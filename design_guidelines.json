@@ -1,0 +1,122 @@
+{
+  "theme_and_archetype": {
+    "theme": "hybrid_fullstack",
+    "mode": "dark_and_light",
+    "archetype": "Archetype 4 (Swiss & High-Contrast)",
+    "variation": "Industrial Enterprise",
+    "description": "A high-contrast, structured, and function-first interface inspired by industrial control rooms. Relies on deep slate bases and high-visibility safety amber/orange accents. It prioritizes clarity, data density, and operational reliability."
+  },
+  "typography": {
+    "strategy": "Swiss Brutalist Industrial",
+    "heading_font": "Chivo",
+    "body_font": "IBM Plex Sans",
+    "weights": {
+      "headings": [700, 900],
+      "body": [400, 500],
+      "data_labels": [600]
+    },
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl tracking-tight leading-none",
+      "h2": "text-2xl sm:text-3xl tracking-tight leading-tight",
+      "h3": "text-xl sm:text-2xl tracking-tight",
+      "h4": "text-lg font-bold uppercase tracking-[0.05em]",
+      "body": "text-base leading-relaxed",
+      "kpi_value": "text-3xl sm:text-4xl font-black tracking-tighter",
+      "overline": "text-xs font-bold uppercase tracking-[0.15em] text-muted-foreground"
+    },
+    "rules": [
+      "CRITICAL: Do not use Inter, Roboto, or Open Sans.",
+      "Data tables and financial numbers MUST use tabular nums utility (tabular-nums).",
+      "Section headers must be tight and concise."
+    ]
+  },
+  "color_palette": {
+    "dark_mode": {
+      "background": "#020617",
+      "surface": "#0f172a",
+      "surface_hover": "#1e293b",
+      "border": "#334155",
+      "text_primary": "#f8fafc",
+      "text_secondary": "#94a3b8",
+      "primary": "#f59e0b",
+      "primary_hover": "#d97706",
+      "accent": "#ea580c",
+      "destructive": "#ef4444",
+      "success": "#10b981",
+      "warning": "#eab308"
+    },
+    "light_mode": {
+      "background": "#f8fafc",
+      "surface": "#ffffff",
+      "surface_hover": "#f1f5f9",
+      "border": "#e2e8f0",
+      "text_primary": "#0f172a",
+      "text_secondary": "#475569",
+      "primary": "#f59e0b",
+      "primary_hover": "#d97706",
+      "accent": "#ea580c",
+      "destructive": "#ef4444",
+      "success": "#10b981",
+      "warning": "#eab308"
+    },
+    "rules": [
+      "Tinted Grey Rule applied: Grays are slate/blue-tinted to feel technical.",
+      "No gradients for standard UI elements. Solid colors only.",
+      "Interactive element text contrast must be minimum 4.5:1."
+    ]
+  },
+  "layout_and_spacing": {
+    "strategy": "The 'Control Room' Grid",
+    "base_grid": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6",
+    "kpi_cards": "col-span-1",
+    "primary_charts": "col-span-2 row-span-2",
+    "data_tables": "col-span-full",
+    "spacing_scale": "Use tight spacings inside cards (p-4 to p-6) to maximize data density, but generous gaps between sections (gap-6 to gap-8).",
+    "borders_and_radius": "Max border-radius of 4px (rounded-sm) for a sharp, robust industrial feel. Heavy reliance on 1px solid borders.",
+    "navigation": "Collapsible sidebar on desktop (w-64 expanded, w-16 collapsed). Bottom nav or hamburger menu for mobile viewports."
+  },
+  "component_rules": {
+    "buttons": "Solid backgrounds, sharp corners (rounded-sm). Hover states must increase color intensity. Add 1px subtle border to primary buttons.",
+    "cards": "Flat background with 1px border. No shadows in default state. Hover state: subtle shadow and border color shift.",
+    "tables": "Dense layout, sticky headers, striped rows for readability. Always include filters/search at the top right of the table container.",
+    "forms": "Inputs use solid borders, background slightly darker than surface in dark mode. Clear focus rings (ring-2 ring-primary).",
+    "dashboards": "KPI cards must include trend indicators (red/green arrows). Use Shadcn charts (recharts) for line/bar visualization.",
+    "status_badges": "Solid background with 20% opacity of the semantic color, text in 100% semantic color. Square corners."
+  },
+  "motion_and_interactions": {
+    "hover_states": "Crisp and instant. Background shifts up one lightness step.",
+    "transitions": "Use 'transition-colors duration-200' for interactive elements.",
+    "page_load": "Staggered fade-up for dashboard widgets (delay-75, delay-150, etc.).",
+    "navigation": "Sidebar expansion must be smooth (width transition)."
+  },
+  "media_and_assets": {
+    "icons": {
+      "library": "@phosphor-icons/react",
+      "style": "Duotone or bold weight for high legibility in industrial contexts."
+    },
+    "image_urls": [
+      {
+        "category": "landing_hero",
+        "url": "https://images.unsplash.com/photo-1504964670878-71b73cec0ce1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzN8MHwxfHNlYXJjaHwzfHxpbmR1c3RyaWFsJTIwc2NhZmZvbGRpbmclMjBjb25zdHJ1Y3Rpb24lMjBzaXRlJTIwbW9kZXJufGVufDB8fHx8MTc3ODc0ODQ0N3ww&ixlib=rb-4.1.0&q=85",
+        "description": "Industrial concrete and scaffolding building, modern construction site."
+      },
+      {
+        "category": "login_background",
+        "url": "https://static.prod-images.emergentagent.com/jobs/9aee82b5-a22f-42f7-9330-c146e7cb4c20/images/73f7497aae98b5900f801d77266560bbb884361a717ac9f4a96269908efb7dbb.png",
+        "description": "Abstract 3D rendering of industrial steel beams with amber/orange data streams in a dark void."
+      },
+      {
+        "category": "brand_logo",
+        "url": "https://static.prod-images.emergentagent.com/jobs/9aee82b5-a22f-42f7-9330-c146e7cb4c20/images/47dd3fda493184bf3321baded3e8a5f40f78ff1b229c508aab00a444f96329b5.png",
+        "description": "Minimalist, modern logo for an industrial ERP software. Slate and amber geometric shape."
+      }
+    ]
+  },
+  "instructions_to_main_agent": {
+    "general": "Build a robust, functional industrial ERP layout. Prioritize data density, crisp edges, and high-contrast text.",
+    "theming": "Implement dark mode by default but ensure full light mode support. Use the defined Slate and Amber/Orange palette.",
+    "layout_execution": "Sidebar must house the 14 modules logically grouped (e.g., Core, Operations, HR, Finance). The Executive Dashboard is the default route post-login.",
+    "data_visualization": "Use Shadcn Charts to build out the revenue, expenses, and pending payments line/bar charts. Avoid donut charts for critical metrics; prefer bar or line.",
+    "testing": "All interactive elements MUST include a data-testid attribute in kebab-case."
+  }
+}
