@@ -21,5 +21,5 @@ export default function Documents() {
     { key: "version", label: "Version" },
     { key: "expiry", label: "Expiry Date", type: "date" },
   ];
-  return <DataTableShell title="Document Management" description="Contracts, drawings, certifications and inspection reports." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="documents" />;
+  return <DataTableShell title="Document Management" description="Contracts, drawings, certifications and inspection reports." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="documents" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} />;
 }

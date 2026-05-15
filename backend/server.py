@@ -10,6 +10,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 import os
+import io
 import uuid
 import secrets
 import logging
@@ -20,8 +21,13 @@ import bcrypt
 import jwt
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr
+
+from rbac import PERMISSIONS, can, permissions_for
+from approval_engine import build_chain, apply_action, APPROVAL_CHAINS
+from exports import to_excel, to_pdf, COLUMNS as EXPORT_COLUMNS
 
 # ---------- Config ----------
 MONGO_URL = os.environ["MONGO_URL"]
@@ -115,6 +121,15 @@ def require_roles(*roles: str):
             # super_admin always allowed
             if user.get("role") != "super_admin":
                 raise HTTPException(status_code=403, detail="Insufficient permissions")
+        return user
+    return dep
+
+
+def require_permission(resource: str, action: str):
+    """Dependency factory enforcing per-resource RBAC. action ∈ {read, write, delete}."""
+    async def dep(user: dict = Depends(get_current_user)) -> dict:
+        if not can(user.get("role"), resource, action):
+            raise HTTPException(status_code=403, detail=f"Forbidden: '{user.get('role')}' cannot {action} {resource}")
         return user
     return dep
 
@@ -245,32 +260,41 @@ async def list_users(user: dict = Depends(get_current_user)):
     return [UserOut(**r) for r in rows]
 
 
-# ---------- Generic CRUD factory ----------
-def make_crud(resource: str, collection: str):
+# ---------- Generic CRUD factory (RBAC-aware) ----------
+def make_crud(resource: str, collection: str, perm_key: str | None = None):
+    """`resource` is URL slug, `collection` is Mongo collection, `perm_key` maps to PERMISSIONS."""
+    perm = perm_key or collection
+
     @api.get(f"/{resource}")
-    async def list_items(user: dict = Depends(get_current_user)):
+    async def list_items(user: dict = Depends(require_permission(perm, "read"))):
         rows = await db[collection].find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
         return rows
 
     @api.post(f"/{resource}")
-    async def create_item(payload: Dict[str, Any], user: dict = Depends(get_current_user)):
+    async def create_item(payload: Dict[str, Any], user: dict = Depends(require_permission(perm, "write"))):
         doc = dict(payload)
         doc["id"] = new_id()
         doc["created_at"] = now_iso()
         doc["created_by"] = user["id"]
+        # Auto-attach approval chain when creating an approval request
+        if perm == "approvals" and not doc.get("chain"):
+            doc["chain"] = build_chain(doc.get("type") or "expense")
+            doc["current_step"] = 0
+            doc["history"] = []
+            doc["status"] = doc.get("status") or "pending"
         await db[collection].insert_one(doc)
         doc.pop("_id", None)
         return doc
 
     @api.get(f"/{resource}/{{item_id}}")
-    async def get_item(item_id: str, user: dict = Depends(get_current_user)):
+    async def get_item(item_id: str, user: dict = Depends(require_permission(perm, "read"))):
         row = await db[collection].find_one({"id": item_id}, {"_id": 0})
         if not row:
             raise HTTPException(status_code=404, detail="Not found")
         return row
 
     @api.put(f"/{resource}/{{item_id}}")
-    async def update_item(item_id: str, payload: Dict[str, Any], user: dict = Depends(get_current_user)):
+    async def update_item(item_id: str, payload: Dict[str, Any], user: dict = Depends(require_permission(perm, "write"))):
         payload.pop("id", None)
         payload["updated_at"] = now_iso()
         payload["updated_by"] = user["id"]
@@ -281,11 +305,87 @@ def make_crud(resource: str, collection: str):
         return row
 
     @api.delete(f"/{resource}/{{item_id}}")
-    async def delete_item(item_id: str, user: dict = Depends(get_current_user)):
+    async def delete_item(item_id: str, user: dict = Depends(require_permission(perm, "delete"))):
         result = await db[collection].delete_one({"id": item_id})
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Not found")
         return {"ok": True}
+
+
+# ---------- Approval workflow endpoints ----------
+class ApprovalAction(BaseModel):
+    action: str  # approve | reject | comment
+    comment: Optional[str] = None
+
+
+@api.post("/approvals/{approval_id}/action")
+async def approval_action(approval_id: str, payload: ApprovalAction, user: dict = Depends(get_current_user)):
+    approval = await db.approvals.find_one({"id": approval_id}, {"_id": 0})
+    if not approval:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not approval.get("chain"):
+        approval["chain"] = build_chain(approval.get("type") or "expense")
+        approval["current_step"] = 0
+        approval["history"] = []
+    try:
+        updated = apply_action(approval, payload.action, user, payload.comment)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    await db.approvals.update_one(
+        {"id": approval_id},
+        {"$set": {
+            "chain": updated["chain"],
+            "current_step": updated["current_step"],
+            "history": updated["history"],
+            "status": updated["status"],
+            "updated_at": updated["updated_at"],
+        }},
+    )
+    return updated
+
+
+@api.get("/approvals-config/chains")
+async def approval_chains(user: dict = Depends(get_current_user)):
+    return APPROVAL_CHAINS
+
+
+# ---------- Export endpoints (Excel + PDF) ----------
+_EXPORT_RESOURCE_MAP = {
+    "clients": "clients", "vendors": "vendors", "employees": "employees",
+    "attendance": "attendance", "projects": "projects", "inventory": "inventory",
+    "purchase-orders": "purchase_orders", "quotations": "quotations",
+    "journal-entries": "journal_entries", "safety-reports": "safety_reports",
+    "assets": "assets", "payroll": "payroll", "vehicles": "vehicles",
+    "documents": "documents", "approvals": "approvals",
+}
+
+
+@api.get("/export/{resource}.{fmt}")
+async def export_resource(resource: str, fmt: str, user: dict = Depends(get_current_user)):
+    if resource not in _EXPORT_RESOURCE_MAP:
+        raise HTTPException(status_code=404, detail="Unknown resource")
+    perm_key = _EXPORT_RESOURCE_MAP[resource]
+    if not can(user.get("role"), perm_key, "read"):
+        raise HTTPException(status_code=403, detail=f"Forbidden: cannot read {perm_key}")
+    if fmt not in ("xlsx", "pdf"):
+        raise HTTPException(status_code=400, detail="Format must be xlsx or pdf")
+
+    rows = await db[perm_key].find({}, {"_id": 0}).sort("created_at", -1).to_list(5000)
+    fname = f"{perm_key}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.{fmt}"
+    if fmt == "xlsx":
+        data = to_excel(perm_key, rows)
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        data = to_pdf(perm_key, rows)
+        media = "application/pdf"
+    return StreamingResponse(io.BytesIO(data), media_type=media, headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+@api.get("/auth/permissions")
+async def my_permissions(user: dict = Depends(get_current_user)):
+    return permissions_for(user.get("role"))
 
 
 # Register CRUD modules
@@ -561,13 +661,26 @@ async def seed_sample_data():
     await db.documents.insert_many(documents)
 
     approvals = [
-        _doc(title="PO-2026-002 Approval", type="purchase_order", reference="PO-2026-002", amount=128000, requested_by="Rohit Sharma", current_approver="Director", status="pending"),
-        _doc(title="Leave Request - Sneha Iyer", type="leave", reference="LV-2026-008", amount=0, requested_by="Sneha Iyer", current_approver="Dept Head", status="pending"),
-        _doc(title="Capex - New Welding Machine", type="capex", reference="CAP-2026-001", amount=92000, requested_by="Mohan Lal", current_approver="Finance", status="pending"),
+        _doc(title="PO-2026-002 Approval", type="purchase_order", reference="PO-2026-002", amount=128000, requested_by="Rohit Sharma", chain=build_chain("purchase_order"), current_step=0, history=[], status="pending"),
+        _doc(title="Leave Request - Sneha Iyer", type="leave", reference="LV-2026-008", amount=0, requested_by="Sneha Iyer", chain=build_chain("leave"), current_step=0, history=[], status="pending"),
+        _doc(title="Capex - New Welding Machine", type="capex", reference="CAP-2026-001", amount=92000, requested_by="Mohan Lal", chain=build_chain("capex"), current_step=0, history=[], status="pending"),
     ]
     await db.approvals.insert_many(approvals)
 
     logger.info("Seeded sample ERP data.")
+
+
+async def migrate_approvals_chain():
+    """Backfill chain/history/current_step on legacy approval docs that lack them."""
+    async for doc in db.approvals.find({"chain": {"$exists": False}}, {"_id": 0, "id": 1, "type": 1}):
+        await db.approvals.update_one(
+            {"id": doc["id"]},
+            {"$set": {
+                "chain": build_chain(doc.get("type") or "expense"),
+                "current_step": 0,
+                "history": [],
+            }},
+        )
 
 
 @app.on_event("startup")
@@ -579,6 +692,7 @@ async def on_startup():
             await db[c].create_index("id", unique=True)
         await seed_admin()
         await seed_sample_data()
+        await migrate_approvals_chain()
         logger.info("ERP backend started successfully.")
     except Exception as e:
         logger.exception(f"Startup error: {e}")

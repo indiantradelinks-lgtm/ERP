@@ -39,5 +39,5 @@ export default function Projects() {
     { key: "progress", label: "Progress %", type: "number" },
     { key: "status", label: "Status", type: "select", options: ["planned", "active", "on_hold", "completed", "cancelled"] },
   ];
-  return <DataTableShell title="Projects" description="Active sites, scopes, budgets and progress." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="projects" />;
+  return <DataTableShell title="Projects" description="Active sites, scopes, budgets and progress." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="projects" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} />;
 }

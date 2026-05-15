@@ -33,7 +33,7 @@ export default function Clients() {
       onCreate={r.create}
       onUpdate={r.update}
       onDelete={r.remove}
-      testidPrefix="clients"
+      testidPrefix="clients" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete}
     />
   );
 }

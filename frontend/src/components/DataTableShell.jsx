@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Plus, Search, Trash2, Pencil } from "lucide-react";
+import { Plus, Search, Trash2, Pencil, FileSpreadsheet, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { downloadExport } from "@/lib/exports";
 
 /**
  * Generic data table with create/edit/delete dialog.
@@ -25,6 +26,9 @@ export default function DataTableShell({
   testidPrefix = "tbl",
   searchKeys,
   rightSlot,
+  exportResource,
+  canWrite = true,
+  canDelete = true,
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -81,7 +85,17 @@ export default function DataTableShell({
             />
           </div>
           {rightSlot}
-          {onCreate && (
+          {exportResource && (
+            <>
+              <Button variant="outline" className="h-9 rounded-sm" onClick={() => downloadExport(exportResource, "xlsx")} data-testid={`${testidPrefix}-export-xlsx`} title="Export Excel">
+                <FileSpreadsheet className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" className="h-9 rounded-sm" onClick={() => downloadExport(exportResource, "pdf")} data-testid={`${testidPrefix}-export-pdf`} title="Export PDF">
+                <FileText className="h-4 w-4" />
+              </Button>
+            </>
+          )}
+          {onCreate && canWrite && (
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
                 <Button className="h-9 rounded-sm" onClick={startCreate} data-testid={`${testidPrefix}-add-btn`}>
@@ -162,12 +176,12 @@ export default function DataTableShell({
                 {(onUpdate || onDelete) && (
                   <TableCell className="text-right">
                     <div className="inline-flex gap-1">
-                      {onUpdate && (
+                      {onUpdate && canWrite && (
                         <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => startEdit(row)} data-testid={`${testidPrefix}-edit-${row.id}`}>
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
                       )}
-                      {onDelete && (
+                      {onDelete && canDelete && (
                         <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => onDelete(row.id)} data-testid={`${testidPrefix}-delete-${row.id}`}>
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>

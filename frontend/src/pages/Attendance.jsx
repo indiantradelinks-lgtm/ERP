@@ -19,5 +19,5 @@ export default function Attendance() {
     { key: "hours", label: "Hours", type: "number" },
     { key: "status", label: "Status", type: "select", options: ["present", "absent", "leave", "half_day"] },
   ];
-  return <DataTableShell title="Attendance" description="Daily check-in/out records by employee." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="attendance" />;
+  return <DataTableShell title="Attendance" description="Daily check-in/out records by employee." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="attendance" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} />;
 }

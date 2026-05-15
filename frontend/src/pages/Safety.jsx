@@ -22,5 +22,5 @@ export default function Safety() {
     { key: "description", label: "Description", full: true, type: "textarea" },
     { key: "status", label: "Status", type: "select", options: ["open", "under_review", "closed"] },
   ];
-  return <DataTableShell title="Safety Management" description="Observations, near-miss, incidents and PTWs." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="safety" />;
+  return <DataTableShell title="Safety Management" description="Observations, near-miss, incidents and PTWs." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="safety" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} />;
 }

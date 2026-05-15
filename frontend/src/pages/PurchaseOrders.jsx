@@ -21,5 +21,5 @@ export default function PurchaseOrders() {
     { key: "status", label: "Status", type: "select", options: ["draft", "pending", "approved", "rejected", "received"] },
     { key: "paid", label: "Paid (true/false)", type: "select", options: [{ value: "true", label: "Yes" }, { value: "false", label: "No" }] },
   ];
-  return <DataTableShell title="Purchase Orders" description="Requisition → RFQ → PO → GRN. Multi-level approvals." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="purchase" />;
+  return <DataTableShell title="Purchase Orders" description="Requisition → RFQ → PO → GRN. Multi-level approvals." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="purchase" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} />;
 }

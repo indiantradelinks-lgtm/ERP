@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import KPICard from "@/components/KPICard";
 import { StatusBadge } from "@/components/DataTableShell";
@@ -15,6 +16,7 @@ const inr = (v) => "₹ " + Math.abs(v).toLocaleString("en-IN", { maximumFractio
 
 export default function Dashboard() {
   const [data, setData] = useState(null);
+  const navigate = useNavigate();
   useEffect(() => {
     api.get("/dashboard/summary").then((r) => setData(r.data)).catch(() => setData({}));
   }, []);
@@ -22,6 +24,7 @@ export default function Dashboard() {
     return <div className="text-sm text-muted-foreground" data-testid="dashboard-loading">Loading dashboard…</div>;
   }
   const k = data.kpis || {};
+  const go = (path) => () => navigate(path);
 
   return (
     <div className="space-y-8" data-testid="dashboard-root">
@@ -39,11 +42,11 @@ export default function Dashboard() {
 
       {/* Top KPI strip */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 stagger">
-        <KPICard testid="kpi-revenue" label="Revenue (6M)" value={inr(k.revenue || 0)} icon={TrendingUp} delta="+12.4%" deltaTone="up" sub="vs prev period" accent />
-        <KPICard testid="kpi-expenses" label="Expenses (6M)" value={inr(k.expenses || 0)} icon={TrendingDown} delta="+8.1%" deltaTone="down" sub="vs prev period" />
-        <KPICard testid="kpi-profit" label="Net Profit" value={inr(k.profit || 0)} icon={Wallet} delta="+18.6%" deltaTone="up" sub="margin healthy" />
-        <KPICard testid="kpi-receivables" label="Receivables" value={inr(k.receivables || 0)} icon={ArrowUpRight} sub="open invoices" />
-        <KPICard testid="kpi-payables" label="Vendor Payables" value={inr(k.payables || 0)} icon={ShoppingCart} sub="due to vendors" />
+        <KPICard testid="kpi-revenue" label="Revenue (6M)" value={inr(k.revenue || 0)} icon={TrendingUp} delta="+12.4%" deltaTone="up" sub="vs prev period" accent onClick={go("/app/accounts")} />
+        <KPICard testid="kpi-expenses" label="Expenses (6M)" value={inr(k.expenses || 0)} icon={TrendingDown} delta="+8.1%" deltaTone="down" sub="vs prev period" onClick={go("/app/accounts")} />
+        <KPICard testid="kpi-profit" label="Net Profit" value={inr(k.profit || 0)} icon={Wallet} delta="+18.6%" deltaTone="up" sub="margin healthy" onClick={go("/app/reports")} />
+        <KPICard testid="kpi-receivables" label="Receivables" value={inr(k.receivables || 0)} icon={ArrowUpRight} sub="open invoices" onClick={go("/app/quotations")} />
+        <KPICard testid="kpi-payables" label="Vendor Payables" value={inr(k.payables || 0)} icon={ShoppingCart} sub="due to vendors" onClick={go("/app/purchase-orders")} />
       </div>
 
       {/* Charts row */}
@@ -100,21 +103,21 @@ export default function Dashboard() {
       <div>
         <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground mb-3">Operations Snapshot</div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 stagger">
-          <KPICard testid="kpi-projects" label="Active Projects" value={k.active_projects ?? 0} sub={`of ${k.total_projects ?? 0} total`} icon={Briefcase} />
-          <KPICard testid="kpi-employees" label="Employees" value={k.employees ?? 0} sub="on roll" icon={HardHat} />
-          <KPICard testid="kpi-clients" label="Clients" value={k.clients ?? 0} sub="active" icon={Users} />
-          <KPICard testid="kpi-vendors" label="Vendors" value={k.vendors ?? 0} sub="approved" icon={Truck} />
-          <KPICard testid="kpi-inventory" label="Inventory Items" value={k.inventory_items ?? 0} sub="SKUs tracked" icon={Boxes} />
-          <KPICard testid="kpi-lowstock" label="Low Stock Alerts" value={k.low_stock_alerts ?? 0} sub="below minimum" icon={AlertTriangle} accent={!!k.low_stock_alerts} />
+          <KPICard testid="kpi-projects" label="Active Projects" value={k.active_projects ?? 0} sub={`of ${k.total_projects ?? 0} total`} icon={Briefcase} onClick={go("/app/projects")} />
+          <KPICard testid="kpi-employees" label="Employees" value={k.employees ?? 0} sub="on roll" icon={HardHat} onClick={go("/app/employees")} />
+          <KPICard testid="kpi-clients" label="Clients" value={k.clients ?? 0} sub="active" icon={Users} onClick={go("/app/clients")} />
+          <KPICard testid="kpi-vendors" label="Vendors" value={k.vendors ?? 0} sub="approved" icon={Truck} onClick={go("/app/vendors")} />
+          <KPICard testid="kpi-inventory" label="Inventory Items" value={k.inventory_items ?? 0} sub="SKUs tracked" icon={Boxes} onClick={go("/app/inventory")} />
+          <KPICard testid="kpi-lowstock" label="Low Stock Alerts" value={k.low_stock_alerts ?? 0} sub="below minimum" icon={AlertTriangle} accent={!!k.low_stock_alerts} onClick={go("/app/inventory")} />
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Approvals & Safety */}
-        <div className="bg-card border border-border rounded-sm p-5">
+        <div className="bg-card border border-border rounded-sm p-5 hover:border-primary/40 transition-colors cursor-pointer" onClick={go("/app/approvals")} data-testid="dash-approvals-card">
           <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Pending Approvals</div>
           <div className="font-display font-black text-4xl tabular mt-1">{k.pending_approvals ?? 0}</div>
-          <div className="text-xs text-muted-foreground">requires action</div>
+          <div className="text-xs text-muted-foreground">click to review</div>
           <div className="h-px bg-border my-4" />
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div>
@@ -128,7 +131,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-card border border-border rounded-sm p-5">
+        <div className="bg-card border border-border rounded-sm p-5 hover:border-primary/40 transition-colors cursor-pointer" onClick={go("/app/safety")} data-testid="dash-safety-card">
           <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Safety Today</div>
           <div className="font-display font-black text-4xl tabular mt-1 flex items-center gap-3">
             {k.open_safety_incidents ?? 0}
@@ -146,7 +149,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-card border border-border rounded-sm p-5">
+        <div className="bg-card border border-border rounded-sm p-5 hover:border-primary/40 transition-colors cursor-pointer" onClick={go("/app/attendance")} data-testid="dash-attendance-card">
           <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Attendance Today</div>
           <div className="grid grid-cols-2 gap-3 mt-1">
             <div>

@@ -21,5 +21,5 @@ export default function Accounts() {
     { key: "amount", label: "Amount (INR)", type: "number" },
     { key: "narration", label: "Narration", full: true, type: "textarea" },
   ];
-  return <DataTableShell title="Accounts & Finance" description="Journal entries, ledgers, and cost-centre wise booking." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="accounts" />;
+  return <DataTableShell title="Accounts & Finance" description="Journal entries, ledgers, and cost-centre wise booking." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="accounts" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} />;
 }

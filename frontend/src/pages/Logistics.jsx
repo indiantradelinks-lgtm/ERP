@@ -21,5 +21,5 @@ export default function Logistics() {
     { key: "fuel_avg", label: "Fuel Avg (km/L)", type: "number" },
     { key: "status", label: "Status", type: "select", options: ["active", "maintenance", "idle"] },
   ];
-  return <DataTableShell title="Logistics · Vehicles" description="Fleet, drivers, fuel and trip readiness." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="logistics" />;
+  return <DataTableShell title="Logistics · Vehicles" description="Fleet, drivers, fuel and trip readiness." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="logistics" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} />;
 }

@@ -22,45 +22,48 @@ const NAV_GROUPS = [
     label: "Command",
     items: [
       { to: "/app", icon: LayoutDashboard, label: "Executive Dashboard", end: true, testid: "nav-dashboard" },
-      { to: "/app/approvals", icon: CheckSquare, label: "Approvals", testid: "nav-approvals" },
+      { to: "/app/approvals", icon: CheckSquare, label: "Approvals", testid: "nav-approvals", perm: "approvals" },
       { to: "/app/reports", icon: BarChart3, label: "Reports", testid: "nav-reports" },
     ],
   },
   {
     label: "Operations",
     items: [
-      { to: "/app/projects", icon: Briefcase, label: "Projects", testid: "nav-projects" },
-      { to: "/app/safety", icon: ShieldAlert, label: "Safety", testid: "nav-safety" },
-      { to: "/app/assets", icon: Wrench, label: "Assets", testid: "nav-assets" },
-      { to: "/app/logistics", icon: Car, label: "Logistics", testid: "nav-logistics" },
+      { to: "/app/projects", icon: Briefcase, label: "Projects", testid: "nav-projects", perm: "projects" },
+      { to: "/app/safety", icon: ShieldAlert, label: "Safety", testid: "nav-safety", perm: "safety_reports" },
+      { to: "/app/assets", icon: Wrench, label: "Assets", testid: "nav-assets", perm: "assets" },
+      { to: "/app/logistics", icon: Car, label: "Logistics", testid: "nav-logistics", perm: "vehicles" },
     ],
   },
   {
     label: "Commerce",
     items: [
-      { to: "/app/clients", icon: Users, label: "Clients", testid: "nav-clients" },
-      { to: "/app/vendors", icon: Truck, label: "Vendors", testid: "nav-vendors" },
-      { to: "/app/quotations", icon: FileText, label: "Sales & Quotations", testid: "nav-quotations" },
-      { to: "/app/purchase-orders", icon: ShoppingCart, label: "Purchase Orders", testid: "nav-purchase" },
-      { to: "/app/inventory", icon: Boxes, label: "Inventory & Stores", testid: "nav-inventory" },
+      { to: "/app/clients", icon: Users, label: "Clients", testid: "nav-clients", perm: "clients" },
+      { to: "/app/vendors", icon: Truck, label: "Vendors", testid: "nav-vendors", perm: "vendors" },
+      { to: "/app/quotations", icon: FileText, label: "Sales & Quotations", testid: "nav-quotations", perm: "quotations" },
+      { to: "/app/purchase-orders", icon: ShoppingCart, label: "Purchase Orders", testid: "nav-purchase", perm: "purchase_orders" },
+      { to: "/app/inventory", icon: Boxes, label: "Inventory & Stores", testid: "nav-inventory", perm: "inventory" },
     ],
   },
   {
     label: "People & Finance",
     items: [
-      { to: "/app/employees", icon: HardHat, label: "Employees (HRMS)", testid: "nav-employees" },
-      { to: "/app/attendance", icon: ClipboardList, label: "Attendance", testid: "nav-attendance" },
-      { to: "/app/payroll", icon: Wallet, label: "Payroll", testid: "nav-payroll" },
-      { to: "/app/accounts", icon: FileText, label: "Accounts & Finance", testid: "nav-accounts" },
-      { to: "/app/documents", icon: FolderArchive, label: "Documents", testid: "nav-documents" },
+      { to: "/app/employees", icon: HardHat, label: "Employees (HRMS)", testid: "nav-employees", perm: "employees" },
+      { to: "/app/attendance", icon: ClipboardList, label: "Attendance", testid: "nav-attendance", perm: "attendance" },
+      { to: "/app/payroll", icon: Wallet, label: "Payroll", testid: "nav-payroll", perm: "payroll" },
+      { to: "/app/accounts", icon: FileText, label: "Accounts & Finance", testid: "nav-accounts", perm: "journal_entries" },
+      { to: "/app/documents", icon: FolderArchive, label: "Documents", testid: "nav-documents", perm: "documents" },
     ],
   },
 ];
 
-function SidebarBody({ collapsed, onItemClick }) {
+function SidebarBody({ collapsed, onItemClick, can }) {
   return (
     <nav className="flex flex-col gap-6 py-6">
-      {NAV_GROUPS.map((group) => (
+      {NAV_GROUPS.map((group) => {
+        const visible = group.items.filter((it) => !it.perm || can(it.perm, "read"));
+        if (visible.length === 0) return null;
+        return (
         <div key={group.label}>
           {!collapsed && (
             <div className="px-5 mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-sidebar-foreground/40">
@@ -68,7 +71,7 @@ function SidebarBody({ collapsed, onItemClick }) {
             </div>
           )}
           <div className="flex flex-col gap-0.5 px-2">
-            {group.items.map((it) => (
+            {visible.map((it) => (
               <NavLink
                 key={it.to}
                 to={it.to}
@@ -90,13 +93,13 @@ function SidebarBody({ collapsed, onItemClick }) {
             ))}
           </div>
         </div>
-      ))}
+      );})}
     </nav>
   );
 }
 
 export default function Layout({ children }) {
-  const { user, logout } = useAuth();
+  const { user, logout, can } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
@@ -137,7 +140,7 @@ export default function Layout({ children }) {
           </button>
         </div>
         <div className="flex-1 overflow-y-auto">
-          <SidebarBody collapsed={collapsed} />
+          <SidebarBody collapsed={collapsed} can={can} />
         </div>
         {!collapsed && (
           <div className="px-4 py-3 border-t border-sidebar-border flex items-center gap-2 text-xs text-sidebar-foreground/50">
@@ -154,7 +157,7 @@ export default function Layout({ children }) {
             <Brand />
           </div>
           <div className="overflow-y-auto h-[calc(100vh-64px)]">
-            <SidebarBody collapsed={false} onItemClick={() => setMobileOpen(false)} />
+            <SidebarBody collapsed={false} onItemClick={() => setMobileOpen(false)} can={can} />
           </div>
         </SheetContent>
       </Sheet>
@@ -221,3 +224,4 @@ export default function Layout({ children }) {
     </div>
   );
 }
+

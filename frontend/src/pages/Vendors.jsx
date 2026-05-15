@@ -24,6 +24,6 @@ export default function Vendors() {
     { key: "status", label: "Approval Status", type: "select", options: ["pending", "approved", "rejected"] },
   ];
   return (
-    <DataTableShell title="Vendor Management" description="Approved supplier base, compliance and performance ratings." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="vendors" />
+    <DataTableShell title="Vendor Management" description="Approved supplier base, compliance and performance ratings." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="vendors" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} />
   );
 }

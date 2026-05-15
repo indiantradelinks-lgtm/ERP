@@ -24,5 +24,5 @@ export default function Employees() {
     { key: "salary", label: "Monthly Salary", type: "number" },
     { key: "status", label: "Status", type: "select", options: ["active", "on_leave", "exited"] },
   ];
-  return <DataTableShell title="Employees · HRMS" description="Master record for all on-roll personnel." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="employees" />;
+  return <DataTableShell title="Employees · HRMS" description="Master record for all on-roll personnel." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="employees" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} />;
 }

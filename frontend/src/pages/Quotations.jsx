@@ -21,5 +21,5 @@ export default function Quotations() {
     { key: "total", label: "Total (INR)", type: "number" },
     { key: "status", label: "Status", type: "select", options: ["draft", "sent", "won", "invoiced", "lost"] },
   ];
-  return <DataTableShell title="Sales & Quotations" description="Lead → Quote → Win → Invoice pipeline." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="quotations" />;
+  return <DataTableShell title="Sales & Quotations" description="Lead → Quote → Win → Invoice pipeline." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="quotations" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} />;
 }
