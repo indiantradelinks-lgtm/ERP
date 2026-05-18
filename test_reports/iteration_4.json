@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 4 testing: Backend refactor + APScheduler 100% green (34/34 new pytest cases + 71/71 iter1+iter2+iter3 regression = 105/105). Scheduler endpoint /api/scheduler/status returns running:true with exactly two jobs (expiry_scan + invoice_reminders), valid next_run_time and last_results scaffold. RBAC preserved: hr_iter4 cannot GET /api/journal-entries (403) but can GET /api/employees (200). File upload+list+download (cookie + ?auth=)+soft-delete end-to-end works. Frontend: admin login OK, /app dashboard loads with 17 sidebar links (Executive Dashboard, Approvals, Reports + 14 module entries: Projects, Safety, Assets, Logistics, Clients, Vendors, Sales & Quotations, Purchase Orders, Inventory & Stores, Employees (HRMS), Attendance, Payroll, Accounts & Finance, Documents). HOWEVER the new FileUploader progress feature is broken: clicking Documents in sidebar produces an Uncaught runtime error: ReferenceError: progress is not defined at FileUploader. The component imports Progress and renders {Object.keys(progress).length > 0 && ...} on line 107 but never declares the progress state, never declares setProgress, and the axios api.post on line 39 has no onUploadProgress callback. This blocks the Documents page entirely and any page using FileUploader (also breaks Safety detail/edit dialogs that include attachments).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "FileUploader", "issue": "ReferenceError: progress is not defined — `progress` state hook is missing. Component declares only `busy` and `drag` via useState but JSX on line 107 reads Object.keys(progress).length. Page renders, then crashes when FileUploader mounts. Also the axios api.post call on line 39 never passes the onUploadProgress option promised by the iteration, so even with the state declared no bar would advance.", "selector": "[data-testid='uploader-dropzone'] (Documents page)", "priority": "CRITICAL"}
+    ],
+    "integration_issues": [
+      {"flow": "Documents page load & file upload progress", "issue": "Documents route crashes immediately for any user; uploads cannot be initiated through the UI. Backend /api/uploads is healthy (verified via pytest) so the integration failure is purely on the FE side.", "affected_selectors": ["[data-testid='uploader-dropzone']", "[data-testid='uploader-input']", "[data-testid^='uploader-progress-']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_erp_iteration4.py",
+    "/app/backend/tests/test_erp_iteration3.py",
+    "/app/backend/tests/test_erp_iteration2.py",
+    "/app/backend/tests/test_erp_backend.py",
+    "/app/test_reports/pytest/iteration4_results.xml"
+  ],
+  "action_items": [
+    "Fix FileUploader.jsx: add `const [progress, setProgress] = useState({});` and wire axios onUploadProgress to setProgress(prev => ({...prev, [file.name]: pct})). Also clear the entry on success/failure (or delete pct on the file name in `finally`) so the progress row disappears when the file is added to the list. Without this, the entire Documents page (and any Safety dialog using FileUploader) is unusable.",
+    "Optional code review: server.py is now a clean 91-line entrypoint (down from 942) — addresses the iter3 critical_code_review comment. scheduler.py is small and cron-correct (UTC). All routers stay under 700 lines."
+  ],
+  "critical_code_review_comments": [
+    "FileUploader.jsx is shipped with an undeclared `progress` identifier. Any CI lint with no-undef enabled would have caught this — recommend enabling react-app no-undef rule or running `yarn lint` before commit.",
+    "The Progress component is imported but never reachable without the state hook (dead import currently).",
+    "Once progress state is added, ensure the cleanup path also removes the entry on toast.error path so a failed upload doesn't leave a stuck 100% row.",
+    "Consider extracting an `axios` config `{ onUploadProgress: (e) => setProgress(p => ({...p, [file.name]: Math.round((e.loaded/e.total)*100)})) }` helper if you want to reuse the progress UX elsewhere."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_erp_iteration4.py"
+  ],
+  "success_rate": {"backend": "100% (34/34 iter4 + 71/71 iter1+iter2+iter3 regression = 105/105)", "frontend": "Dashboard + sidebar nav OK; Documents page BROKEN by FileUploader ReferenceError. Safety dialog flow blocked by the same component."},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin) — verified. hr_iter4_<runtag>@erp.com / Hr@1234 created at test time for RBAC.",
+  "seed_data_creation": "Tests created TEST_IT4_* uploads in object storage (1 .txt later soft-deleted), and ephemeral approvals (deleted in teardown). HR test user hr_iter4_<runtag>@erp.com left in users collection — safe to ignore.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend post-refactor surface is stable. server.py is a 91-line entrypoint, routers live in /app/backend/routers/. GET /api/scheduler/status is super_admin-readable; jobs ids are 'expiry_scan' (cron hour=9, minute=0) and 'invoice_reminders' (cron mon 9:00). last_results stays {expiry_scan: null, invoice_reminders: null} until first fire — that is expected. To retest FileUploader, navigate to /app/documents (sidebar 'Documents'), drop a >1MB file, expect a row showing the filename + a Progress bar advancing 0->100 then disappearing once the file appears in the list below. Same flow inside Safety per-row Photos dialog.",
+  "rca of the issue": "FileUploader.jsx (iter4 patch) added the rendering block for progress rows and imported Progress, but forgot to (a) declare `const [progress, setProgress] = useState({});` and (b) pass `{ onUploadProgress: ... }` to api.post. Result: React executes the function component, hits `Object.keys(progress)` with progress undefined → ReferenceError → React error overlay covers the route. Reproduction: log in as admin → click Documents in sidebar → page crashes; pageerror in console is 'progress is not defined at FileUploader (bundle.js:107606:27)'. Mitigation: add the missing useState + onUploadProgress as described in action_items. Backend remained untouched by this bug — all upload APIs work via direct API tests."
+}

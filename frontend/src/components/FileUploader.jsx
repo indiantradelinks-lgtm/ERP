@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { Upload, Loader2, FileText, Image as ImageIcon, Trash2, ExternalLink, X, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -102,6 +103,19 @@ export default function FileUploader({ folder = "documents", parent_type, parent
           data-testid={`${testidPrefix}-input`}
         />
       </div>
+
+      {Object.keys(progress).length > 0 && (
+        <ul className="space-y-1.5">
+          {Object.entries(progress).map(([name, pct]) => (
+            <li key={name} className="flex items-center gap-3 px-2 py-1.5 border border-border rounded-sm bg-muted/30 text-xs" data-testid={`${testidPrefix}-progress-${name}`}>
+              <Loader2 className="h-3.5 w-3.5 text-primary animate-spin shrink-0" />
+              <span className="truncate flex-1">{name}</span>
+              <Progress value={pct} className="h-1.5 w-32" />
+              <span className="tabular w-9 text-right font-mono-data text-[10px] text-muted-foreground">{pct}%</span>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {files.length > 0 && (
         <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
