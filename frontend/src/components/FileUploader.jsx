@@ -25,6 +25,7 @@ function isImage(ct) { return ct?.startsWith("image/"); }
 export default function FileUploader({ folder = "documents", parent_type, parent_id, accept, capture, onUploaded, files = [], onDeleted, compact = false, testidPrefix = "uploader" }) {
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(false);
+  const [progress, setProgress] = useState({});
   const inputRef = useRef();
 
   const upload = useCallback(async (file) => {
@@ -35,12 +36,24 @@ export default function FileUploader({ folder = "documents", parent_type, parent
     if (parent_type) fd.append("parent_type", parent_type);
     if (parent_id) fd.append("parent_id", parent_id);
     fd.append("title", file.name);
+    setProgress((p) => ({ ...p, [file.name]: 0 }));
     try {
-      const { data } = await api.post("/uploads", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      const { data } = await api.post("/uploads", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (evt) => {
+          const pct = evt.total ? Math.round((evt.loaded / evt.total) * 100) : 0;
+          setProgress((p) => ({ ...p, [file.name]: pct }));
+        },
+      });
       onUploaded?.(data);
       toast.success(`Uploaded ${file.name}`);
     } catch (e) {
       toast.error(e.response?.data?.detail || `Upload failed: ${file.name}`);
+    } finally {
+      setProgress((p) => {
+        const { [file.name]: _drop, ...rest } = p;
+        return rest;
+      });
     }
   }, [folder, parent_type, parent_id, onUploaded]);
 
