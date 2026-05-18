@@ -15,7 +15,7 @@ export default function MyApprovalsInbox() {
     try {
       const { data } = await api.get("/approvals/inbox/mine");
       setItems(Array.isArray(data) ? data : []);
-    } catch (e) {
+    } catch {
       setItems([]);
     } finally { setLoading(false); }
   }, []);

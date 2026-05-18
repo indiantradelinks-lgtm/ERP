@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { Upload, Loader2, FileText, Image as ImageIcon, Trash2, ExternalLink, X, Camera } from "lucide-react";
+import { Upload, Loader2, FileText, Trash2, ExternalLink, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { api } from "@/lib/api";
@@ -61,7 +61,6 @@ export default function FileUploader({ folder = "documents", parent_type, parent
     setBusy(true);
     try {
       for (const f of Array.from(fileList || [])) {
-        // eslint-disable-next-line no-await-in-loop
         await upload(f);
       }
     } finally { setBusy(false); }
@@ -78,7 +77,9 @@ export default function FileUploader({ folder = "documents", parent_type, parent
       await api.delete(`/files/${id}`);
       onDeleted?.(id);
       toast.success("Removed");
-    } catch (e) { toast.error("Failed to remove"); }
+    } catch {
+      toast.error("Failed to remove");
+    }
   };
 
   return (

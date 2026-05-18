@@ -12,7 +12,7 @@ export function AuthProvider({ children }) {
     try {
       const { data } = await api.get("/auth/permissions");
       setPermissions(data || {});
-    } catch (e) {
+    } catch {
       setPermissions({});
     }
   }, []);
@@ -22,7 +22,7 @@ export function AuthProvider({ children }) {
       const { data } = await api.get("/auth/me");
       setUser(data);
       await loadPermissions();
-    } catch (e) {
+    } catch {
       setUser(false);
       setPermissions({});
     } finally {
@@ -46,7 +46,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = async () => {
-    try { await api.post("/auth/logout"); } catch (e) { /* ignore */ }
+    try { await api.post("/auth/logout"); } catch { /* ignore */ }
     setUser(false);
     setPermissions({});
   };

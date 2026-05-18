@@ -2,17 +2,15 @@ import { useEffect, useState } from "react";
 import DataTableShell, { StatusBadge } from "@/components/DataTableShell";
 import useResource from "@/hooks/useResource";
 import FileUploader from "@/components/FileUploader";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import { Paperclip, Cloud } from "lucide-react";
+import { Cloud } from "lucide-react";
 
 export default function Documents() {
   const r = useResource("documents");
   const [files, setFiles] = useState([]);
 
   const loadFiles = async () => {
-    try { const { data } = await api.get(`/files?folder=documents`); setFiles(data); } catch (e) { /* ignore */ }
+    try { const { data } = await api.get(`/files?folder=documents`); setFiles(data); } catch { /* ignore */ }
   };
   useEffect(() => { loadFiles(); }, []);
 

@@ -1,4 +1,4 @@
-import { api, API } from "@/lib/api";
+import { api } from "@/lib/api";
 import { toast } from "sonner";
 
 /** Trigger a browser download for /api/export/{resource}.{fmt}. */
@@ -18,7 +18,7 @@ export async function downloadExport(resource, fmt) {
     a.remove();
     window.URL.revokeObjectURL(url);
     toast.success(`Downloaded ${filename}`);
-  } catch (e) {
+  } catch {
     toast.error("Export failed");
   }
 }

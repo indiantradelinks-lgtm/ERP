@@ -1,4 +1,4 @@
-import DataTableShell, { StatusBadge } from "@/components/DataTableShell";
+import DataTableShell from "@/components/DataTableShell";
 import useResource from "@/hooks/useResource";
 
 export default function Clients() {

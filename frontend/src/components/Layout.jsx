@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Truck, Briefcase, HardHat, ShieldAlert, Boxes,
   ShoppingCart, FileText, Wallet, ClipboardList, Wrench, Car, FolderArchive,
-  CheckSquare, BarChart3, LogOut, Menu, Search, Bell, ChevronLeft, ChevronRight,
+  CheckSquare, BarChart3, LogOut, Menu, Search, ChevronLeft, ChevronRight,
   User2, Construction
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import Brand from "@/components/Brand";

@@ -5,7 +5,7 @@ import KPICard from "@/components/KPICard";
 import { StatusBadge } from "@/components/DataTableShell";
 import {
   Wallet, TrendingDown, TrendingUp, Briefcase, Users, Truck, Boxes, ShieldAlert,
-  ShoppingCart, FileText, ClipboardList, HardHat, ArrowUpRight, AlertTriangle, Activity
+  ShoppingCart, HardHat, ArrowUpRight, AlertTriangle
 } from "lucide-react";
 import {
   BarChart, Bar, LineChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis,

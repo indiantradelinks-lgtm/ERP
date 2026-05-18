@@ -10,7 +10,7 @@ export default function Approvals() {
   const r = useResource("approvals");
   const [active, setActive] = useState(null);
   const [open, setOpen] = useState(false);
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
 
   const openDetail = (row) => { setActive(row); setOpen(true); };
 

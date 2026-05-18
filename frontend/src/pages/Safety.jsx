@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import DataTableShell, { StatusBadge } from "@/components/DataTableShell";
+import { useState } from "react";
+import DataTableShell from "@/components/DataTableShell";
 import useResource from "@/hooks/useResource";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -19,7 +19,7 @@ export default function Safety() {
     try {
       const { data } = await api.get(`/files?folder=safety&parent_type=safety_reports&parent_id=${row.id}`);
       setPhotos(data || []);
-    } catch (e) { setPhotos([]); }
+    } catch { setPhotos([]); }
   };
 
   const columns = [
