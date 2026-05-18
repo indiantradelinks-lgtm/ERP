@@ -29,9 +29,18 @@ Permission map in `/app/backend/rbac.py` — read/write/delete per resource. Sid
 - **P2 Inventory QR**: each item has a QR-code label dialog (qrcode.react) with Print button.
 - **P2 PWA polish**: manifest.json, theme-color, apple-mobile-web-app meta tags, installable on mobile.
 
+### Iteration 3 (May 18, 2026)
+- **Object storage (Emergent built-in)**: `/api/uploads` multipart endpoint, `/api/files` listing, `/api/files/{id}/download` (cookie or `?auth=` token), soft-delete via `/api/files/{id}` DELETE; metadata stored in `db.files` with `is_deleted` flag.
+- **Documents module drag-drop**: multi-file upload (PDF/DOCX/XLSX/PNG/JPG ≤ 25MB) with live thumbnails, open/remove actions; existing Document Register table now shows expiry tone (red if expired, amber if <30 days).
+- **Safety photo capture**: per-incident "Photos" dialog with mobile `capture=environment` (camera attached on phones), drop-zone for desktop.
+- **Resend email notifications**: approval-pending emails to current step role, approval-decided emails to requester + super_admins, `/api/notifications/expiry-scan` and `/api/notifications/invoice-reminders` ad-hoc triggers. Branded HTML email template (Slate + Amber).
+- **"My Approvals" topbar inbox**: bell icon with live badge; dropdown lists approvals where the current user's role is the current step; clicking navigates to `/app/approvals?id=<id>` and auto-opens the detail dialog. Polls every 30 seconds.
+- **DataTableShell hardening**: `canWrite`/`canDelete` defaults are now `false`; every page passes the values from `useResource()` so RBAC is enforced even if a caller forgets to wire it.
+
 ## Test Results
 - Iteration 1: 35/35 backend, 100% frontend
 - Iteration 2: 53/53 backend (18 new + 35 regression), 100% frontend
+- Iteration 3: 71/71 backend (18 new + 53 regression), 100% frontend, no bugs reported
 
 ## Credentials
 See `/app/memory/test_credentials.md` — admin@erp.com / Admin@123
