@@ -27,8 +27,8 @@ export default function DataTableShell({
   searchKeys,
   rightSlot,
   exportResource,
-  canWrite = true,
-  canDelete = true,
+  canWrite = false,
+  canDelete = false,
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);

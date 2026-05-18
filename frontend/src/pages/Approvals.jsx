@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import DataTableShell from "@/components/DataTableShell";
 import useResource from "@/hooks/useResource";
 import { Button } from "@/components/ui/button";
@@ -9,8 +10,18 @@ export default function Approvals() {
   const r = useResource("approvals");
   const [active, setActive] = useState(null);
   const [open, setOpen] = useState(false);
+  const [params, setParams] = useSearchParams();
 
   const openDetail = (row) => { setActive(row); setOpen(true); };
+
+  // If URL has ?id=xxx, auto-open the matching approval once data loads
+  useEffect(() => {
+    const id = params.get("id");
+    if (id && r.data?.length) {
+      const found = r.data.find((x) => x.id === id);
+      if (found) { setActive(found); setOpen(true); }
+    }
+  }, [params, r.data]);
 
   const columns = [
     { key: "title", label: "Request" },

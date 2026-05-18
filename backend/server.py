@@ -13,13 +13,14 @@ import os
 import io
 import uuid
 import secrets
+import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Any, Dict
 
 import bcrypt
 import jwt
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Query, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -28,6 +29,12 @@ from pydantic import BaseModel, Field, EmailStr
 from rbac import PERMISSIONS, can, permissions_for
 from approval_engine import build_chain, apply_action, APPROVAL_CHAINS
 from exports import to_excel, to_pdf, COLUMNS as EXPORT_COLUMNS
+from storage import init_storage, put_object, get_object, MAX_BYTES
+from notifications import (
+    send_email, email_enabled,
+    tmpl_approval_pending, tmpl_approval_decided,
+    tmpl_invoice_reminder, tmpl_doc_expiry,
+)
 
 # ---------- Config ----------
 MONGO_URL = os.environ["MONGO_URL"]
@@ -284,6 +291,9 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None):
             doc["status"] = doc.get("status") or "pending"
         await db[collection].insert_one(doc)
         doc.pop("_id", None)
+        # Fire notification on new approval creation
+        if perm == "approvals":
+            asyncio.create_task(_notify_approval_pending(doc))
         return doc
 
     @api.get(f"/{resource}/{{item_id}}")
@@ -343,6 +353,15 @@ async def approval_action(approval_id: str, payload: ApprovalAction, user: dict 
             "updated_at": updated["updated_at"],
         }},
     )
+    # Fire-and-forget email notifications
+    by = user.get("name") or user.get("email", "")
+    if payload.action == "approve":
+        if updated["status"] == "approved":
+            asyncio.create_task(_notify_approval_decided(updated, "approve", by))
+        else:
+            asyncio.create_task(_notify_approval_pending(updated))
+    elif payload.action == "reject":
+        asyncio.create_task(_notify_approval_decided(updated, "reject", by))
     return updated
 
 
@@ -386,6 +405,209 @@ async def export_resource(resource: str, fmt: str, user: dict = Depends(get_curr
 @api.get("/auth/permissions")
 async def my_permissions(user: dict = Depends(get_current_user)):
     return permissions_for(user.get("role"))
+
+
+# ---------- File uploads (Emergent object storage) ----------
+@api.post("/uploads")
+async def upload_file(
+    file: UploadFile = File(...),
+    folder: str = Form("documents"),
+    parent_type: str = Form(""),
+    parent_id: str = Form(""),
+    title: str = Form(""),
+    user: dict = Depends(get_current_user),
+):
+    if folder not in ("documents", "safety"):
+        raise HTTPException(status_code=400, detail="folder must be 'documents' or 'safety'")
+    data = await file.read()
+    if len(data) > MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"File too large (max {MAX_BYTES // (1024 * 1024)} MB)")
+    try:
+        result = put_object(folder=folder, filename=file.filename or "file.bin", data=data, content_type=file.content_type)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.exception(f"upload failed: {e}")
+        raise HTTPException(status_code=500, detail="Upload failed")
+    record = {
+        "id": new_id(),
+        "storage_path": result["path"],
+        "original_filename": file.filename,
+        "content_type": result.get("content_type") or file.content_type,
+        "size": result.get("size") or len(data),
+        "title": title or file.filename,
+        "folder": folder,
+        "parent_type": parent_type or None,
+        "parent_id": parent_id or None,
+        "uploaded_by": user.get("name") or user.get("email"),
+        "uploaded_by_id": user["id"],
+        "is_deleted": False,
+        "created_at": now_iso(),
+    }
+    await db.files.insert_one(record)
+    record.pop("_id", None)
+    return record
+
+
+@api.get("/files")
+async def list_files(parent_type: str = "", parent_id: str = "", folder: str = "", user: dict = Depends(get_current_user)):
+    q: Dict[str, Any] = {"is_deleted": False}
+    if parent_type:
+        q["parent_type"] = parent_type
+    if parent_id:
+        q["parent_id"] = parent_id
+    if folder:
+        q["folder"] = folder
+    rows = await db.files.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return rows
+
+
+@api.get("/files/{file_id}/download")
+async def download_file(file_id: str, request: Request, auth: str = Query(None)):
+    # Allow auth via cookie OR query param (for inline <img src> usage)
+    if not request.cookies.get("access_token") and auth:
+        request.scope.setdefault("headers", [])
+        # fall through; downstream get_current_user reads Authorization header too
+    try:
+        await get_current_user(request) if not auth else None
+    except HTTPException:
+        if not auth:
+            raise
+    if auth:
+        # validate the query token as an access token
+        try:
+            payload = jwt.decode(auth, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            if payload.get("type") != "access":
+                raise HTTPException(status_code=401, detail="Invalid token")
+        except jwt.InvalidTokenError:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+    record = await db.files.find_one({"id": file_id, "is_deleted": False}, {"_id": 0})
+    if not record:
+        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        data, ct = get_object(record["storage_path"])
+    except Exception as e:
+        logger.exception(f"download failed: {e}")
+        raise HTTPException(status_code=500, detail="Download failed")
+    headers = {"Content-Disposition": f'inline; filename="{record.get("original_filename", "file")}"'}
+    return Response(content=data, media_type=record.get("content_type") or ct, headers=headers)
+
+
+@api.delete("/files/{file_id}")
+async def delete_file(file_id: str, user: dict = Depends(get_current_user)):
+    result = await db.files.update_one({"id": file_id}, {"$set": {"is_deleted": True, "deleted_at": now_iso(), "deleted_by": user["id"]}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"ok": True}
+
+
+# ---------- My approvals (inbox) ----------
+@api.get("/approvals/inbox/mine")
+async def my_inbox(user: dict = Depends(get_current_user)):
+    """Return approvals currently waiting on the logged-in user's role (or all pending for super_admin)."""
+    role = user.get("role")
+    rows = await db.approvals.find({"status": {"$in": ["pending", "in_progress", None]}}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    out = []
+    for r in rows:
+        chain = r.get("chain") or []
+        idx = r.get("current_step") or 0
+        step = chain[idx] if 0 <= idx < len(chain) else None
+        if not step:
+            continue
+        if role == "super_admin" or step.get("role") == role:
+            r["_my_step"] = step
+            out.append(r)
+    return out
+
+
+# ---------- Email notifications ----------
+@api.get("/notifications/email-status")
+async def email_status(user: dict = Depends(get_current_user)):
+    return {"enabled": email_enabled()}
+
+
+def _approver_emails_for_role(role: str) -> list[str]:
+    # Synchronous-call shim isn't async-safe here; we'll use the async version inline where needed.
+    return []
+
+
+async def _emails_for_role(role: str) -> list[str]:
+    rows = await db.users.find({"role": role}, {"_id": 0, "email": 1}).to_list(100)
+    return [r["email"] for r in rows if r.get("email")]
+
+
+def _app_url() -> str:
+    return os.environ.get("FRONTEND_URL", "")
+
+
+async def _notify_approval_pending(approval: dict) -> None:
+    chain = approval.get("chain") or []
+    idx = approval.get("current_step") or 0
+    if idx >= len(chain):
+        return
+    step = chain[idx]
+    recipients = await _emails_for_role(step.get("role"))
+    if not recipients:
+        return
+    msg = tmpl_approval_pending(approval, step, _app_url())
+    for r in recipients:
+        await send_email(r, msg["subject"], msg["html"])
+
+
+async def _notify_approval_decided(approval: dict, action: str, by: str) -> None:
+    # Notify the requester (if their email is on file) and super_admins
+    recipients: set[str] = set()
+    requester = approval.get("requested_by") or ""
+    if "@" in requester:
+        recipients.add(requester)
+    admins = await _emails_for_role("super_admin")
+    recipients.update(admins)
+    msg = tmpl_approval_decided(approval, action, by, _app_url())
+    for r in recipients:
+        await send_email(r, msg["subject"], msg["html"])
+
+
+@api.post("/notifications/expiry-scan")
+async def expiry_scan(user: dict = Depends(get_current_user)):
+    """Find documents expiring within 30 days and email super_admins. Idempotent ad-hoc trigger."""
+    if user.get("role") not in ("super_admin", "director", "general_manager"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    today = datetime.now(timezone.utc).date()
+    rows = await db.documents.find({"is_deleted": {"$ne": True}, "expiry": {"$ne": None}}, {"_id": 0}).to_list(500)
+    admins = await _emails_for_role("super_admin")
+    sent = 0
+    for d in rows:
+        exp = d.get("expiry")
+        if not exp:
+            continue
+        try:
+            exp_date = datetime.fromisoformat(str(exp)).date()
+        except Exception:
+            continue
+        days_left = (exp_date - today).days
+        if days_left <= 30:
+            msg = tmpl_doc_expiry(d, days_left, _app_url())
+            for r in admins:
+                await send_email(r, msg["subject"], msg["html"])
+                sent += 1
+    return {"scanned": len(rows), "sent": sent, "email_enabled": email_enabled()}
+
+
+@api.post("/notifications/invoice-reminders")
+async def invoice_reminders(user: dict = Depends(get_current_user)):
+    """Email super_admins about outstanding invoices (quotations with status=invoiced)."""
+    if user.get("role") not in ("super_admin", "director", "general_manager", "accounts_executive"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    rows = await db.quotations.find({"status": "invoiced"}, {"_id": 0}).to_list(500)
+    admins = await _emails_for_role("super_admin")
+    sent = 0
+    for q in rows:
+        msg = tmpl_invoice_reminder(q, _app_url())
+        for r in admins:
+            await send_email(r, msg["subject"], msg["html"])
+            sent += 1
+    return {"scanned": len(rows), "sent": sent, "email_enabled": email_enabled()}
 
 
 # Register CRUD modules
@@ -690,10 +912,13 @@ async def on_startup():
         await db.login_attempts.create_index("identifier")
         for _, c in MODULES:
             await db[c].create_index("id", unique=True)
+        await db.files.create_index("id", unique=True)
+        await db.files.create_index([("parent_type", 1), ("parent_id", 1)])
         await seed_admin()
         await seed_sample_data()
         await migrate_approvals_chain()
-        logger.info("ERP backend started successfully.")
+        init_storage()
+        logger.info(f"ERP backend started. email_enabled={email_enabled()}")
     except Exception as e:
         logger.exception(f"Startup error: {e}")
 

@@ -16,6 +16,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import Brand from "@/components/Brand";
 import ThemeToggle from "@/components/ThemeToggle";
+import MyApprovalsInbox from "@/components/MyApprovalsInbox";
 
 const NAV_GROUPS = [
   {
@@ -184,10 +185,7 @@ export default function Layout({ children }) {
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="relative h-9 w-9 rounded-sm border border-border" data-testid="notifications-btn">
-              <Bell className="h-4 w-4" />
-              <span className="absolute top-1 right-1 h-1.5 w-1.5 bg-primary rounded-full" />
-            </Button>
+            <MyApprovalsInbox />
             <ThemeToggle />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
