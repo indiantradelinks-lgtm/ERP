@@ -37,10 +37,16 @@ Permission map in `/app/backend/rbac.py` — read/write/delete per resource. Sid
 - **"My Approvals" topbar inbox**: bell icon with live badge; dropdown lists approvals where the current user's role is the current step; clicking navigates to `/app/approvals?id=<id>` and auto-opens the detail dialog. Polls every 30 seconds.
 - **DataTableShell hardening**: `canWrite`/`canDelete` defaults are now `false`; every page passes the values from `useResource()` so RBAC is enforced even if a caller forgets to wire it.
 
+### Iteration 4 (May 18, 2026)
+- **APScheduler nightly jobs**: `/app/backend/scheduler.py` registers `expiry_scan` (daily 09:00 UTC) and `invoice_reminders` (Mondays 09:00 UTC). `/api/scheduler/status` exposes running state, next run times and last results.
+- **Backend refactor**: `server.py` reduced from 942 → 91 lines. Extracted `core.py` (db/auth helpers), `seed.py` (admin + sample data), `notification_service.py` (templates + send), and 7 focused routers (`auth_router`, `crud_router`, `approvals_router`, `files_router`, `notifications_router`, `exports_router`, `dashboard_router`) — every file under 165 lines.
+- **Upload progress bar**: `FileUploader` now shows a live `Progress` bar per file driven by `axios onUploadProgress`. Bug found by testing agent (missing useState hook) — fixed and retested green.
+
 ## Test Results
 - Iteration 1: 35/35 backend, 100% frontend
 - Iteration 2: 53/53 backend (18 new + 35 regression), 100% frontend
 - Iteration 3: 71/71 backend (18 new + 53 regression), 100% frontend, no bugs reported
+- Iteration 4: 105/105 backend (34 new + 71 regression). FileUploader frontend bug fixed in iter 5 retest — 100% frontend on all 17 routes.
 
 ## Credentials
 See `/app/memory/test_credentials.md` — admin@erp.com / Admin@123
