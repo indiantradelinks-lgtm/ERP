@@ -28,9 +28,9 @@ async def approval_action(approval_id: str, payload: ApprovalAction, user: dict 
     try:
         updated = apply_action(approval, payload.action, user, payload.comment)
     except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=403, detail=str(e)) from e
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     await db.approvals.update_one(
         {"id": approval_id},
         {"$set": {

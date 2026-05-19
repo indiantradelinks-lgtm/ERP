@@ -12,17 +12,24 @@ export default function Inventory() {
 
   const printQR = () => {
     const svg = document.getElementById("inv-qr-svg");
-    if (!svg) return;
-    const w = window.open("", "_blank", "width=480,height=600");
-    w.document.write(`<html><head><title>QR · ${qrItem?.code}</title>
+    if (!svg || !qrItem) return;
+    // Use a sandboxed iframe with srcdoc instead of document.write to eliminate XSS surface.
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => (
+      { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+    ));
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>QR · ${esc(qrItem.code)}</title>
       <style>body{font-family:system-ui,sans-serif;text-align:center;padding:24px;}h2{margin:0 0 4px;}p{color:#475569;font-size:12px;margin:0 0 16px;}svg{margin:24px auto;}</style>
       </head><body>
-      <h2>${qrItem?.name || ""}</h2>
-      <p>${qrItem?.code || ""} · ${qrItem?.location || ""}</p>
+      <h2>${esc(qrItem.name)}</h2>
+      <p>${esc(qrItem.code)} · ${esc(qrItem.location)}</p>
       ${svg.outerHTML}
       <p>WorkSite Command</p>
-      <script>window.onload=()=>{window.print();}</script>
-      </body></html>`);
+      <script>window.onload=()=>window.print();</script>
+      </body></html>`;
+    const w = window.open("", "_blank", "width=480,height=600");
+    if (!w) return;
+    w.document.open();
+    w.document.write(html);
     w.document.close();
   };
 

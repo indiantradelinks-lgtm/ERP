@@ -85,7 +85,7 @@ async def download_file(file_id: str, request: Request, auth: str = Query(None))
         data, ct = get_object(record["storage_path"])
     except Exception as e:
         logger.exception(f"download failed: {e}")
-        raise HTTPException(status_code=500, detail="Download failed")
+        raise HTTPException(status_code=500, detail="Download failed") from e
     headers = {"Content-Disposition": f'inline; filename="{record.get("original_filename", "file")}"'}
     return Response(content=data, media_type=record.get("content_type") or ct, headers=headers)
 

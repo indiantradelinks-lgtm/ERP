@@ -88,8 +88,8 @@ export default function Dashboard() {
                 outerRadius={85}
                 paddingAngle={2}
               >
-                {(data.project_status || []).map((_, i) => (
-                  <Cell key={i} fill={`hsl(var(--chart-${(i % 5) + 1}))`} />
+                {(data.project_status || []).map((entry, i) => (
+                  <Cell key={`${entry.status}-${i}`} fill={`hsl(var(--chart-${(i % 5) + 1}))`} />
                 ))}
               </Pie>
               <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 4, fontSize: 12 }} />

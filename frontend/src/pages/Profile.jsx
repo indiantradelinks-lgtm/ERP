@@ -20,7 +20,12 @@ export default function Profile() {
   const [form, setForm] = useState({ email: "", password: "", name: "", role: "site_engineer", department: "", phone: "" });
 
   const load = async () => {
-    try { const { data } = await api.get("/auth/users"); setUsers(data); } catch { /* ignore */ }
+    try {
+      const { data } = await api.get("/auth/users");
+      setUsers(data);
+    } catch (e) {
+      console.warn("Failed to load users", e);
+    }
   };
   useEffect(() => { load(); }, []);
 

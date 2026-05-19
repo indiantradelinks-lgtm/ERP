@@ -10,7 +10,12 @@ export default function Documents() {
   const [files, setFiles] = useState([]);
 
   const loadFiles = async () => {
-    try { const { data } = await api.get(`/files?folder=documents`); setFiles(data); } catch { /* ignore */ }
+    try {
+      const { data } = await api.get(`/files?folder=documents`);
+      setFiles(data);
+    } catch (e) {
+      console.warn("Failed to load files", e);
+    }
   };
   useEffect(() => { loadFiles(); }, []);
 

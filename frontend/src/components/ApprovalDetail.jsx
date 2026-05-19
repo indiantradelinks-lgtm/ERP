@@ -66,7 +66,7 @@ export default function ApprovalDetail({ approval, open, onOpenChange, onUpdated
                 const isRejected = s.status === "rejected";
                 return (
                   <div
-                    key={i}
+                    key={`${s.role}-${i}`}
                     className={cn(
                       "flex items-center gap-3 p-2.5 border rounded-sm text-sm",
                       isCurrent && "border-primary/60 bg-primary/5",
@@ -108,7 +108,7 @@ export default function ApprovalDetail({ approval, open, onOpenChange, onUpdated
             ) : (
               <ul className="divide-y divide-border">
                 {history.map((h, i) => (
-                  <li key={i} className="p-2.5 flex items-start gap-3 text-xs">
+                  <li key={`${h.at || ""}-${h.by_id || i}`} className="p-2.5 flex items-start gap-3 text-xs">
                     <div className={cn(
                       "h-6 w-6 rounded-sm grid place-items-center shrink-0",
                       h.action === "approve" ? "bg-success/15 text-success" :
