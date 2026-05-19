@@ -187,14 +187,15 @@ export default function Landing() {
               ))}
             </ul>
           </div>
-          <div className="bg-secondary text-secondary-foreground rounded-sm p-8 relative overflow-hidden">
-            <div className="absolute inset-0 industrial-gridlines opacity-10" />
+          <div className="bg-primary text-primary-foreground rounded-sm p-8 relative overflow-hidden">
+            <div className="absolute inset-0 industrial-gridlines opacity-15" />
+            <div className="absolute inset-0 bg-gradient-to-br from-primary to-accent/70" />
             <div className="relative">
-              <Shield className="h-8 w-8 text-primary" />
+              <Shield className="h-8 w-8" />
               <div className="mt-4 font-display font-black text-2xl">Audit-ready by design.</div>
-              <p className="mt-2 text-sm text-secondary-foreground/70">Every approval, edit and signature is timestamped. Built for industrial clients that demand traceability.</p>
+              <p className="mt-2 text-sm text-white/85">Every approval, edit and signature is timestamped. Built for industrial clients that demand traceability.</p>
               <Link to="/login">
-                <Button className="mt-6 rounded-sm" data-testid="why-cta-launch">Launch Control Room</Button>
+                <Button variant="secondary" className="mt-6 rounded-sm bg-white text-primary hover:bg-white/90" data-testid="why-cta-launch">Launch Control Room</Button>
               </Link>
             </div>
           </div>

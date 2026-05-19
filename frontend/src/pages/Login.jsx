@@ -56,32 +56,32 @@ export default function Login() {
   return (
     <div className="min-h-screen flex bg-background">
       {/* Left visual */}
-      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-secondary text-secondary-foreground">
+      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-primary text-primary-foreground">
         <img
           src="https://static.prod-images.emergentagent.com/jobs/9aee82b5-a22f-42f7-9330-c146e7cb4c20/images/73f7497aae98b5900f801d77266560bbb884361a717ac9f4a96269908efb7dbb.png"
           alt="Industrial control room"
-          className="absolute inset-0 w-full h-full object-cover opacity-50"
+          className="absolute inset-0 w-full h-full object-cover opacity-25 mix-blend-overlay"
         />
-        <div className="absolute inset-0 bg-gradient-to-br from-secondary via-secondary/60 to-transparent" />
-        <div className="absolute inset-0 industrial-gridlines opacity-20" />
+        <div className="absolute inset-0 bg-gradient-to-br from-primary via-primary/95 to-accent/80" />
+        <div className="absolute inset-0 industrial-gridlines opacity-15" />
         <div className="relative z-10 flex flex-col justify-between p-10 w-full">
           <Brand />
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary mb-3">// CONTROL ROOM</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/80 mb-3">// CONTROL ROOM</div>
             <h2 className="font-display font-black text-4xl lg:text-5xl leading-[1.05] tracking-tight max-w-md">
-              Sign in to your <span className="text-primary">command</span> deck.
+              Sign in to your <span className="text-white drop-shadow">command</span> deck.
             </h2>
-            <p className="mt-4 text-sm text-secondary-foreground/70 max-w-md">
+            <p className="mt-4 text-sm text-white/85 max-w-md">
               Real-time visibility across every project, permit, payroll cycle and purchase order.
             </p>
             <div className="mt-10 grid grid-cols-2 gap-4 max-w-sm">
-              <div className="border-l-2 border-primary pl-3">
+              <div className="border-l-2 border-white/60 pl-3">
                 <div className="font-display font-black text-2xl tabular">256-bit</div>
-                <div className="text-[10px] uppercase tracking-[0.18em] text-secondary-foreground/50">Encrypted Sessions</div>
+                <div className="text-[10px] uppercase tracking-[0.18em] text-white/70">Encrypted Sessions</div>
               </div>
-              <div className="border-l-2 border-primary pl-3">
+              <div className="border-l-2 border-white/60 pl-3">
                 <div className="font-display font-black text-2xl tabular">RBAC</div>
-                <div className="text-[10px] uppercase tracking-[0.18em] text-secondary-foreground/50">14 Role Levels</div>
+                <div className="text-[10px] uppercase tracking-[0.18em] text-white/70">14 Role Levels</div>
               </div>
             </div>
           </div>

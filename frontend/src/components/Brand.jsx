@@ -10,8 +10,8 @@ export default function Brand({ compact = false, className = "" }) {
       </div>
       {!compact && (
         <div className="leading-tight">
-          <div className="font-display font-black text-base tracking-tight">WORKSITE<span className="text-primary">.</span>CMD</div>
-          <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground -mt-0.5">Industrial ERP</div>
+          <div className="font-display font-black text-base tracking-tight">WORKSITE<span className="opacity-70">.</span>CMD</div>
+          <div className="text-[10px] uppercase tracking-[0.18em] opacity-60 -mt-0.5">Industrial ERP</div>
         </div>
       )}
     </div>

@@ -111,8 +111,8 @@ def to_excel(resource: str, rows: List[Dict[str, Any]]) -> bytes:
     ws = wb.active
     ws.title = resource[:31]
 
-    header_fill = PatternFill(start_color="F59E0B", end_color="F59E0B", fill_type="solid")
-    header_font = Font(bold=True, color="1A0A00", size=10)
+    header_fill = PatternFill(start_color="2563EB", end_color="2563EB", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=10)
     thin = Side(border_style="thin", color="E2E8F0")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
@@ -165,8 +165,8 @@ def to_pdf(resource: str, rows: List[Dict[str, Any]]) -> bytes:
 
     t = Table(table_data, repeatRows=1)
     t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f59e0b")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#1a0a00")),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2563eb")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#ffffff")),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), 8),
         ("BOTTOMPADDING", (0, 0), (-1, 0), 6),

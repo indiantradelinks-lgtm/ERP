@@ -25,9 +25,9 @@ def email_enabled() -> bool:
 
 
 # ---------- HTML templates ----------
-_BRAND_COLOR = "#f59e0b"
-_BG = "#020617"
-_CARD = "#0f172a"
+_BRAND_COLOR = "#2563eb"
+_BG = "#0f172a"
+_CARD = "#1e293b"
 
 
 def _shell(title: str, preheader: str, body_html: str, cta_label: str | None = None, cta_url: str | None = None) -> str:
