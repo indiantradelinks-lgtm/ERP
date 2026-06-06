@@ -1,15 +1,24 @@
 """Excel + PDF export helpers for module data tables."""
 import io
+import os
 from datetime import datetime
 from typing import List, Dict, Any
 
 from openpyxl import Workbook
+from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
+
+from pdf_watermark import attach_watermark
+
+# Brand asset (kept at repo path so both Excel/PDF can embed it)
+BRAND_LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "itl-logo.jpg")
+BRAND_NAME = "INDIAN TRADE LINKS"
+BRAND_SUB = "Industrial Services Pvt. Ltd."
 
 
 # Per-resource column definitions for exports.
@@ -116,19 +125,33 @@ def to_excel(resource: str, rows: List[Dict[str, Any]]) -> bytes:
     thin = Side(border_style="thin", color="E2E8F0")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    # Title row
-    ws.cell(row=1, column=1, value=f"WorkSite Command — {resource.replace('_', ' ').title()}").font = Font(bold=True, size=14)
-    ws.cell(row=2, column=1, value=f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}").font = Font(italic=True, color="475569", size=9)
+    # Logo (top-left A1:B3)
+    try:
+        if os.path.exists(BRAND_LOGO_PATH):
+            img = XLImage(BRAND_LOGO_PATH)
+            img.height = 60
+            img.width = 60
+            ws.add_image(img, "A1")
+            ws.row_dimensions[1].height = 22
+            ws.row_dimensions[2].height = 22
+            ws.row_dimensions[3].height = 22
+    except Exception:
+        pass
 
-    # Header row at row 4
+    # Brand text block (rows 1-3, columns C+)
+    ws.cell(row=1, column=3, value=BRAND_NAME).font = Font(bold=True, size=14, color="0F172A")
+    ws.cell(row=2, column=3, value=BRAND_SUB).font = Font(italic=True, color="475569", size=9)
+    ws.cell(row=3, column=3, value=f"{resource.replace('_', ' ').title()} · Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}").font = Font(italic=True, color="64748B", size=9)
+
+    # Header row at row 5
     for j, c in enumerate(cols, start=1):
-        cell = ws.cell(row=4, column=j, value=c["label"])
+        cell = ws.cell(row=5, column=j, value=c["label"])
         cell.fill = header_fill
         cell.font = header_font
         cell.alignment = Alignment(horizontal="left", vertical="center")
         cell.border = border
 
-    for i, row in enumerate(rows, start=5):
+    for i, row in enumerate(rows, start=6):
         for j, c in enumerate(cols, start=1):
             val = row.get(c["key"])
             if isinstance(val, (dict, list)):
@@ -138,7 +161,7 @@ def to_excel(resource: str, rows: List[Dict[str, Any]]) -> bytes:
             cell.alignment = Alignment(horizontal="left", vertical="center")
 
     for j, c in enumerate(cols, start=1):
-        ws.column_dimensions[ws.cell(row=4, column=j).column_letter].width = max(14, min(40, len(str(c["label"])) + 4))
+        ws.column_dimensions[ws.cell(row=5, column=j).column_letter].width = max(14, min(40, len(str(c["label"])) + 4))
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -150,14 +173,35 @@ def to_pdf(resource: str, rows: List[Dict[str, Any]]) -> bytes:
     cols = COLUMNS.get(resource, [{"key": k, "label": k} for k in (rows[0].keys() if rows else [])])
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=15 * mm, rightMargin=15 * mm, topMargin=12 * mm, bottomMargin=12 * mm)
+    attach_watermark(doc, width_mm=180.0)  # landscape A4 → wider watermark
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle("title", parent=styles["Heading1"], fontSize=16, textColor=colors.HexColor("#0f172a"), spaceAfter=4)
+    sub_style = ParagraphStyle("sub", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#475569"), spaceAfter=2)
     meta_style = ParagraphStyle("meta", parent=styles["Normal"], fontSize=8, textColor=colors.HexColor("#475569"))
 
     story = []
-    story.append(Paragraph(f"WorkSite Command — {resource.replace('_', ' ').title()}", title_style))
-    story.append(Paragraph(f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} · {len(rows)} records", meta_style))
-    story.append(Spacer(1, 6 * mm))
+    # Top brand band: logo (left) + INDIAN TRADE LINKS title block
+    logo_cell = ""
+    try:
+        if os.path.exists(BRAND_LOGO_PATH):
+            logo_cell = RLImage(BRAND_LOGO_PATH, width=20 * mm, height=20 * mm)
+    except Exception:
+        logo_cell = ""
+    brand_block = [
+        Paragraph(f"<b>{BRAND_NAME}</b>", title_style),
+        Paragraph(BRAND_SUB, sub_style),
+        Paragraph(f"{resource.replace('_', ' ').title()} · Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} · {len(rows)} records", meta_style),
+    ]
+    brand_band = Table([[logo_cell, brand_block]], colWidths=[24 * mm, 240 * mm])
+    brand_band.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (0, 0), 0),
+        ("RIGHTPADDING", (0, 0), (0, 0), 6),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.append(brand_band)
+    story.append(Spacer(1, 4 * mm))
 
     table_data = [[c["label"] for c in cols]]
     for r in rows:

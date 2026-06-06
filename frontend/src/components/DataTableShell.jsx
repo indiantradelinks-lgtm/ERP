@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Plus, Search, Trash2, Pencil, FileSpreadsheet, FileText } from "lucide-react";
+import { Plus, Search, Trash2, Pencil, FileSpreadsheet, FileText, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -7,12 +7,142 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { downloadExport } from "@/lib/exports";
+import RowAttachments from "@/components/RowAttachments";
 
 /**
  * Generic data table with create/edit/delete dialog.
  * columns: [{ key, label, render?, badge?: (row) => ({text, tone}) }]
- * fields: [{ key, label, type?: 'text'|'number'|'select'|'textarea', options?: [] }]
+ * fields: [{ key, label, type?: 'text'|'number'|'select'|'textarea'|'date', options?: [] }]
+ * attachmentsParentType?: string  -> when set, enables a paperclip button per row
+ *   that opens a drag-drop attachments dialog bound to (parent_type, row.id).
  */
+function FormField({ field, value, onChange, testidPrefix }) {
+  const testId = `${testidPrefix}-field-${field.key}`;
+  if (field.type === "textarea") {
+    return (
+      <textarea
+        className="w-full min-h-[80px] rounded-sm border border-input bg-background p-2 text-sm"
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        data-testid={testId}
+      />
+    );
+  }
+  if (field.type === "multiselect") {
+    const arr = Array.isArray(value) ? value : (value ? [value] : []);
+    const toggle = (opt) => {
+      const next = arr.includes(opt) ? arr.filter((x) => x !== opt) : [...arr, opt];
+      onChange(next);
+    };
+    return (
+      <div className="flex flex-wrap gap-1.5 p-2 border border-input rounded-sm bg-background min-h-9" data-testid={testId}>
+        {(field.options || []).map((o) => {
+          const v = o.value || o;
+          const label = o.label || o;
+          const active = arr.includes(v);
+          return (
+            <button
+              key={v}
+              type="button"
+              onClick={() => toggle(v)}
+              className={cn(
+                "text-[11px] font-bold uppercase tracking-wider px-2 py-1 rounded-sm border transition-colors",
+                active
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-border text-muted-foreground hover:border-primary/40",
+              )}
+              data-testid={`${testId}-opt-${v}`}
+            >
+              {label}
+            </button>
+          );
+        })}
+        {arr.length === 0 && <span className="text-[11px] text-muted-foreground self-center">None selected</span>}
+      </div>
+    );
+  }
+  if (field.type === "checkbox") {
+    return (
+      <label className="inline-flex items-center gap-2 text-sm" data-testid={testId}>
+        <input
+          type="checkbox"
+          checked={!!value}
+          onChange={(e) => onChange(e.target.checked)}
+          className="h-4 w-4 rounded-sm border-input"
+        />
+        {field.checkboxLabel || "Yes"}
+      </label>
+    );
+  }
+  if (field.type === "select") {
+    return (
+      <select
+        className="h-9 rounded-sm border border-input bg-background px-2 text-sm"
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        data-testid={testId}
+      >
+        <option value="">— Select —</option>
+        {(field.options || []).map((o) => (
+          <option key={o.value || o} value={o.value || o}>{o.label || o}</option>
+        ))}
+      </select>
+    );
+  }
+  let inputType = "text";
+  if (field.type === "number") inputType = "number";
+  else if (field.type === "date") inputType = "date";
+  return (
+    <Input
+      type={inputType}
+      value={value ?? ""}
+      onChange={(e) => onChange(e.target.value)}
+      className="h-9 rounded-sm"
+      data-testid={testId}
+    />
+  );
+}
+
+function RowActions({ row, onEdit, onDelete, canWrite, canDelete, testidPrefix, attachmentsParentType }) {
+  const [openAttach, setOpenAttach] = useState(false);
+  return (
+    <div className="inline-flex gap-1">
+      {attachmentsParentType && (
+        <>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 text-primary"
+            onClick={() => setOpenAttach(true)}
+            data-testid={`${testidPrefix}-attach-${row.id}`}
+            title="Attachments"
+          >
+            <Paperclip className="h-3.5 w-3.5" />
+          </Button>
+          <RowAttachments
+            open={openAttach}
+            onOpenChange={setOpenAttach}
+            parentType={attachmentsParentType}
+            parentId={row.id}
+            recordTitle={row.name || row.title || row.po_no || row.code || row.id}
+            testidPrefix={`${testidPrefix}-attach-${row.id}`}
+          />
+        </>
+      )}
+      {onEdit && canWrite && (
+        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onEdit(row)} data-testid={`${testidPrefix}-edit-${row.id}`}>
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+      )}
+      {onDelete && canDelete && (
+        <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => onDelete(row.id)} data-testid={`${testidPrefix}-delete-${row.id}`}>
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export default function DataTableShell({
   title,
   description,
@@ -28,6 +158,10 @@ export default function DataTableShell({
   exportResource,
   canWrite = false,
   canDelete = false,
+  attachmentsParentType,
+  extraActions,
+  formHeader,           // (mode: 'create'|'edit', form, setForm) => ReactNode — slot above the form
+  onAfterCreate,        // async (createdRow, form) => void — fires after a successful create
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -54,16 +188,23 @@ export default function DataTableShell({
 
   const save = async () => {
     const payload = { ...form };
-    // coerce numbers
     fields.forEach((f) => {
       if (f.type === "number" && payload[f.key] !== undefined && payload[f.key] !== "") {
         payload[f.key] = Number(payload[f.key]);
       }
     });
+    let created;
     if (editing) await onUpdate(editing.id, payload);
-    else await onCreate(payload);
+    else {
+      created = await onCreate(payload);
+      if (created && onAfterCreate) {
+        try { await onAfterCreate(created, payload); } catch (_e) { /* parent toasts */ }
+      }
+    }
     setOpen(false);
   };
+
+  const hasActions = onUpdate || onDelete || attachmentsParentType;
 
   return (
     <div className="bg-card border border-border rounded-sm">
@@ -84,6 +225,7 @@ export default function DataTableShell({
             />
           </div>
           {rightSlot}
+          {extraActions}
           {exportResource && (
             <>
               <Button variant="outline" className="h-9 rounded-sm" onClick={() => downloadExport(exportResource, "xlsx")} data-testid={`${testidPrefix}-export-xlsx`} title="Export Excel">
@@ -101,44 +243,43 @@ export default function DataTableShell({
                   <Plus className="h-4 w-4 mr-1" /> New
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-xl rounded-sm">
+              <DialogContent className="max-w-3xl rounded-sm">
                 <DialogHeader>
                   <DialogTitle className="font-display">{editing ? `Edit ${title}` : `New ${title}`}</DialogTitle>
                 </DialogHeader>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 py-2">
-                  {fields.map((f) => (
-                    <div key={f.key} className={cn("flex flex-col gap-1.5", f.full && "md:col-span-2")}>
-                      <Label className="text-xs uppercase tracking-wider">{f.label}</Label>
-                      {f.type === "textarea" ? (
-                        <textarea
-                          className="w-full min-h-[80px] rounded-sm border border-input bg-background p-2 text-sm"
-                          value={form[f.key] ?? ""}
-                          onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
-                          data-testid={`${testidPrefix}-field-${f.key}`}
+                {formHeader && (
+                  <div className="pb-2 border-b border-border mb-1">
+                    {formHeader(editing ? "edit" : "create", form, setForm)}
+                  </div>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 py-2 max-h-[70vh] overflow-y-auto pr-1">
+                  {fields.map((f) => {
+                    if (f.type === "section") {
+                      return (
+                        <div key={f.key} className="md:col-span-2 pt-2 first:pt-0">
+                          <div className="flex items-center gap-2 pb-1.5 border-b border-border">
+                            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">{f.label}</span>
+                            {f.hint && <span className="text-[10px] text-muted-foreground">· {f.hint}</span>}
+                          </div>
+                        </div>
+                      );
+                    }
+                    if (f.showIf && !f.showIf(form)) return null;
+                    return (
+                      <div key={f.key} className={cn("flex flex-col gap-1.5", f.full && "md:col-span-2")}>
+                        <Label className="text-xs uppercase tracking-wider">
+                          {f.label}{f.required && <span className="text-destructive ml-0.5">*</span>}
+                        </Label>
+                        <FormField
+                          field={f}
+                          value={form[f.key]}
+                          onChange={(v) => setForm((s) => ({ ...s, [f.key]: v }))}
+                          testidPrefix={testidPrefix}
                         />
-                      ) : f.type === "select" ? (
-                        <select
-                          className="h-9 rounded-sm border border-input bg-background px-2 text-sm"
-                          value={form[f.key] ?? ""}
-                          onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
-                          data-testid={`${testidPrefix}-field-${f.key}`}
-                        >
-                          <option value="">— Select —</option>
-                          {(f.options || []).map((o) => (
-                            <option key={o.value || o} value={o.value || o}>{o.label || o}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <Input
-                          type={f.type === "number" ? "number" : f.type === "date" ? "date" : "text"}
-                          value={form[f.key] ?? ""}
-                          onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
-                          className="h-9 rounded-sm"
-                          data-testid={`${testidPrefix}-field-${f.key}`}
-                        />
-                      )}
-                    </div>
-                  ))}
+                        {f.help && <div className="text-[10px] text-muted-foreground">{f.help}</div>}
+                      </div>
+                    );
+                  })}
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setOpen(false)} className="rounded-sm" data-testid={`${testidPrefix}-cancel-btn`}>Cancel</Button>
@@ -156,7 +297,7 @@ export default function DataTableShell({
               {columns.map((c) => (
                 <TableHead key={c.key} className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">{c.label}</TableHead>
               ))}
-              {(onUpdate || onDelete) && <TableHead className="w-24 text-right">Actions</TableHead>}
+              {hasActions && <TableHead className="w-28 text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -167,25 +308,26 @@ export default function DataTableShell({
             )}
             {filtered.map((row) => (
               <TableRow key={row.id} className="hover:bg-muted/30">
-                {columns.map((c) => (
-                  <TableCell key={c.key} className="py-2.5 text-sm">
-                    {c.render ? c.render(row) : c.badge ? <StatusBadge {...c.badge(row)} /> : row[c.key] ?? "—"}
-                  </TableCell>
-                ))}
-                {(onUpdate || onDelete) && (
+                {columns.map((c) => {
+                  let cellContent;
+                  if (c.render) cellContent = c.render(row);
+                  else if (c.badge) cellContent = <StatusBadge {...c.badge(row)} />;
+                  else cellContent = row[c.key] ?? "—";
+                  return (
+                    <TableCell key={c.key} className="py-2.5 text-sm">{cellContent}</TableCell>
+                  );
+                })}
+                {hasActions && (
                   <TableCell className="text-right">
-                    <div className="inline-flex gap-1">
-                      {onUpdate && canWrite && (
-                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => startEdit(row)} data-testid={`${testidPrefix}-edit-${row.id}`}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                      {onDelete && canDelete && (
-                        <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => onDelete(row.id)} data-testid={`${testidPrefix}-delete-${row.id}`}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                    </div>
+                    <RowActions
+                      row={row}
+                      onEdit={onUpdate ? startEdit : null}
+                      onDelete={onDelete}
+                      canWrite={canWrite}
+                      canDelete={canDelete}
+                      testidPrefix={testidPrefix}
+                      attachmentsParentType={attachmentsParentType}
+                    />
                   </TableCell>
                 )}
               </TableRow>

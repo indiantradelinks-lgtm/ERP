@@ -8,7 +8,7 @@ from core import db, get_current_user, logger
 from notification_service import (
     send_email, email_enabled,
     tmpl_approval_pending, tmpl_approval_decided,
-    tmpl_invoice_reminder, tmpl_doc_expiry,
+    tmpl_invoice_reminder, tmpl_doc_expiry, tmpl_ppe_expiry,
 )
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -50,12 +50,17 @@ async def notify_approval_decided(approval: dict, action: str, by: str) -> None:
 
 
 async def run_expiry_scan() -> dict:
-    """Scan documents that expire in the next 30 days and email super_admins."""
+    """Scan documents AND PPE issuance records that expire in the next 30 days
+    and email super_admins + safety_officers."""
     today = datetime.now(timezone.utc).date()
-    rows = await db.documents.find({"is_deleted": {"$ne": True}, "expiry": {"$ne": None}}, {"_id": 0}).to_list(500)
     admins = await emails_for_role("super_admin")
-    sent = 0
-    for d in rows:
+    safety = await emails_for_role("safety_officer")
+    recipients = list({*admins, *safety})
+
+    # Documents
+    docs = await db.documents.find({"is_deleted": {"$ne": True}, "expiry": {"$ne": None}}, {"_id": 0}).to_list(500)
+    docs_sent = 0
+    for d in docs:
         exp = d.get("expiry")
         if not exp:
             continue
@@ -66,10 +71,35 @@ async def run_expiry_scan() -> dict:
         days_left = (exp_date - today).days
         if days_left <= 30:
             msg = tmpl_doc_expiry(d, days_left, app_url())
-            for r in admins:
+            for r in recipients:
                 await send_email(r, msg["subject"], msg["html"])
-                sent += 1
-    return {"scanned": len(rows), "sent": sent, "email_enabled": email_enabled()}
+                docs_sent += 1
+
+    # PPE Issuance
+    ppe = await db.ppe_issuance.find({"expiry_date": {"$ne": None}}, {"_id": 0}).to_list(2000)
+    ppe_sent = 0
+    ppe_due = 0
+    for p in ppe:
+        exp = p.get("expiry_date")
+        if not exp:
+            continue
+        try:
+            exp_date = datetime.fromisoformat(str(exp)).date()
+        except Exception:
+            continue
+        days_left = (exp_date - today).days
+        if days_left <= 30:
+            ppe_due += 1
+            msg = tmpl_ppe_expiry(p, days_left, app_url())
+            for r in recipients:
+                await send_email(r, msg["subject"], msg["html"])
+                ppe_sent += 1
+
+    return {
+        "documents": {"scanned": len(docs), "sent": docs_sent},
+        "ppe": {"scanned": len(ppe), "due": ppe_due, "sent": ppe_sent},
+        "email_enabled": email_enabled(),
+    }
 
 
 async def run_invoice_reminders() -> dict:

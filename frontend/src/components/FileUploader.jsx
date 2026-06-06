@@ -17,12 +17,18 @@ function humanSize(n) {
 
 function isImage(ct) { return ct?.startsWith("image/"); }
 
+function dropzoneLabel({ busy, capture }) {
+  if (busy) return "Uploading…";
+  if (capture) return "Tap to capture or drop photos";
+  return "Drop files or click to browse";
+}
+
 /**
  * Drag-drop multi-file uploader bound to a parent record.
  * Props: folder ('documents'|'safety'), parent_type, parent_id, accept, capture (mobile camera)
  * onUploaded(file) called after each successful upload.
  */
-export default function FileUploader({ folder = "documents", parent_type, parent_id, accept, capture, onUploaded, files = [], onDeleted, compact = false, testidPrefix = "uploader" }) {
+export default function FileUploader({ folder = "documents", parent_type, parent_id, category, accept, capture, onUploaded, files = [], onDeleted, compact = false, testidPrefix = "uploader" }) {
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(false);
   const [progress, setProgress] = useState({});
@@ -35,6 +41,7 @@ export default function FileUploader({ folder = "documents", parent_type, parent
     fd.append("folder", folder);
     if (parent_type) fd.append("parent_type", parent_type);
     if (parent_id) fd.append("parent_id", parent_id);
+    if (category) fd.append("category", category);
     fd.append("title", file.name);
     setProgress((p) => ({ ...p, [file.name]: 0 }));
     try {
@@ -55,7 +62,7 @@ export default function FileUploader({ folder = "documents", parent_type, parent
         return rest;
       });
     }
-  }, [folder, parent_type, parent_id, onUploaded]);
+  }, [folder, parent_type, parent_id, category, onUploaded]);
 
   const handleFiles = async (fileList) => {
     setBusy(true);
@@ -98,7 +105,7 @@ export default function FileUploader({ folder = "documents", parent_type, parent
       >
         <div className="flex flex-col items-center text-center gap-2">
           {busy ? <Loader2 className="h-6 w-6 text-primary animate-spin" /> : <Upload className="h-6 w-6 text-muted-foreground" />}
-          <div className="text-sm font-semibold">{busy ? "Uploading…" : capture ? "Tap to capture or drop photos" : "Drop files or click to browse"}</div>
+          <div className="text-sm font-semibold">{dropzoneLabel({ busy, capture })}</div>
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Max 25MB · PDF · DOCX · XLSX · PNG · JPG</div>
           {capture && (
             <Button type="button" variant="outline" size="sm" className="mt-2 rounded-sm" onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }} data-testid={`${testidPrefix}-camera-btn`}>

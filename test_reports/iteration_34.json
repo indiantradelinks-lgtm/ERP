@@ -1,0 +1,67 @@
+{
+  "summary": "Tested iteration 34 HR module (Onboarding, Employee 360, Leave). Backend 17/17 pytest pass (100%). Frontend pages load and render all expected sections for super_admin, but a CRITICAL React runtime crash occurs when submitting the New Onboarding form with the email field left blank — Pydantic 422 detail array is rendered raw by toast.error.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Onboarding.jsx",
+        "issue": "Uncaught React error: 'Objects are not valid as a React child (found object with keys {type, loc, msg, input, ctx})'. Occurs after clicking Create when email field is left blank — backend returns FastAPI 422 with detail array, and toast.error(e.response.data.detail) passes the array straight into React causing a full app crash.",
+        "selector": "Onboarding 'Create' button in New Onboarding dialog",
+        "priority": "CRITICAL"
+      },
+      {
+        "component": "Onboarding.jsx form payload",
+        "issue": "Form sends email: '' (empty string) when blank instead of omitting it / null. Pydantic EmailStr rejects empty string → 422. Should send null or omit when empty.",
+        "selector": "create_onboarding submit handler (line ~75)",
+        "priority": "HIGH"
+      },
+      {
+        "component": "Leave.jsx Apply form",
+        "issue": "Date pickers use native <input type='date'> (browser default) instead of shadcn Calendar/DatePicker for consistency.",
+        "selector": "FROM/TO date inputs",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "All HR pages — generic error handling",
+        "issue": "Every catch block uses `toast.error(e.response?.data?.detail || ...)`. When the API returns 422 (validation error), detail is an array of objects → React crash. Need a helper that stringifies validation errors, e.g. `Array.isArray(detail) ? detail.map(d => d.msg).join(', ') : detail`.",
+        "affected_selectors": ["Onboarding.jsx:62,80,88,97,105", "Employee360.jsx", "Leave.jsx"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration34_hr_module.py",
+    "/app/test_reports/pytest/iteration34.xml"
+  ],
+  "action_items": [
+    "FIX (CRITICAL): Onboarding.jsx — handle 422 validation error array; never pass raw object to toast.error/JSX. Add a util `formatApiError(err)` that flattens Pydantic detail array → string.",
+    "FIX (HIGH): Onboarding.jsx — strip/null empty optional fields (email, phone, department, joining_date, designation) before POST so EmailStr/etc. validators don't reject empty strings.",
+    "Recommend: apply same `formatApiError` helper across Employee360.jsx & Leave.jsx catch blocks for consistency.",
+    "Optional: replace native date inputs in Leave Apply form with shadcn Calendar component."
+  ],
+  "critical_code_review_comments": [
+    "hr_router.py is 870 lines — close to the 700-line guideline. Consider splitting into hr/onboarding_router.py, hr/employee360_router.py, hr/leave_router.py.",
+    "leave_calendar endpoint $or condition does not cover leaves that SPAN the queried month (start before, end after). It only matches when either from_date or to_date falls inside the month. A leave from 2026-05-25 to 2026-06-05 viewed for June will still match (to_date in June), but a leave from 2026-05-20 to 2026-07-10 viewed for June would be MISSED. Consider adding the 'wraps the month' clause.",
+    "complete_onboarding default password 'Welcome@123' is hardcoded — fine for now, but should be configurable per-tenant env var.",
+    "_next_emp_code sorts E-XXXX lexicographically; after E-9999 (10k) it will pick E-999 over E-1000. Low risk now but consider numeric sort.",
+    "All write actions properly emit audit logs — good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration34_hr_module.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (17/17)",
+    "frontend": "83% (10/12 UI checks; critical crash on form error path)"
+  },
+  "test_credentials": "admin@erp.com/Admin@123 (super_admin), supervisor@erp.com/Super@1234 (for 403 check)",
+  "seed_data_creation": "Created onboarding TEST_Joiner_QA → completed (employee E-XXXX, ppe row, induction, leave balances). Also created onboarding TEST_UI_Joiner_X via UI (in_progress). Leave applications created+approved/cancelled within test_iteration34_hr_module.py for balance assertions.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend layer fully verified. After main agent fixes the 422 error rendering + empty-string email payload in Onboarding.jsx, please re-run the UI flow: (1) New Onboarding with only Name filled → must show toast 'Name is required' or successful create, no React crash; (2) Open in_progress onboarding → verify Mark Done and Complete & Auto-Trigger buttons appear; (3) click Complete → verify Create login/PPE/Induction checkboxes and the green auto-trigger panel after confirm.",
+  "rca_of_the_issue": "RCA: React crash 'Objects are not valid as a React child {type, loc, msg, input, ctx}' = FastAPI 422 ValidationError detail array. Reproduction: open /app/hr/onboarding → click New Onboarding → fill only Name 'TEST' → click Create. Server returns 422 because email='' fails EmailStr. Frontend catch block does `toast.error(e.response.data.detail)` — detail is an Array<ErrorObject>, sonner toast then renders it as React children → throwOnInvalidObjectType → app error boundary screen. Mitigation: (a) strip empty optional strings before submit; (b) add a util to stringify Pydantic 422 detail arrays."
+}

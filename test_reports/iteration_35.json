@@ -1,0 +1,39 @@
+{
+  "summary": "Re-tested HR module P0 flows after main agent's fixes (stripEmpty + apiErrorMessage in /app/frontend/src/lib/api.js). The critical React crash from iter34 is FIXED. Onboarding 'only Name' submission no longer crashes — the empty-string optional fields are stripped client-side. Full completion flow auto-creates the employee (E-1009 verified). Employee360 renders all 7 tabs with no console errors, skill add works, certification with expiry 2026-06-15 shows 'expiring soon' badge with days countdown. Leave Apply → Approve flow works, calendar prev/next navigation correctly cycles months (May → April → June). No React 'Objects are not valid as a React child' errors observed anywhere.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Leave → Balances tab",
+        "issue": "Balances tab rendered 0 rows for super_admin after applying+approving a 2-day leave for an employee. The tab likely shows balances scoped to the logged-in user's own employee record (admin@erp.com has no linked employee), not the employee whose leave was just approved. Backend balance reduction itself was already verified 100% in iter34 pytest. Consider adding an employee filter/dropdown to the Balances tab, or default to the most recently impacted employee for HR/super_admin roles.",
+        "affected_selectors": ["leave-tab-balances", "balance-row-*"]
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "Leave Apply form",
+        "issues": ["FROM/TO date inputs still use native <input type='date'> instead of shadcn Calendar/DatePicker (carry-over from iter34, low priority)."]
+      }
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration34_hr_module.py"],
+  "action_items": [
+    "(Optional) Scope Leave Balances tab so super_admin/HR can pick the employee whose balances to inspect — currently appears empty for admin users with no employee record.",
+    "(Optional) Replace native date inputs in Leave Apply with shadcn Calendar component for consistency."
+  ],
+  "critical_code_review_comments": [
+    "/app/frontend/src/lib/api.js helpers (formatApiErrorDetail, apiErrorMessage, stripEmpty) are correctly used across all 3 HR pages — good unification.",
+    "hr_router.py leave_calendar now correctly includes the 3rd $or clause for leaves spanning the queried month.",
+    "hr_router.py is 874 lines — still above the 700-line guideline; recommend splitting into hr/onboarding_router.py, hr/employee360_router.py, hr/leave_router.py.",
+    "Onboarding 'Complete & Auto-Trigger' green panel (.bg-emerald-50) shares the same CSS class as completed-stage rows — testing/automation must scope to the 'Auto-Triggers Fired' header to disambiguate; not a bug but could be brittle for tests."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "100% (carried over from iter34)", "frontend": "100% on the previously-crashing flows; 95% overall (Balances tab empty for admin-user is a minor UX issue, not a regression)" },
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin)",
+  "seed_data_creation": "Created onboarding TEST_OnlyName_<ts> (in_progress, only Name field) and TEST_FullFlow_97074 (completed → became employee E-1009 with PPE + induction). Added TEST_Skill_<ts> and TEST_Cert_<ts> (expiry 2026-06-15) to first employee in E360. Submitted+approved one 2026-02-10 to 2026-02-11 leave application.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All iter34 critical bugs are FIXED. The api.js stripEmpty()+apiErrorMessage() utilities are now wired across Onboarding/Employee360/Leave. Backend leave_calendar 3-clause $or is in place. If new HR features arrive, the only minor improvement left is making the Leave Balances tab employee-selectable for HR/admin viewers.",
+  "rca_of_the_issue": "Iter34 crash root cause confirmed mitigated: Pydantic 422 detail arrays are now flattened to string before reaching toast.error via apiErrorMessage(err, fallback). Additionally, empty optional fields (email='') are stripped from POST payloads via stripEmpty(), so EmailStr/etc. no longer reject them in the first place. Both layers of defence verified end-to-end through the UI."
+}

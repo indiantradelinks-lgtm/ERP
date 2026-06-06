@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Navigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import KPICard from "@/components/KPICard";
+import OperationsPulse from "@/components/OperationsPulse";
 import { StatusBadge } from "@/components/DataTableShell";
+import { useAuth } from "@/contexts/AuthContext";
+import { roleLandingPath } from "@/lib/roleLanding";
+import { toneFor } from "@/lib/statusTone";
 import {
   Wallet, TrendingDown, TrendingUp, Briefcase, Users, Truck, Boxes, ShieldAlert,
   ShoppingCart, HardHat, ArrowUpRight, AlertTriangle
@@ -14,12 +18,19 @@ import {
 
 const inr = (v) => "₹ " + Math.abs(v).toLocaleString("en-IN", { maximumFractionDigits: 0 });
 
+const SEVERITY_TONE = { high: "danger", medium: "warning", low: "success" };
+
 export default function Dashboard() {
   const [data, setData] = useState(null);
   const navigate = useNavigate();
+  const { user } = useAuth();
   useEffect(() => {
     api.get("/dashboard/summary").then((r) => setData(r.data)).catch(() => setData({}));
   }, []);
+  // Non-super-admin users land on the department launcher, not the global control room.
+  if (user && user.role && user.role !== "super_admin") {
+    return <Navigate to={roleLandingPath(user.role)} replace />;
+  }
   if (!data) {
     return <div className="text-sm text-muted-foreground" data-testid="dashboard-loading">Loading dashboard…</div>;
   }
@@ -39,6 +50,9 @@ export default function Dashboard() {
           <span className="text-muted-foreground">Updated {new Date().toLocaleString()}</span>
         </div>
       </div>
+
+      {/* Operations Pulse — live cross-module heartbeat */}
+      <OperationsPulse />
 
       {/* Top KPI strip */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 stagger">
@@ -143,7 +157,7 @@ export default function Dashboard() {
             {(data.safety_by_severity || []).map((s) => (
               <div key={s.severity} className="flex items-center justify-between text-xs">
                 <span className="capitalize">{s.severity}</span>
-                <StatusBadge text={String(s.count)} tone={s.severity === "high" ? "danger" : s.severity === "medium" ? "warning" : "success"} />
+                <StatusBadge text={String(s.count)} tone={toneFor(SEVERITY_TONE, s.severity, "success")} />
               </div>
             ))}
           </div>

@@ -1,5 +1,8 @@
 import DataTableShell from "@/components/DataTableShell";
 import useResource from "@/hooks/useResource";
+import { toneFor } from "@/lib/statusTone";
+
+const JE_TYPE_TONE = { revenue: "success", expense: "danger" };
 
 export default function Accounts() {
   const r = useResource("journal-entries");
@@ -7,7 +10,7 @@ export default function Accounts() {
     { key: "je_number", label: "JE #" },
     { key: "date", label: "Date" },
     { key: "account", label: "Account" },
-    { key: "type", label: "Type", badge: (r) => ({ text: r.type, tone: r.type === "revenue" ? "success" : r.type === "expense" ? "danger" : "info" }) },
+    { key: "type", label: "Type", badge: (r) => ({ text: r.type, tone: toneFor(JE_TYPE_TONE, r.type, "info") }) },
     { key: "cost_centre", label: "Cost Centre" },
     { key: "amount", label: "Amount", render: (r) => "₹ " + Number(r.amount || 0).toLocaleString("en-IN") },
     { key: "narration", label: "Narration" },

@@ -1,0 +1,48 @@
+{
+  "summary": "RETEST of InventoryIntel after fixes from iteration_24. ALL 4 issues from iteration_24 are now RESOLVED. Logged in as super_admin admin@erp.com, walked all 7 InventoryIntel tabs (valuation, aging, dead-stock, movers, idle, reorder, import) — every pane renders cleanly with NO error-boundary-fallback and ZERO TypeError console errors. Tab-switch race (aging→idle→movers→aging at 600ms intervals) passes — no crash at any switch. Bulk Import end-to-end works: CSV upload returns 200 with summary {created:2, updated:0, errors:0}, intel-import-result block renders, intel-import-open-valuation button is present, and clicking it switches to the valuation tab where the imported rows (Retest Item 1, Retest Item 2) appear. DeadStock duplicate-key React warnings are GONE. ProcurementIntel regression: all 4 tabs (vendors, budgets, reservations, audit) load OK. Sidebar regression: both nav-inventory-intel and nav-procurement-intel are visible. InventoryIntel success_rate now 100% (was 73%).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "various", "issue": "3x 401 console errors on initial page bootstrap (likely pre-auth probes before cookie restore) — cosmetic, also flagged in iteration_24"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_checks": [
+    "Login as super_admin succeeds and lands on /app",
+    "/app/inventory-intel renders inventory-intel-page",
+    "intel-tab-valuation → intel-pane-valuation OK (₹44,65,560 FIFO total)",
+    "intel-tab-aging → intel-pane-aging OK (NO CRASH — null-guard data?.buckets fix verified)",
+    "intel-tab-dead-stock → intel-pane-dead-stock OK (NO duplicate-key React warnings — composite key fix verified)",
+    "intel-tab-movers → intel-pane-movers OK",
+    "intel-tab-idle → intel-pane-idle OK (NO CRASH — null-guard data?.items fix verified)",
+    "intel-tab-reorder → intel-pane-reorder OK",
+    "intel-tab-import → intel-pane-import OK",
+    "Tab-switch race aging→idle→movers→aging at 600ms intervals — NO crash at any step (data-shape guards working)",
+    "Bulk Import: POST /api/inventory-intel/import.csv returned 200 (correct CSV columns: item_code,name,category,unit,opening_quantity,rate,store_location,batch,serial_no,vendor_name,asset_tag,reorder_level,min_stock,max_stock)",
+    "intel-import-result block renders with 'Created 2 · Updated 0 · Errors 0' Stat cards",
+    "intel-import-open-valuation button is visible when errors=0",
+    "Clicking intel-import-open-valuation switches to valuation tab; imported TEST_INTEL_R1/R2 rows visible in valuation table (Retest Item 1: 10 nos @ ₹50; Retest Item 2: 5 nos @ ₹100)",
+    "ProcurementIntel: pintel-tab-vendors, pintel-tab-budgets, pintel-tab-reservations, pintel-tab-audit — all OK",
+    "Sidebar (super_admin): nav-inventory-intel + nav-procurement-intel visible",
+    "Zero TypeError/Cannot-read/Cannot-convert console errors throughout entire walk"
+  ],
+  "test_report_links": ["/app/test_reports/iteration_24.json"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Importer.upload() does not call setResult on error path — when backend returns 4xx (e.g., bad CSV columns), the user only sees a toast and the in-page result block stays hidden. Consider always rendering an inline error card on exception so partial failures with structured error rows are visible without re-uploading.",
+    "Importer template instructions list 14 specific CSV columns. Recommend adding a sample row inside the downloaded template (already done via /import-template endpoint — verified template button present) and a small validation hint near the file input.",
+    "401 noise on page bootstrap (3x) — investigate auth bootstrap order; harmless but pollutes logs and may confuse on-call."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not retested in this iteration (GREEN per iteration_21)", "frontend": "100% (11 of 11 tabs across InventoryIntel + ProcurementIntel render cleanly; bulk import end-to-end works including Open Valuation handoff)"},
+  "test_credentials": "super_admin admin@erp.com / Admin@123 — used via [data-testid='login-submit']",
+  "seed_data_creation": "Imported 2 rows via bulk import CSV: TEST_INTEL_R1 (Retest Item 1, 10 nos @ ₹50, ₹500 total) and TEST_INTEL_R2 (Retest Item 2, 5 nos @ ₹100, ₹500 total). Visible in valuation pane after import. Main agent may wish to clean up these TEST_ prefixed rows.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "InventoryIntel + ProcurementIntel pages are fully working. Iteration_24's 4 issues (Aging crash, Idle crash, Import-result missing, DeadStock duplicate keys) all closed. The fixes in /app/frontend/src/pages/InventoryIntel.jsx (data?.<field> guards on all sub-components, removal of onUploaded auto-redirect, explicit intel-import-open-valuation button, composite keys) are verified. No further frontend testing needed for these pages.",
+  "rca_of_the_issue": "Iteration_24 root-causes confirmed and fixed: (1) Tab-switch race where parent `data` held prior tab's shape allowed sub-components past `if (!data)` truthy check and into field-access crashes — fixed by switching every sub-component's guard from `if (!data)` to `if (!data?.<expected_field>)`. (2) Bulk Import 'result missing' was caused by auto-redirect on success (onUploaded fired and immediately switched away from import tab before result rendered) — fixed by removing auto-redirect and adding explicit intel-import-open-valuation handoff button. (3) DeadStock duplicate-key React warning resolved via composite key `${r.id}-${i}` (also applied to Importer error rows)."
+}

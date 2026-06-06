@@ -5,6 +5,9 @@ import useResource from "@/hooks/useResource";
 import { Button } from "@/components/ui/button";
 import { Eye } from "lucide-react";
 import ApprovalDetail from "@/components/ApprovalDetail";
+import { toneFor } from "@/lib/statusTone";
+
+const APPROVAL_STATUS_TONE = { approved: "success", rejected: "danger", in_progress: "info" };
 
 export default function Approvals() {
   const r = useResource("approvals");
@@ -40,7 +43,7 @@ export default function Approvals() {
         return <span className="text-xs">{idx + 1}/{chain.length} · {step.label}</span>;
       },
     },
-    { key: "status", label: "Status", badge: (r) => ({ text: r.status || "pending", tone: r.status === "approved" ? "success" : r.status === "rejected" ? "danger" : r.status === "in_progress" ? "info" : "warning" }) },
+    { key: "status", label: "Status", badge: (r) => ({ text: r.status || "pending", tone: toneFor(APPROVAL_STATUS_TONE, r.status, "warning") }) },
     {
       key: "_act",
       label: "Action",

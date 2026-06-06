@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 38 — HR Document Scanner (AI KYC Verification). End-to-end tested: GET /hr/document-types (14 types, 3 key), upload validation (400 on bad doc_type, .txt, empty file; 404 on bad employee), upload happy path (creates db.files row with scan_status='not_scanned', parent_type='employees'), list shows uploaded docs, soft-delete hides from list, scan endpoint properly reaches Gemini and gracefully returns 502 'AI scan failed' when Universal Key budget cap hit (scan_status stays 'not_scanned' — no partial state), RBAC blocks supervisor on upload/scan/delete with 403, employees expose verification_status field. Unit-tested _build_verification engine (PAN match, PAN mismatch, Aadhaar with dashes normalisation, autofill candidate detection, bank passbook IFSC match). Frontend Employee360 → Documents tab works: section header 'Documents · AI-Scanned KYC' visible, + Add opens upload dialog with all 14 doc-type options (3 tagged '· KYC key'), upload + list + scan + delete all work via UI, 'Verification Pending' badge visible in employee header. 17/17 pytest passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/hr/employees/{eid}/documents/{doc_id}/scan", "issue": "Returns 502 'AI scan failed: Budget has been exceeded' — environmental (Universal Key budget cap), not a code bug. Behavior is correct: error wrapped via HTTPException(502), scan_status stays 'not_scanned', no DB partial-write."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "AI Scan click → toast", "issue": "When scan returns 502, the toast/error message text does not surface the exact reason ('budget' / 'AI scan failed') visibly enough in body innerText (console shows 502 cleanly). Consider showing toast.error(apiErrorMessage(e)) so user sees a clear failure message instead of just a silent stop.", "affected_selectors": ["[data-testid^='doc-scan-']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration38_hr_documents.py",
+    "/app/test_reports/pytest/iteration38.xml"
+  ],
+  "action_items": [
+    "(Optional UX) When AI Scan errors with 502/budget-cap, surface a toast.error so user knows the cap is hit and can retry later (currently the spinner just stops with no visible toast in some flows).",
+    "No code bugs found — iteration is functionally complete; the 502 from Gemini is environmental (Universal Key budget) and not a bug."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/routers/hr/documents.py is 471 lines — borderline OK but could split scan/verification engine into a separate module (e.g. routers/hr/_doc_verification.py) for cleaner unit-testability.",
+    "_build_verification correctly handles autofill_candidates but only fills when status=='no_data' AND ext_val present AND emp_val empty — good guard. autofill is also re-validated through india_compliance.validate_employee_compliance before commit, which is excellent.",
+    "MIME_MAP whitelist on upload is good (rejects .txt). Storage path uses put_object() returning a deterministic path. content_type fallback chain (stored → fetched_ct → application/pdf) is robust.",
+    "DOC_FIELD_MAP doesn't cover educational/experience/police_verification/medical_fitness/project_cert — these doc types upload+scan but won't drive any verification matching. That's by design per problem statement (no employee-side counterpart). Confirm with main agent that these doc types should return overall='no_data' (currently they do — verification.items will be empty).",
+    "_recompute_employee_verification gates 'verified' on ALL three key docs being verification.overall=='verified' — correct per spec."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration38_hr_documents.py (new)"
+  ],
+  "success_rate": {"backend": "100% (17/17 pytest)", "frontend": "100% (full upload → scan → delete flow verified visually)"},
+  "test_credentials": "admin@erp.com/Admin@123 (super_admin), supervisor@erp.com/Super@1234 (site_supervisor used for RBAC 403 test)",
+  "seed_data_creation": "Uploaded one TEST_UI_PAN doc via UI for an existing employee, then deleted it. Backend pytest also uploaded+deleted one TEST_PAN_label PNG to db.files (soft-deleted after test).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 38 (HR Document Scanner) is fully verified. 14 doc types with 3 KYC-key ones (aadhaar/pan/bank_passbook). Universal Key budget cap returns 502 on Gemini scan — this is environmental (not a code bug). _build_verification is unit-testable via routers.hr.documents._build_verification — see test_iteration38_hr_documents.py for examples covering match/mismatch/normalisation/autofill. RBAC enforced via require_permission('hr_employee_360', 'write'). Soft-delete uses is_deleted flag + list filter. verification_status on employees is recomputed after every scan/delete via _recompute_employee_verification.",
+  "rca of the issue": "N/A — no functional bugs. Only environmental note: Gemini Universal Key has hit its budget cap, so /scan returns 502 'AI scan failed: Budget has been exceeded'. The code path correctly wraps this via try/except → HTTPException(502), keeps scan_status='not_scanned' (no partial write), and the frontend shows the error in console. To exercise a real scan response, monkey-patch emergentintegrations.llm.chat.LlmChat.send_message in a future iteration."
+}

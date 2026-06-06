@@ -1,0 +1,45 @@
+{
+  "summary": "End-to-end testing of AI Quotation Builder backend + frontend smoke. 16/19 backend pytest tests pass (84%). Identified 3 backend bugs: (a) PUT /api/admin/company-profile crashes with 500 (Mongo write conflict on 'id'), (b) sales_executive can hit company-profile write path because permission key reused is 'quotations' instead of dedicated 'company_profile' (returns 500 instead of expected 403), (c) tax_mode auto-detection does not re-evaluate when client_state changes after quote creation. Frontend: Company Profile, Conditions Library (51 seeded clauses grouped by category), Quotations table with 'AI Builder' button per row, and 4-tab Quotation Builder all load cleanly with no JS errors.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "PUT /api/admin/company-profile", "issue": "MongoDB WriteError: \"Updating the path 'id' would create a conflict at 'id'\". Caused by sending `id` inside `$set` AND `$setOnInsert` simultaneously in quotation_builder_router.py:191. Fix: remove `$setOnInsert` (or pop 'id' from payload before $set, and add only $setOnInsert).", "priority": "CRITICAL"},
+      {"endpoint": "PUT /api/admin/company-profile (RBAC)", "issue": "sales_executive can attempt to write company profile because endpoint is gated by require_permission('quotations','write') instead of a dedicated 'company_profile' key. Per spec only super_admin/director/GM should write. Right now sales gets 500 (not 403). Use require_permission('company_profile','write').", "priority": "HIGH"},
+      {"endpoint": "POST /api/quotation-builder/{id}/recalc", "issue": "tax_mode auto-detection doesn't re-evaluate. After PUT client_state='Maharashtra' (company_state='Gujarat'), recalc still returns tax_mode='intra' (CGST+SGST). Root cause: create_quotation_full always defaults `tax_mode` to 'intra' and recalc_quotation only auto-detects when tax_mode is missing/invalid. Fix: either omit default at create (let recalc detect), or in /recalc/PUT force re-evaluate from company/client states unless user explicitly overrides.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/quotation-builder/{id}/send-to-client", "issue": "Resend rejects with 'You can only send testing emails to your own email address' for non-verified recipients. Endpoint returns 502 (handled gracefully). Consider falling back to status=submitted+delivered=false instead of 502 when Resend domain is not verified, so the workflow doesn't break in dev/test."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_quotation_builder.py",
+    "/app/test_reports/pytest/quotation_builder.xml"
+  ],
+  "action_items": [
+    "Fix MongoDB write conflict in PUT /api/admin/company-profile (remove $setOnInsert OR pop 'id' from $set payload).",
+    "Introduce dedicated RBAC permission key 'company_profile' (read=*, write=super_admin/director/general_manager) and switch /api/admin/company-profile endpoints to it. Also add 'condition_library' key (write also allowed to sales_executive, delete admin-only).",
+    "Make tax_mode auto-detection authoritative: recompute in recalc_quotation() whenever client_state/company_state changes, OR drop default 'intra' in create_quotation_full so first recalc picks correct mode.",
+    "Optional: Send-to-client should not 502 when Resend domain unverified — record submission with delivered=false and 200."
+  ],
+  "critical_code_review_comments": [
+    "quotation_builder_router.py:191 mixes $set with payload['id']='company' AND $setOnInsert {'id':'company'} — Mongo rejects updates that touch the same field. Drop $setOnInsert or pop id from $set.",
+    "Reusing 'quotations' permission for company-profile and condition-library breaks the principle of least privilege (sales_executive becomes able to mutate company profile bytes).",
+    "tax_mode default ('intra') at create time blocks the auto-detection contract documented in the spec. Either default to None or always recompute in recalc_quotation().",
+    "send-to-client raises 502 on Resend errors — for unverified-recipient errors it's safer to mark submission undelivered and continue (the doc + workflow status still advance).",
+    "Mongo index error during startup is unrelated to this module but worth noting: site index 'gst_1' has partialFilterExpression + sparse mixed — see /var/log/supervisor/backend.err.log."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_quotation_builder.py (new)"
+  ],
+  "success_rate": {"backend": "84% (16/19)", "frontend": "100% smoke"},
+  "test_credentials": "admin@erp.com / Admin@123  ; sales@erp.com / Sales@123",
+  "seed_data_creation": "Created one TEST_ quotation (auto via fixture, status moved to 'won') and ephemeral TEST_ conditions (auto-cleaned). No persistent pollution beyond one quote.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Re-run /app/backend/tests/test_quotation_builder.py after fixes. Frontend builder/conditions/company-profile pages render correctly; deep UI flows (add section dialog, AI-from-RFQ dialog, inline item edits) were not exercised due to time — worth a follow-up Playwright run if business logic fixes change UI contracts. AI endpoints work: suggest-items returned >=5 items, extract-rfq parsed a synthetic text RFQ successfully.",
+  "rca of the issue": "Bug 1 (company-profile 500): db.settings.update_one used {'$set': payload, '$setOnInsert': {'id':'company'}} while payload itself includes 'id':'company'. Mongo error code 40. Fix in router. Bug 2 (RBAC): permission key 'quotations' is shared by sales_executive, so write hits real code path and crashes (Bug 1). Bug 3 (tax_mode): created quote has tax_mode='intra' baked in; recalc_quotation() only auto-detects when tax_mode is missing/unset, so subsequent client_state change is ignored."
+}

@@ -113,5 +113,5 @@ def require_permission(resource: str, action: str):
 ROLES = [
     "super_admin", "director", "general_manager", "dept_head", "project_manager",
     "site_engineer", "supervisor", "store_incharge", "accounts_executive",
-    "hr_executive", "safety_officer", "purchase_officer", "client_rep", "vendor",
+    "hr_executive", "safety_officer", "purchase_officer", "sales_executive", "client_rep", "vendor",
 ]

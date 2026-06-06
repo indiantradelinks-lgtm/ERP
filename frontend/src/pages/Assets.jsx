@@ -1,5 +1,8 @@
 import DataTableShell from "@/components/DataTableShell";
 import useResource from "@/hooks/useResource";
+import { toneFor } from "@/lib/statusTone";
+
+const ASSET_STATUS_TONE = { in_use: "success", maintenance: "warning", disposed: "danger" };
 
 export default function Assets() {
   const r = useResource("assets");
@@ -11,7 +14,7 @@ export default function Assets() {
     { key: "cost", label: "Cost", render: (r) => "₹ " + Number(r.cost || 0).toLocaleString("en-IN") },
     { key: "location", label: "Location" },
     { key: "assigned_to", label: "Assigned To" },
-    { key: "status", label: "Status", badge: (r) => ({ text: r.status, tone: r.status === "in_use" ? "success" : r.status === "maintenance" ? "warning" : r.status === "disposed" ? "danger" : "neutral" }) },
+    { key: "status", label: "Status", badge: (r) => ({ text: r.status, tone: toneFor(ASSET_STATUS_TONE, r.status, "neutral") }) },
   ];
   const fields = [
     { key: "asset_id", label: "Asset ID" },
@@ -24,5 +27,5 @@ export default function Assets() {
     { key: "depreciation_rate", label: "Depreciation %", type: "number" },
     { key: "status", label: "Status", type: "select", options: ["available", "in_use", "maintenance", "disposed"] },
   ];
-  return <DataTableShell title="Asset Management" description="Equipment register, allocation, maintenance and depreciation." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="assets" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} />;
+  return <DataTableShell title="Asset Management" description="Equipment register, allocation, maintenance and depreciation." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="assets" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} attachmentsParentType="assets" />;
 }

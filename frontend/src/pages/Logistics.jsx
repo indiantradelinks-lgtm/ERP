@@ -1,5 +1,8 @@
 import DataTableShell from "@/components/DataTableShell";
 import useResource from "@/hooks/useResource";
+import { toneFor } from "@/lib/statusTone";
+
+const VEHICLE_STATUS_TONE = { active: "success", maintenance: "warning" };
 
 export default function Logistics() {
   const r = useResource("vehicles");
@@ -10,7 +13,7 @@ export default function Logistics() {
     { key: "driver", label: "Driver" },
     { key: "last_service", label: "Last Service" },
     { key: "fuel_avg", label: "Fuel (km/L)" },
-    { key: "status", label: "Status", badge: (r) => ({ text: r.status, tone: r.status === "active" ? "success" : r.status === "maintenance" ? "warning" : "neutral" }) },
+    { key: "status", label: "Status", badge: (r) => ({ text: r.status, tone: toneFor(VEHICLE_STATUS_TONE, r.status, "neutral") }) },
   ];
   const fields = [
     { key: "reg_number", label: "Registration No" },

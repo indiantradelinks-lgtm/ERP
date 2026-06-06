@@ -64,12 +64,39 @@ async def login(payload: LoginInput, request: Request, response: Response):
         )
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
+    # Reject inactive / disabled accounts.
+    if user.get("active") is False:
+        raise HTTPException(status_code=403, detail="Account is disabled. Contact your administrator.")
+
     await db.login_attempts.delete_one({"identifier": identifier})
     access = create_access_token(user["id"], user["email"], user["role"])
     refresh = create_refresh_token(user["id"])
     set_auth_cookies(response, access, refresh)
+    # Stamp last_login on the user doc
+    try:
+        await db.users.update_one({"id": user["id"]},
+                                  {"$set": {"last_login": now_iso(),
+                                            "last_login_ip": ip}})
+    except Exception:
+        pass
     user.pop("_id", None)
     user.pop("password_hash", None)
+    # Record login activity for the session monitor (best-effort).
+    try:
+        from audit import audit as _audit
+        await db.login_activity.insert_one({
+            "id": new_id(),
+            "user_id": user["id"],
+            "email": user["email"],
+            "name": user.get("name"),
+            "role": user.get("role"),
+            "ip": ip,
+            "user_agent": request.headers.get("user-agent", "")[:240],
+            "at": now_iso(),
+        })
+        await _audit(user=user, action="login", resource="auth", record_id=user["id"], ip=ip)
+    except Exception as _e:
+        logger.warning(f"login activity capture failed: {_e}")
     return user
 
 

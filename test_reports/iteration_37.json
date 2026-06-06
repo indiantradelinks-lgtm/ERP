@@ -1,0 +1,40 @@
+{
+  "summary": "Iter 37 — Indian Statutory Compliance + Employment-Type tested end-to-end. All 16 backend pytest cases (9 negative validation + 4 positive create/update + 3 regression list endpoints) PASS. Frontend UI: every section header renders, employment_type dropdown has the 3 required options + a red asterisk, conditional 'Daily Wages Details' and 'Contractual Engagement' sections REVEAL/HIDE correctly on type change, required asterisks present on Full Name / Employment Type / Mobile Phone, dialog scroll container with max-h-[70vh] confirmed, end-to-end create-via-UI of a valid permanent employee with PAN/Aadhaar/IFSC succeeds and renders the 'Permanent' type badge. Vendors regression: dialog still opens normally (no DataTableShell regression).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter37_india_compliance.py",
+    "/app/test_reports/pytest/iter37_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "GOOD: india_compliance.validate_employee_compliance normalises PAN/IFSC/UAN to uppercase + strips spaces/hyphens before regex — verified via test_valid_permanent_full_compliance (lowercase input ABCDE1234F / sbin0001234 stored uppercase).",
+    "GOOD: Aadhaar Verhoeff checksum correctly rejects '123456789012' (random 12 digits) and accepts '999941057058'.",
+    "GOOD: Validation runs on BOTH POST and PUT — confirmed via test_put_validation_runs.",
+    "GOOD: DataTableShell's new section/showIf/required/help additions are purely additive — Vendors and other pages continue to render dialogs correctly.",
+    "GOOD: Conditional fields use form-state showIf and the values are not stripped when type toggles (form state preserved). However, NOTE: if a user fills daily_rate=600 then switches employment_type to permanent, the daily_rate value REMAINS in form state and WILL be sent on save (it just won't be validated since etype!=daily_wages). This is benign — no validation error, value is harmless on a permanent record — but worth flagging for future cleanup if HR ever wants strict role-specific payload.",
+    "MINOR (defensive): validate_employee_compliance's UAN regex `^\\d{12}$` is identical to AADHAAR_RE; if someone accidentally pastes their Aadhaar into UAN, the regex won't catch it. Not a bug per se, but a UI-level hint could help.",
+    "MINOR: ESIC regex permits 10–17 digits while the form help-text says exactly 17. Either tighten regex to `^\\d{17}$` or relax help text. Currently any 10-digit IP number also passes, which may be acceptable for legacy records.",
+    "NIT: There is no max-len constraint on textarea / address fields; not a P1 concern."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter37_india_compliance.py (NEW — 16 tests, 100% pass)"
+  ],
+  "success_rate": {
+    "backend": "16/16 = 100%",
+    "frontend": "100% of tested flows (sections, conditional reveals, required asterisks, create-via-UI, type badge, vendors regression)"
+  },
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin)",
+  "seed_data_creation": "Created 4 TEST_-prefixed permanent/daily_wages/contractual employees via backend pytest fixtures (auto-cleaned by module-scoped teardown fixture) + 1 TEST_UI_Iter37_Perm via UI (cleaned up post-test). DB is clean.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Full happy-path + negative validation suite lives at /app/backend/tests/test_iter37_india_compliance.py — reusable for any future change to india_compliance.py or the employees CRUD validation hooks. Use Aadhaar '999941057058' as the known-valid Verhoeff number. UI testids on the form follow the pattern `employees-field-<key>` (e.g. employees-field-pan_number, employees-field-employment_type, employees-field-daily_rate).",
+  "rca_of_the_issue": "n/a — no defects found in this iteration."
+}

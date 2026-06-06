@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useMemo } from "react";
 import { api, formatApiErrorDetail } from "@/lib/api";
 
 const AuthContext = createContext(null);
@@ -34,7 +34,7 @@ export function AuthProvider({ children }) {
     fetchMe();
   }, [fetchMe]);
 
-  const login = async (email, password) => {
+  const login = useCallback(async (email, password) => {
     try {
       const { data } = await api.post("/auth/login", { email, password });
       setUser(data);
@@ -43,9 +43,9 @@ export function AuthProvider({ children }) {
     } catch (e) {
       return { ok: false, error: formatApiErrorDetail(e.response?.data?.detail) || e.message };
     }
-  };
+  }, [loadPermissions]);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       await api.post("/auth/logout");
     } catch (e) {
@@ -53,18 +53,19 @@ export function AuthProvider({ children }) {
     }
     setUser(false);
     setPermissions({});
-  };
+  }, []);
 
-  const can = (resource, action = "read") => {
+  const can = useCallback((resource, action = "read") => {
     if (user?.role === "super_admin") return true;
     return !!permissions?.[resource]?.[action];
-  };
+  }, [user, permissions]);
 
-  return (
-    <AuthContext.Provider value={{ user, permissions, loading, login, logout, refresh: fetchMe, can }}>
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({ user, permissions, loading, login, logout, refresh: fetchMe, can }),
+    [user, permissions, loading, login, logout, fetchMe, can]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

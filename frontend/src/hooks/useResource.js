@@ -38,9 +38,7 @@ export default function useResource(resource) {
       const { data } = await api.get(`/${resource}`);
       setData(Array.isArray(data) ? data : []);
     } catch (e) {
-      if (e.response?.status === 403) {
-        // silent — UI handles via canRead
-      } else {
+      if (e.response?.status !== 403) {
         toast.error(`Failed to load ${resource}`);
       }
     } finally {
@@ -50,7 +48,7 @@ export default function useResource(resource) {
 
   useEffect(() => { load(); }, [load]);
 
-  const create = async (payload) => {
+  const create = useCallback(async (payload) => {
     try {
       const { data: row } = await api.post(`/${resource}`, payload);
       setData((d) => [row, ...d]);
@@ -59,9 +57,9 @@ export default function useResource(resource) {
     } catch (e) {
       toast.error(e.response?.data?.detail || "Create failed");
     }
-  };
+  }, [resource]);
 
-  const update = async (id, payload) => {
+  const update = useCallback(async (id, payload) => {
     try {
       const { data: row } = await api.put(`/${resource}/${id}`, payload);
       setData((d) => d.map((r) => (r.id === id ? row : r)));
@@ -69,9 +67,9 @@ export default function useResource(resource) {
     } catch (e) {
       toast.error(e.response?.data?.detail || "Update failed");
     }
-  };
+  }, [resource]);
 
-  const remove = async (id) => {
+  const remove = useCallback(async (id) => {
     if (!window.confirm("Delete this item?")) return;
     try {
       await api.delete(`/${resource}/${id}`);
@@ -80,7 +78,7 @@ export default function useResource(resource) {
     } catch (e) {
       toast.error(e.response?.data?.detail || "Delete failed");
     }
-  };
+  }, [resource]);
 
   return { data, loading, reload: load, create, update, remove, canRead, canWrite, canDelete, exportResource: resource };
 }

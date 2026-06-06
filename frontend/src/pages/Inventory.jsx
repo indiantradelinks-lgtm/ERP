@@ -4,11 +4,13 @@ import useResource from "@/hooks/useResource";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { QRCodeSVG } from "qrcode.react";
-import { QrCode, Printer } from "lucide-react";
+import { QrCode, Printer, BookOpenCheck } from "lucide-react";
+import StockLedger from "@/components/StockLedger";
 
 export default function Inventory() {
   const r = useResource("inventory");
   const [qrItem, setQrItem] = useState(null);
+  const [ledgerFor, setLedgerFor] = useState(null);
 
   const printQR = () => {
     const svg = document.getElementById("inv-qr-svg");
@@ -51,11 +53,16 @@ export default function Inventory() {
     },
     {
       key: "_qr",
-      label: "QR",
+      label: "Actions",
       render: (row) => (
-        <Button size="sm" variant="outline" className="h-7 w-7 p-0 rounded-sm" onClick={() => setQrItem(row)} data-testid={`inventory-qr-${row.id}`} title="Show QR code">
-          <QrCode className="h-3.5 w-3.5" />
-        </Button>
+        <div className="inline-flex gap-1">
+          <Button size="sm" variant="outline" className="h-7 w-7 p-0 rounded-sm" onClick={() => setLedgerFor(row)} data-testid={`inventory-ledger-${row.id}`} title="Stock ledger drilldown">
+            <BookOpenCheck className="h-3.5 w-3.5" />
+          </Button>
+          <Button size="sm" variant="outline" className="h-7 w-7 p-0 rounded-sm" onClick={() => setQrItem(row)} data-testid={`inventory-qr-${row.id}`} title="Show QR code">
+            <QrCode className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       ),
     },
   ];
@@ -114,6 +121,12 @@ export default function Inventory() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <StockLedger
+        itemId={ledgerFor?.id}
+        itemName={ledgerFor?.name}
+        open={!!ledgerFor}
+        onOpenChange={(o) => !o && setLedgerFor(null)}
+      />
     </>
   );
 }

@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 16 — Multi-location Client Management (Phase A+B+C: customer-code-format admin, hierarchical clients→sites→contacts, search, 7 reports, sales_executive RBAC). Backend 37/37 PASS in test_iteration16_clients.py (~3.7s). Frontend Playwright walk-through against admin@erp.com / Admin@123 covered /app/clients (tree + KPI strip + New Client dialog), /app/client-reports (7 tabs), /app/admin/customer-code (Prefix/Padding/include-FY/live-preview), /app/admin (Customer Code tile), /app/modules/sales (workspace links), /app/quotations + /app/projects (site_id dropdown). Two minor frontend testability gaps found: (1) Admin Console (/app/admin) does NOT render the 'Customer Code' tile/link, (2) /app/client-reports tab for 'Outstanding' is missing data-testid='creport-tab-outstanding' (the tab is visible & clickable but the testid string doesn't match the spec).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AdminConsole (/app/admin)", "issue": "The 'Customer Code Format' tile that should link to /app/admin/customer-code is NOT rendered. Page HTML contains neither the literal text 'Customer Code' nor a hyperlink to '/admin/customer-code'. Super admin currently has no entry point from the Admin Console into the new settings page.", "selector": "/app/frontend/src/pages/admin/AdminConsole.jsx — Customer Code tile JSX appears to be missing or guarded behind a condition that excludes super_admin", "priority": "MEDIUM"},
+      {"component": "ClientReports — Outstanding tab", "issue": "data-testid='creport-tab-outstanding' returns 0 matches although a tab visually labelled 'Outstanding' is rendered on /app/client-reports. The other 6 testids (by-client, by-site, by-gst, by-location, contact-directory, activity-history) all exist. Inspect /app/frontend/src/pages/ClientReports.jsx and align the Outstanding tab's data-testid with the spec.", "selector": "[data-testid='creport-tab-outstanding']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration16_clients.py",
+    "/app/test_reports/pytest/iteration16.xml"
+  ],
+  "action_items": [
+    "(MEDIUM) Add a 'Customer Code Format' tile to /app/frontend/src/pages/admin/AdminConsole.jsx that links to /app/admin/customer-code so super_admin can discover the new settings page. The settings page itself works end-to-end.",
+    "(LOW) Rename/add data-testid='creport-tab-outstanding' to the Outstanding tab in /app/frontend/src/pages/ClientReports.jsx to match the other 6 tab testids."
+  ],
+  "critical_code_review_comments": [
+    "clients_router._next_site_code() computes site sequence as len(existing)+1 — this is NOT safe under concurrent inserts (two parallel POSTs would both compute the same length and produce duplicate site_codes). Use db.sequences with $inc keyed by `<customer_code>-SITE` like _next_customer_code() does. Also, deleting then re-creating a site would re-use a code and clash with the unique site_code expectation.",
+    "GST uniqueness on POST /api/clients/{id}/sites is enforced application-side via find_one — there is no MongoDB unique index on sites.gst. Add `await db.sites.create_index('gst', unique=True, partialFilterExpression={'gst': {'$type': 'string', '$ne': ''}})` so a race condition can't bypass the dup check.",
+    "POST /api/clients duplicate-name guard uses a case-insensitive regex match that is NOT anchored against regex meta-chars correctly — for a name like 'A.B & Co' the '.' will match any char. Either re.escape the user name before injecting into $regex, or just compare lower-cased name == lower-cased existing via $expr/$toLower.",
+    "DELETE /api/clients soft-deletes the parent + sets sites inactive but does NOT cascade to client_contacts. After a soft-delete, the contact directory report still shows contacts pointing at the now-inactive client.",
+    "PUT /api/clients/{id} silently drops 'customer_code' / 'code' from the payload — fine — but it does NOT block status changes back from 'inactive' to 'active'. A delete-then-revive flow would resurrect the client without an audit trail differentiating it from a normal update.",
+    "/api/clients/search runs three full collection scans with $regex (case-insensitive, no index). For 10K+ contacts this is going to get slow. Add a $text index over name/mobile/email and use $text search, or at least index the queried fields.",
+    "Customer code padding=3 lower bound is somewhat tight — once you hit CUST-999 the next code is CUST-1000 (4 digits) and ordering by string breaks. Either left-pad on display, or store an int sequence separately.",
+    "_next_customer_code() with include_fy=False uses a different sequence key (<prefix>-NOFY) than include_fy=True (<prefix>) — flipping include_fy mid-life will reset the counter for that prefix. Document this or warn in the settings UI.",
+    "ClientReports.jsx Outstanding tab testid drift (spec says 'creport-tab-outstanding') indicates the front-end is not strictly mirroring the contract — add a regression test that asserts all 7 testids exist on the page."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration16_clients.py (new)"
+  ],
+  "success_rate": {"backend": "100% (37/37)", "frontend": "~92% — tree, reports, settings page, downstream dropdowns and sales workspace all verified; AdminConsole tile + 1 tab testid missing"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin) — verified. sales@erp.com / Sales@123 (sales_executive) — created during this run via /api/auth/register if absent, then login verified. test_pm@erp.com / PM@12345 (project_manager) — login + /api/auth/me verified.",
+  "seed_data_creation": "Backend test creates TEST_Client_<ts> (parent) with 2 sites (CUST-####-01 and -02), 1 contact in Purchase dept, plus a transient TEST_CodeFmt_<ts> client used to assert format change, plus TEST_SalesCreated_<ts> created by sales_executive. All TEST_* clients are soft-deleted in teardown. customer_code_format setting is reset to {prefix:'CUST', padding:4, include_fy:false} at the end of the format-change test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Auth uses httpOnly cookies — the /api/auth/login response body does NOT include access_token; use a requests.Session() to capture the cookie (see _login_session() in test_iteration16_clients.py). Login form on /login is prefilled with admin@erp.com/Admin@123 — for Playwright just click 'Sign in' instead of filling. Tree view: data-testid='clients-tree', 'clients-kpi', 'clients-search' all exist. Per-row '+ Site' and edit buttons are icon-only (no text). 'Outstanding' tab on /app/client-reports renders but its testid is missing — confirm against ClientReports.jsx if main agent fixes it. Site dup-GST 400 message text: 'GST {x} is already registered under {client_name} ({site_code})'. Backend startup migration verified — all 9 currently-seeded clients (Adani, ONGC, Reliance, TAKENAKA, TEST_*, Tata Steel) have customer_code populated.",
+  "rca of the issue": "N/A — Phase A+B+C backend is fully functional. The 2 frontend findings are pure spec-coverage misses: the Customer Code tile is absent from AdminConsole.jsx, and one of the seven ClientReports tabs is missing its data-testid. Neither blocks any user flow when super_admin navigates directly via /app/admin/customer-code or clicks the visible Outstanding tab."
+}

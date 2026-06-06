@@ -1,9 +1,18 @@
+import { useNavigate } from "react-router-dom";
 import DataTableShell from "@/components/DataTableShell";
 import useResource from "@/hooks/useResource";
+import useSiteOptions from "@/hooks/useSiteOptions";
 import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
+import { Users } from "lucide-react";
+import { toneFor } from "@/lib/statusTone";
+
+const PROJECT_STATUS_TONE = { active: "success", completed: "info", planned: "warning" };
 
 export default function Projects() {
+  const navigate = useNavigate();
   const r = useResource("projects");
+  const siteOptions = useSiteOptions();
   const columns = [
     { key: "code", label: "Code" },
     { key: "name", label: "Project" },
@@ -24,12 +33,22 @@ export default function Projects() {
         </div>
       ),
     },
-    { key: "status", label: "Status", badge: (r) => ({ text: r.status, tone: r.status === "active" ? "success" : r.status === "completed" ? "info" : r.status === "planned" ? "warning" : "neutral" }) },
+    { key: "status", label: "Status", badge: (r) => ({ text: r.status, tone: toneFor(PROJECT_STATUS_TONE, r.status, "neutral") }) },
+    {
+      key: "_mp",
+      label: "Manpower",
+      render: (row) => (
+        <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={() => navigate(`/app/projects/${encodeURIComponent(row.code)}/manpower`)} data-testid={`projects-manpower-${row.id}`}>
+          <Users className="h-3.5 w-3.5 mr-1" /> View
+        </Button>
+      ),
+    },
   ];
   const fields = [
     { key: "code", label: "Project Code" },
     { key: "name", label: "Project Name", full: true },
     { key: "client", label: "Client" },
+    { key: "site_id", label: "Customer Site", type: "select", options: siteOptions },
     { key: "type", label: "Type", type: "select", options: ["scaffolding", "painting", "roof_sheeting", "rope_access", "shutdown", "maintenance"] },
     { key: "site", label: "Site Location" },
     { key: "manager", label: "Project Manager" },
@@ -39,5 +58,5 @@ export default function Projects() {
     { key: "progress", label: "Progress %", type: "number" },
     { key: "status", label: "Status", type: "select", options: ["planned", "active", "on_hold", "completed", "cancelled"] },
   ];
-  return <DataTableShell title="Projects" description="Active sites, scopes, budgets and progress." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="projects" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} />;
+  return <DataTableShell title="Projects" description="Active sites, scopes, budgets and progress." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="projects" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} attachmentsParentType="projects" />;
 }

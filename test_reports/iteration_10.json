@@ -1,0 +1,27 @@
+{
+  "summary": "Iteration 10 — PPE expiry wiring + PWA polish. Backend pytest /app/backend/tests/test_iteration10_pwa_expiry.py: 9/9 PASS (~7.5s). Verified: (1) POST /api/notifications/expiry-scan returns new nested shape {documents:{scanned,sent}, ppe:{scanned,due,sent}, email_enabled} and old top-level scanned/sent keys are NOT returned; (2) PPE rows with expiry_date in past or <=30 days flagged as due (3 seeded rows: expired/-30d, soon/+10d, far/+200d → due>=2, scanned>=3, far row excluded from due); (3) sent count is a multiple of due (per-recipient fan-out — confirmed when email enabled); (4) Unauthenticated POST /api/notifications/expiry-scan → 403 (correctly rejected); (5) GET /api/scheduler/status returns running=true with BOTH 'expiry_scan' and 'invoice_reminders' jobs having valid next_run_time; (6) GET /manifest.json → 200 with name, short_name, display='standalone', theme_color, id, scope, lang AND exactly 4 shortcuts (Dashboard, Approvals Inbox, Stock Movement, Safety Reports); (7) GET /service-worker.js → 200 with Content-Type application/javascript and contains SHELL_CACHE, ASSET_CACHE, OFFLINE_API_RESPONSE; (8) /api/* routing not intercepted by SW asset (GET /api/auth/me still 200 with cookies). Regression: 60/60 PASS across test_phase_a_admin.py + test_phase_b_sales.py + test_phase_cdef.py (10.5s). Frontend Playwright smoke after admin@erp.com login on production preview URL: navigator.serviceWorker.getRegistration() => 'registered:activated'; synthesized beforeinstallprompt → [data-testid=pwa-install-card] + pwa-install-btn + pwa-dismiss-btn all visible; clicking pwa-dismiss-btn removes the card; dispatching 'offline' shows [data-testid=pwa-offline-pill], dispatching 'online' hides it; <link rel='manifest'> present in <head> resolving to manifest.json. No console errors except expected pre-login 401s on /api/auth/me.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration10_pwa_expiry.py",
+    "/app/test_reports/pytest/iteration10.xml",
+    "/app/test_reports/pytest/iteration10_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "notifications_router.run_expiry_scan: dispatch fans out 1 email per recipient per due row — for large super_admin teams + many expiring PPE rows this scales O(admins*rows). Acceptable for current dataset; consider batching into one digest email per recipient when row counts grow.",
+    "notifications_router.run_expiry_scan: documents.scanned counts only docs with non-null expiry (Mongo filter expiry:{$ne:null}), but ppe.scanned counts the same way — naming is fine; just ensure tests/docs reflect 'scanned' = 'records with an expiry_date considered', not 'total table rows'.",
+    "service-worker.js OFFLINE_API_RESPONSE: returned with status 503 — fetch consumers in app should be coded to treat 503 as transient/offline. Consider header 'X-Offline: true' for cleaner client-side detection (non-blocking).",
+    "service-worker.js navigation fallback uses cache.match('/index.html') — works because SHELL_URLS pre-caches it; if VERSION bumped mid-session before activate completes, fallback could miss. Existing skipWaiting + clients.claim mitigates this.",
+    "PWAInstallPrompt offline pill uses Tailwind class 'bg-warning/95 text-warning-foreground' — confirm theme has these CSS vars defined (it renders in screenshot so OK); pill z-index is 50 which may overlap a future modal layer.",
+    "manifest.json display_override includes 'window-controls-overlay' — only honoured on desktop installed PWAs; harmless on mobile."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration10_pwa_expiry.py (new)"],
+  "success_rate": {"backend": "100% (9/9 iteration10 + 60/60 Phase A-F regression = 69/69)", "frontend": "100% (SW reg + install card + offline pill all green)"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin) — verified working.",
+  "seed_data_creation": "3 TEST_IT10_* PPE rows (expired/soon/far) created and auto-deleted via fixture teardown in /app/backend/tests/test_iteration10_pwa_expiry.py.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 10 fully green. The new backend test file test_iteration10_pwa_expiry.py is safe to re-run as regression (~7s) — it seeds 3 PPE rows, runs 4 expiry-scan assertions, validates scheduler/status job list, hits the public /manifest.json + /service-worker.js, and cleans up. Phase A-F suites still 60/60. Note: test_dispatch_recipients_count auto-skips when email is disabled — currently email_enabled=true on the preview env so it runs. Frontend PWA testids are stable: pwa-install-card, pwa-install-btn, pwa-dismiss-btn, pwa-close-btn, pwa-offline-pill. Service worker is registered + activated on the preview URL; tear-down may leave a localStorage 'wsc_install_dismissed_v1' flag from previous runs — playwright script clears it before dispatching beforeinstallprompt.",
+  "rca of the issue": "N/A — no functional bugs found."
+}

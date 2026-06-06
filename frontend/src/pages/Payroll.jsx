@@ -1,5 +1,8 @@
 import DataTableShell from "@/components/DataTableShell";
 import useResource from "@/hooks/useResource";
+import { toneFor } from "@/lib/statusTone";
+
+const PAYROLL_STATUS_TONE = { processed: "success", paid: "info" };
 
 export default function Payroll() {
   const r = useResource("payroll");
@@ -9,7 +12,7 @@ export default function Payroll() {
     { key: "gross", label: "Gross", render: (r) => "₹ " + Number(r.gross || 0).toLocaleString("en-IN") },
     { key: "deductions", label: "Deductions", render: (r) => "₹ " + Number(r.deductions || 0).toLocaleString("en-IN") },
     { key: "net", label: "Net Pay", render: (r) => "₹ " + Number(r.net || 0).toLocaleString("en-IN") },
-    { key: "status", label: "Status", badge: (r) => ({ text: r.status, tone: r.status === "processed" ? "success" : r.status === "paid" ? "info" : "warning" }) },
+    { key: "status", label: "Status", badge: (r) => ({ text: r.status, tone: toneFor(PAYROLL_STATUS_TONE, r.status, "warning") }) },
   ];
   const fields = [
     { key: "employee_name", label: "Employee", full: true },

@@ -11,6 +11,22 @@ from storage import put_object, get_object, MAX_BYTES
 router = APIRouter(tags=["files"])
 
 
+ALLOWED_FOLDERS = {
+    "documents",
+    "safety",
+    "projects",
+    "vendors",
+    "clients",
+    "client_sites",
+    "employees",
+    "assets",
+    "purchase_orders",
+    "quotations",
+    "approvals",
+}
+CLIENT_DOC_CATEGORIES = {"PAN", "GST", "MSA", "NDA", "TradeLicense", "IncorporationCert", "AddressProof", "BankDetails", "Other"}
+
+
 @router.post("/uploads")
 async def upload_file(
     file: UploadFile = File(...),
@@ -18,10 +34,15 @@ async def upload_file(
     parent_type: str = Form(""),
     parent_id: str = Form(""),
     title: str = Form(""),
+    category: str = Form(""),
     user: dict = Depends(get_current_user),
 ):
-    if folder not in ("documents", "safety"):
-        raise HTTPException(status_code=400, detail="folder must be 'documents' or 'safety'")
+    if folder not in ALLOWED_FOLDERS:
+        raise HTTPException(status_code=400, detail=f"folder must be one of {sorted(ALLOWED_FOLDERS)}")
+    # Validate category when supplied (only client/site uploads use it today)
+    cat = (category or "").strip()
+    if cat and folder in {"clients", "client_sites"} and cat not in CLIENT_DOC_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"category must be one of {sorted(CLIENT_DOC_CATEGORIES)}")
     data = await file.read()
     if len(data) > MAX_BYTES:
         raise HTTPException(status_code=413, detail=f"File too large (max {MAX_BYTES // (1024 * 1024)} MB)")
@@ -42,6 +63,7 @@ async def upload_file(
         "folder": folder,
         "parent_type": parent_type or None,
         "parent_id": parent_id or None,
+        "category": cat or None,
         "uploaded_by": user.get("name") or user.get("email"),
         "uploaded_by_id": user["id"],
         "is_deleted": False,
@@ -49,6 +71,12 @@ async def upload_file(
     }
     await db.files.insert_one(record)
     record.pop("_id", None)
+    # Queue for OneDrive push (no-op if integration disabled)
+    try:
+        from routers.onedrive_router import enqueue_file
+        await enqueue_file(record["id"])
+    except Exception as e:
+        logger.warning(f"OneDrive enqueue skipped: {e}")
     return record
 
 

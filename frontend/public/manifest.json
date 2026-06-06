@@ -1,7 +1,18 @@
 {
-  "short_name": "WorkSite",
-  "name": "WorkSite Command — Industrial ERP",
-  "description": "Single-window ERP for scaffolding, painting, roof sheeting, rope access & shutdown operations.",
+  "name": "INDIAN TRADE LINKS — Industrial Services ERP",
+  "short_name": "ITL ERP",
+  "description": "INDIAN TRADE LINKS Industrial Services Pvt. Ltd. — Single-window cloud ERP for scaffolding, painting, roof sheeting, rope access & shutdown operations. RBAC, multi-level approvals, dashboards.",
+  "id": "/?source=pwa",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "theme_color": "#2563eb",
+  "background_color": "#ffffff",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["business", "productivity", "utilities"],
   "icons": [
     {
       "src": "favicon.ico",
@@ -11,13 +22,45 @@
     {
       "src": "logo192.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "logo192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "maskable"
     }
   ],
-  "start_url": ".",
-  "display": "standalone",
-  "theme_color": "#2563eb",
-  "background_color": "#f8fafc",
-  "orientation": "any",
-  "categories": ["business", "productivity"]
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "description": "Open the executive dashboard",
+      "url": "/app",
+      "icons": [{ "src": "logo192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Approvals Inbox",
+      "short_name": "Approvals",
+      "description": "Review pending approvals",
+      "url": "/app/approvals",
+      "icons": [{ "src": "logo192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Stock Movement",
+      "short_name": "Stock",
+      "description": "Scan barcode and post inventory movement",
+      "url": "/app/store-transactions",
+      "icons": [{ "src": "logo192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Safety Reports",
+      "short_name": "Safety",
+      "description": "Open safety incident register",
+      "url": "/app/safety",
+      "icons": [{ "src": "logo192.png", "sizes": "192x192" }]
+    }
+  ],
+  "prefer_related_applications": false
 }

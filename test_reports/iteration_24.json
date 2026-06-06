@@ -1,0 +1,64 @@
+{
+  "summary": "Frontend wiring verification for Phase C (Inventory Intel) and Phase D (Procurement Intel). Sidebar links, routes, and workspace tiles are all reachable. Procurement Intel page is fully functional (all 4 tabs render). Inventory Intel has TWO critical runtime crashes: Aging tab and Idle tab. Bulk import upload result does not render UI block. Minor React key warnings on DeadStock.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "various", "issue": "4x 401 errors in console on initial page load (before/around auth bootstrap) — non-blocking but noisy"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "InventoryIntel · Aging tab", "issue": "CRASHES — ErrorBoundary shows 'This view crashed while rendering · Cannot convert undefined or null to object'. Root cause: Aging({data}) does `Object.entries(data.buckets)` — backend response shape is missing `buckets` (or has null), or data shape differs from FE assumption. FE must guard: `if (!data?.buckets) return <Empty />`.", "selector": "[data-testid='intel-tab-aging']", "priority": "CRITICAL"},
+      {"component": "InventoryIntel · Idle tab", "issue": "CRASHES — 'TypeError: Cannot read properties of undefined (reading length)' inside Idle component. `data.items.length` accessed when `data.items` is undefined. FE must guard: `if (!data?.items) return <Empty />` or default to `data.items || []`.", "selector": "[data-testid='intel-tab-idle']", "priority": "CRITICAL"},
+      {"component": "InventoryIntel · DeadStock tab", "issue": "React warning: 'Each child in a list should have a unique key prop' in DeadStock rows. `data.items.map((r) => <TableRow key={r.id} ...>)` — multiple rows share the same id (or id is undefined). Use a stable composite key e.g., key={`${r.id}-${i}`} or ensure backend returns unique ids.", "selector": "[data-testid='intel-pane-dead-stock']", "priority": "MEDIUM"},
+      {"component": "InventoryIntel · Bulk Import", "issue": "After successful upload of a small CSV (TEST_INTEL_1), `intel-import-result` block does NOT render in DOM. Toast may show but the on-page Result summary card is missing. Either the API call failed silently OR `setResult(data)` is not triggered. Need to verify response shape `{summary:{created,updated,errors}, errors:[]}` matches FE expectations.", "selector": "[data-testid='intel-import-result']", "priority": "HIGH"}
+    ],
+    "integration_issues": [
+      {"flow": "Inventory Intel /reports/aging", "issue": "FE expects `data.buckets` (object) — backend likely returning different shape or null. Verify with curl.", "affected_selectors": ["[data-testid='intel-pane-aging']"]},
+      {"flow": "Inventory Intel /reports/idle", "issue": "FE expects `data.items` array; either backend returns `data: null` or missing `items` key.", "affected_selectors": ["[data-testid='intel-pane-idle']"]}
+    ],
+    "design_issues": []
+  },
+  "passed_checks": [
+    "Sidebar `nav-inventory-intel` and `nav-procurement-intel` present for super_admin",
+    "Route /app/inventory-intel renders `inventory-intel-page` testid",
+    "Route /app/procurement-intel renders `proc-intel-page` testid",
+    "Inventory Intel tabs that load OK: valuation, dead-stock, movers, reorder, import (5 of 7)",
+    "FIFO/LIFO/weighted_avg toggle buttons render and clickable (Total ₹ 44,64,060 shown for FIFO)",
+    "Day filter buttons 30/60/90/180/365 all clickable and re-fetch on dead-stock",
+    "Reorder Alerts table renders without crash",
+    "Bulk Import template download works (inventory_template.csv downloaded)",
+    "Procurement Intel ALL 4 tabs render OK: vendors, budgets, reservations, audit",
+    "Vendor Performance tab — 5 vendor rows render with grade badges (Tata Steel Ltd → B grade)",
+    "Audit Explorer renders filters, Search button (`audit-go`) runs query and lists ~16+ resources",
+    "Procurement workspace /app/modules/procurement has BOTH 'Inventory Intel' and 'Procurement Intel' tiles",
+    "Store workspace /app/modules/store has 'Inventory Intel' tile (also shows Material Allocations, Challans)",
+    "Regression sidebar entries: nav-rfqs, nav-grn, nav-procurement-dashboard, nav-asset-lifecycle, nav-challans all PRESENT. (Note: actual testids are `nav-prs` and `nav-allocations`, not `nav-purchase-requisitions`/`nav-material-allocations` as listed in the request — both PRESENT.)"
+  ],
+  "test_report_links": ["/app/backend/tests/test_phase_cd.py", "/app/test_reports/iteration_21.json"],
+  "action_items": [
+    "CRITICAL: Fix InventoryIntel `Aging` component — guard against null/undefined `data.buckets`. Replace `Object.entries(data.buckets)` with `Object.entries(data?.buckets || {})` and add Empty fallback when buckets is empty.",
+    "CRITICAL: Fix InventoryIntel `Idle` component — guard against undefined `data.items`. Use `data?.items || []` everywhere or return <Empty/> when items missing.",
+    "HIGH: Investigate Bulk Import — confirm `/inventory-intel/import.csv` returns expected `{summary, errors}` shape; ensure `setResult(data)` fires and `intel-import-result` is rendered. May be a silent error.",
+    "MEDIUM: Fix React unique-key warning in `DeadStock` rows (and check Movers/Reorder rows for same pattern) — use composite key `${r.id}-${i}`.",
+    "LOW: Investigate 4x 401 console errors on page bootstrap (likely cosmetic if cookie auth is reattempted)."
+  ],
+  "critical_code_review_comments": [
+    "InventoryIntel.jsx Aging() line 132: `Object.entries(data.buckets)` — NO null guard; crashes if data shape differs. Same defensive pattern needed across all sub-components (Idle line ~235 reads data.items.length without guard).",
+    "Several `if (!data) return <Empty />` checks pass if `data === {}` (truthy) — should explicitly guard the specific fields they rely on.",
+    "DeadStock/Movers tables likely emit duplicate React keys when backend returns rows with same `id` (e.g., grouped by item but multiple batches). Use composite keys.",
+    "Importer: failure path silently calls toast but does not surface inline error; verify response shape and ensure error UI is rendered even on partial success."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not retested (iteration_21 PASS)", "frontend": "73% (8 of 11 tabs across both pages render cleanly; 2 critical crashes + 1 import-result render bug)"},
+  "test_credentials": "super_admin admin@erp.com / Admin@123 — used successfully via [data-testid='login-submit'] (form is pre-populated with demo creds)",
+  "seed_data_creation": "Attempted creation of one row 'TEST_INTEL_1' via Bulk Import CSV; cannot confirm persistence because the on-screen result block did not render. Recommend main agent verify and clean up.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend already GREEN per iteration_21. Frontend wiring (routes, sidebar, workspace tiles) is CORRECT. Two genuine React runtime crashes are localized to InventoryIntel.jsx components Aging() and Idle() — null-guard fixes will close them. Bulk Import result block missing on screen needs deeper debug. ProcurementIntel.jsx is solid. Re-run the same Playwright walk after fixes to confirm Aging + Idle no longer crash and intel-import-result renders.",
+  "rca_of_the_issues": {
+    "Aging crash": "Aging({data}) executes `Object.entries(data.buckets)` after only guarding for falsy `data`. When backend returns `{}` or missing `buckets`, JS throws 'Cannot convert undefined or null to object'. Repro: navigate to /app/inventory-intel and click intel-tab-aging. Mitigation: replace with `Object.entries(data?.buckets || {})` and bail out to <Empty/> if no keys.",
+    "Idle crash": "Idle({data}) accesses `data.items.length` without verifying items exists. Repro: navigate to /app/inventory-intel and click intel-tab-idle. Mitigation: `const items = data?.items || []` then drive UI from `items`.",
+    "Import result missing": "After successful POST of /inventory-intel/import.csv with a valid CSV, the result card with testid intel-import-result is absent from DOM. Either the request errored (toast in flight, captured by try/catch) or response shape mismatch caused setResult to never run. Mitigation: console.log the response in the upload() handler and check Network tab response."
+  }
+}

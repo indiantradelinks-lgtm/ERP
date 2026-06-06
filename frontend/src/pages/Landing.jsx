@@ -205,7 +205,7 @@ export default function Landing() {
       <footer className="border-t border-border">
         <div className="max-w-7xl mx-auto px-6 py-8 flex flex-wrap items-center justify-between gap-4">
           <Brand />
-          <div className="text-xs text-muted-foreground">© {new Date().getFullYear()} WorkSite Command — Industrial Service ERP.</div>
+          <div className="text-xs text-muted-foreground">© {new Date().getFullYear()} INDIAN TRADE LINKS — Industrial Services Pvt. Ltd.</div>
         </div>
       </footer>
     </div>

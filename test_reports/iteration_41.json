@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 41 — Entity-aware email actions (entity-context / ai-draft / send-entity) + 10-min retry scheduler. Backend pytest 20/20 PASSED. Verified: (a) GET /api/email/entity-context/{module}/{id} for quotation, purchase_order, rfq, ra_bill, hr_letter — correct sender_type per SENDER_POLICY, auto_attachment.filename_hint format (Quotation-*.pdf / PO-*.pdf / RFQ-*.pdf / RA-Bill-*.pdf / *.docx), no _id leakage. (b) 400 on unknown module, 404 on nonexistent record. (c) HR-letter context returns 503 'Shared mailbox not configured' (expected — shared password empty in .env). (d) POST /api/email/ai-draft via LIVE Claude Sonnet 4.5 → Gemini fallback, both professional + friendly tones returned non-empty subject/body within ≤200-char subject limit. (e) POST /api/email/send-entity/{module}/{id} for quotation, PO, RFQ, RA bill — queued outbox row with related.entity_type/entity_id, attached[] contains correct PDF filename. (f) HR letter send returns 503 (shared not configured). sender_override='shared' on quotation also returns 503 — correct guard. (g) GET /api/scheduler/status reports running=true and includes email_retry job with IntervalTrigger (every 10 min). (h) Direct invocation of retry_pending_outbox(max_attempts=3, retry_after_minutes=0) with seeded failed rows: throttle row eligible, auth row skipped — returns {retried, skipped_auth_or_permanent, considered}. (i) RBAC vendor role gets 403 on /entity-context, /ai-draft, /send-entity. No backend code changes required.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration41_email_actions.py",
+    "/app/test_reports/pytest/iteration41.xml"
+  ],
+  "action_items": [
+    "Populate M365_SMTP_SHARED_PASSWORD in /app/backend/.env when the user pastes the rotated App Password. After that, HR-letter context/send transitions from 503 → 200/queued automatically (no code change).",
+    "(Frontend not in scope) Build Email composer dialog on Quotation/PO/RFQ/RA Bill/HR-Letter pages — backend contract is now stable (entity-context preview → optional ai-draft → send-entity)."
+  ],
+  "critical_code_review_comments": [
+    "email_actions_router._fetch_record correctly projects {'_id': 0}; all 7 endpoint responses verified clean of _id.",
+    "Sender policy fallback: when sender_type='user' but the user has no smtp_user_credentials row, /entity-context sets sender_fallback_reason and downgrades to 'shared'. send-entity does the same downgrade silently then re-checks shared availability — clean two-step guard.",
+    "RFQ vendor fallback: when top-level vendor_id is missing the code correctly picks vendors[0].vendor_id from the list; tested with a live RFQ that has no top-level vendor_id.",
+    "AI draft uses LlmChat.with_model('anthropic','claude-sonnet-4-5-20250929') and on any exception falls back to gemini-2.5-pro — verified live (latency 4-12s).",
+    "_parse_ai_json handles ```json fenced blocks AND raw JSON AND first-{...}-last-} extraction — defensive, returns ('','text') worst case so caller can apply fallback subject/body.",
+    "retry_pending_outbox uses retry_after_minutes window correctly (skips rows updated within window), then re-queries error_type per-row to skip auth/permanent — robust against stale candidates list. Tested both eligible and skipped paths.",
+    "Scheduler registration: _email_retry_job + IntervalTrigger(minutes=10) confirmed in /api/scheduler/status output — replace_existing=True prevents duplicate registration on reload.",
+    "send_entity attaches PDF via document_pdf.purchase_order_pdf / rfq_pdf / ra_bill_pdf and quotation via quotation_pdf.render_quotation_pdf — all 4 ran end-to-end successfully against live seeded records.",
+    "Minor nit (NOT a blocker): _build_attachment swallows all exceptions and returns None silently — could log the record_id at WARN to ease future debug, but doesn't affect correctness."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration41_email_actions.py (new — 20 pytest cases covering entity-context, ai-draft, send-entity, scheduler, retry function, RBAC, _id hygiene)"
+  ],
+  "success_rate": {
+    "backend": "100% (20/20 pytest)",
+    "frontend": "N/A (backend-only iteration)"
+  },
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin) — used for all positive paths. TEST_vendor_iter41@erp.com / Vendor@123 (vendor role) — auto-created via /api/auth/register for 403 tests (idempotent; reused on subsequent runs).",
+  "seed_data_creation": "No new module seed data created — used existing quotations/purchase_orders/rfqs/ra_bills/hr_letters records. Created vendor user TEST_vendor_iter41@erp.com (idempotent — already present after first run). All [Iter41 TEST]-prefixed email_outbox rows are cleaned in teardown_module. Two temporary email_outbox rows (TEST_iter41_throttle_* / TEST_iter41_auth_*) seeded for the retry-function test are cleaned in-test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 41 (entity-aware email actions + 10-min retry scheduler) backend is fully verified. SHARED mailbox is still INTENTIONALLY unconfigured in /app/backend/.env — therefore HR-letter context/send tests assert 503 (and sender_override='shared' on any module asserts 503). Once user pastes the rotated M365 App Password into M365_SMTP_SHARED_PASSWORD, the 503 path naturally transitions to 200/queued — no code change required. AI draft test does a LIVE Claude Sonnet 4.5 call (4-12s) via EMERGENT_LLM_KEY — keep timeout ≥60s. Live send tests will actually attempt to dispatch to erp.itl@indiantradelinks.in via the admin's per-user SMTP creds saved in iter 40 — known external side-effect, marked acceptable per problem statement. Run with: `pytest /app/backend/tests/test_iteration41_email_actions.py -v`. Frontend agent: when composer dialog is built, validate against /api/email/entity-context (prefill), /api/email/ai-draft (Magic Draft button), /api/email/send-entity (Send button). All three already emit RBAC-correct 403 for vendor role.",
+  "rca of the issue": "No bugs found. One test-script issue self-fixed during the run: the subprocess that directly invokes retry_pending_outbox() was failing with KeyError: 'MONGO_URL' because /app/backend/core.py reads os.environ['MONGO_URL'] at import time and the subprocess didn't have /app/backend/.env loaded. Fixed by injecting load_dotenv('/app/backend/.env') at the top of the inline script and setting cwd='/app/backend'. After this fix, retry_pending_outbox returned {retried: 1, skipped_auth_or_permanent: 1, considered: 2} as expected."
+}

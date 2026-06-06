@@ -1,0 +1,39 @@
+{
+  "summary": "Re-tested the 3 backend fixes from iteration_27 + light frontend deep-flow on QuotationBuilder. All 3 fixes verified PASS via pytest (20 tests; 18 pass, 2 unrelated LLM-budget 502 failures). Frontend: builder loads cleanly, tax-mode auto-detect banner shown, Conditions tab (37 checkboxes) and Preview tab (Grand Total rendered) work. Sales sidebar correctly hides 'Company Profile' and 'Conditions Library' nav. Backend RBAC blocks sales writes (403).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/quotation-builder/ai/suggest-items, /ai/extract-rfq", "issue": "Both return 502 due to LLM provider budget exhausted (litellm.BadRequestError 'Budget has been exceeded! Current cost: 0.436, Max budget: 0.401'). External infra issue, NOT a regression. Out of scope per request, but should be flagged to ops."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/app/admin/company-profile and /app/admin/conditions", "issues": ["Sales sidebar correctly hides these links, but direct URL navigation as sales_executive still renders the page UI (backend PUT correctly returns 403 so no data is mutated). Recommend a frontend route-guard / 403 banner to match the sidebar hiding."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_quotation_builder.py",
+    "/app/test_reports/pytest/quotation_builder_iter28.xml"
+  ],
+  "action_items": [
+    "Top-up LLM provider budget (or rotate key) — /ai/suggest-items and /ai/extract-rfq are returning 502 due to 'Budget has been exceeded'. Not a code bug.",
+    "(Optional/nice-to-have) Add frontend route guard on /app/admin/company-profile and /app/admin/conditions so sales_executive sees a 403/Not Authorized page instead of the form (the form is read-only-effectively because PUT/DELETE return 403, but UX is misleading)."
+  ],
+  "critical_code_review_comments": [
+    "Fix-1 (router.py:184-198): Now correctly pops both 'id' and '_id' from payload before $set — no more Mongo write conflict. Verified PUT 200 + persistence + restore in test_update_company_profile.",
+    "Fix-2 (rbac.py:246-255): Two new permission rows 'company_profile' (write: super_admin/director/general_manager) and 'condition_library' (write incl. sales_executive; delete super_admin/director). Endpoints in quotation_builder_router.py correctly switched to these keys. Verified: sales_executive blocked on PUT company-profile (403) and DELETE condition (403); sales CAN POST/PUT a condition (verified separately in pytest fixtures).",
+    "Fix-3 (quotation_calc.py recalc_quotation): tax_mode_locked flag now honored — when True keeps stored mode; when False/absent re-derives from company_state vs client_state. New pytest test_tax_mode_locked_honored validates both branches (forced 'inter' with same states stays 'inter'; unlocking flips back to 'intra')."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_quotation_builder.py (added TestQuotation::test_tax_mode_locked_honored)"
+  ],
+  "success_rate": {"backend": "90% (18/20; 2 failures are LLM-budget infra, not regressions)", "frontend": "100% smoke on tested flows"},
+  "test_credentials": "admin@erp.com / Admin@123 ; sales@erp.com / Sales@123",
+  "seed_data_creation": "One TEST_ quotation (QTN-2026-0010) reused from previous iteration (now status=won). Transient TEST_ conditions auto-cleaned. Company profile city restored after test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 3 iteration_27 bugs are FIXED and verified. Note tab name in builder is 'Services & Line Items' (not 'Sections' as written in the request). The opened builder URL was a WON quote (locked) so Add-Section was hidden — frontend behavior correct. To exercise Add-Section deep flow, create a fresh draft quote first or pick a draft row in the table. Preset-item population via Add-Section dialog was therefore not visually re-verified in this run, but backend POST /quotation-builder with PRESET_ITEMS payload works (test_create_returns_quote_number with grand_total > 0).",
+  "rca of the issue": "Not applicable — this iteration is regression-verification only. All 3 bugs from iteration_27 are confirmed fixed."
+}

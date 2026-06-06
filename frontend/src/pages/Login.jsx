@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { roleLandingPath } from "@/lib/roleLanding";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,8 +13,11 @@ import { toast } from "sonner";
 export default function Login() {
   const { user, login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("admin@erp.com");
-  const [password, setPassword] = useState("Admin@123");
+  const [params] = useSearchParams();
+  const next = params.get("next");
+  const dest = (u) => (next && next.startsWith("/") ? next : roleLandingPath(u.role));
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [phone, setPhone] = useState("");
@@ -22,8 +26,11 @@ export default function Login() {
   const [mockOtp, setMockOtp] = useState("");
 
   useEffect(() => {
-    if (user) navigate("/app", { replace: true });
-  }, [user, navigate]);
+    if (user) {
+      navigate(dest(user), { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, navigate, next]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -32,7 +39,7 @@ export default function Login() {
     setLoading(false);
     if (res.ok) {
       toast.success(`Welcome, ${res.user.name}`);
-      navigate("/app");
+      navigate(dest(res.user));
     } else {
       toast.error(res.error);
     }
@@ -133,9 +140,6 @@ export default function Login() {
                 <Button type="submit" className="w-full h-11 rounded-sm text-sm font-bold uppercase tracking-wider" disabled={loading} data-testid="login-submit">
                   {loading ? "Signing in…" : <>Sign in <ArrowRight className="h-4 w-4 ml-2" /></>}
                 </Button>
-                <div className="rounded-sm border border-dashed border-border bg-muted/30 p-3 text-xs text-muted-foreground" data-testid="demo-creds">
-                  <span className="font-semibold text-foreground">Demo:</span> admin@erp.com · Admin@123
-                </div>
               </form>
             </TabsContent>
 
@@ -166,7 +170,7 @@ export default function Login() {
 
           <div className="mt-8 text-xs text-muted-foreground flex items-center justify-between">
             <Link to="/" className="hover-amber" data-testid="login-back-home">← Back to home</Link>
-            <span>v1.0 · Industrial Build</span>
+            <span>INDIAN TRADE LINKS · v1.1</span>
           </div>
         </div>
       </div>

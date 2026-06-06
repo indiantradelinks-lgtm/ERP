@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 17 - Phase D Sales Reports + Global Search + new Enquiry schema. Backend pytest: 16/17 PASS (test_iteration17_phase_d_reports.py) - the only 'failure' is the RBAC negative-control test where project_manager (test_pm@erp.com) was NOT denied access to /api/sales/reports/monthly because that role currently has quotations:read permission (intent unclear - finance_manager account does not exist in test_credentials.md). Frontend Playwright walkthrough under admin@erp.com/Admin@123 verified end-to-end: sidebar nav-sales-reports link, /app/sales-reports route renders, all 6 tabs (monthly, by-client, by-service, won-lost, deadline-tracker, search) click and render their pane via data-testid='sreport-pane-{tab}', Global Search returned '13 matches' for q='ENQ' with Enquiries/Quotations/Orders buckets, /app/enquiries KPI strip renders (Total/Open/Won/Lost/Pending/Deadline), New Enquiry dialog opens with all 4 sections (Customer & Site, Enquiry Reference, RFQ Type & Service Categories, Scope & Specifications) and multi-select chips, /app/quotations now has 'Enquiry' column (header verified), /app/modules/sales workspace shows 'Sales Reports' tile.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/sales/reports/monthly", "issue": "project_manager (test_pm@erp.com) can read all sales reports because the role currently has 'quotations:read' permission. Spec asked for an 'unrelated role' to be denied - finance_manager is not in test_credentials.md so PM was used. Either intentional (PMs need pipeline visibility) or a permission-map oversight - main agent should confirm intent and, if needed, scope sales reports to a dedicated permission (e.g. 'sales_reports:read') so only sales_executive/sales_manager/super_admin/director/general_manager have access."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/app/sales-reports", "issues": ["Recharts emits 'The width(-1) and height(-1) of chart should be greater than 0' warnings on initial mount of every tab. Charts still render once parent has size, but worth wrapping ResponsiveContainer parents with minWidth:0 / aspect ratio fallback to silence the warning and avoid flash-of-empty-chart.", "React 'Each child in a list should have a unique key prop' warning inside TableBody on the By Service pane - if r.service is null/empty the key collides. Use `${r.service || 'unknown'}-${i}` as key.", "By Service tab currently shows Empty state because no historical enquiries have populated service_categories - this is expected and matches the request, but a one-line hint like 'Service categories appear once new enquiries are created with the new schema' would improve UX."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration17_phase_d_reports.py",
+    "/app/test_reports/pytest/iteration17.xml"
+  ],
+  "action_items": [
+    "(LOW) Clarify RBAC: should project_manager be able to read /api/sales/reports/*? Either tighten permission to 'sales_reports:read' / role allowlist, or document the current behaviour. Currently quotations:read is granted to project_manager which gives them every Phase D endpoint.",
+    "(LOW) Fix React key warning in /app/frontend/src/pages/SalesReports.jsx ByService TableBody - use composite key with index fallback.",
+    "(LOW) Wrap recharts ResponsiveContainer parent divs with explicit min-h or aspect ratio to avoid width(-1)/height(-1) warnings on initial mount."
+  ],
+  "critical_code_review_comments": [
+    "sales_router._snapshot_from_site() uses sort=[('created_at', 1)] to find primary contact - if a site has 0 contacts this is fine, but there is no guarantee a 'primary' flag is honoured. Consider preferring is_primary=True before falling back to oldest.",
+    "Auto-quote creation in POST /api/enquiries is wrapped in try/except that only logs a warning - if the quote insert fails, the enquiry is created without a paired quote and the caller never knows. Either make it transactional (Mongo session) or surface a 'partial_success' field so the UI can recover.",
+    "/api/sales/search uses uncompiled re.escape($q) injected straight into find() - works but does a full collection scan with $regex (no text index). For a long-running ERP with 100K+ rows across enquiries/quotations/orders this will be slow. Add a text index over (enquiry_no, customer, scope_of_work) and switch to $text.",
+    "/api/sales/reports/monthly uses {'$substr': ['$created_at', 0, 7]} which depends on created_at being an ISO-8601 string starting with YYYY-MM. If a future migration stores created_at as ISODate the substring breaks silently and the chart goes empty.",
+    "report_won_lost computes avg_cycle_days by walking status_history in Python instead of a Mongo aggregation - fine at 500 rows, but the .to_list(500) cap will silently truncate once won enquiries exceed 500.",
+    "Sales Reports endpoints have no department/site filtering - a sales_executive scoped to one region currently sees pipeline of every region. Acceptable for super_admin but may leak across BUs - confirm intent.",
+    "EnquiryIn validates rfq_type list but not service_categories (the loop only checks RFQ_TYPES). A typo like 'paniting' would be accepted silently and never show up in by-service report.",
+    "SalesReports.jsx GlobalSearch component does NOT debounce the search input - relies on Enter / button click which is fine, but the empty-q early-return in onChange means the result panel flashes between states; consider an explicit 'Clear' button."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration17_phase_d_reports.py (new)"
+  ],
+  "success_rate": {"backend": "94% (16/17) - only the RBAC negative-control assertion fails because PM happens to have quotations:read", "frontend": "100% - all 6 tabs, global search, KPI strip, dialog sections, quotations Enquiry column, sidebar link and workspace tile verified"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin) - login verified. sales@erp.com / Sales@123 (sales_executive) - read access on all Phase D endpoints verified. test_pm@erp.com / PM@12345 - unexpectedly also has read access (see RBAC note).",
+  "seed_data_creation": "Backend test creates one TEST_PhaseD_<ts> enquiry via POST /api/enquiries (which auto-creates a paired QTN). Both are soft-deleted in teardown via DELETE /api/enquiries/{id}. Also attempts to create TEST_BadRFQ_<ts> which the API correctly rejects with 400.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Auth is cookie-session - use requests.Session().post(/api/auth/login) to get the cookie, no token in response body. Frontend login form is prefilled with admin@erp.com / Admin@123, just click 'Sign in' button. Sales Reports testids on /app/sales-reports: sreport-tab-{monthly|by-client|by-service|won-lost|deadline-tracker|search}, sreport-pane-{tab}, sales-search-input, sales-search-go, sreport-monthly-{YYYY-MM}, sreport-client-{i}, sreport-service-{name}, sreport-deadline-{id}, sales-search-{id} on result rows. Service categories pipeline value is empty in seed data, so the By Service tab shows the Empty component - this is expected. Quotations table headers: ['Quote #', 'Enquiry', 'Rev', 'Client', 'Project', 'Date', 'Valid Till', 'Total', 'Status', 'Revisions', 'Actions']. nav-sales-reports lives under the Commerce sidebar group. enquiry-pulse KPI strip on /app/enquiries renders 6 tiles: Total/Open/Won/Lost/Pending Quotes/Deadline <= 7d. To test RBAC denial, create or use a role with NO quotations:read perm - currently sales_executive, project_manager, sales_manager, super_admin, director, general_manager all have it.",
+  "rca of the issue": "The single backend test failure (test_unrelated_role_denied) is not a backend bug but a permission-mapping observation. /api/sales/reports/* are guarded by require_permission('quotations', 'read'). The project_manager role's permission matrix includes 'quotations:read' (presumably to let PMs see what is in the pipeline before being assigned a project). If the product intent is to scope sales analytics to sales-only roles, a new permission key 'sales_reports:read' (or 'pipeline:read') should be added and the 6 endpoints + global search migrated to it. Mitigation: low-effort - add the new permission in /app/backend/permissions.py, replace require_permission strings in sales_router.py lines 451/476/508/535/570/607, and grant it to super_admin/sales_executive/sales_manager/director/general_manager only."
+}

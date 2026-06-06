@@ -1,0 +1,54 @@
+{
+  "summary": "Frontend testing of DPR (Daily Site Reports) and Measurements pages — features A+B in iteration 26. ALL 11 review_request checks passed except ONE RBAC gap: the Certify button on submitted measurements is NOT gated by canApprove/PC_LIKE — a site_engineer can see (and click) the Certify button. Everything else (sidebar links, workspace tiles, KPIs, dialogs, draft→submit→approve workflows, RA Billing Summary, status badges, console clean) verified against super_admin, project_manager and site_engineer accounts.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/measurements/{id}/certify", "issue": "Endpoint only checks measurements:write permission and does NOT restrict to PC_LIKE roles. If site_engineer has measurements:write, they could record a client certification — which contradicts the documented workflow (PC/AE only). Suggest adding role-set check identical to approve-for-billing (PC_ROLES | {accounts_executive})."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Measurements.jsx (list row actions)", "issue": "Certify button is rendered for ALL roles when m.status === 'submitted'. It is NOT gated by canApprove/PC_LIKE. site_engineer test_site_engineer@erp.com sees the Certify button on MEAS-2026-0003 (verified via screenshot). Frontend should wrap the button with `{canApprove && m.status === 'submitted' && ( <Button data-testid=meas-certify-${m.id}... /> )}`.", "selector": "[data-testid^=\"meas-certify-\"]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_checks": [
+    "Sidebar (super_admin, project_manager, site_engineer): nav-dprs + nav-measurements both visible",
+    "Workspace /app/modules/projects: 'Daily Site Reports' and 'Measurement' tiles present",
+    "Workspace /app/modules/accounts: 'Measurement' / 'Bill-ready' tile present",
+    "/app/dprs renders dprs-page with 5 KPI cards (dpr-kpi-total/today/pending/approved/rejected)",
+    "DPR New dialog opens with all sections — project/site/service/work/safety/client/delay/extra/remarks/manpower add+role+count fields all carry data-testids",
+    "DPR save-as-draft works (3+ rows created end-to-end)",
+    "DPR submit + approve as super_admin reduces submitted count and increments approved KPI (verified via re-query)",
+    "DPR submit + approve as project_manager (PM@12345) works — approve button visible (PC_ROLES includes project_manager) and clicking it decremented the approve-button count from 2→1",
+    "DPR site_engineer (TestPass@123): CAN create+submit DPR (dpr-add present, dpr-form-submit-checkbox + save flow succeeded), and CANNOT see dpr-approve-* / dpr-reject-* buttons on any submitted row (count = 0, including on the SE-just-created submitted row)",
+    "/app/measurements renders meas-page with full 6-KPI strip (total/draft/submitted/certified/approved/rejected)",
+    "Tabs meas-tab-list + meas-tab-summary both present and switch correctly; meas-summary panel renders and lists project-grouped aggregation (1 project group seen for the single approved_for_billing row MEAS-2026-0001)",
+    "Measurements New dialog opens with line-item editor (meas-form-service-0, activity-0, executed-0, certified-0, add-line, save, submit-check) — full editor confirmed",
+    "Measurements Certify dialog opens for submitted rows; submitting WITHOUT signatory_name produces validation error toast 'Signatory name required' (frontend validation works)",
+    "State matrix on Measurements list confirmed per agent_to_agent_context_note: 1 approved_for_billing (MEAS-0001), 1 submitted (MEAS-0003), 1 draft (MEAS-0002), 1 rejected (MEAS-0004)",
+    "Status badges render with correct tone class via STATUS_TONE map (DRAFT neutral, SUBMITTED warning, APPROVED FOR BILLING success green, REJECTED danger red) — screenshot confirms",
+    "site_engineer Measurements page: meas-approve-* (Bill) buttons NOT visible (0/0 — correct)",
+    "ZERO pageerrors / console errors captured across the entire walk for super_admin, project_manager and site_engineer sessions"
+  ],
+  "test_report_links": ["/app/test_reports/iteration_26.json"],
+  "action_items": [
+    "FIX (HIGH): Wrap the Certify button in /app/frontend/src/pages/Measurements.jsx (around line 197-199) with `canApprove &&` — site_engineer / supervisor should not see the Certify button. Same row in the screenshot evidences the bug.",
+    "OPTIONAL (Backend hardening): Add explicit role-set check inside /api/measurements/{id}/certify in /app/backend/routers/site_execution_router.py (~line 394-417) using `if user.get('role') not in (PC_ROLES | {'accounts_executive'}): raise 403` — currently only measurements:write is enforced."
+  ],
+  "critical_code_review_comments": [
+    "Measurements.jsx line 197-199: Certify button missing canApprove gate — defense-in-depth issue, even if backend later enforces it the UI should not advertise the action.",
+    "Dprs.jsx + Measurements.jsx use window.prompt() / window.confirm() for reject reason + delete confirmation. These are blocking native dialogs that are not data-testid-targettable and look unbranded. Consider replacing with a shadcn AlertDialog or a small inline form for testability and consistency with the rest of the ERP UI.",
+    "Dprs.jsx 'approve' uses window.prompt for an OPTIONAL comment — fine but inconsistent with measurement reject which uses prompt for a REQUIRED reason. A standard ConfirmDialog component would unify UX across both pages.",
+    "Both Dprs.jsx (355 lines) and Measurements.jsx (504 lines) keep the View dialog + Certify dialog + Form dialog + list + KPI strip in one file. As more states get added (bills, partial-bill, client-rejection trail), consider splitting Measurements.jsx into Measurements/index.jsx, Measurements/FormDialog.jsx, Measurements/CertifyDialog.jsx, Measurements/Summary.jsx — currently borderline."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% per iteration_25 (not retested; review_request was frontend-only)", "frontend": "95% — 17/18 review_request checks pass; 1 RBAC gap on Measurements.Certify button"},
+  "test_credentials": "super_admin admin@erp.com / Admin@123, project_manager test_pm@erp.com / PM@12345, site_engineer test_site_engineer@erp.com / TestPass@123 — all verified working via [data-testid='login-submit']",
+  "seed_data_creation": "Created during testing: 2-3 TEST-DPR-FE / TEST-DPR-PM / TEST-DPR-SE draft DPRs (one each per role session). 1 of them was submitted+approved by PM and 1 by super_admin. Main agent may wish to clean these TEST-prefixed DPRs.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Only 1 frontend gate is missing (Measurements Certify button). Once main agent wraps it in {canApprove && ...} the page is fully RBAC-correct. All other DPR + Measurement flows (draft/submit/approve/reject/certify/approve-for-billing/summary tab/status badges/KPIs/sidebar/workspace tiles) are verified working as designed. Backend pytest already GREEN per iteration prior. After main agent's one-line frontend fix, retest by logging in as test_site_engineer@erp.com on /app/measurements and verifying NO `[data-testid^=\"meas-certify-\"]` element exists. Console was clean (zero errors/warnings) — preserve that.",
+  "rca_of_the_issue": "Root cause of the Certify-button RBAC leak: In /app/frontend/src/pages/Measurements.jsx the table-row action block (line 197) wraps Certify only with `m.status === 'submitted'` but omits the `canApprove &&` prefix that the sibling Approve(Bill) (line 200) and Reject (line 203) buttons correctly use. Likely an oversight when the certify-vs-approve split was introduced. Fix: change line 197 from `{m.status === 'submitted' && (` to `{canApprove && m.status === 'submitted' && (`. Then verify by logging in as site_engineer and confirming zero meas-certify-* elements on the page."
+}

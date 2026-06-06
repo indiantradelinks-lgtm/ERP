@@ -1,0 +1,68 @@
+{
+  "summary": "Iteration 6 — verified P1 refactors (AuthContext memoization, ErrorBoundary, ApprovalDetail/DataTableShell decomposition, dashboard helper extraction) and the new RowAttachments paperclip feature. Backend pytest 9/10 PASS; CRITICAL backend bug found that blocks the entire new attachments feature: POST /api/uploads only whitelists folder='documents'|'safety', so paperclip uploads on Projects/Vendors/Clients/Employees/Assets/PurchaseOrders/Quotations all return 400 'folder must be documents or safety'. UI smoke: login OK, /api/dashboard/summary payload shape preserved (kpis dict with 18 keys, chart_revenue_expense entries have month/revenue/expense, project_status[].status, safety_by_severity[].severity), ErrorBoundary doesn't false-trigger on healthy pages, paperclip buttons render on all 7 modules with correct ${prefix}-attach-${row.id} testids, attach dialog opens correctly — only the upload POST fails.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/uploads",
+        "issue": "Folder whitelist hardcoded to {'documents','safety'} in /app/backend/routers/files_router.py:23-24. The new attachmentsParentType feature passes folder=projects|vendors|clients|employees|assets|purchase_orders|quotations and gets a 400. Verified via pytest (test_attachments_upload_and_list) AND via the actual UI dropzone on /app/projects which produced a 'folder must be documents or safety' error toast.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "GET /api/dashboard/summary",
+        "issue": "chart_revenue_expense returns 5 entries instead of expected 6. Root cause is the naive `now - timedelta(days=30*i)` arithmetic in _monthly_chart which can collapse to the same YYYY-MM bucket twice (e.g., end-of-month subtractions), and the dict dedupes. Shape is still correct (keys month/revenue/expense) so it does not break the contract, but the 'last 6 months' label is off by one. Use dateutil.relativedelta(months=i) or month arithmetic to fix."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ApprovalDetail.jsx · ChainStep / HistoryEntry",
+        "issue": "Extracted sub-components lack data-testid attributes — chain rows and history entries are not individually addressable for automation. Container dialog testid='approval-detail' is fine, but no testid on ChainStep (line 26) or HistoryEntry (line 76).",
+        "selector": "[data-testid^='approval-chain-step-'], [data-testid^='approval-history-entry-'] (NOT PRESENT)",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Row-level attachments upload (Projects/Vendors/Clients/Employees/Assets/PurchaseOrders/Quotations)",
+        "issue": "Dropzone POST /api/uploads returns 400 because backend rejects folder=projects/vendors/etc. The dialog opens, the GET /api/files list works, but every upload attempt fails — making the whole new feature non-functional.",
+        "affected_selectors": ["[data-testid^='projects-attach-']", "[data-testid^='vendors-attach-']", "[data-testid^='clients-attach-']", "[data-testid^='employees-attach-']", "[data-testid^='assets-attach-']", "[data-testid^='purchase-attach-']", "[data-testid^='quotations-attach-']"]
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "Attachments Dialog",
+        "issues": ["Console warning: 'Missing Description or aria-describedby={undefined} for DialogContent'. Add a <DialogDescription> in RowAttachments.jsx and ApprovalDetail.jsx for a11y."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_erp_iteration6.py",
+    "/app/test_reports/pytest/iteration6_results.xml"
+  ],
+  "action_items": [
+    "FIX (CRITICAL): /app/backend/routers/files_router.py — change folder whitelist from ('documents','safety') to also allow the new parent module folders, OR derive folder from parent_type. Suggested: `ALLOWED_FOLDERS = {'documents','safety','projects','vendors','clients','employees','assets','purchase_orders','quotations'}` — and confirm storage.put_object handles arbitrary folder names (it does, see /app/backend/storage.py:69).",
+    "FIX: _monthly_chart in /app/backend/routers/dashboard_router.py uses days=30*i which produces 5 unique months instead of 6 in some calendar conditions. Switch to month-level arithmetic.",
+    "ENHANCE (test coverage): add data-testid='approval-chain-step-{idx}' and 'approval-history-entry-{idx}' inside ApprovalDetail.jsx's ChainStep and HistoryEntry components so future automation can assert chain progression and history rendering.",
+    "ENHANCE: seed at least one approval in 'pending' state with super_admin as the current approver so the approval-approve-btn / approval-reject-btn / approval-comment-btn can be smoke-tested end-to-end (current seed only has terminal approvals so the action footer never renders)."
+  ],
+  "critical_code_review_comments": [
+    "Backend folder whitelist in files_router.py is the kind of hardcoded list that should be derived from a shared registry (e.g., the same MODULES tuple in crud_router.py) so that adding a new attachable resource doesn't require touching two files.",
+    "RowAttachments.jsx — useEffect loads only once via `loaded` flag, but if the parent record's id changes while the dialog stays open this won't refetch. Acceptable since dialog is keyed per-row but worth a comment.",
+    "DataTableShell.jsx — hasActions = onUpdate || onDelete || attachmentsParentType correctly accounts for the new action; good. RowActions renders RowAttachments unconditionally inside the JSX tree even when openAttach=false — fine (radix Dialog handles open state) but consider lazy-mount for very large tables.",
+    "ErrorBoundary correctly exposes data-testid='error-boundary-fallback' and a retry that resets state; this is a good production-grade implementation.",
+    "dashboard_router.py helper extraction is clean and payload shape is preserved exactly (kpis dict, project_status[].status, safety_by_severity[].severity) — verified by pytest."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_erp_iteration6.py (new)"
+  ],
+  "success_rate": {"backend": "90% (9/10 pytest pass — the 1 failing test surfaces the real /api/uploads whitelist bug)", "frontend": "85% (all routes render, ErrorBoundary clean, paperclip testids present on all 7 modules, approval-detail dialog opens; uploads via paperclip are broken because of the backend issue)"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin) — verified working via /api/auth/login → 200 with role='super_admin'.",
+  "seed_data_creation": "None this iteration. Backend test attempts a file upload that fails with 400 before any record is persisted.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Re-run /app/backend/tests/test_erp_iteration6.py after main agent expands the folder whitelist in files_router.py. To validate the FE end-to-end, log in, go to /app/projects, click any [data-testid^='projects-attach-'] paperclip, drop a small file in the dropzone, and confirm: (1) POST /api/uploads returns 200, (2) a row appears inside the dialog, (3) GET /api/files?parent_type=projects&parent_id=<id> returns the new file. Repeat for vendors/clients/employees/assets/purchase_orders/quotations. Note: Approvals action-button smoke test cannot be executed until a pending approval where admin@erp.com is the current approver exists in the seed.",
+  "rca of the issue": "BUG: New attachmentsParentType feature is wired correctly on the FE (DataTableShell → RowAttachments → FileUploader → POST /api/uploads with folder={parent_type}) but the backend (files_router.py lines 23-24) hard-codes `if folder not in ('documents','safety'): raise 400`. Repro: (1) login as super_admin, (2) GET /api/projects → take id, (3) curl -F file=@x.txt -F folder=projects -F parent_type=projects -F parent_id=<id> /api/uploads → 400. Fix: expand the whitelist to include the 7 new parent types (or accept any folder matching a registered MODULE in crud_router.MODULES). After fix, re-run test_erp_iteration6.py — test_attachments_upload_and_list should pass."
+}

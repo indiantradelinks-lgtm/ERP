@@ -6,6 +6,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import FileUploader from "@/components/FileUploader";
 import { Camera } from "lucide-react";
 import { api } from "@/lib/api";
+import { toneFor } from "@/lib/statusTone";
+
+const SAFETY_SEVERITY_TONE = { high: "danger", medium: "warning", low: "success" };
+const SAFETY_STATUS_TONE = { closed: "success", open: "warning" };
 
 export default function Safety() {
   const r = useResource("safety-reports");
@@ -27,9 +31,9 @@ export default function Safety() {
     { key: "date", label: "Date" },
     { key: "project", label: "Project" },
     { key: "type", label: "Type", render: (r) => (r.type || "").replaceAll("_", " ") },
-    { key: "severity", label: "Severity", badge: (r) => ({ text: r.severity, tone: r.severity === "high" ? "danger" : r.severity === "medium" ? "warning" : "success" }) },
+    { key: "severity", label: "Severity", badge: (r) => ({ text: r.severity, tone: toneFor(SAFETY_SEVERITY_TONE, r.severity, "neutral") }) },
     { key: "reporter", label: "Reporter" },
-    { key: "status", label: "Status", badge: (r) => ({ text: r.status, tone: r.status === "closed" ? "success" : r.status === "open" ? "warning" : "info" }) },
+    { key: "status", label: "Status", badge: (r) => ({ text: r.status, tone: toneFor(SAFETY_STATUS_TONE, r.status, "info") }) },
     {
       key: "_photos",
       label: "Photos",

@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 45 — Employee Advance Register Phase A+B backend testing COMPLETE. 26/26 pytest tests PASS in /app/backend/tests/test_iteration45_advances.py. Verified end-to-end: (a) 7 seeded advance types with caps (max_amount/max_installments/active), (b) advance-type CRUD + RBAC (super_admin/hr_executive/general_manager/director allowed; site_engineer/purchase_officer 403; duplicate code 409), (c) POST /api/advances auto-generates AD-YYYY-#### no, auto-fetches employee_name/dept/salary, computes EMI = requested/installments, enforces max_amount + max_installments caps with 400, sets on_behalf_of+created_by_role automatically when creator != employee.user_id, blocks site_engineer from creating on behalf with 403, (d) submit transitions draft→submitted and creates approval doc with the correct 6-step chain (project_manager → dept_head → hr_executive → accounts_executive → general_manager → director), (e) super_admin can walk all 6 steps; on final approve the on_advance_approval_action hook flips advance.status=approved, sets approved_amount+outstanding, recomputes emi, (f) reject flips status=rejected and captures reject_reason from approval comment, (g) amend by current step approver updates approved_amount + installments and recomputes EMI; non-approver blocked 403, (h) /payment endpoint enforces RBAC (purchase_officer 403), rejects over-approved with 400, full payment sets status=paid + outstanding=0 + auto-creates journal_entries row with je_number=voucher_no (TST-ITER45-XXXXXX) and ref_advance_id, blocks repeat-payment on paid advance with 400, (i) GET /advances filters status+advance_type honored, site_engineer scope limited, (j) dashboard/summary shape correct (totals/by_status/by_department) and RBAC blocks purchase_officer 403, (k) PUT/DELETE blocked on paid advance (400), DELETE rejected advance allowed for super_admin and blocked for purchase_officer (403). status_history append confirmed at draft/submitted/approved transitions. Approval hook is correctly guarded by type==employee_advance so PR/deployment/client_onboarding regression chains remain untouched (verified by code inspection of approvals_router.py:48).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration45_advances.py",
+    "/app/test_reports/pytest/iteration45_advances.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Good: Auth in /app endpoint pattern uses httpOnly cookies; tests adapted to use requests.Session per role (no bearer token expected in login response — only the user payload).",
+    "Good: advance_router.on_advance_approval_action() hook is invoked from approvals_router.py:48 ONLY when approval.type == 'employee_advance', so the new module cannot regress other approval workflows (PR/deployment/client_onboarding/etc).",
+    "Good: EMI recomputation is consistent — on initial create (requested/installments), on final approval (approved_amount/installments), and on amend (approved_amount/installments). All three paths verified to produce identical-precision values.",
+    "Good: Journal entry creation on full payment correctly uses voucher_no when supplied (falls back to ADV-{advance_no}). je_number uniqueness on the shared journal_entries collection respected via the voucher_no being supplied by the operator.",
+    "Good: All Mongo reads use {'_id': 0} projection — no ObjectId leakage in any of the 26 test assertions. /api/advances, /api/advance-types, /api/advances/{id}, /api/advances/dashboard/summary all clean.",
+    "Good: RBAC enforced at three layers: advance-type writes (super_admin/hr_executive/general_manager/director), advance create on-behalf (privileged only — site_engineer correctly 403), payment endpoint (super_admin/accounts_executive/general_manager/director — purchase_officer correctly 403), dashboard summary (privileged only — purchase_officer 403). Coverage matches the rbac.py:307-318 hr_advances permission key contract.",
+    "Good: Status-lock on update/delete works as designed — PUT and DELETE on a 'paid' advance both return 400. DELETE on a 'rejected' advance is allowed (correct since the recovery hasn't started).",
+    "Minor: Tests rely on a real employee existing in the DB (uses GET /api/employees and picks the first with non-empty salary). If the DB is wiped this suite will skip cleanly via pytest.skip — no false failures, but a seed_employee_if_empty would make this suite hermetic.",
+    "Minor: payment endpoint does not appear to enforce that voucher_no is unique across the journal_entries collection BEFORE inserting — if two operators submit the same voucher_no the second one will still create a duplicate row. Consider a unique index on journal_entries.je_number or a pre-insert exists check.",
+    "Minor: The duplicate-detection on POST /api/advance-types is on `code` (returns 409) which is the case-insensitive lookup key. Confirm the unique constraint is also on the lowercased code so 'sal' and 'SAL' cannot coexist (current behaviour: lookup is case-insensitive, but the 409 check appears to be exact-match — borderline risk of duplicate-by-case)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration45_advances.py (new — 26 tests across 8 test classes covering types-CRUD, create+RBAC+caps, 6-step approval walk, payment+journal-entry, list+scope, dashboard, amend+reject, update+delete RBAC)"
+  ],
+  "success_rate": {"backend": "100% (26 passed / 0 failed / 0 skipped)", "frontend": "n/a — backend-only iteration"},
+  "test_credentials": "All 5 required credentials login successfully via cookie-based auth: admin@erp.com/Admin@123, hr.test@erp.com/HR@12345, test_pm@erp.com/PM@12345, purchase@erp.com/Purchase@123, test_site_engineer@erp.com/TestPass@123. Login response returns the user object directly (no access_token field) — auth state is in httpOnly cookies set on the Session.",
+  "seed_data_creation": "Suite creates (and cleans up where applicable): (a) one TEST advance-type with random code TSTxxxx — created by hr_executive, updated, then deleted, (b) one Salary Advance for ₹24,000 / 4 EMIs driven through full happy path (submit → 6-step approve → ₹24,000 payment + journal entry with je_number=TST-ITER45-xxxxxx) — leaves a paid advance in DB, (c) one Emergency Advance for ₹15,000 / 5 EMIs used for amend (changed to ₹12,000 / 4 EMIs) and reject flow — deleted at end. No collision risk on journal_entries.je_number because voucher_no is randomized per run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase A+B fully verified. Re-run: `cd /app && pytest backend/tests/test_iteration45_advances.py -v`. When Phase C (recovery/payroll integration) ships, this suite leaves a paid advance (status=paid, outstanding=0) ready as a fixture — its id is logged in pytest output. The on_advance_approval_action hook is the ONLY side-effect bridge between approvals_router and advance_router; if Phase C adds another transition (e.g. paid → under_recovery) please re-verify hook ordering. Tests use requests.Session per role (cookie auth) — do NOT switch to bearer tokens, login endpoint does not return one.",
+  "rca of the issue": "No bugs found. All 26 assertions matched the contract specified in the review request. The initial test run had all 26 SKIPPED because the test harness assumed bearer-token auth (login response.access_token); fixed by switching to requests.Session per role so httpOnly cookies are persisted across requests. The TOKENS→SESSIONS rename then unblocked all 8 conditional pytest.skip guards in the RBAC tests."
+}
