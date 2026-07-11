@@ -12,7 +12,7 @@
  *
  * Bumping VERSION will purge old caches.
  */
-const VERSION = "v1.0.0";
+const VERSION = "v1.0.1";
 const SHELL_CACHE = `wsc-shell-${VERSION}`;
 const ASSET_CACHE = `wsc-assets-${VERSION}`;
 

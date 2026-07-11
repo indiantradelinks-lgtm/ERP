@@ -1285,3 +1285,15 @@ Iter 66 had the right plumbing but the **wrong source priority** — it was read
 
 **Status: COMPLETE & verified on preview.**
 
+
+### Iteration 68 (Jul 11, 2026) — Rollback verification + stale service-worker cache fix
+
+User rolled back to commit `107bfa3` (Jun 6, 2026) but browser still showed "wrong menus" (from the erased post-Jun-6 Safety Module session).
+
+**Root cause**: PWA service worker (`public/service-worker.js`) uses stale-while-revalidate for JS assets — the browser kept serving the pre-rollback cached bundle.
+
+**Fix**: Bumped SW `VERSION` "v1.0.0" → "v1.0.1" (one-line change, the app's built-in cache-purge mechanism). New SW installs on next visit, purges old caches, auto-reloads. Verified codebase is byte-identical to `107bfa3` otherwise; verified login + Executive Dashboard render correct Jun 6 menus via screenshot.
+
+**Note**: The 5-phase Safety Module work described in the last fork's handoff was ERASED by the user's rollback — it does NOT exist in the current codebase. Menus come from `components/Layout.jsx` (no menuConfig.js in this checkpoint).
+
+**Status: COMPLETE & verified on preview.**
