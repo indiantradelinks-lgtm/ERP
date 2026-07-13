@@ -1,0 +1,44 @@
+{
+  "summary": "HR Phase 3 (Manpower Planning · Deployment · Mobilization · Demobilization · Replacement · Rollups) — full backend + frontend integration tested. 25/25 pytest PASS against public REACT_APP_BACKEND_URL. Frontend hub at /app/hr/manpower-planning was missing its <Route> in App.js (HrPhase3 component imported but never wired) — fixed during test run. Also fixed a syntax error at the end of App.js (stray '/BrowserRouter>' block) that was breaking the entire frontend build. After both fixes the hub loads, all 9 tabs render, CRUD on Requirements works against backend, and Mobilization/Demobilization/Replacement/Availability/Calendar/Dashboard tabs all render and respond to clicks. Existing /api/hr (leave), /api/hr1 (phase1) and /api/hr2 (phase2) endpoints untouched — no regression.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/hr3/deployments", "issue": "test function test_deployment_full_flow has `return dep` which pytest warns about (PytestReturnNotNoneWarning). Cosmetic — replace with assert or remove the return."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "App.js (line 251-255)", "issue": "Stray '/BrowserRouter>... </ThemeProvider> );}' block at the end of file caused 'Unterminated regular expression' SyntaxError and broke the entire frontend webpack build. FIXED by testing agent.", "selector": "n/a", "priority": "CRITICAL"},
+      {"component": "App.js routes", "issue": "Route for /app/hr/manpower-planning was missing — HrPhase3 imported but never mounted. Layout sidebar nav-hr-manpower pointed to a dead URL. FIXED by testing agent (added <Route path=\"/app/hr/manpower-planning\" element={...HrPhase3.../>).", "selector": "nav-hr-manpower", "priority": "CRITICAL"},
+      {"component": "HrPhase3 Deployment dialog", "issue": "allow_multi_site override is a shadcn Select (Yes/No) without a data-testid on its trigger. Spec said `data-testid dep-allow_multi_site` should exist on the toggle but it currently exists only on the checkboxes for accommodation/travel/ppe/tool. Recommend adding data-testid='dep-allow_multi_site' to the SelectTrigger at HrPhase3.jsx:351.", "selector": "[data-testid='dep-allow_multi_site']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_hr_phase3.py",
+    "/app/test_reports/pytest/iter83_hr_phase3.xml"
+  ],
+  "action_items": [
+    "(Optional) Add data-testid='dep-allow_multi_site' to the allow_multi_site SelectTrigger in /app/frontend/src/pages/hr/HrPhase3.jsx so playbook spec matches.",
+    "(Optional) Replace `return dep` with assertions in test_deployment_full_flow to silence the pytest warning.",
+    "Main agent should verify that the App.js route fix and trash-block removal are kept in subsequent edits (these were live during this test run)."
+  ],
+  "critical_code_review_comments": [
+    "App.js had a syntax-breaking trailing block — main agent should verify file integrity after every multi-file write.",
+    "HrPhase3 route wiring was forgotten — recommend adding a smoke test that visits the new route after creating a hub page so dead-link issues fail fast.",
+    "_recompute_requirement_availability uses regex with raw user-supplied skill — special-character skills (e.g. 'C/C++') could be a partial ReDoS or regex compile-time failure. Recommend re.escape() before $regex.",
+    "availability_by_skill iterates per-person doing async _compliance_status, which calls today_d/now twice per person — for very large pools this is N+1-like; consider vectorizing.",
+    "Active-deployment guard checks `employee_id` but `_resolve_person` accepts `person_id` for workers too — code is correct but variable naming is mixed; recommend renaming to `person_id` consistently in `deployments` collection."
+  ],
+  "updated_files": [
+    "/app/frontend/src/App.js (fixed trailing /BrowserRouter> stray block + added /app/hr/manpower-planning route)"
+  ],
+  "success_rate": {"backend": "100% (25/25)", "frontend": "95% (all 9 tabs, requirement create, allow_multi_site present as Select but missing data-testid)"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin) — verified working",
+  "seed_data_creation": "Pytest run created several PRJ-PYT-* manpower requirements, deployments (DEP-2026-####), MOB-2026-####, DMB-2026-####, REP-2026-####. UI run created an additional 'PRJ-UI-HR3' requirement.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "HR Phase 3 backend + frontend both green. App.js had 2 issues now fixed (stray trailing block, missing manpower-planning route). Next phase work won't need to redo any of this. dep-allow_multi_site data-testid is the only remaining cosmetic miss.",
+  "rca of the issue": "App.js compile error: a previous merge appended a duplicated tail of the file ('/BrowserRouter>... }') after the closing brace, producing an Unterminated regex SyntaxError during babel parse. Removed lines 251-255. Missing route: the HrPhase3 component was imported at line 93 and a sidebar nav link existed in Layout.jsx pointing to /app/hr/manpower-planning, but no <Route path='/app/hr/manpower-planning'> existed in App.js, so visiting the URL fell through to the wildcard route and redirected to home. Added the route adjacent to /app/hr/operations."
+}

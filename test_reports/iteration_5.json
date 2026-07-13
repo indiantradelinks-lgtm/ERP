@@ -1,0 +1,26 @@
+{
+  "summary": "Iteration 5 — FileUploader fix retest. All three FE flows GREEN. Documents page (/app/documents) loads with zero pageerrors; dropzone + uploader-input mount correctly; 4 prior files preserved. Uploaded a fresh 2.0 MB file: the progress row appeared with the shadcn Progress bar (role=progressbar) inside the row, advanced to max_pct=100, then the row vanished and big_doc.bin appeared in the repository (4 -> 5), the 'files in storage' counter incremented from 4 to 5, and a 'Uploaded big_doc.bin' success toast was shown. Safety page (/app/safety) Photos dialog opens cleanly; dropzone visible inside dialog; 1 MB PNG uploaded and thumbnail rendered with no errors. Full sidebar regression: all 14 modules (Clients, Vendors, Employees, Attendance, Projects, Inventory, Purchase Orders, Quotations, Accounts, Safety, Assets, Payroll, Logistics, Documents) plus Approvals + Reports + Profile loaded with zero pageerrors and no redirect to /login. The iter4 ReferenceError 'progress is not defined' is fully resolved by the useState hook + onUploadProgress wiring + finally-block cleanup added on lines 28, 43-46, 52-56 of FileUploader.jsx.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_4.json",
+    "/app/backend/tests/test_erp_iteration4.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "FileUploader.jsx fix is correct and idempotent: setProgress in finally{} guarantees the row is cleaned even on error toast paths.",
+    "Optional: enable react-app no-undef ESLint rule in CI to catch similar regressions before deploy — iter4 shipped with an undeclared identifier that lint would have flagged."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only retest)", "frontend": "100% (17/17 module routes clean, Documents upload-with-progress works, Safety Photos dialog upload works)"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin) — verified working.",
+  "seed_data_creation": "Uploaded big_doc.bin (2 MB random bytes) and upload_test_img.png (~1 MB) via the UI; both attached to global Documents and Safety SR-003 respectively. Safe to leave or purge.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "FileUploader iter5 fix verified end-to-end via Playwright. Documents testidPrefix='documents-uploader' and Safety dialog testidPrefix='safety-uploader' — use these in future scripts. Progress row appears very briefly on a 2 MB upload (visible for ~5 polls of 80ms each, max_pct hit 100); poll at <=100ms interval to catch it. Backend upload API was untouched in this iter and remained healthy.",
+  "rca of the issue": "Resolved. Root cause (from iter4): missing useState hook + missing onUploadProgress callback in FileUploader.jsx. Fix applied: line 28 declares const [progress, setProgress] = useState({}); lines 39, 43-46 wire setProgress to onUploadProgress (Math.round(loaded/total*100)); lines 52-56 strip the file's entry in finally{} on both success and error so stuck rows are impossible. Verified visually (toast 'Uploaded big_doc.bin', file count 4->5) and programmatically (max_pct=100, progress_rows=0 after settle, zero pageerrors)."
+}

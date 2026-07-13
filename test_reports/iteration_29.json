@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 30 — User Management + Role Register fully tested. Backend: 27/27 pytest tests PASS (RBAC, CRUD, super_admin guards, reset password lockout-clear, toggle-active → inactive login 403, last_login stamp, role-register matrix shape, override APPLIES IMMEDIATELY, super_admin auto-injected, reset clears, plus regression on dropdowns/approval-matrix/audit-logs/login-activity). Frontend: /app/admin/users full CRUD + search + filter all work end-to-end (create → search → toggle → reset → edit → delete). Edit dialog correctly hides password field. /app/admin/role-register loads 46 resource cards, resource search filters correctly, cell toggle + save + reset-all all functional (toast 'All overrides cleared' shown).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration30_user_mgmt_role_register.py",
+    "/app/test_reports/pytest/iteration30.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "admin_router.py: duplicate `_ip(request)` helper defined twice (lines 33 and 259) — works because they are identical, but should be deduped.",
+    "admin_router.py POST /admin/users (line 286): `must_change_password` field is present on UserCreateIn but the frontend Create User dialog only exposes it via checkbox; on edit, the field is never updateable through admin_update_user — minor UX gap.",
+    "admin_router.py PUT /admin/users (line 322-327): email-uniqueness check uses {'$ne': user_id} but never validates the new email format beyond Pydantic — fine, just note no domain-level normalization happens twice (handled by `.lower().strip()`).",
+    "admin_router.py reset-password (line 353): lockout-clear regex `{'$regex': f':{email}$'}` will fail if the email contains regex metacharacters (e.g., +). Recommend `re.escape(email)` or query on the deterministic `identifier` field directly.",
+    "rbac.py PERMISSIONS_BASE 'role_register' resource (line 268-272): read includes director and general_manager, but write/delete are super_admin-only. The frontend RoleRegister save would 403 for director — only super_admin can persist. This matches the request spec but worth flagging that director sees the matrix but can't save.",
+    "auth_router.py login (line 60-65): on bad password the lockout count increments AND locked_until is always reset to +15 min on every failed try. This means 5 fails within 15 min is correctly enforced, but the lockout timer keeps sliding forward on subsequent attempts within the window — acceptable behaviour, just note it's a sliding window not fixed.",
+    "Frontend UserManagement.jsx: native `window.confirm` used for delete — could be replaced by a shadcn AlertDialog for consistency but functional.",
+    "Frontend role-register reset uses native window.confirm — same comment."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration30_user_mgmt_role_register.py (NEW)"
+  ],
+  "success_rate": {"backend": "100% (27/27)", "frontend": "100% on tested admin flows"},
+  "test_credentials": "admin@erp.com / Admin@123 ; hr.test@erp.com / HR@12345 ; sales@erp.com / Sales@123",
+  "seed_data_creation": "Test users created via admin_s fixture are auto-cleaned up at end of module (DELETE in teardown). UI test created uit{rand}@erp.com which was deleted within the test flow. Role-register override applied during 'override_applies_immediately' test was reset within the same test. No residual data.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 9 features in the review request are verified. (1) GET admin/users + RBAC ✓, (2) POST creates user + new user can login ✓, (3) PUT updates name/role/email with uniqueness ✓, (4) cannot demote/deactivate only super_admin ✓ (400), (5) reset-password invalidates old pw + clears lockout ✓, (6) toggle-active → inactive login returns 403 'Account is disabled' ✓, (7) DELETE blocks self and only super_admin ✓, (8) last_login + last_login_ip stamped on login ✓, (9) role-register GET returns full {roles,actions,resources,base,overrides,effective} ✓, (10) PUT overrides apply IMMEDIATELY — verified by sales_executive POSTing /api/employees successfully after override grant (was 403 before, 200 after) and 403 again after reset ✓, (11) reset clears ✓, (12) validation of unknown role/action/resource → 400 ✓, (13) existing admin endpoints (dropdowns, approval-matrix, audit-logs, login-activity) all still 200 ✓. Frontend: create dialog has all 6 fields + must_change_password checkbox; edit dialog hides password field as expected; reset dialog has must_change_password checkbox. RoleRegister has 46 resources, search-filter narrows results, cells toggle, save sends overrides correctly, reset-all confirms then clears with 'All overrides cleared' toast. Sidebar RBAC gating verified indirectly via backend 403 (sales gets 403 on both admin/users and admin/role-register).",
+  "rca of the issue": "Not applicable — all features pass."
+}

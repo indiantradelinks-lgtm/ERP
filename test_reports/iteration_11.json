@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 11 — Operations Pulse + Camera Barcode Scanner. Backend pytest /app/backend/tests/test_iteration11_pulse.py: 12/12 PASS (~1.6s). Verified: (1) GET /api/dashboard/operations-pulse returns {as_of: ISO, cards: list-of-exactly-7}, (2) all 7 expected keys present (pending_approvals, material_issue_holds, open_ptws, low_stock, ppe_due, open_enquiries, open_safety), (3) every card has value (non-negative int), tone in {primary,success,warning,danger,info,neutral}, deeplink starting with /app/, label non-empty, (4) accessible to site_engineer (non-admin) — confirms get_current_user gate not require_super_admin, (5) unauthenticated → 403, (6) semantic counters match raw Mongo queries for all 7 keys (approvals status in [pending,in_progress]; inventory_transactions status=awaiting_approval; ptws status=open; inventory $expr quantity<min_stock; ppe_issuance expiry_date<=today+30d; enquiries status in [open,under_review,submitted,negotiation]; safety_reports status not in [closed,resolved]), (7) deeplinks match spec verbatim. Regression: 69/69 PASS (test_phase_a_admin + test_phase_b_sales + test_phase_cdef + test_iteration10_pwa_expiry, 15s). Frontend Playwright: admin login → dashboard at /app shows [data-testid=operations-pulse] container at y=213 ABOVE financial Revenue KPI tile at y=862 (PULSE_ABOVE_KPI=True); 7 [data-testid^=pulse-] cards in DOM with correct labels+values (pending_approvals=3, material_issue_holds=4, open_ptws=1, low_stock=2, ppe_due=2, open_enquiries=0, open_safety=2); clicking pulse-pending_approvals navigates to /app/approvals. /app/store-transactions → 'New Movement' dialog opens; [data-testid=store-txns-camera] visible next to Lookup; clicking opens [data-testid=barcode-scanner] dialog which renders [data-testid=barcode-unsupported] fallback in headless Chromium (BarcodeDetector absent — graceful degradation working as intended); [data-testid=barcode-close] closes dialog correctly. Code review confirms BarcodeScanner stop() fn stops all tracks and clears streamRef on unmount/close, and OperationsPulse setInterval is cleared on unmount via cleanup return.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/app dashboard OperationsPulse", "issues": ["Minor: .stagger fade-in animation can momentarily leave cards 3-7 invisible during the first ~200ms after route mount; screenshot captured 2 of 7 visible mid-animation. Not a functional defect — DOM has all 7 cards and they render fully within ~400ms."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration11_pulse.py",
+    "/app/test_reports/pytest/iteration11.xml",
+    "/app/test_reports/pytest/iteration11_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "operations_pulse: counter uses date string $lte comparison for PPE — fine because PPE expiry_date is stored as ISO 'YYYY-MM-DD' string and Mongo lexicographic compare matches calendar order. If schema later stores Date objects, this query will silently return 0; consider normalising via aggregation $dateFromString or coerce on write.",
+    "operations_pulse: 7 independent count_documents calls run sequentially. Could be parallelised with asyncio.gather for ~5x faster response under load (currently ~50-150ms total). Non-blocking but easy win.",
+    "BarcodeScanner: the inner stop() closure relies on `cancelled` from outer scope, but the useEffect cleanup `return stop` runs after the IIFE start() completes — if start() throws synchronously before streamRef.current is set, stop() still safely no-ops. Good. However, if onDetected prop identity changes mid-scan, the effect re-runs (formats+onDetected in deps) and the previous stream is properly torn down; verify upstream callers memoise onDetected to avoid camera flicker on every parent render.",
+    "BarcodeScanner: passing onDetected in useEffect deps may cause re-mount/re-grab of the camera if parent re-renders. Recommend wrapping the parent handler in useCallback or remove onDetected from deps (use ref pattern) to avoid camera permission prompt churn on busy parent components.",
+    "OperationsPulse: load() returns the promise from api.get(...) — if the network 401s mid-session (token refresh in flight), .catch sets data={cards:[]} which renders an empty section. Consider preserving the previous data on transient errors so the strip doesn't blank-out between refreshes.",
+    "OperationsPulse: deeplinks are server-controlled strings — XSS-safe because react-router navigate() doesn't render them, but consider whitelisting expected prefixes (/app/*) to prevent a future regression that could redirect to external URLs.",
+    "dashboard_router.py is now 154 lines — still well under the 700-line split threshold."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration11_pulse.py (new — 12 tests)"
+  ],
+  "success_rate": {"backend": "100% (12/12 iter11 + 69/69 Phase A-F + iter10 regression = 81/81)", "frontend": "100% (pulse strip + 7 cards + deeplink + barcode dialog + unsupported fallback + close all green)"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin) and test_site_engineer@erp.com / TestPass@123 (site_engineer) — both verified working against /api/dashboard/operations-pulse.",
+  "seed_data_creation": "None — iteration 11 tests are read-only against existing seeded data.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iter11 test file test_iteration11_pulse.py is fast (~1.6s) and read-only — safe to chain into regression. The two semantic fixtures (admin_session, engineer_session) re-login each module run; engineer fixture auto-creates the site_engineer user via /api/auth/register if missing. The mongo_db fixture imports pymongo and reads MONGO_URL+DB_NAME directly; skip cleanly if env not set. Note: headless Chromium does NOT expose BarcodeDetector — supported=false path is the only exercised path in CI, which IS the intended degradation. Live observed pulse values at test time: pending_approvals=3, material_issue_holds=4, open_ptws=1, low_stock=2, ppe_due=2, open_enquiries=0, open_safety=2 — values will drift as data evolves; tests assert semantic equality with raw Mongo counts, not fixed numbers.",
+  "rca of the issue": "N/A — no functional bugs found. Manual verified counters match (admin agent context noted pending_approvals=2/low_stock=2/open_safety=2/ppe_due=2; current run sees pending_approvals=3 and material_issue_holds=4 — natural data drift since seeding)."
+}

@@ -1,0 +1,38 @@
+{
+  "summary": "Iter 78 — Phase 2 Store & Inventory (Procurement / Accounts / Finance integration) fully tested. Backend: 15/15 HTTP API tests + 4/4 unit tests pass (1 skip for OpenAPI GRNIn schema absent in registry, 1 skip because no non-approved PO available to trigger manual_grn 403 branch in live DB — both covered by unit test that asserts the model fields & branch source). All 7 /api/inv2/* GET endpoints return 200 with correct shape; pr-from-stock create+persistence works (PR-202606-NNNNN format, status=submitted, source=stock_shortage, found in /api/procurement/prs); priority whitelist enforced (400 on INVALID_X, 400 on qty<=0, 404 on missing item); GRNIn extended with 11 Phase 2 fields all backward-compatible; three_way_match boolean correctly derived from bill presence + amount diff <1. Frontend: login OK, all 7 Phase 2 nav testids render in sidebar across 3 new groups (Procurement / Accounts / Finance Integration), each view renders real data without React errors. Pipeline tile shows PR=2, PO=1 ₹9,000, GRN30d=3, Emergency=0. Pending POs view shows PO-2026-0044 with line-level ordered=100/received=0/pending=100/pending_value=₹9,000 — math correct. PRFromStock form has prfs-select-all + prfs-priority + prfs-submit testids. All 3 CSV export buttons (pending-pos-csv, grn-pending-inv-csv, inward-csv) present. Phase 1 regression intact (si-nav-dashboard still present, /app/purchase-requisitions, /app/grn still load). No console JS errors on Phase 2 views (401 errors observed pre-auth on a non-Phase-2 polling endpoint — unrelated).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter78_phase2_api.py",
+    "/app/backend/tests/test_iter78_phase2_inventory.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/iter78_phase2.xml"
+  ],
+  "action_items": [
+    "(optional, low) Add a non-approved PO in seed data so the manual_grn=true → 403 (PM) and 200 (admin) override branch can be covered by HTTP tests in addition to the existing unit-source assertion.",
+    "(optional, low) /api/inv2/inspection-hold returns total_held_value computed as sum(hold_qty * 0) — always 0; either remove the field or multiply by the line rate.",
+    "(optional) Add GRNIn schema to OpenAPI components (currently omitted), so SDET tools can introspect Phase 2 fields without code inspection.",
+    "(optional) PR auto-numbering uses count_documents — already flagged in Iter 77; acceptable for v1 but switch to an atomic counter or unique index before high-concurrency rollouts."
+  ],
+  "critical_code_review_comments": [
+    "inventory_phase2_router.py L400 `total_held_value` is sum(hold_qty * 0) — always 0; either drop the key or use line rate to get a real held value.",
+    "inventory_phase2_router.py L89 PR numbering via count_documents is race-prone under concurrency (two simultaneous calls can produce the same pr_number). Acceptable for v1 but add a unique index on pr_number or migrate to an atomic counters collection.",
+    "stock_inward_report L227-229 filter uses raw string comparison on `created_at` ISO strings — works only if the field is consistently stored as ISO-8601 with `Z` suffix; document the contract or convert to datetime on read.",
+    "grn_pending_invoice L302 parses `created_at` with .replace('Z','+00:00'); if created_at is missing, falls back to now() — days_pending=0. Consider using grn_date when created_at is null instead of silently defaulting.",
+    "pr-from-stock auto-priority logic (L85) only bumps `normal`→`urgent`; it never downgrades when caller already supplied `emergency`. Logic is correct, but worth a code comment so future devs don't think the priority is being overwritten."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter78_phase2_api.py (NEW — Phase 2 HTTP API regression suite)",
+    "/app/backend/tests/conftest.py (NEW — loads backend .env so router unit-test imports succeed; fixes prior KeyError: 'MONGO_URL' in any pytest run that imported routers directly)"
+  ],
+  "success_rate": {"backend": "100% (15/15 HTTP + 4/4 unit = 19/19 executed, 2 environmental skips)", "frontend": "100% on tested Phase 2 flows"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin). test_pm@erp.com / PM@12345 is unavailable in the current preview DB (per /app/memory/test_credentials.md line 15 — seed-only accounts were not re-created), so the 'PM gets 403 on manual_grn' HTTP path is gracefully skipped; unit assertion in test_grn_model_has_phase2_fields + source-level check that the 403 branch exists at procurement_router.py L597-598 cover the same behaviour.",
+  "seed_data_creation": "Test run created 1 PR (PR-202606-NNNNN, remarks='TEST_iter78 PR from stock', status=submitted) via /api/inv2/pr-from-stock. Cleanly identifiable by remarks prefix. No other writes.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 2 of Store & Inventory is fully working. The Iter 78 backend regression suite at /app/backend/tests/test_iter78_phase2_api.py + /app/backend/tests/test_iter78_phase2_inventory.py is the baseline for any Phase 3+ change. A new /app/backend/tests/conftest.py was added to load /app/backend/.env before any router-module import — this fixes a latent KeyError('MONGO_URL') that would have impacted ALL future unit-test files that import core/router modules directly. The PM (test_pm@erp.com) account is NOT in the current DB; if any future test needs it, recreate via super_admin → /app/admin/users → Add User. Phase 2 reuses purchase_requisitions/purchase_orders/grn/vendor_bills/inventory_transactions collections — NO new collections were introduced and Phase 1 (Iter 77) hub is preserved. 7 sidebar testids: si-nav-pr_from_stock, si-nav-pending_pos, si-nav-inward_report, si-nav-inspection_hold, si-nav-grn_pending_inv, si-nav-accounts_grn, si-nav-pipeline."
+}

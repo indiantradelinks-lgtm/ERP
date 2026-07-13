@@ -1,0 +1,1041 @@
+{
+ "created_at": "2026-06-15T12:02:32.913765+00:00",
+ "deleted_projects": [
+  {
+   "id": "2dde4f11-9551-4fcc-858b-2eaa5f856b54",
+   "code": "PRJ-2026-0016",
+   "name": "Pytest Project",
+   "client_id": null,
+   "client_name": "Pytest Client",
+   "site_location": "Test Site",
+   "work_order_number": null,
+   "contract_value": 100000.0,
+   "contract_start_date": null,
+   "contract_end_date": null,
+   "status": "active",
+   "project_manager_id": "e6914a72-dc1f-42c1-a398-5e658997bd45",
+   "project_coordinator_id": null,
+   "reporting_manager_id": null,
+   "department": "Operations",
+   "priority": "high",
+   "handover_id": "f647c7e6-8e7e-4a89-8ced-935323f96cf9",
+   "handover_no": "CHO-2026-0002",
+   "created_at": "2026-06-05T05:46:33.588121+00:00",
+   "created_by": "Super Admin"
+  },
+  {
+   "id": "d3332e59-34eb-4312-be24-5a5b11bca95a",
+   "code": "PRJ-2026-0019",
+   "name": "Adani Power \u2014 Project",
+   "client": "Adani Power",
+   "type": "services",
+   "site": "DELHI",
+   "budget": 125000.0,
+   "status": "planned",
+   "progress": 0,
+   "manager": null,
+   "order_id": "8979e8b0-89e7-4e64-8656-46689f9828ed",
+   "enquiry_id": "b2c6c92c-bfb8-4577-add4-8eb9dcc8d061",
+   "created_at": "2026-06-06T09:33:01.742616+00:00",
+   "created_by": "cd3ee87a-d767-4cae-a735-95dd93c21866"
+  },
+  {
+   "id": "e124e990-0782-4809-b912-8e3313cb2d10",
+   "code": "PRJ-2026-0024",
+   "name": "TEST_iter62_full",
+   "client": "TEST_Client_1780129906",
+   "client_id": "24591580-c504-4899-9d42-e4f67008f628",
+   "type": "sales",
+   "site": "MumbaiUpdated",
+   "site_id": "f4f27713-5e58-498a-8a03-7347e9a1beab",
+   "budget": 12345.0,
+   "status": "planned",
+   "progress": 0,
+   "manager": null,
+   "quotation_id": "a90ace3e-bc2e-4dcc-bed9-44bef4d9f8b1",
+   "quotation_no": "QTN-2026-0009",
+   "enquiry_id": "0be4584b-1e92-4312-987f-08b97736dc8e",
+   "enquiry_no": "ENQ-2026-0040",
+   "department": null,
+   "source": "auto_from_quote",
+   "created_at": "2026-06-06T10:38:43.207249+00:00",
+   "created_by": "Super Admin",
+   "created_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866"
+  },
+  {
+   "id": "09c790f5-312f-43d4-b884-6fa6d9ffdb43",
+   "code": "PRJ-2026-0028",
+   "name": "ONGC \u2014 Project",
+   "client": "ONGC",
+   "type": "services",
+   "site": "TEST",
+   "budget": 16000.0,
+   "status": "planned",
+   "progress": 0,
+   "manager": null,
+   "order_id": "f187494c-6dea-4aba-b7dc-20b34d953099",
+   "enquiry_id": "caa5c6ad-2b69-40bd-b85e-84f56c4b3e56",
+   "created_at": "2026-06-10T06:30:13.268787+00:00",
+   "created_by": "cd3ee87a-d767-4cae-a735-95dd93c21866"
+  },
+  {
+   "id": "39bf43d9-77fb-4d01-b47d-30c316ee781d",
+   "code": "PRJ-2026-0029",
+   "name": "ONGC \u2014 Project",
+   "client": "ONGC",
+   "type": "services",
+   "site": "DELHI",
+   "budget": 18000.0,
+   "status": "planned",
+   "progress": 0,
+   "manager": null,
+   "order_id": "d61950dc-6ede-427c-a774-997df2a2628b",
+   "enquiry_id": "9f2869a9-9ac5-4b8c-ae70-b3343b618e11",
+   "created_at": "2026-06-10T08:29:39.681611+00:00",
+   "created_by": "cd3ee87a-d767-4cae-a735-95dd93c21866"
+  }
+ ],
+ "child_before": {
+  "resource_requests": [
+   {
+    "collection": "resource_requests",
+    "doc": {
+     "project_id": "cf19d96a-8456-46ca-9331-201907e122c5",
+     "resource_type": "manpower",
+     "item_name": "Scaffolders \u00d7 5 for 30 days",
+     "quantity": 5.0,
+     "unit": "persons",
+     "required_date": null,
+     "site_location": null,
+     "priority": "high",
+     "justification": "Phase 1 erection",
+     "attachments": [],
+     "id": "eec34a01-a7b4-494f-b19b-c5c04c80b9a8",
+     "rr_no": "RR-2026-0001",
+     "status": "pending_approval",
+     "project_name": "Pytest Project",
+     "project_manager_id": "e6914a72-dc1f-42c1-a398-5e658997bd45",
+     "project_coordinator_id": null,
+     "requested_by": "Super Admin",
+     "requested_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "created_at": "2026-06-05T06:07:43.983071+00:00",
+     "approval_id": "9358f604-c891-4a54-a34e-8fc954531727",
+     "submitted_at": "2026-06-05T06:07:44.299616+00:00",
+     "submitted_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "updated_at": "2026-06-05T06:07:44.299622+00:00"
+    }
+   },
+   {
+    "collection": "resource_requests",
+    "doc": {
+     "project_id": "cf19d96a-8456-46ca-9331-201907e122c5",
+     "resource_type": "consumable",
+     "item_name": "TEST_Welding Rods x 50 kg",
+     "quantity": 50.0,
+     "unit": "kg",
+     "required_date": "2026-07-15",
+     "site_location": "Site A",
+     "priority": "medium",
+     "justification": "Phase 1 welding",
+     "attachments": [],
+     "id": "44acc024-e2c4-4cb1-b39d-310a5d560524",
+     "rr_no": "RR-2026-0002",
+     "status": "pending_approval",
+     "project_name": "Pytest Project",
+     "project_manager_id": "e6914a72-dc1f-42c1-a398-5e658997bd45",
+     "project_coordinator_id": null,
+     "requested_by": "Super Admin",
+     "requested_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "created_at": "2026-06-05T06:22:29.799415+00:00",
+     "approval_id": "778beba7-aadd-47d4-8dd9-461e08285914",
+     "submitted_at": "2026-06-05T06:22:29.904272+00:00",
+     "submitted_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "updated_at": "2026-06-05T06:22:29.904279+00:00"
+    }
+   },
+   {
+    "collection": "resource_requests",
+    "doc": {
+     "project_id": "cf19d96a-8456-46ca-9331-201907e122c5",
+     "resource_type": "manpower",
+     "item_name": "TEST_iter63 RR helper",
+     "quantity": 2.0,
+     "unit": "Nos",
+     "required_date": null,
+     "site_location": null,
+     "priority": "medium",
+     "justification": null,
+     "attachments": [],
+     "id": "789bffb0-e8b7-48cc-a0bf-e690405c9563",
+     "rr_no": "RR-2026-0003",
+     "status": "draft",
+     "project_name": "Pytest Project",
+     "project_manager_id": "e6914a72-dc1f-42c1-a398-5e658997bd45",
+     "project_coordinator_id": null,
+     "requested_by": "Super Admin",
+     "requested_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "created_at": "2026-06-05T11:28:49.867592+00:00"
+    }
+   },
+   {
+    "collection": "resource_requests",
+    "doc": {
+     "project_id": "cf19d96a-8456-46ca-9331-201907e122c5",
+     "resource_type": "manpower",
+     "item_name": "TEST_iter63 RR helper",
+     "quantity": 2.0,
+     "unit": "Nos",
+     "required_date": null,
+     "site_location": null,
+     "priority": "medium",
+     "justification": null,
+     "attachments": [],
+     "id": "7428e4c2-f077-4b5c-9f04-552bb00f130f",
+     "rr_no": "RR-2026-0004",
+     "status": "pending_approval",
+     "project_name": "Pytest Project",
+     "project_manager_id": "e6914a72-dc1f-42c1-a398-5e658997bd45",
+     "project_coordinator_id": null,
+     "requested_by": "Super Admin",
+     "requested_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "created_at": "2026-06-05T11:28:50.027743+00:00",
+     "approval_id": "78401812-1231-4441-bb6e-febc83459121",
+     "submitted_at": "2026-06-05T11:28:50.077627+00:00",
+     "submitted_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "updated_at": "2026-06-05T11:28:50.077634+00:00"
+    }
+   },
+   {
+    "collection": "resource_requests",
+    "doc": {
+     "project_id": "cf19d96a-8456-46ca-9331-201907e122c5",
+     "resource_type": "manpower",
+     "item_name": "TEST_iter63 RR helper",
+     "quantity": 2.0,
+     "unit": "Nos",
+     "required_date": null,
+     "site_location": null,
+     "priority": "medium",
+     "justification": null,
+     "attachments": [],
+     "id": "57ea9f65-2469-46d2-8bf6-7e26771e6177",
+     "rr_no": "RR-2026-0005",
+     "status": "draft",
+     "project_name": "Pytest Project",
+     "project_manager_id": "e6914a72-dc1f-42c1-a398-5e658997bd45",
+     "project_coordinator_id": null,
+     "requested_by": "Super Admin",
+     "requested_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "created_at": "2026-06-05T11:29:53.737890+00:00"
+    }
+   },
+   {
+    "collection": "resource_requests",
+    "doc": {
+     "project_id": "cf19d96a-8456-46ca-9331-201907e122c5",
+     "resource_type": "manpower",
+     "item_name": "TEST_iter63 RR helper",
+     "quantity": 2.0,
+     "unit": "Nos",
+     "required_date": null,
+     "site_location": null,
+     "priority": "medium",
+     "justification": null,
+     "attachments": [],
+     "id": "f81f4624-666a-4dbe-bbbf-15ba3aa440f5",
+     "rr_no": "RR-2026-0006",
+     "status": "pending_approval",
+     "project_name": "Pytest Project",
+     "project_manager_id": "e6914a72-dc1f-42c1-a398-5e658997bd45",
+     "project_coordinator_id": null,
+     "requested_by": "Super Admin",
+     "requested_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "created_at": "2026-06-05T11:29:53.889219+00:00",
+     "approval_id": "e2af01c2-8f64-4f41-9564-a01d75a498f5",
+     "submitted_at": "2026-06-05T11:29:53.939304+00:00",
+     "submitted_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "updated_at": "2026-06-05T11:29:53.939308+00:00"
+    }
+   }
+  ],
+  "project_handovers": [
+   {
+    "collection": "project_handovers",
+    "doc": {
+     "project_name": "Pytest Project",
+     "client_name": "Pytest Client",
+     "client_id": null,
+     "site_location": "Test Site",
+     "work_order_number": null,
+     "contract_value": 100000.0,
+     "contract_start_date": null,
+     "contract_end_date": null,
+     "scope_of_work": null,
+     "billing_terms": null,
+     "payment_terms": null,
+     "gst_details": null,
+     "customer_contact_person": null,
+     "customer_contact_number": null,
+     "customer_email": null,
+     "special_conditions": null,
+     "safety_requirements": null,
+     "manpower_requirements": null,
+     "material_requirements": null,
+     "asset_requirements": null,
+     "remarks": null,
+     "attachments": [],
+     "id": "f647c7e6-8e7e-4a89-8ced-935323f96cf9",
+     "handover_no": "CHO-2026-0002",
+     "status": "active",
+     "created_at": "2026-06-05T05:46:32.941731+00:00",
+     "created_by": "Super Admin",
+     "created_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "updated_at": "2026-06-05T05:46:33.588523+00:00",
+     "updated_by": "Super Admin",
+     "submitted_at": "2026-06-05T05:46:33.047497+00:00",
+     "submitted_by": "Super Admin",
+     "submitted_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "allocated_at": "2026-06-05T05:46:33.588515+00:00",
+     "allocated_by": "Super Admin",
+     "allocated_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "allocation_remarks": null,
+     "department": "Operations",
+     "expected_completion_date": null,
+     "expected_start_date": null,
+     "priority": "high",
+     "project_coordinator_id": null,
+     "project_id": "2dde4f11-9551-4fcc-858b-2eaa5f856b54",
+     "project_manager_id": "e6914a72-dc1f-42c1-a398-5e658997bd45",
+     "reporting_manager_id": null
+    }
+   },
+   {
+    "collection": "project_handovers",
+    "doc": {
+     "project_name": "Pytest Project",
+     "client_name": "Pytest Client",
+     "client_id": null,
+     "site_location": "Test Site",
+     "work_order_number": null,
+     "contract_value": 100000.0,
+     "contract_start_date": null,
+     "contract_end_date": null,
+     "scope_of_work": null,
+     "billing_terms": null,
+     "payment_terms": null,
+     "gst_details": null,
+     "customer_contact_person": null,
+     "customer_contact_number": null,
+     "customer_email": null,
+     "special_conditions": null,
+     "safety_requirements": null,
+     "manpower_requirements": null,
+     "material_requirements": null,
+     "asset_requirements": null,
+     "remarks": null,
+     "attachments": [],
+     "id": "aeed1676-5640-4506-8555-358a89e0620a",
+     "handover_no": "CHO-2026-0003",
+     "status": "active",
+     "created_at": "2026-06-05T05:46:54.493688+00:00",
+     "created_by": "Super Admin",
+     "created_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "updated_at": "2026-06-05T05:46:55.191608+00:00",
+     "updated_by": "Super Admin",
+     "submitted_at": "2026-06-05T05:46:54.609446+00:00",
+     "submitted_by": "Super Admin",
+     "submitted_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "allocated_at": "2026-06-05T05:46:55.191604+00:00",
+     "allocated_by": "Super Admin",
+     "allocated_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "allocation_remarks": null,
+     "department": "Operations",
+     "expected_completion_date": null,
+     "expected_start_date": null,
+     "priority": "high",
+     "project_coordinator_id": null,
+     "project_id": "cf19d96a-8456-46ca-9331-201907e122c5",
+     "project_manager_id": "e6914a72-dc1f-42c1-a398-5e658997bd45",
+     "reporting_manager_id": null
+    }
+   },
+   {
+    "collection": "project_handovers",
+    "doc": {
+     "id": "c290cf80-26ff-416c-8ed3-ccc3e91081d8",
+     "handover_no": "CHO-2026-0010",
+     "project_name": "TEST_iter62_full",
+     "client_name": "TEST_Client_1780129906",
+     "client_id": "24591580-c504-4899-9d42-e4f67008f628",
+     "site_id": "f4f27713-5e58-498a-8a03-7347e9a1beab",
+     "site_location": "MumbaiUpdated",
+     "work_order_number": "",
+     "contract_value": 12345.0,
+     "contract_start_date": "2026-06-05",
+     "contract_end_date": null,
+     "scope_of_work": "TEST_iter62_full",
+     "billing_terms": "",
+     "payment_terms": "Net 30",
+     "gst_details": "",
+     "customer_contact_person": "TEST Contact",
+     "customer_contact_number": "9876500001",
+     "customer_email": "c@x.com",
+     "special_conditions": "",
+     "safety_requirements": "",
+     "manpower_requirements": "",
+     "material_requirements": "",
+     "asset_requirements": "",
+     "remarks": "Auto-created from won quotation QTN-2026-0004",
+     "attachments": [],
+     "department": null,
+     "quotation_id": "25a7393f-bd8f-4e6f-9677-5f6a745ebe78",
+     "quotation_no": "QTN-2026-0004",
+     "enquiry_id": "5b05b139-e473-413b-ab31-8c101e176bfa",
+     "enquiry_no": "ENQ-2026-0035",
+     "project_id": "32099f0a-296c-4ce9-b3f4-3183b4eb732b",
+     "project_code": "PRJ-2026-0023",
+     "source": "auto_from_quote",
+     "status": "draft",
+     "status_history": [
+      {
+       "status": "draft",
+       "by": "Super Admin",
+       "at": "2026-06-06T10:38:43.200541+00:00",
+       "note": "Auto-generated when quote QTN-2026-0004 was marked won"
+      }
+     ],
+     "created_at": "2026-06-06T10:38:43.200541+00:00",
+     "created_by": "Super Admin",
+     "created_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "updated_at": "2026-06-06T10:38:43.200541+00:00"
+    }
+   },
+   {
+    "collection": "project_handovers",
+    "doc": {
+     "id": "029da388-cb93-453c-b3be-9ed604d6bed0",
+     "handover_no": "CHO-2026-0011",
+     "project_name": "TEST_iter62_full",
+     "client_name": "TEST_Client_1780129906",
+     "client_id": "24591580-c504-4899-9d42-e4f67008f628",
+     "site_id": "f4f27713-5e58-498a-8a03-7347e9a1beab",
+     "site_location": "MumbaiUpdated",
+     "work_order_number": "",
+     "contract_value": 12345.0,
+     "contract_start_date": "2026-06-05",
+     "contract_end_date": null,
+     "scope_of_work": "TEST_iter62_full",
+     "billing_terms": "",
+     "payment_terms": "Net 30",
+     "gst_details": "",
+     "customer_contact_person": "TEST Contact",
+     "customer_contact_number": "9876500001",
+     "customer_email": "c@x.com",
+     "special_conditions": "",
+     "safety_requirements": "",
+     "manpower_requirements": "",
+     "material_requirements": "",
+     "asset_requirements": "",
+     "remarks": "Auto-created from won quotation QTN-2026-0009",
+     "attachments": [],
+     "department": null,
+     "quotation_id": "a90ace3e-bc2e-4dcc-bed9-44bef4d9f8b1",
+     "quotation_no": "QTN-2026-0009",
+     "enquiry_id": "0be4584b-1e92-4312-987f-08b97736dc8e",
+     "enquiry_no": "ENQ-2026-0040",
+     "project_id": "e124e990-0782-4809-b912-8e3313cb2d10",
+     "project_code": "PRJ-2026-0024",
+     "source": "auto_from_quote",
+     "status": "draft",
+     "status_history": [
+      {
+       "status": "draft",
+       "by": "Super Admin",
+       "at": "2026-06-06T10:38:43.207249+00:00",
+       "note": "Auto-generated when quote QTN-2026-0009 was marked won"
+      }
+     ],
+     "created_at": "2026-06-06T10:38:43.207249+00:00",
+     "created_by": "Super Admin",
+     "created_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "updated_at": "2026-06-06T10:38:43.207249+00:00"
+    }
+   },
+   {
+    "collection": "project_handovers",
+    "doc": {
+     "id": "55a0bfd9-696c-4af0-bb5b-685e196f532e",
+     "handover_no": "CHO-2026-0014",
+     "project_name": "TEST",
+     "client_name": "ONGC",
+     "client_id": "8562b41f-f28d-482c-8ad8-2929b4ef7f10",
+     "site_id": "b0de48b4-ca2f-4cb3-9baf-6d4058a54af2",
+     "site_location": "TEST",
+     "work_order_number": "1111",
+     "contract_value": 4115.0,
+     "contract_start_date": "2026-06-10",
+     "contract_end_date": null,
+     "scope_of_work": "TEST",
+     "billing_terms": "",
+     "payment_terms": "30",
+     "gst_details": "07AAACO1598A1ZZ",
+     "customer_contact_person": "RAHUL",
+     "customer_contact_number": "9220881471",
+     "customer_email": "mis@itlis.in",
+     "special_conditions": "",
+     "safety_requirements": "",
+     "manpower_requirements": "",
+     "material_requirements": "",
+     "asset_requirements": "",
+     "remarks": "Auto-created from won quotation QTN-2026-0041",
+     "attachments": [],
+     "department": "IT",
+     "quotation_id": "432ef470-cde3-47e0-846c-9f383d3069c8",
+     "quotation_no": "QTN-2026-0041",
+     "enquiry_id": "caa5c6ad-2b69-40bd-b85e-84f56c4b3e56",
+     "enquiry_no": "ENQ-2026-0068",
+     "project_id": "09c790f5-312f-43d4-b884-6fa6d9ffdb43",
+     "project_code": "PRJ-2026-0028",
+     "source": "auto_from_quote",
+     "status": "draft",
+     "status_history": [
+      {
+       "status": "draft",
+       "by": "Super Admin",
+       "at": "2026-06-10T06:36:14.440552+00:00",
+       "note": "Auto-generated when quote QTN-2026-0041 was marked won"
+      }
+     ],
+     "created_at": "2026-06-10T06:36:14.440552+00:00",
+     "created_by": "Super Admin",
+     "created_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "updated_at": "2026-06-10T06:36:14.440552+00:00"
+    }
+   },
+   {
+    "collection": "project_handovers",
+    "doc": {
+     "id": "ed7a66d3-1218-475d-bc26-5ca3c0a48fff",
+     "handover_no": "CHO-2026-0016",
+     "project_name": "QTN-2026-0043",
+     "client_name": "ONGC",
+     "client_id": "8562b41f-f28d-482c-8ad8-2929b4ef7f10",
+     "site_id": "b0de48b4-ca2f-4cb3-9baf-6d4058a54af2",
+     "site_location": "DELHI",
+     "work_order_number": "",
+     "contract_value": 3080.0,
+     "contract_start_date": "2026-06-10",
+     "contract_end_date": null,
+     "scope_of_work": "",
+     "billing_terms": "",
+     "payment_terms": "Net 30",
+     "gst_details": "07AAACO1598A1ZZ",
+     "customer_contact_person": "RAHUL",
+     "customer_contact_number": "",
+     "customer_email": "mis@itlis.in",
+     "special_conditions": "",
+     "safety_requirements": "",
+     "manpower_requirements": "",
+     "material_requirements": "",
+     "asset_requirements": "",
+     "remarks": "Auto-created from won quotation QTN-2026-0043",
+     "attachments": [],
+     "department": "IT",
+     "quotation_id": "c564baf8-eb77-4666-a3c6-fa8ef49af7c5",
+     "quotation_no": "QTN-2026-0043",
+     "enquiry_id": "9f2869a9-9ac5-4b8c-ae70-b3343b618e11",
+     "enquiry_no": "ENQ-2026-0070",
+     "project_id": "39bf43d9-77fb-4d01-b47d-30c316ee781d",
+     "project_code": "PRJ-2026-0029",
+     "source": "auto_from_quote",
+     "status": "draft",
+     "status_history": [
+      {
+       "status": "draft",
+       "by": "Super Admin",
+       "at": "2026-06-10T08:30:08.093628+00:00",
+       "note": "Auto-generated when quote QTN-2026-0043 was marked won"
+      }
+     ],
+     "created_at": "2026-06-10T08:30:08.093628+00:00",
+     "created_by": "Super Admin",
+     "created_by_id": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "updated_at": "2026-06-10T08:30:08.093628+00:00"
+    }
+   }
+  ],
+  "enquiries": [
+   {
+    "collection": "enquiries",
+    "doc": {
+     "site_id": "559463bb-67eb-4d59-9ef7-135b31533b1b",
+     "client_id": "0ef304cb-0af2-4e2b-9bbb-66c13ade254f",
+     "customer": "Adani Power",
+     "contact_person": "Ranveer",
+     "contact_email": "ranveer@test.co",
+     "contact_phone": "+91-9999999999",
+     "site_location": "DELHI",
+     "department": null,
+     "customer_enquiry_no": null,
+     "enquiry_date": null,
+     "rfq_type": [
+      "service"
+     ],
+     "service_categories": [],
+     "service_type": "services",
+     "submission_deadline": null,
+     "bid_closing_date": null,
+     "deadline": null,
+     "priority": null,
+     "scope_of_work": "Iter64 won\u2192handover",
+     "technical_requirements": null,
+     "material_requirements": null,
+     "site_conditions": null,
+     "special_instructions": null,
+     "commercial_notes": null,
+     "scope": null,
+     "expected_value": 125000.0,
+     "notes": null,
+     "client_code": "CL-003",
+     "site_code": "CL-003-01",
+     "site_name": "HAZIRA",
+     "id": "b2c6c92c-bfb8-4577-add4-8eb9dcc8d061",
+     "enquiry_no": "ENQ-2026-0063",
+     "dept_doc_no": "SAL/ENQ/2026/0040",
+     "ownership_department": "sales",
+     "status": "won",
+     "status_history": [
+      {
+       "status": "open",
+       "by": "Super Admin",
+       "at": "2026-06-06T09:21:13.163345+00:00",
+       "note": null
+      },
+      {
+       "status": "submitted",
+       "by": "Super Admin",
+       "at": "2026-06-06T09:21:14.224198+00:00",
+       "note": "Synced from quote QTN-2026-0036 \u2192 submitted"
+      },
+      {
+       "status": "won",
+       "by": "Super Admin",
+       "at": "2026-06-06T09:21:14.327173+00:00",
+       "note": "Synced from quote QTN-2026-0036 \u2192 won"
+      }
+     ],
+     "created_at": "2026-06-06T09:21:13.163356+00:00",
+     "created_by": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "quotation_id": "26aedbe9-0e5f-484d-852e-d3e7577fc83f",
+     "quotation_no": "QTN-2026-0036",
+     "updated_at": "2026-06-06T09:33:01.761540+00:00",
+     "updated_by": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "order_id": "8979e8b0-89e7-4e64-8656-46689f9828ed",
+     "order_no": "ORD-2026-0002",
+     "project_code": "PRJ-2026-0019",
+     "project_id": "d3332e59-34eb-4312-be24-5a5b11bca95a"
+    }
+   },
+   {
+    "collection": "enquiries",
+    "doc": {
+     "site_id": "b0de48b4-ca2f-4cb3-9baf-6d4058a54af2",
+     "client_id": "8562b41f-f28d-482c-8ad8-2929b4ef7f10",
+     "customer": "ONGC",
+     "contact_person": "RAHUL",
+     "contact_email": "mis@itlis.in",
+     "contact_phone": "9220881471",
+     "site_location": "TEST",
+     "department": "IT",
+     "customer_enquiry_no": "1111",
+     "enquiry_date": "2026-06-10",
+     "rfq_type": [
+      "service"
+     ],
+     "service_categories": [
+      "scaffolding"
+     ],
+     "service_type": "services",
+     "submission_deadline": "2026-10-01",
+     "bid_closing_date": "2026-10-01",
+     "deadline": null,
+     "priority": "medium",
+     "scope_of_work": "",
+     "technical_requirements": "",
+     "material_requirements": "",
+     "site_conditions": "",
+     "special_instructions": "",
+     "commercial_notes": "",
+     "scope": null,
+     "expected_value": 16000.0,
+     "notes": null,
+     "client_code": "CL-004",
+     "site_code": "CL-004-01",
+     "site_name": "ongc",
+     "id": "caa5c6ad-2b69-40bd-b85e-84f56c4b3e56",
+     "enquiry_no": "ENQ-2026-0068",
+     "dept_doc_no": "SAL/ENQ/2026/0045",
+     "ownership_department": "sales",
+     "status": "won",
+     "status_history": [
+      {
+       "status": "open",
+       "by": "Super Admin",
+       "at": "2026-06-10T06:23:19.589676+00:00",
+       "note": null
+      },
+      {
+       "status": "submitted",
+       "by": "Super Admin",
+       "at": "2026-06-10T06:26:40.405319+00:00",
+       "note": null
+      },
+      {
+       "status": "won",
+       "by": "Super Admin",
+       "at": "2026-06-10T06:29:27.891694+00:00",
+       "note": null
+      },
+      {
+       "status": "submitted",
+       "by": "Super Admin",
+       "at": "2026-06-10T06:36:08.340546+00:00",
+       "note": "Synced from quote QTN-2026-0041 \u2192 submitted"
+      },
+      {
+       "status": "won",
+       "by": "Super Admin",
+       "at": "2026-06-10T06:36:14.429363+00:00",
+       "note": "Synced from quote QTN-2026-0041 \u2192 won"
+      }
+     ],
+     "created_at": "2026-06-10T06:23:19.589684+00:00",
+     "created_by": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "quotation_id": "432ef470-cde3-47e0-846c-9f383d3069c8",
+     "quotation_no": "QTN-2026-0041",
+     "updated_at": "2026-06-10T06:36:14.429375+00:00",
+     "updated_by": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "order_id": "f187494c-6dea-4aba-b7dc-20b34d953099",
+     "order_no": "ORD-2026-0004",
+     "project_code": "PRJ-2026-0028",
+     "project_id": "09c790f5-312f-43d4-b884-6fa6d9ffdb43"
+    }
+   },
+   {
+    "collection": "enquiries",
+    "doc": {
+     "site_id": "b0de48b4-ca2f-4cb3-9baf-6d4058a54af2",
+     "client_id": "8562b41f-f28d-482c-8ad8-2929b4ef7f10",
+     "customer": "ONGC",
+     "contact_person": "RAHUL",
+     "contact_email": "",
+     "contact_phone": "",
+     "site_location": "DELHI",
+     "department": "IT",
+     "customer_enquiry_no": "",
+     "enquiry_date": "2026-06-10",
+     "rfq_type": [
+      "service"
+     ],
+     "service_categories": [
+      "painting"
+     ],
+     "service_type": "services",
+     "submission_deadline": "",
+     "bid_closing_date": "",
+     "deadline": null,
+     "priority": "medium",
+     "scope_of_work": "",
+     "technical_requirements": "",
+     "material_requirements": "",
+     "site_conditions": "",
+     "special_instructions": "",
+     "commercial_notes": "",
+     "scope": null,
+     "expected_value": 18000.0,
+     "notes": null,
+     "client_code": "CL-004",
+     "site_code": "CL-004-01",
+     "site_name": "ongc",
+     "id": "9f2869a9-9ac5-4b8c-ae70-b3343b618e11",
+     "enquiry_no": "ENQ-2026-0070",
+     "dept_doc_no": "SAL/ENQ/2026/0047",
+     "ownership_department": "sales",
+     "status": "won",
+     "status_history": [
+      {
+       "status": "open",
+       "by": "Super Admin",
+       "at": "2026-06-10T08:21:31.698865+00:00",
+       "note": null
+      },
+      {
+       "status": "submitted",
+       "by": "Super Admin",
+       "at": "2026-06-10T08:28:28.675043+00:00",
+       "note": "Synced from quote QTN-2026-0043 \u2192 submitted"
+      },
+      {
+       "status": "won",
+       "by": "Super Admin",
+       "at": "2026-06-10T08:29:15.413386+00:00",
+       "note": "Synced from quote QTN-2026-0043 Rev1 \u2192 won"
+      }
+     ],
+     "created_at": "2026-06-10T08:21:31.698874+00:00",
+     "created_by": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "quotation_id": "c564baf8-eb77-4666-a3c6-fa8ef49af7c5",
+     "quotation_no": "QTN-2026-0043",
+     "updated_at": "2026-06-10T08:29:39.698640+00:00",
+     "updated_by": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "order_id": "d61950dc-6ede-427c-a774-997df2a2628b",
+     "order_no": "ORD-2026-0005",
+     "project_code": "PRJ-2026-0029",
+     "project_id": "39bf43d9-77fb-4d01-b47d-30c316ee781d"
+    }
+   }
+  ],
+  "orders": [
+   {
+    "collection": "orders",
+    "doc": {
+     "id": "8979e8b0-89e7-4e64-8656-46689f9828ed",
+     "order_no": "ORD-2026-0002",
+     "enquiry_id": "b2c6c92c-bfb8-4577-add4-8eb9dcc8d061",
+     "enquiry_no": "ENQ-2026-0063",
+     "customer": "Adani Power",
+     "contact_person": "Ranveer",
+     "site_location": "DELHI",
+     "service_type": "services",
+     "scope": null,
+     "customer_po": "test 123",
+     "contract_value": 125000.0,
+     "payment_terms": "Net 30",
+     "status": "active",
+     "created_at": "2026-06-06T09:33:01.742232+00:00",
+     "created_by": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "project_id": "d3332e59-34eb-4312-be24-5a5b11bca95a",
+     "project_code": "PRJ-2026-0019",
+     "dept_doc_no": "SAL/SO/2026/0002",
+     "ownership_department": "sales"
+    }
+   },
+   {
+    "collection": "orders",
+    "doc": {
+     "id": "f187494c-6dea-4aba-b7dc-20b34d953099",
+     "order_no": "ORD-2026-0004",
+     "enquiry_id": "caa5c6ad-2b69-40bd-b85e-84f56c4b3e56",
+     "enquiry_no": "ENQ-2026-0068",
+     "customer": "ONGC",
+     "contact_person": "RAHUL",
+     "site_location": "TEST",
+     "service_type": "services",
+     "scope": null,
+     "customer_po": "1541",
+     "contract_value": 16000.0,
+     "payment_terms": "Net 30",
+     "status": "active",
+     "created_at": "2026-06-10T06:30:13.268344+00:00",
+     "created_by": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "project_id": "09c790f5-312f-43d4-b884-6fa6d9ffdb43",
+     "project_code": "PRJ-2026-0028",
+     "dept_doc_no": "SAL/SO/2026/0004",
+     "ownership_department": "sales"
+    }
+   },
+   {
+    "collection": "orders",
+    "doc": {
+     "id": "d61950dc-6ede-427c-a774-997df2a2628b",
+     "order_no": "ORD-2026-0005",
+     "enquiry_id": "9f2869a9-9ac5-4b8c-ae70-b3343b618e11",
+     "enquiry_no": "ENQ-2026-0070",
+     "customer": "ONGC",
+     "contact_person": "RAHUL",
+     "site_location": "DELHI",
+     "service_type": "services",
+     "scope": null,
+     "customer_po": "46547474687",
+     "contract_value": 18000.0,
+     "payment_terms": "Net 30",
+     "status": "active",
+     "created_at": "2026-06-10T08:29:39.681118+00:00",
+     "created_by": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "project_id": "39bf43d9-77fb-4d01-b47d-30c316ee781d",
+     "project_code": "PRJ-2026-0029",
+     "dept_doc_no": "SAL/SO/2026/0005",
+     "ownership_department": "sales"
+    }
+   }
+  ],
+  "quotations": [
+   {
+    "collection": "quotations",
+    "doc": {
+     "id": "25a7393f-bd8f-4e6f-9677-5f6a745ebe78",
+     "quote_number": "QTN-2026-0004",
+     "enquiry_id": "5b05b139-e473-413b-ab31-8c101e176bfa",
+     "enquiry_no": "ENQ-2026-0035",
+     "client_id": "24591580-c504-4899-9d42-e4f67008f628",
+     "site_id": "f4f27713-5e58-498a-8a03-7347e9a1beab",
+     "client": "TEST_Client_1780129906",
+     "project": "TEST_iter62_full",
+     "service_categories": [
+      "scaffolding"
+     ],
+     "rfq_type": [
+      "supply"
+     ],
+     "submission_deadline": null,
+     "scope_of_work": "TEST_iter62_full",
+     "technical_requirements": null,
+     "material_requirements": null,
+     "commercial_notes": null,
+     "contact_person": "TEST Contact",
+     "contact_email": "c@x.com",
+     "amount": 12345.0,
+     "date": "2026-06-05",
+     "status": "won",
+     "created_at": "2026-06-05T10:44:06.067064+00:00",
+     "created_by": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "created_via": "auto_from_enquiry",
+     "dept_doc_no": "SAL/QT/2026/0012",
+     "ownership_department": "sales",
+     "approval_id": "c589f707-e810-4dc9-a995-f92e6e0128c1",
+     "approval_sent_at": "2026-06-05T10:44:06.117351+00:00",
+     "approval_status": "approved",
+     "updated_at": "2026-06-05T10:44:07.091154+00:00",
+     "updated_by": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "approval_decided_at": "2026-06-05T10:44:06.789652+00:00",
+     "status_history": [
+      {
+       "status": "submitted",
+       "by": "Super Admin",
+       "at": "2026-06-05T10:44:06.990035+00:00",
+       "note": null
+      },
+      {
+       "status": "won",
+       "by": "Super Admin",
+       "at": "2026-06-05T10:44:07.091123+00:00",
+       "note": null
+      }
+     ]
+    }
+   },
+   {
+    "collection": "quotations",
+    "doc": {
+     "id": "a90ace3e-bc2e-4dcc-bed9-44bef4d9f8b1",
+     "quote_number": "QTN-2026-0009",
+     "enquiry_id": "0be4584b-1e92-4312-987f-08b97736dc8e",
+     "enquiry_no": "ENQ-2026-0040",
+     "client_id": "24591580-c504-4899-9d42-e4f67008f628",
+     "site_id": "f4f27713-5e58-498a-8a03-7347e9a1beab",
+     "client": "TEST_Client_1780129906",
+     "project": "TEST_iter62_full",
+     "service_categories": [
+      "scaffolding"
+     ],
+     "rfq_type": [
+      "supply"
+     ],
+     "submission_deadline": null,
+     "scope_of_work": "TEST_iter62_full",
+     "technical_requirements": null,
+     "material_requirements": null,
+     "commercial_notes": null,
+     "contact_person": "TEST Contact",
+     "contact_email": "c@x.com",
+     "amount": 12345.0,
+     "date": "2026-06-05",
+     "status": "won",
+     "created_at": "2026-06-05T10:44:31.476453+00:00",
+     "created_by": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "created_via": "auto_from_enquiry",
+     "dept_doc_no": "SAL/QT/2026/0017",
+     "ownership_department": "sales",
+     "approval_id": "a8090e8c-f24f-4aec-be71-f34c4e203917",
+     "approval_sent_at": "2026-06-05T10:44:31.527360+00:00",
+     "approval_status": "approved",
+     "updated_at": "2026-06-05T10:44:32.505285+00:00",
+     "updated_by": "cd3ee87a-d767-4cae-a735-95dd93c21866",
+     "approval_decided_at": "2026-06-05T10:44:32.197761+00:00",
+     "status_history": [
+      {
+       "status": "submitted",
+       "by": "Super Admin",
+       "at": "2026-06-05T10:44:32.398339+00:00",
+       "note": null
+      },
+      {
+       "status": "won",
+       "by": "Super Admin",
+       "at": "2026-06-05T10:44:32.505262+00:00",
+       "note": null
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "plan": [
+  {
+   "keep": {
+    "id": "cf19d96a-8456-46ca-9331-201907e122c5",
+    "code": "PRJ-2026-0017",
+    "name": "Pytest Project"
+   },
+   "merge": [
+    {
+     "id": "2dde4f11-9551-4fcc-858b-2eaa5f856b54",
+     "code": "PRJ-2026-0016"
+    }
+   ]
+  },
+  {
+   "keep": {
+    "id": "7387643c-7d93-465e-8ee9-6ae964879d98",
+    "code": "PRJ-2026-0018",
+    "name": "Adani Power \u2014 Project"
+   },
+   "merge": [
+    {
+     "id": "d3332e59-34eb-4312-be24-5a5b11bca95a",
+     "code": "PRJ-2026-0019"
+    }
+   ]
+  },
+  {
+   "keep": {
+    "id": "32099f0a-296c-4ce9-b3f4-3183b4eb732b",
+    "code": "PRJ-2026-0023",
+    "name": "TEST_iter62_full"
+   },
+   "merge": [
+    {
+     "id": "e124e990-0782-4809-b912-8e3313cb2d10",
+     "code": "PRJ-2026-0024"
+    }
+   ]
+  },
+  {
+   "keep": {
+    "id": "20f4846b-6260-41f5-9d56-31b1af5f0594",
+    "code": "PRJ-2026-0027",
+    "name": "ONGC \u2014 Project"
+   },
+   "merge": [
+    {
+     "id": "09c790f5-312f-43d4-b884-6fa6d9ffdb43",
+     "code": "PRJ-2026-0028"
+    },
+    {
+     "id": "39bf43d9-77fb-4d01-b47d-30c316ee781d",
+     "code": "PRJ-2026-0029"
+    }
+   ]
+  }
+ ]
+}

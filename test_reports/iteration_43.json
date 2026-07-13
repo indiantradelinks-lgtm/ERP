@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 43 — Microsoft Graph OneDrive integration (Phase 1+2) backend testing complete. 24/24 pytest tests pass. Verified API contract for all 11 admin endpoints, super_admin-only RBAC (12 negative 403 cases), settings encryption at rest + masked GET, blank-secret-preserves-existing, enqueue hook on /api/uploads with stats/queue listing, retry flow, historical migration (idempotent), backups list/schedule, and graceful failure of /test-connection against the user-supplied invalid Azure tenant (AADSTS90002 returned cleanly as {ok:false, error:...}). Regression on /api/auth/login and /api/scheduler/status PASS.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/admin/onedrive/test-connection",
+        "issue": "Invalid Azure tenant from user (tenant_id=a399706e-c501-4e30-9d0f-45ba9ebfb504) returns MSAL error 'Unable to get authority configuration ... please double check your tenant name or GUID is correct.' This is EXPECTED per the request brief — credentials supplied are not real. No code defect; integration plumbing is correct and reaches the MS Graph authority endpoint. Action: ask user for valid tenant_id (likely the Azure AD tenant of indiantradelinks.in)."
+      },
+      {
+        "endpoint": "auth / test_credentials.md",
+        "issue": "test_pm@erp.com (PM@12345) and all other documented non-super_admin accounts (sales@erp.com, hr.test@erp.com, purchase@erp.com, supervisor@erp.com) return 401 against current DB. Only 4 users exist: admin, test_vendor_iter40, test_vendor_iter41, mis@indiantradelinks.in. /app/memory/test_credentials.md is stale relative to actual DB seed state. Used test_vendor_iter40@erp.com / Vendor@123 as the non-super_admin actor for all 12 RBAC-403 assertions instead — vendor role is equally non-super_admin so the RBAC contract verification is equivalent."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration43_onedrive.py",
+    "/app/test_reports/pytest/iteration43_onedrive.xml"
+  ],
+  "action_items": [
+    "Confirm Azure tenant credentials with user — the supplied tenant_id is rejected by Microsoft. Once correct tenant is provided and admin grants Files.ReadWrite.All + User.Read.All app permissions and admin-consents them, /test-connection should return ok:true.",
+    "Refresh /app/memory/test_credentials.md to match actual DB seed (most documented non-super_admin accounts no longer exist in the current preview DB). Either re-seed them via auth/register on startup or update the doc.",
+    "Consider running run_push_queue once with a tiny limit at app startup just to log the configured state — currently the scheduled push job logs results to scheduler._last_results but there's no admin endpoint to surface the last run summary on the UI."
+  ],
+  "critical_code_review_comments": [
+    "Good: client_secret encrypted at rest via Fernet (M365_FERNET_KEY) and masked in all GET responses. Blank secret on PUT correctly preserves existing encrypted value.",
+    "Good: enqueue_file in onedrive_router is idempotent (skips file_id already pending/pushed) — verified by migrate-historical second-run returning queued=0.",
+    "Good: _push_queued_item correctly auto-requeues on failure (status stays 'pending' until attempts >= 5, then flips to 'failed'). Behaviour observed in tests against invalid tenant.",
+    "Good: super_admin RBAC consistently enforced across all 11 endpoints via _require_admin() helper.",
+    "Minor: files_router.py:74-79 wraps enqueue_file in try/except and logs warning on failure — so a future bug in OneDrive code can never break /api/uploads. Confirmed working; regression test passes.",
+    "Minor: scheduler runs the push job every 2 minutes — fine for low-volume ERP but may be aggressive against Graph throttling at scale. Consider exponential backoff once attempts ≥ 2.",
+    "Minor: /api/admin/onedrive/queue has no pagination (only `limit`) — for large historical migrations the UI will need an offset/cursor. Currently capped at limit=100 default.",
+    "Minor: _create_db_dump prefers `mongodump`; if absent it falls back to a JSON-export with `json.dumps(default=str)` — that converts dates/Decimals to strings but loses fidelity. Acceptable for a backup tier."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration43_onedrive.py (new — 24 tests covering all OneDrive admin endpoints + enqueue hook + regression)"
+  ],
+  "success_rate": {"backend": "100% (24/24)", "frontend": "n/a — backend-only iteration"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin) — works. test_vendor_iter40@erp.com / Vendor@123 (vendor role) — used for non-super_admin 403 tests. test_pm@erp.com from the doc DID NOT WORK (account missing from DB).",
+  "seed_data_creation": "Test uploads a single file 'TEST_iter43_onedrive.txt' (27 bytes) via /api/uploads which auto-enqueues into db.onedrive_queue. This row remains in the queue (status oscillates pending due to invalid Azure creds + retries) but is harmless. PUT /admin/onedrive/settings persists tenant_id=a399706e-c501-4e30-9d0f-45ba9ebfb504, client_id=a06f2e42-0376-4c18-af29-5168cd27aca4, backup_user_upn=backup@indiantradelinks.in, base_folder=ITL-ERP-Backups — as specified in the user inputs.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "OneDrive integration plumbing is fully verified — settings save/mask, RBAC, queue enqueue on upload, queue listing/stats/filter, process-now scheduling, retry, migrate-historical (with idempotency), backups list/schedule, test-connection graceful failure all pass. The single remaining variable is the Azure tenant validity: when the real tenant is supplied, only the test_connection assertion in TestOneDriveConnection needs to be inverted to expect ok:true; everything else remains valid. Test file is self-contained at /app/backend/tests/test_iteration43_onedrive.py; run: `pytest backend/tests/test_iteration43_onedrive.py -v`. Auth in tests uses Set-Cookie access_token extraction (httpOnly cookie auth pattern).",
+  "rca of the issue": "The 'test-connection failure' is not a bug — it is a data issue. MSAL error message: 'Unable to get authority configuration for https://login.microsoftonline.com/a399706e-c501-4e30-9d0f-45ba9ebfb504. Authority would typically be in a format of https://login.microsoftonline.com/your_tenant ... double check your tenant name or GUID is correct.' Confirms Azure could not resolve the tenant GUID, exactly as the request brief predicted. All upstream code paths (MSAL init, ConfidentialClientApplication, acquire_token_for_client, error capture, settings persist of last_test_ok=false + last_test_error) handle this cleanly with no crash, no 500, and the queue/backup workers correctly skip pushing when this state persists."
+}

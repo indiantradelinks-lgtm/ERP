@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 46 backend testing complete — Employee Advance Recovery (Phase C/D/E). All 22 pytest cases pass. Verified: (a) Iter45 payment outstanding regression fix (outstanding == paid_amount, NOT zero, NOT approved-paid); (b) Phase C dry-run/commit/idempotency/override/skip/foreclose/settle with full RBAC; (c) Phase D self-service /me/summary (linked true & false paths) + outstanding/monthly-recovery/aging reports; (d) Phase E CSV bulk-import incl. happy row, missing-employee error row, and auto-closed status when fully recovered. Full happy path AD-####/Salary Advance (create → 6-step approve → pay → recovery dry-run + commit) executed end-to-end inside the test fixture chain.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/advances/recovery/run", "issue": "Month validation only checks len==7; values like '2026/01' or 'XXXX-XX' pass validation (no regex). Low risk but should use regex r'^\\d{4}-(0[1-9]|1[0-2])$'."},
+      {"endpoint": "POST /api/advances/{id}/recovery/skip", "issue": "Pydantic schema RecoveryAdjustIn requires amount>0, but skip ignores amount entirely. Callers must pass a dummy >0 amount. Should be Optional/relaxed for skip."},
+      {"endpoint": "POST /api/advances/recovery/override", "issue": "When override row is replaced, recovered is recomputed via approved_amount - new_recovered. If a different recovery TYPE (e.g., foreclosure/skipped) exists for that month, delta_back ignores it (only emi/manual counted) — could under/over-credit. Edge case; no break in our flows."},
+      {"endpoint": "POST /api/advances/recovery/override", "issue": "Cap check uses outstanding + recovered (i.e., approved). Inflating outstanding manually is possible by increasing override after a prior partial recovery — minor design quirk."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration46_advance_recovery.py",
+    "/app/test_reports/pytest/iteration46_advances.xml"
+  ],
+  "action_items": [
+    "(Optional / low priority) Tighten month validation in /advances/recovery/run with a regex.",
+    "(Optional) Loosen RecoveryAdjustIn.amount constraint for /recovery/skip route (or use a separate Skip schema with amount Optional).",
+    "(Optional) Make override delta_back account for all prior recovery types in the same month, not just emi/manual."
+  ],
+  "critical_code_review_comments": [
+    "advance_router.py is now 974 lines — recommend splitting Phase C (recovery), Phase D (reports/self-service), Phase E (bulk import) into separate routers/sub-modules. Crossed the >700-line guideline.",
+    "Bulk import status_history pushes 'from': None — fine, but lacks role-gating beyond super_admin/hr_executive; consider also restricting to a feature flag for production safety.",
+    "advance_recoveries collection has no compound index on (advance_id, month, type) — idempotency check relies on a find_one scan. Add index for scale.",
+    "Settlement endpoint allows waived_amount=0 (Field(ge=0)). A 0-waive settle still flips status→closed silently. Add explicit guard `waived_amount > 0` or document intent.",
+    "Override formula uses approved_amount as basis for outstanding (approved - recovered). If paid_amount < approved_amount (partial payment), outstanding would be wrong. Currently the payment endpoint forbids paid_amount > approved but allows partial — override should use paid_amount or stored outstanding+delta instead."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration46_advance_recovery.py (new)"
+  ],
+  "success_rate": {"backend": "100% (22/22)", "frontend": "N/A (backend-only request)"},
+  "test_credentials": "admin@erp.com/Admin@123, hr.test@erp.com/HR@12345, test_pm@erp.com/PM@12345, test_site_engineer@erp.com/TestPass@123 — all valid.",
+  "seed_data_creation": "Created fresh advance AD-2026-0008 (₹12k Salary Advance, 4 EMIs of ₹3k, repay_start 2026-01) for the recovery happy-path. EMI Jan committed then overridden to ₹2k. Also created a foreclose target (₹6k, closed) and a settle target (₹4k waived → closed). Two bulk-imported advances (one under_recovery ₹8k outstanding, one closed). Hist entries on db.advance_recoveries for 2026-01 (manual override) and 2026-02 (skipped). Production data not modified.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Recovery + reports + bulk import all stable. Re-run the file with pytest to regress. Note: every run creates 4 new advance docs (one happy path, one foreclose target, one settle target, plus 2 bulk imports). For long-term suite hygiene consider a cleanup fixture that deletes advance_no LIKE 'AD-2026-%' AND created_by='Admin' AND reason LIKE 'iter46%'.",
+  "rca of the issue": "No production bugs found. Iter45's payment outstanding bug is FIXED — line 497 in advance_router.py now correctly sets `outstanding = payload.paid_amount` (not approved_amount - paid_amount). Verified with a fresh 12000 paid → outstanding=12000 (not 0)."
+}

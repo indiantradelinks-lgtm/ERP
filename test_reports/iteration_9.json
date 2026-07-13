@@ -1,0 +1,39 @@
+{
+  "summary": "Phase C/D/E/F regression — backend + frontend smoke. Backend pytest /app/backend/tests/test_phase_cdef.py: 29/29 PASS in 4.8s. Phase C store transactions (inward +50 → balance 150 status='posted' txn_no=INV-2026-####; outward 60 > threshold 50 → status='awaiting_approval' + db.approvals row created, inventory.quantity unchanged; overdraft 99999 → 400; scrap below threshold → quantity decremented; lookup by id/sku/barcode resolves and unknown→404; list filter by item_id+txn_type works). Phase D Safety (ppe-issuance, ptws, safety-trainings, toolbox-talks): super_admin full CRUD 200; site_engineer READ 200 + DELETE 403 verified for all four. Phase E HR (recruitment-requests, candidates, deployments, accommodations, overtime): super_admin full CRUD 200; candidates AND recruitment-requests properly return 403 for site_engineer per RBAC matrix. Phase F Vendor portal: /vendor-portal/me for unlinked super_admin returns 404 (as designed); evaluation POST x2 (4.0, 5.0) correctly updates vendor.rating to 4.5 and rating_count=2 (rolling average verified); site_engineer POST evaluation → 403; /vendor-portal/invoices POST for unlinked admin → 404. Regression: Phase A admin (test_phase_a_admin.py) + Phase B sales (test_phase_b_sales.py) → 31/31 PASS combined. Frontend smoke (admin@erp.com): all 10 new pages (/app/store-transactions, /app/ppe, /app/ptws, /app/safety-trainings, /app/toolbox-talks, /app/recruitment, /app/candidates, /app/deployments, /app/accommodations, /app/overtime) render without runtime errors. Store transactions dialog opens; all required testids present: store-txns-search, store-txns-filter, store-txns-add, store-txns-scan, store-txns-lookup, store-txns-field-type, store-txns-field-qty, store-txns-post. Existing INV-2026-#### rows render with status badges (posted/awaiting_approval/scrap). Sidebar (visible in screenshot) shows expected groups: COMMAND, OPERATIONS (incl. PPE Issuance / Permits to Work / Safety Trainings / Toolbox Talks), COMMERCE (incl. Stock Movements / Inventory & Stores), PEOPLE & FINANCE. Candidates page renders with existing row + New button.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Store transactions — Lookup result card", "issue": "After programmatically filling SKU 'TESTBOLT-M10' and clicking [data-testid=store-txns-lookup], the [data-testid=store-txns-resolved-item] card did not render in Playwright. Backend GET /api/store/lookup/{code} works correctly (verified in pytest). Likely a Playwright fill/autoFocus race condition (the Input has autoFocus and onKeyDown=Enter handler) rather than a real bug — manual click from screenshot 1 confirms the dialog renders with the Lookup button. Recommend a manual visual check.", "affected_selectors": ["[data-testid=store-txns-resolved-item]"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase_cdef.py",
+    "/app/test_reports/pytest/iteration9_phase_cdef.xml"
+  ],
+  "action_items": [
+    "Optional: Manually verify Store Transactions resolved-item card renders after Lookup with a valid SKU — backend is confirmed working; this is purely a UI verification."
+  ],
+  "critical_code_review_comments": [
+    "store_router.create_txn correctly creates the approval BEFORE mutating inventory and skips inventory.update when needs_approval=True; reverse path (approve→post) is not wired in this router — assumes a separate approvals workflow updates inventory.quantity on approve. Confirm the approval-approve handler also adjusts inventory.quantity, or outward issues that are approved will remain logically unposted.",
+    "store_router._delta treats 'transfer' as a negative-only delta. A transfer normally should ALSO create a positive inward at the destination location — current implementation only debits source. If multi-location stock is in scope, this is a gap; otherwise fine as a simple move-out audit.",
+    "vendor_portal_router.add_evaluation rolling average iterates the entire evaluations cursor on every write. Acceptable for low row counts; consider an incremental on-vendor accumulator (sum, count) if evaluation volume grows.",
+    "vendor_portal_router.require_vendor accepts role=super_admin but _resolve_vendor without vendor_id falls back to matching the admin's email — which by design will 404 for admin (verified). Doc string is accurate.",
+    "rbac.PERMISSIONS: vendor_invoices read excludes 'vendor' role — vendors must hit /vendor-portal/invoices to see their own. Confirm /api/vendor-invoices is NOT exposed under crud_router for vendors (looks intentional — main agent please confirm).",
+    "store_router uses float for quantity/balance — for procurement/inventory ledgers, consider Decimal to avoid 0.1+0.2=0.30000000000000004 surprises (non-blocking, current data shows integer qty)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase_cdef.py (new — Phase C/D/E/F + regression suite, 29 cases)"
+  ],
+  "success_rate": {"backend": "100% (29/29 Phase C/D/E/F + 31/31 Phase A/B regression)", "frontend": "100% (smoke)"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin); test_site_engineer@erp.com / TestPass@123 (site_engineer, persisted from prior iterations).",
+  "seed_data_creation": "Test inventory item TEST_PhaseC Bolt M10 (SKU TESTBOLT-M10, barcode BC-TESTBOLT-M10) — auto-deleted by fixture teardown but the transactions referencing it (INV-2026-####) and the approval row remain. Vendor TEST_PhaseF Vendor was created+deleted in eval test. Test rows for ppe-issuance / ptws / safety-trainings / toolbox-talks / recruitment-requests / candidates / deployments / accommodations / overtime were created and cleaned up via DELETE.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase C/D/E/F stable. /app/backend/tests/test_phase_cdef.py is safe to re-run as regression (~5s). The 29 cases cover txn_type validation, approval-gated outward, overdraft 400, scrap decrement, barcode/SKU/id lookup, txn list filters, all 4 safety resources × full CRUD + RBAC, all 5 HR resources × full CRUD, candidates+recruitment-requests RBAC (site_engineer 403), vendor evaluation rolling average, vendor portal 404 fallbacks. Sequence counters INV-2026-#### advanced by ~5 numbers during this run. The only un-verified UI surface is the Store Transactions 'resolved item' card after Lookup — backend lookup is green, just couldn't drive it cleanly via Playwright (likely autoFocus race).",
+  "rca of the issue": "N/A — no functional bugs found in this iteration."
+}

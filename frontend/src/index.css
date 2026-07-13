@@ -1,0 +1,146 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Industrial ERP — White + Blue + Soft Slate palette */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 217 91% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 214 32% 95%;
+    --secondary-foreground: 222 47% 14%;
+    --muted: 210 40% 98%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 199 89% 48%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 158 64% 38%;
+    --warning: 38 92% 50%;
+    --border: 214 32% 88%;
+    --input: 214 32% 88%;
+    --ring: 217 91% 55%;
+    --chart-1: 217 91% 55%;
+    --chart-2: 199 89% 48%;
+    --chart-3: 188 86% 53%;
+    --chart-4: 158 64% 45%;
+    --chart-5: 215 25% 47%;
+    --radius: 4px;
+    --sidebar-bg: 0 0% 100%;
+    --sidebar-fg: 222 47% 18%;
+    --sidebar-border: 214 32% 90%;
+  }
+  .dark {
+    --background: 222 47% 6%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 215 28% 14%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 215 28% 14%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 199 89% 55%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+    --success: 158 64% 50%;
+    --warning: 38 92% 55%;
+    --border: 215 28% 18%;
+    --input: 215 28% 18%;
+    --ring: 217 91% 60%;
+    --chart-1: 217 91% 65%;
+    --chart-2: 199 89% 60%;
+    --chart-3: 188 86% 60%;
+    --chart-4: 158 64% 55%;
+    --chart-5: 215 25% 70%;
+    --sidebar-bg: 222 47% 6%;
+    --sidebar-fg: 210 40% 90%;
+    --sidebar-border: 215 28% 16%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html, body {
+    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "ss01", "cv11";
+  }
+  h1, h2, h3, h4, h5, h6, .font-display {
+    font-family: 'Chivo', sans-serif;
+    letter-spacing: -0.01em;
+  }
+  .font-mono-data {
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .tabular { font-variant-numeric: tabular-nums; }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: hsl(var(--background)); }
+::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.5); }
+
+/* Grain overlay for landing hero */
+.bg-grain::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.4 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.18;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+
+.industrial-gridlines {
+  background-image:
+    linear-gradient(hsl(var(--border) / 0.4) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--border) / 0.4) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.hover-amber:hover { color: hsl(var(--primary)); }
+
+/* KPI tile micro motion */
+.kpi-tile {
+  transition: transform 200ms ease, border-color 200ms ease, background-color 200ms ease;
+}
+.kpi-tile:hover { transform: translateY(-2px); border-color: hsl(var(--primary) / 0.6); }
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fade-up 360ms ease both; }
+
+/* Staggered children */
+.stagger > * { animation: fade-up 360ms ease both; }
+.stagger > *:nth-child(1) { animation-delay: 30ms; }
+.stagger > *:nth-child(2) { animation-delay: 90ms; }
+.stagger > *:nth-child(3) { animation-delay: 150ms; }
+.stagger > *:nth-child(4) { animation-delay: 210ms; }
+.stagger > *:nth-child(5) { animation-delay: 270ms; }
+.stagger > *:nth-child(6) { animation-delay: 330ms; }
+.stagger > *:nth-child(7) { animation-delay: 390ms; }
+.stagger > *:nth-child(8) { animation-delay: 450ms; }
+
+@layer base {
+  [data-debug-wrapper="true"] { display: contents !important; }
+}

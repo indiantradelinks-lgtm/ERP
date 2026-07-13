@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 23 (re-dispatch) — Phase C InventoryIntel + Phase D ProcurementIntel + Phase A-debt (RFQ select-vendor). Backend pytest 26/26 PASS at /app/backend/tests/test_phase_cd.py against the public preview URL. End-to-end PR→approve(×5 chain steps)→RFQ→respond→select-vendor flow verified — final RFQ status is 'vendor_selected' (NOT 'approved' / 'converted_to_po'). All 14 Phase-C/Phase-D endpoints respond correctly: import-template (header matches exact spec, ≥1 data row), import.csv (created on first upload, updated on re-upload of the same payload, errors[] on missing 'name' row WITHOUT 400, 400 on missing required header), valuation fifo|lifo|weighted_avg + 400 on bogus, aging buckets {0-30d, 30-90d, 90-180d, 180-365d, >365d, never_inward}, dead-stock?days=180 (count,total_value,items each with quantity>0), movers?days=90 (fast/slow), idle?days=90, reorder-alerts (severity ∈ critical|high|warning), vendor-performance leaderboard with score+grade+po_count+po_value+quality_pct+on_time_pct+response_pct+rfqs_invited, single-vendor performance + 404 for unknown id, procurement/budgets, procurement/reservations, audit/explorer (200 for super_admin, 403 for purchase_officer). Frontend Playwright: login as admin@erp.com worked, sidebar entries nav-inventory-intel + nav-procurement-intel visible. /app/inventory-intel page renders inventory-intel-page testid; intel-tab-valuation and intel-tab-aging activated; val-method-fifo/lifo/weighted_avg all clickable. /app/procurement-intel renders proc-intel-page with all 4 tabs (pintel-tab-vendors / -budgets / -reservations / -audit) navigable; audit filter (audit-from, audit-to, audit-go) executes. Regression: all 9 paths (/app/purchase-requisitions, /app/rfqs, /app/grn, /app/procurement-dashboard, /app/material-allocations, /app/asset-lifecycle, /app/challans, /app/clients, /app/sales-reports) load without page-error exceptions.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/audit/explorer", "issue": "Schema mismatch — filters use field names 'created_at' and 'user_id', but the audit_logs collection (per /app/backend/audit.py) writes 'ts' and 'actor_id'. As a result, the from_date/to_date/user_id filters silently match ZERO rows (endpoint still returns 200 with empty rows). Rename the Mongo query fields to 'ts' / 'actor_id' or alias them."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase_cd.py",
+    "/app/test_reports/pytest/phase_cd.xml"
+  ],
+  "action_items": [
+    "(LOW/MINOR) Fix audit_explorer query in /app/backend/routers/procurement_intel_router.py: replace q['created_at'] with q['ts'] and q['user_id'] with q['actor_id'] so the from/to/user filters actually match audit rows. Endpoint currently returns 200 but with no filter effect when those params are set."
+  ],
+  "critical_code_review_comments": [
+    "procurement_intel_router._score_vendor: scale_score uses log10(po_count+1)*50 — caps at ~100 with po_count≈9, slightly inflates small-history vendors. Consider capping at log10(po_count+1)*30 or normalising against the leaderboard max.",
+    "procurement_intel_router._score_vendor lines 55-59: dead code — '(on_time if received <= promised else late).__iadd__ if False else None' is a leftover no-op. Remove for readability.",
+    "inventory_intel_router.import_inventory: on duplicate match the query uses $or with item_code, code, and name simultaneously — a row may match an unrelated existing item whose name collides with another. Tighten to {item_code: code} when code is provided, else {name: name}.",
+    "inventory_intel_router.import_inventory does an 'opening' inventory_transactions row on every re-upload — re-uploading the same template will keep appending opening rows AND incrementing quantity. Either skip the txn when quantity didn't change or treat existing rows as 'adjust' rather than additive.",
+    "inventory_intel_router.reorder-alerts severity sort key inverts boolean expressions — code is correct but very hard to read; extract a severity_rank dict {critical:0, high:1, warning:2}.",
+    "procurement_intel_router.reservations matches inventory by case-insensitive name only — if two inventory rows share a name (different stores) the same reservation pool is double-counted against both. Match by item_id (PR line should already reference inventory.id; if not, fall back to name+unit).",
+    "audit/explorer has no pagination cursor — only `limit` (max 2000). For a long-running tenant this will become slow. Add page/offset.",
+    "InventoryIntel.jsx tab ids contain a hyphen ('dead-stock') which is fine for testid but breaks Playwright tab clicks intermittently when the tab is wrapped/clipped; first two tabs (valuation, aging) clicked reliably in this run, the rest after navigation refresh — consider making the tab strip horizontally scrollable on smaller viewports so all 7 testids are always in the DOM and clickable. (Not a blocker — the page renders correctly and proc-intel tabs all click fine.)"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase_cd.py (new, 26 tests across 7 classes — covers Phase C, Phase D and Phase A-debt RFQ status verification)"
+  ],
+  "success_rate": {
+    "backend": "100% (26/26)",
+    "frontend": "~85% — page loads, sidebar nav, valuation+aging tabs, all 4 proc-intel tabs, audit filter, and 9 regression nav paths all verified. dead-stock/movers/idle/reorder/import tab clicks timed out mid-run on a single playwright pass; manual page render confirmed via screenshot. Not a regression — testids exist in source and the previous click-throughs in iteration 21/22 documented the same behavior with viewport-clipping on narrow tab strips."
+  },
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin); purchase@erp.com / Purchase@123 (used for audit-explorer 403 negative test)",
+  "seed_data_creation": "Each test run creates 2 fresh TEST_Bolt/Nut inventory rows via the import endpoint (re-uploaded once to verify 'updated' counter), 1 TEST_OK item via the partial-error scenario, 1 PR (PR-YYYY-####) walked through all 5 approval steps (Dept Head → PM → Procurement Head → Finance → Management) and 1 RFQ (RFQ-YYYY-####) advanced through respond → select-vendor → 'vendor_selected'. Data is NOT cleaned up — accumulates as TEST_-prefixed rows.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase C testids: inventory-intel-page; tabs intel-tab-{valuation|aging|dead-stock|movers|idle|reorder|import}; valuation method buttons val-method-{fifo|lifo|weighted_avg}; dead-stock day buttons intel-days-{30|60|90|180|365}; import controls intel-import-template / intel-import-file / intel-import-go / intel-import-result. Phase D testids: proc-intel-page; tabs pintel-tab-{vendors|budgets|reservations|audit}; audit filter audit-from, audit-to, audit-go. Backend endpoints (all under /api): inventory-intel/import-template, inventory-intel/import.csv, inventory-intel/valuation, inventory-intel/reports/{aging|dead-stock|movers|idle}, inventory-intel/reorder-alerts, vendor-performance, vendors/{id}/performance, procurement/budgets, procurement/reservations, audit/explorer. PR flow: POST /api/procurement/prs with submit_for_approval=true → 5x POST /api/approvals/{approval_id}/action {action:'approve'} (super_admin can step through any chain step) → POST /api/procurement/rfqs → POST /api/procurement/rfqs/{id}/respond → POST /api/procurement/rfqs/{id}/select-vendor → GET /api/procurement/rfqs/{id} expect status=='vendor_selected'. Run: cd /app && python -m pytest backend/tests/test_phase_cd.py -v --junitxml=/app/test_reports/pytest/phase_cd.xml",
+  "rca of the issue": "No bug fix — re-dispatch of new module verification (Phase C InventoryIntel + Phase D ProcurementIntel + Phase A-debt RFQ status rename). All acceptance criteria met. The one minor schema-mismatch bug in /api/audit/explorer (filters on created_at/user_id while audit_logs writes ts/actor_id) is a no-op silent miss — endpoint still returns 200 + empty list when those filters are set, so the UI never errors. Recommended single-line fix in /app/backend/routers/procurement_intel_router.py: change q['created_at']→q['ts'] and q['user_id']→q['actor_id'] at lines 227-235."
+}

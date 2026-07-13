@@ -1,0 +1,32 @@
+{
+  "summary": "Iter 54 — Frontend-only validation of Procurement Phase 2/3/4 UI (ProcurementReports page, StockLedger dialog, Comparative Statement L1/L2/L3 with non-L1 justification, RFQ Lineage). All targeted flows PASS. Login as admin@erp.com/Admin@123 succeeded; super_admin lands on /app. /app/procurement/reports renders all 4 tabs (Registers, Pending POs, By Dept/Project/Vendor, Rejected Material) without React errors; CSV button visible on each; register dropdown switches between PR/RFQ/PO/GRN with Count + Total Value badges updating. /app/inventory shows 1 seeded item with working inventory-ledger-{id} button — StockLedger dialog opens, fetches /api/store/ledger/{item_code}, and renders 6 totals tiles (Opening 0 · Receipts 100 · Issues 0 · Returns 0 · Transfers 0 · Closing 100) plus an inward txn row (+100 from SteelTech Supplies). /app/rfqs Compare on RFQ-2026-0008 displays L1 SteelTech (₹1,950 SELECTED), L2 RopeAccess (+₹1,350 / 69.23% above L1), L3 PaintMaster (+₹9,000 / 461.54% above L1) with Select(L2)/Select(L3) buttons. Earlier test confirmed non-L1 justification dialog: opens on non-L1 click, Confirm button disabled when text <20 chars, enabled at >=20 chars (regex enforced client-side at confirmNonL1 too). Lineage dialog opens with 'Procurement Lineage — RFQ-...' title.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Sidebar", "issues": ["Sidebar lists 'Approvals Dashboard' link but /app/approvals-dashboard redirects to the public landing page '/' (not in scope of Phase 2/3/4 but observed during regression). /app/approvals works correctly and shows the Approvals Queue."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_54.json"
+  ],
+  "action_items": [
+    "(Low priority, NOT regression of this iter) Verify /app/approvals-dashboard route registration in /app/frontend/src/App.js — sidebar link currently lands on the public homepage. Likely missing route or RBAC redirect."
+  ],
+  "critical_code_review_comments": [
+    "ProcurementReports.jsx — clean separation into Registers/PendingPOs/ByDimension/RejectedMaterial sub-components. CSV download is fully client-side (Blob); for very large datasets prefer a server-stream endpoint. _id/items/history/chain correctly stripped from CSV/table.",
+    "StockLedger.jsx — useEffect dep is [open, itemId] with eslint-disable on the function; OK. KIND_COLOR map covers inward/outward/transfer/return/scrap. Closes properly via DialogFooter Close.",
+    "Rfqs.jsx CompareDialog — selectVendor() correctly opens justification modal when (!isL1 && data?.l1_vendor_id). confirmNonL1 enforces >=20 chars client-side AND sends 'justification' in POST body; data-testid='non-l1-confirm' has disabled={justification.trim().length < 20} — server-side mandatory enforcement should also reject empty/short to avoid bypass via direct API. (backend iter 51 covered this — assumed OK).",
+    "Rfqs.jsx — file is large (~535 lines, 3 sub-components). Approaching the >700-line guideline; consider extracting CompareDialog and ResponseDialog into separate files next iter.",
+    "Inventory.jsx — StockLedger passes itemId={ledgerFor?.id} but backend route is /api/store/ledger/{item_code}. StockLedger uses `${itemId}` directly in the URL; this works because the backend resolves by either id or code per server.py logic (verified in iter 51 backend tests passed). Worth double-checking with main agent that this is intentional."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (skipped per request)", "frontend": "100% on Phase 2/3/4 in-scope flows (Procurement Reports tabs+CSV+register switching, Stock Ledger dialog+API+render, Comparative L1/L2/L3 ranks+deltas, non-L1 justification gating, RFQ Lineage). 1 out-of-scope regression note on /app/approvals-dashboard." },
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin) verified working",
+  "seed_data_creation": "No test data created. Used existing preview DB: 1 inventory item (Pen and Paper with 100 inward), 2 RFQs (RFQ-2026-0008 has 3 vendors L1/L2/L3, RFQ-2026-0012 has 1 vendor; both converted_to_po).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 2/3/4 frontend GREEN. Useful data in preview DB: RFQ-2026-0008 (3 vendors → ideal for L1/L2/L3 + non-L1 justification testing); RFQ-2026-0012 (1 vendor L1 only). Inventory has only 1 item ('Pen and Paper'). To exercise PendingPOs/RejectedMaterial tabs with actual rows, additional seed data is needed (current state shows empty tables which render the 'No data' empty state correctly). /app/approvals works; /app/approvals-dashboard appears to be a stale sidebar link — investigate if reported as a separate task.",
+  "rca of the issue": "No bugs in scope. /app/approvals-dashboard redirect-to-/ is likely a missing <Route> registration or a guard that 404s and the catch-all renders the marketing homepage instead of a 404 page. Mitigation: add explicit Route for /app/approvals-dashboard or remove the sidebar item."
+}

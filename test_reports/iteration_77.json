@@ -1,0 +1,35 @@
+{
+  "summary": "Iter 77 — Phase 1 Store & Inventory (consolidated /app/store-inventory hub). Backend: 24/24 API tests pass via new /app/backend/tests/test_iter77_inventory_api.py (seed idempotency, 12 ITL categories, 17 UOMs incl. FT->M=0.3048, full CRUD for categories/units/stores/site-stores/bins with duplicate-409 and invalid-type-400, opening-stock auto-approve <100k, pending_approval ≥100k, self-approve-403, negative/zero qty 400, duplicate (date,store,item) 409, dashboard 16 tile keys + 4 extras all present, stock-balance shape OK + totals reconcile, settings GET/PUT whitelist + non-privileged 403, 5 legacy endpoints still alive). Frontend: login OK, /app/store-inventory shows consolidated 'Store & Inventory' shell with all 17 si-nav-* sidebar items across 6 groups (Overview, Masters, Stock, Operations, Governance, Reports). Dashboard tiles populated from real aggregations. Categories/Units/Stores/Opening Stock/Settings views render with seeded data. 3 test opening-stock entries visible (2 approved + 1 pending). All 5 legacy routes (/app/inventory, /app/store-transactions, /app/grn, /app/material-allocations, /app/inventory-intel) load cleanly with no 404. No critical issues found.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Inventory Dashboard", "issues": ["Most ₹ value tiles show ₹0 because legacy inventory items in DB lack `rate`/`average_rate` fields — dashboard aggregation is correct, just data-dependent. Consider seeding sample rates or surfacing this clearly in empty state."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter77_inventory_api.py",
+    "/app/backend/tests/test_iter77_inventory_master.py",
+    "/app/test_reports/pytest/iter77_inventory.xml"
+  ],
+  "action_items": [
+    "(optional, low) Dashboard tiles read item.rate / item.average_rate — most legacy items have neither field, so ₹ totals show 0. Either backfill last_purchase_rate -> rate at seed, or fall back to last_purchase_rate inside _cat_value/total_value aggregator.",
+    "(optional) os-save testid is only mounted after user clicks 'New Opening Stock' (form lives in a modal). Acceptable, but consider exposing data-testid='os-new' on the open button so smoke tests can find it deterministically."
+  ],
+  "critical_code_review_comments": [
+    "inventory_master_router.py L488 — os_number derivation uses count_documents which is racy under concurrency (two parallel POSTs could collide). Acceptable for v1 but switch to an atomic counter collection or unique index on os_number before high-volume use.",
+    "_post_opening_stock writes balance_after using the value already-incremented inventory.quantity, which is correct — but it re-reads the doc per line so under concurrent multi-line updates the balance_after could be skewed. Consider transactional session or per-line snapshot in same update.",
+    "dashboard aggregation iterates all items in Python (L609 to_list(10000)). For >10k SKUs this is slow — push aggregation to MongoDB ($group) when item count grows.",
+    "/inv/settings PUT silently drops bogus keys (good) but does not return a 422/400 when ALL keys are invalid; caller can't tell their payload was ignored. Consider warning in response."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter77_inventory_api.py (NEW — full HTTP API regression for Phase 1)"
+  ],
+  "success_rate": {"backend": "100% (24/24 + 8/8 unit = 32/32)", "frontend": "100% on tested flows"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin); test_pm@erp.com / PM@12345 (project_manager — used for non-privileged 403 check)",
+  "seed_data_creation": "Test run created TEST_ prefixed categories/units (cleaned up), 1 site_store (TST*) + 1 site-store (SS*) kept, 1 bin kept, 4 opening_stock entries left in DB (TEST small/large + dup test on 2026-03-10). These do not impact production and are clearly TEST-prefixed.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 1 Store & Inventory module is fully working end-to-end. New API test suite at /app/backend/tests/test_iter77_inventory_api.py is the regression baseline — keep running it on every Phase 2+ change. Frontend hub at /app/store-inventory works with all 17 nav items. Legacy /app/inventory, /app/store-transactions, /app/grn, /app/material-allocations, /app/inventory-intel routes are untouched and still reachable. inv_* collections are separate from legacy `inventory`/`inventory_transactions` — never merge them. Permission key 'inventory' is shared with legacy router (intentional reuse)."
+}

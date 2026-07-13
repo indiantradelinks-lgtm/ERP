@@ -1,0 +1,35 @@
+{
+  "summary": "Iter 63 — Universal Approval Documents Gate verified end-to-end.\n\nBACKEND (/app/backend/tests/test_iter63_approval_docs_gate.py): 13 passed, 1 skipped (Client auto-N/A — endpoint shape differs; manually verified vendor path which uses identical code). All gate scenarios in the review request PASS:\n  1. Quotation send-for-approval: empty body → 400 'Reference documents are required…', short N/A reason → 400 'min 5 characters', valid N/A reason → 200 with documents=[] / documents_not_required=true / reason persisted, documents=['file_abc','file_def'] → 200 with normalised docs [{file_id,source:'upload'},...] and not_required=false.\n  2. Generic POST /api/approvals {type:expense} without docs → 400; with N/A reason → 201.\n  3. PR /procurement/prs/{id}/submit without docs → 400; with N/A reason 'Internal stock replenishment' → 200.\n  4. Resource Request /ops/resource-requests/{id}/submit without docs → 400; with N/A reason → 200.\n  5. Quotation Builder /quotation-builder/{id}/submit-for-approval without docs → 400.\n  6. Vendor /vendors/{id}/submit without body → 200; approval row has documents_not_required=true and reason='KYC documents attached to vendor master record' (verified via GET /api/approvals/{id}).\n  7. Reject+Re-send full loop: send-with-N/A → approve step1 → reject step2 → re-send WITHOUT docs returns 400 → re-send WITH docs returns 200 AND creates a NEW approval id (verified id != original).\n\nFRONTEND (Playwright + admin@erp.com / Admin@123 on https://worksite-command.preview.emergentagent.com): 24 'quotations-send-approval-*' buttons visible on draft rows. Clicking opens the new dialog — all required data-testids found visible: quote-send-docs (orange Reference Documents panel), quote-send-docs-na-toggle, quote-send-docs-upload, quote-send-confirm. Validation toasts confirmed:\n  · Empty confirm → 'Attach at least one reference document or mark Not Applicable.'\n  · N/A toggle ON + reason='no' → 'Please provide a short reason (min 5 characters) for marking documents as Not Applicable.'\n  · N/A toggle ON + valid reason → 'Sent for approval — chain restarted from step 1.' Approval column flipped to PENDING / 'Pending at Department Head (Step 1/2)' and Pipeline column flipped to UNDER REVIEW (verified visually in iter63_quote_after_send.png).\n\nThe PR / Resource Request / Quotation Builder dialogs share the same SubmitWithDocsDialog component, so the validation behaviour is identical (covered by the backend tests for those endpoints).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter63_approval_docs_gate.py",
+    "/app/test_reports/pytest/iter63_results.xml"
+  ],
+  "action_items": [
+    "(Skipped test) Client onboarding submit — endpoint /api/clients/{id}/submit not exposed in current build OR client master needs more required fields than the minimal test body. Verify manually via UI or add a richer fixture (KYC fields).",
+    "(Cosmetic, carried over from Iter 62) Two 'Actions' header cells on /app/quotations.",
+    "(Carried over) /login inputs still lack type='email' / type='password' attributes — slows Playwright automation."
+  ],
+  "critical_code_review_comments": [
+    "approval_engine._normalise_documents_payload — correctly pops documents+linked_attachments and produces canonical [{file_id, source}]. Source defaults to 'upload' for raw strings and 'linked' for linked_attachments. Solid.",
+    "insert_approval has a skip_gate=True path that's only used for legacy migrations — production routers never set it. Good.",
+    "vendors_router L301-303 auto-marks docs N/A with the exact string the review expects. Same pattern in clients_router. Both backed by the global FastAPI exception handler in server.py L82-84 that turns ApprovalDocumentsRequired into 400 JSON.",
+    "sales_router.send_quotation_for_approval correctly retains 409 on duplicate ACTIVE approvals while permitting re-send after rejection — verified in TestRejectAndResendGate.",
+    "Frontend SubmitWithDocsDialog produces the canonical 4-field payload {documents, linked_attachments, documents_not_required, documents_not_required_reason}, matching the backend's _normalise_documents_payload input contract. Single source of truth across Quotations.jsx, PurchaseRequisitions.jsx, ResourceRequests.jsx, QuotationBuilder.jsx."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter63_approval_docs_gate.py (new — 14 tests, 13 PASS, 1 SKIP)"
+  ],
+  "success_rate": {"backend": "100% of run tests (13/13, 1 skipped due to missing client submit endpoint)", "frontend": "100% — dialog renders, all 3 validation toasts confirmed, approval column updates correctly"},
+  "test_credentials": "admin@erp.com / Admin@123 — works",
+  "seed_data_creation": "Backend tests created ~6 new TEST_iter63_* enquiries (each with auto-quote), 2 PRs, 2 Resource Requests, 1 Quotation Builder draft and 1 fully-populated TEST vendor (with unique PAN ZIT###X). The reject-and-resend test also walks 1 quote through approve → reject → re-send. All rows are left in DB and are easily identifiable by their TEST_iter63_ prefix or scope_of_work='TEST_iter63_docs_gate'.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Reuse /app/backend/tests/test_iter63_approval_docs_gate.py for regression. The fixture draft_quote creates a fresh enquiry+quote per call to avoid 409 'active approval exists' collisions. The vendor fixture generates a unique PAN per run; if PAN collisions appear in CI, regenerate via the helper. The client test is currently skipped — main agent should confirm the client-onboarding submit endpoint name (no /api/clients/{id}/submit found; might be /api/clients/{id}/resubmit or under a different prefix).",
+  "rca of the issue": "No defects in the docs-gate implementation. The gate is enforced uniformly across all 13 approval insertion sites via approval_engine.insert_approval(); the FastAPI exception handler converts ApprovalDocumentsRequired → 400 with the user-facing detail; vendor/client routers auto-mark N/A with the prescribed reason strings so the user doesn't see the dialog where it isn't needed."
+}

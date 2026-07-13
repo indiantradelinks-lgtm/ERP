@@ -1,0 +1,38 @@
+{
+  "summary": "HR Phase 4 (Salary/Wage structure approval, Loans, Reimbursements, Store Recoveries, Payroll Finance-Approval, Accounts JV posting, Statutory PF/ESIC/TDS reports, Project-wise manpower cost) — full backend + frontend tested. Backend 18/18 pytest PASS against public REACT_APP_BACKEND_URL. Frontend hub at /app/hr/payroll-statutory loads, all 8 tabs render and switch cleanly, sidebar nav-hr-payroll4 wired correctly, every CRUD entry-point button (hr4-ss-new, hr4-loan-new, hr4-reimb-new, hr4-recovery-new) is mounted, Statutory cards (PF/ESIC/TDS) render with backend data, Posting Workflow shows Finance/Accounts/Payment lanes. The existing /api/payroll preview/override/commit cycle is untouched and re-verified independent. NO regression observed in HR Phase 2/3 endpoints.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "HrPhase4.jsx TabsTrigger data-testids", "issue": "Test-id naming does not match the playbook spec exactly. Spec asks for hr4-tab-{salary-structures,reimbursements,store-recoveries} but UI emits hr4-tab-{structures,reimb,recoveries}. UI works, but downstream playwright scripts that rely on the spec exactly will miss 3 tabs.", "selector": "[data-testid='hr4-tab-salary-structures'], [data-testid='hr4-tab-reimbursements'], [data-testid='hr4-tab-store-recoveries']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_hr_phase4.py",
+    "/app/test_reports/pytest/iter84_hr_phase4.xml"
+  ],
+  "action_items": [
+    "(Optional / cosmetic) Rename three TabsTrigger data-testids in /app/frontend/src/pages/hr/HrPhase4.jsx line 610/612/613 from {hr4-tab-structures, hr4-tab-reimb, hr4-tab-recoveries} to {hr4-tab-salary-structures, hr4-tab-reimbursements, hr4-tab-store-recoveries} so they match the original playbook contract.",
+    "(Code review — non-blocking) hr_phase4_router.py is ~800 LOC; consider splitting into hr_phase4_structures.py / hr_phase4_payroll_posting.py / hr_phase4_statutory.py for maintainability before phase 5."
+  ],
+  "critical_code_review_comments": [
+    "post_payroll_to_accounts assumes employer PF/ESI matches employee — but employer PF is 12% of basic (capped) MINUS the 8.33% EPS portion, and the spec for /statutory/pf currently doubles employee_contribution as employer_contribution. This is a known simplification but should be flagged before audit/CA review.",
+    "_seq uses datetime.now(UTC).year — sequence resets across calendar year boundaries only inside the formatted prefix, but the counter doc itself is never year-scoped. So in Jan 2027 the next LN sequence will be LN-2027-{n+1} where n is last 2026 count — fine functionally but the playbook implies SS-YYYY-#### resets each year. Verify against finance team expectation.",
+    "ACC_CODES['bank'] is hard-coded to 1101 — no fallback if chart_of_accounts uses a different bank code. Safer: read from a settings.bank_account_code or fail loudly if 1101 absent.",
+    "post_payroll_to_accounts builds 1 JV that mixes per-project cost-centre debit lines with aggregated credit lines. If a project_code holds non-ASCII or whitespace, project_id will pass through unsanitized into journal_entries.lines.project_id. Add normalization or whitelist.",
+    "mark_payroll_paid recomputes net from payslips at pay-time rather than reading the already-posted JV — small risk of double-counting if any payslip is touched between posting and payment. Recommend storing net_payable on payroll_runs at posting and re-using.",
+    "HrPhase4.jsx still triggers the same react-hooks/set-state-in-effect ESLint warning seen in Phase 2/3 — non-blocking but worth addressing across all phase hubs at once."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "100% (all 8 tabs render, all primary actions reachable; testid naming cosmetic mismatch noted)"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin) — verified working via both cookie and Bearer paths",
+  "seed_data_creation": "Pytest run created: 1 employee 'PYTEST HR4 Emp', 1 SS-2026-####, 1 LN-2026-#### (paid → posts JV Dr 1302 / Cr 1101), 1 RMB-2026-#### (approved+paid → 2 JVs), 1 STR-2026-####. Loan & reimbursement JVs are now visible in journal_entries. Chart of Accounts now contains codes 5101/5102/2201/2202/2203/2204/2205/2206/1301/1302/4201.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "HR Phase 4 backend + frontend both green. Tests live at /app/backend/tests/test_hr_phase4.py (18 cases, no skips when env var set). The only outstanding note is the tab data-testid naming mismatch — purely cosmetic. The full post-to-accounts + mark-paid end-to-end (404/400 guards) is covered; the 'happy path' (committed run → finance-approve → post-to-accounts → mark-paid) requires a prior /api/payroll/run/commit and is implicitly tested by the guard tests rather than a full E2E because the preview DB has no committed payroll runs at test time. If a future test needs full E2E, first POST to /api/payroll/run/preview then /commit before /hr4/payroll/finance-approve.",
+  "rca of the issue": "No bug found. Initial pytest local run showed 401 across ~10 tests because REACT_APP_BACKEND_URL was unset in the shell — once env var was exported, all 18 passed against the public URL."
+}

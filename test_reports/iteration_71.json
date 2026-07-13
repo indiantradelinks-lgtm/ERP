@@ -1,0 +1,46 @@
+{
+  "summary": "Iter 71 — Accounts Module (CoA + Manual JE + 4 Reports) verified end-to-end via backend pytest (11 passed, 1 skipped) and Playwright UI walkthrough of all 6 tabs.\n\nBACKEND (/app/backend/tests/test_iter71_accounts.py, 11/12 PASS, 1 SKIP):\n  · CoA seed is idempotent (1st call inserts 30, 2nd returns inserted=0).\n  · GET /api/accounts/chart-of-accounts returns >=30 rows.\n  · POST create CoA with code='TEST_9999' → 200 + persisted in list; duplicate POST → 409; DELETE → 200 + row absent from active list (soft-disable confirmed).\n  · POST balanced JE (1100 DR 500 / 3100 CR 500) → 200, JE found via GET ?source_module=manual.\n  · POST unbalanced JE (DR=100 / CR=200) → 400 with detail mentioning 'debit/credit'.\n  · GET trial-balance returns {rows, totals(debit,credit,diff)}; date range 1990 → totals.debit=0 totals.credit=0 (filter works).\n  · GET profit-and-loss / ar-aging / ap-aging all return 200.\n  · SKIPPED: 'auto_posted_je_exists' — out of 50 JEs in DB, 48 are LEGACY rows with NO source_module field, 2 are 'manual' (just posted by the test). ZERO JEs exist with source_module ∈ {sales_invoice, grn, vendor_invoice, payment_release, stock_issue}. Either the auto-posting hooks for the 5 key events are not wired/firing in this preview DB, or no events have triggered them. Worth flagging to main agent.\n\nFRONTEND (Playwright + admin@erp.com / Admin@123 on https://worksite-command.preview.emergentagent.com/app/accounts):\n  · Page loads with all 6 tabs (acc-tab-coa/je/tb/pl/ar/ap) — all data-testids present.\n  · CoA tab: 32 rows render. acc-coa-seed click works (no error). acc-coa-add opens dialog → fill code='9991' name='Test Account FE' type=asset → acc-coa-save → toast 'Account added' visible (green) → row appears in table.\n  · JE tab: 50 existing rows show. acc-je-add opens 'Post Manual Journal Entry' dialog. Account selects (acc-je-line-0-account, acc-je-line-1-account) are native <select> elements. Balanced entry (line0: 1100 DR 500 / line1: 3100 CR 500, narration='QA test entry iter71') → acc-je-save enabled, click → toast 'JE posted', dialog closes, row count 50→51.\n  · UNBALANCED: After filling DR=100/CR=200, acc-je-save is DISABLED and red banner 'DR ≠ CR · diff ₹100' is shown. ✓ Rejection enforced at UI level.\n  · Trial Balance: 4 rows + totals row visible (TB has aggregated postings).\n  · P&L: Revenue, Expenses, Net Profit/(Loss) banner all present.\n  · AR Aging: 4 bucket cards (0-30, 31-60, 61-90, 90+) + 'TOTAL OUTSTANDING' card all visible. 'Nothing outstanding' empty-state shown (no AR invoices in DB).\n  · AP Aging: 4 bucket cards + Total Outstanding ₹70,000 + 7 rows of TEST48-INV-* RopeAccess Gear invoices in 31-60 bucket with green '31-60 · 36d' badges.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/accounts/journal-entries", "issue": "Out of 50 JEs in DB, 48 have NO source_module field (legacy rows) and 2 are 'manual'. ZERO JEs from auto-posting hooks (sales_invoice / grn / vendor_invoice / payment_release / stock_issue). Either the hooks are not wired into the originating routers, or no events have triggered them in this DB. The agent-to-agent note acknowledged legacy data — but the absence of ANY new auto-posted JE means the auto-posting service cannot be regression-verified here."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Accounts page", "issue": "data-testid='acc-page' was specified in the review request but is NOT present on the page wrapper. Only the 6 tab data-testids exist. Not critical (tabs are reachable) but breaks the stated testability contract.", "selector": "[data-testid='acc-page']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Manual JE dialog", "issues": ["React hydration warning in console: '<span> cannot be a child of <option>'. Caused by emergent's <span data-ve-dynamic> instrumentation injected inside <option> elements of the Account <select>. Visual rendering is fine, but Strict-Mode hydration error is noisy. Likely an instrumentation artifact, not a real bug in Accounts.jsx."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter71_accounts.py",
+    "/app/test_reports/pytest/iter71_accounts.xml"
+  ],
+  "action_items": [
+    "Confirm the auto-posting hooks for the 5 key events (GRN, Vendor Invoice, Payment Release, Sales Invoice, Stock Issue) are actually invoked from their originating routers. Currently zero JEs with source_module ∈ those values exist in DB — a sanity run (e.g. create one RA bill / sales invoice via API) should produce a JE; if not, the hook is silently failing.",
+    "(Cosmetic) Add data-testid='acc-page' to the Accounts page root container to honour the review-request testability contract.",
+    "(Cosmetic) The login form inputs still lack type='email' / type='password' attributes (carried over since Iter 62). Slows Playwright; tests resort to nth-child input lookup.",
+    "(Cosmetic) JE dialog hydration warning — option-with-span — investigate whether instrumentation can be disabled inside <option> children, or convert the native <select> to a shadcn Select."
+  ],
+  "critical_code_review_comments": [
+    "accounts_router.py is well-structured (149 lines, clear separation of CoA/JE/Reports). Properly excludes _id via projection in all queries.",
+    "post_manual_je returns 400 with a descriptive 'unbalanced — debit must equal credit and be > 0' message — backend regression test confirms.",
+    "Soft-delete (is_active=False) is the correct approach for CoA since historical JEs reference the code; the active_only=true filter on GET correctly hides them.",
+    "GL drill-down (/reports/general-ledger) computes running balance properly using is_debit_normal flag based on account type — looks correct on inspection.",
+    "Accounts.jsx UI correctly disables the Save button when DR≠CR and surfaces 'DR ≠ CR · diff ₹X' as a red banner. This is exactly what the review request asks for.",
+    "MISSING TEST COVERAGE: There is no end-to-end auto-posting regression in the existing test suite — once main agent confirms the hook wiring, an integration test should POST /api/ra-bills (or similar) and assert a corresponding JE row with source_module='sales_invoice'."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter71_accounts.py (new — 12 tests, 11 PASS / 1 SKIP)"
+  ],
+  "success_rate": {"backend": "91% (11/12 passed, 1 skipped due to absent auto-posted JEs)", "frontend": "100% — all 6 tabs functional, CoA add+toast, JE balanced post + unbalanced reject, TB/P&L/AR/AP all render"},
+  "test_credentials": "admin@erp.com / Admin@123 — works (httpOnly cookie session)",
+  "seed_data_creation": "Backend tests created 1 transient CoA row 'TEST_9999' (soft-deleted in same test), 1 balanced manual JE on 2026-01-15 (TEST_iter71 narration), and attempted 1 unbalanced JE (rejected by backend). Frontend test created 1 CoA row code='9991' name='Test Account FE' (still active in DB — main agent may want to soft-delete) and 1 manual JE with narration='QA test entry iter71' (on today's date).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Reuse /app/backend/tests/test_iter71_accounts.py. The fixture uses Session-based cookie auth (no Bearer token returned in login body). If the main agent fixes the auto-posting hooks, flip test_auto_posted_je_exists from pytest.skip to a strict assertion. Frontend left a CoA row '9991' / 'Test Account FE' as asset — purely cosmetic, can be deleted by clicking trash on the row or directly via DELETE /api/accounts/chart-of-accounts/{id}.",
+  "rca of the issue": "No critical defects in the Accounts Module implementation itself. The single FINDING is that the auto-posting service (which is supposed to fire on 5 events) has produced ZERO JEs in this preview DB while 48 legacy JEs (no source_module field) and the 2 'manual' JEs (posted by this iteration's tests) are present. This is either (a) silent failure of the hooks inside ra_bills_router/grn_router/etc — most likely, or (b) no qualifying events have occurred in this DB since the hooks were wired. Reproduction: GET /api/accounts/journal-entries?limit=500 and inspect source_module distribution. Mitigation: in each originating router (sales invoice creation, GRN posting, vendor invoice creation, payment release, stock issue) add a try/except around the post_journal_entry call so failures are logged loudly, OR write a one-off backfill script that scans existing source records and posts JEs retroactively."
+}

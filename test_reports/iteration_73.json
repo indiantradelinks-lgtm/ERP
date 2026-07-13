@@ -1,0 +1,46 @@
+{
+  "summary": "Iter 73 — Phase 2 Client Billing & Receivables verified end-to-end. Backend pytest 21/21 PASS (catalog endpoints + invoice CRUD/totals/approval+JE + service-type→income mapping + receipt+JE + 8 receivable reports). Frontend Playwright: all 8 new acc-subnav items render under Billing & Receivables groups; New Client Invoice dialog renders with the exact expected summary (Taxable ₹20,000 · GST(18%) ₹3,600 · Gross ₹23,600 · TDS −₹400 · Retention −₹1,000 · Net Receivable ₹22,200).\n\nBACKEND (/app/backend/tests/test_iter73_billing_phase2.py — 21/21 PASS):\n  · /api/billing/invoice-types → 10 codes (TAX/PROF/RA/FINAL/MOB/RETN/EXTRA/REIMB/DN/CN).\n  · /api/billing/service-types → 7 (scaffolding/painting/roof_sheeting/rope_access/manpower/material_supply/other).\n  · RA invoice (scaffolding, 50000 line, WO 500000) → invoice_no matches ^RA-2026-\\d{4}$, totals computed exactly: taxable=50000, cgst=4500, sgst=4500, gross=59000, tds=1000, retention=2500, net=55500, outstanding=59000, status='draft'.\n  · Approve → JE-2026-#### voucher_type=SV, total_debit=total_credit=59000; DR 1200=59000 / CR 4101=50000 / CR 2300=9000 — verified exact line-level mapping.\n  · Re-approve → 400 'Cannot approve invoice in status approved'.\n  · WO over-billing (cumulative 550000 > WO 500000) → 400 'Billing exceeds work-order value'.\n  · TDS 200% → 400 'TDS expected cannot exceed invoice value'.\n  · Service-type painting → CR 4102 (10000); manpower → CR 4105 (10000). Mapping confirmed at JE line level.\n  · Receipt with amount=55500, tds=1000, retention=2500 → total_adjusted=59000, status='posted', je_voucher_number present. Invoice flips to status='paid', outstanding=0, paid_amount=59000.\n  · Receipt JE: voucher_type=RV, total_debit=total_credit=59000; DR 1100=55500 + DR 1220=1000 + DR 1210=2500 / CR 1200=59000.\n  · Excess receipt 70000 without excess_reason → 400 'Excess receipt … requires excess_reason'. With excess_reason='Advance for next bill' → 200.\n  · /reports/client-outstanding → buckets {0-30, 31-60, 61-90, 90+} + total_outstanding + clients[].\n  · /reports/gst-sales-register?start=2026-01-01&end=2026-12-31 → rows + totals {taxable, cgst, sgst, igst, gross}; sum-of-rows.gross == totals.gross.\n  · /reports/tds-receivable → total_tds ≥ 1000 (matches our deduction).\n  · /reports/retention-receivable → total_retention ≥ 2500.\n  · /reports/collection?start=2026-06-01&end=2026-06-30 → totals {total_adjusted, amount_received, tds_deducted, retention_deducted}.\n  · /reports/overdue → each row has overdue_days, outstanding>0.\n  · /reports/invoice-register and ?invoice_type=RA — filter works.\n  · /reports/client-ledger?client_name=Test_Client_A → events date-sorted asc, closing_balance ~0 after full settlement.\n\nFRONTEND (admin@erp.com / Admin@123, /app/accounts):\n  · acc-subnav present. New nav items ALL present: acc-nav-client_inv, acc-nav-receipts, acc-nav-outstanding, acc-nav-overdue, acc-nav-collection, acc-nav-tds_rcvbl, acc-nav-retn_rcvbl, acc-nav-gst_sales.\n  · Billing and Receivables groups visible in sidebar between existing Vouchers and Period sections.\n  · Click acc-nav-client_inv → 'Client Invoices' view loads with 'New Invoice' button. bill-inv-add opens 'New Client Invoice' dialog with: Type, Invoice Date, Service Type, Due Days, Client*, Client GSTIN, Project Code, Work Order #, Contract Value, Billing Address, Lines (Description/Qty/Unit/Rate/Amount), + Line, GST Rate %, Tax Type (Intra/Inter), TDS %, Retention %.\n  · Summary panel renders EXACT expected values for type=RA + service=scaffolding + rate=20000 + GST=18 + TDS=2 + Retention=5: Taxable ₹20,000 · GST(18%) ₹3,600 · Gross ₹23,600 · TDS Expected −₹400 · Retention −₹1,000 · Net Receivable ₹22,200.\n  · Client Invoices grid header shows: TYPE / NO / DATE / CLIENT / GROSS / OUTSTANDING / STATUS / JE columns. Existing approved invoices visible with status='approved' or 'paid' badges and JE-2026-#### codes wired through.\n  · Server-side RA-bill validation enforced via toast ('project_id/project_code required for RA Bill (Running Account)') when project code missing — confirms invoice form is wired to /api/billing/invoices.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/billing/invoices (RA)", "issue": "When work_order_no is supplied but project_code/project_id is empty, server returns 400 'project_id/project_code required for RA Bill'. UI dialog allows save without project_code → user sees red toast. Consider client-side validation to mark Project Code* required when Type ∈ {RA, FINAL, MOB, RETN, EXTRA}."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "New Client Invoice dialog", "issues": ["Project Code field has no visual asterisk despite being mandatory for project-billing invoice types (RA/FINAL/MOB/RETN/EXTRA). Server returns 400 if missing — surface via client-side required marker or disable Save until populated."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter73_billing_phase2.py",
+    "/app/test_reports/pytest/iter73_billing_phase2.xml"
+  ],
+  "action_items": [
+    "(Minor UX) Mark Project Code* / Work Order #* as required in the New Client Invoice dialog when invoice_type ∈ {RA, FINAL, MOB, RETN, EXTRA}, or disable Save until populated, to prevent the server-side 400 surfacing as a red toast."
+  ],
+  "critical_code_review_comments": [
+    "billing_router.py is well-organized (~683 lines): catalogs / invoices CRUD+approve+cancel / receipts / 9 reports cleanly separated with Pydantic schemas (InvoiceIn, ReceiptIn) and proper require_permission('accounting', ...).",
+    "_compute_invoice_totals() correctly handles CGST/SGST split vs IGST, line-level taxable override, and rounds to 2 dp — verified by 21 backend tests.",
+    "_check_wo_limit() sums prior approved+partially_paid+paid invoices on same WO; 1.0001 float tolerance is appropriate.",
+    "approve_invoice writes back je_id + je_voucher_number AND bumps projects.revenue_invoiced — clean.",
+    "Receipt apply logic: FIFO across invoice_ids, validates aggregate against available outstanding, requires excess_reason if exceeded — correct.",
+    "Receipt JE legs DR 1100 (Bank) + DR 1220 (TDS Rec) + DR 1210 (Retention Rec) + DR 5900 (Other Deduction) / CR 1200 (AR) — matches spec exactly.",
+    "Service-type → income-code map (4101..4106, 4900) is implemented inside accounting_service.post_sales_invoice_issued() — verified at JE line level for scaffolding/painting/manpower.",
+    "All reports exclude _id, sort sensibly, and aggregate totals server-side — no leaks.",
+    "Minor: collection_report uses 'amount_received' from receipt.amount field (net), 'total_adjusted' = amount+tds+retention+other — clear naming.",
+    "Minor (server-side enforcement strengthens robustness): if invoice_type ∈ {RA/FINAL/MOB/RETN/EXTRA} require project. Already done. Good.",
+    "Edge: cancel_invoice only allows draft; approved invoices must go through CN — financial-integrity correct."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter73_billing_phase2.py (new — 21 tests, all PASS)"
+  ],
+  "success_rate": {"backend": "100% (21/21 — all billing + reports + JE assertions)", "frontend": "95% — all 8 nav items present, dialog renders correct summary; only a minor UX polish needed for project_code required marker"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin, cookie session)",
+  "seed_data_creation": "Test run created (unique TS suffix) ~6 invoices: 1 RA RA-2026-#### (TEST_Client_A, paid), 1 TAX painting (TEST_Client_Paint, approved 10000+1800), 1 TAX manpower (TEST_Client_Manp, approved 10000+1800), 1 TAX excess-test (TEST_Excess, paid+excess advance), 2 JE entries SV/RV per invoice/receipt, 1 receipt RCPT-2026-####. As requested, the agent suggests main agent clear client_invoices/client_receipts collections (TEST_*) after preview verification.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Re-running /app/backend/tests/test_iter73_billing_phase2.py uses fresh TS each run so no cross-run collisions; safe to re-execute. test_iter71_accounts.py has a stale 'TEST_9999' CoA row from prior runs causing one create-409 (pre-existing — not iter 73 regression). test_iter72_accounts_phase1.py still 12/12 PASS. The new collections client_invoices and client_receipts each gained ~6 test rows this run.",
+  "rca of the issue": "No code defects in Phase 2. The only finding is a UX polish: Project Code / Work Order are conditionally required at the API for RA/FINAL/MOB/RETN/EXTRA but the form does not visually flag this — surfaces as a red toast instead of inline error. Suggest adding a required asterisk + disabled-save until populated for these invoice types in BillingViews.jsx ClientInvoicesView dialog."
+}

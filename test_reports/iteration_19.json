@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 19 - Phase D Client Management (onboarding approval + docs + geo-pin). Backend pytest 13/13 PASS (test_iteration19_phase_d_clients.py). Frontend Playwright walkthrough as admin@erp.com verified: /app/clients shows Map header button (clients-map-btn), per-client Docs buttons (30 of client-docs-*), 2 pending_approval banners (client-pending-*), 11 View-approval links (client-approval-*); ClientDocsDialog opens with category dropdown (docs-category-select default PAN) + FileUploader; /app/client-map renders Leaflet map (client-map) + sidebar (client-map-sidebar) + search (client-map-search) + 1 geo-tagged site row (CUST-0009-01 Mumbai) with marker pin; New Site dialog renders Leaflet pin editor (leaflet-pin-editor), Use-my-location button (leaflet-use-my-location), site-field-geo-lat/geo-lng inputs; sidebar nav-client-map link is present under Commerce; /app/modules/sales workspace shows Client Map tile. Backend: POST /api/clients now defaults to pending_approval with auto-created 3-step approval (sales_executive -> accounts_executive -> director), super_admin x3 approve flips client to active+approved_at, reject sets status=rejected+reject_reason, POST /api/clients/{id}/resubmit on rejected creates new chain (400 on non-rejected), GET /api/sites/map filters out empty/non-numeric/out-of-range geo coords, POST /api/uploads accepts new 'category' Form field and validates against CLIENT_DOC_CATEGORIES for clients & client_sites folders (returns 400 on invalid, allowed list in detail).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/app/client-map", "issues": ["Leaflet map has fixed height with no responsive aspect ratio - on narrow viewports the map can become very small while sidebar takes substantial width. Consider switching to a CSS grid with min map height."]},
+      {"screen": "Site dialog Leaflet pin editor", "issues": ["The mini-map inside the New Site dialog is partially clipped at the bottom (only ~80px visible above the Cancel/Save action bar at 1080p) requiring user to scroll inside the dialog. Consider increasing dialog max-height or shrinking the mini-map to ~180px."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration19_phase_d_clients.py",
+    "/app/test_reports/pytest/iteration19.xml"
+  ],
+  "action_items": [
+    "(LOW) GET /api/sites/map filters out status='inactive' sites. Spec only required excluding null/empty/out-of-range geo; explicitly dropping inactive sites is an undocumented extra filter - confirm intent or surface in API docs.",
+    "(LOW) Resize Leaflet mini-map inside Site dialog so it is fully visible without scrolling at 1920x1080.",
+    "(LOW) Sites map endpoint loads up to 5000 sites with no pagination - fine for now but will need viewport-bounded querying once site count grows."
+  ],
+  "critical_code_review_comments": [
+    "clients_router.create_client: when build_chain/approval insert fails we only log a warning, the client is left in pending_approval with NO approval_id - it becomes orphaned and the user gets a success response with no way to advance. Consider either making it transactional or rolling the client back to a 'draft' status on failure.",
+    "clients_router.resubmit_client: the previous (rejected) approval document is not soft-deleted or marked stale - a new one is just inserted. /app/approvals will list both unless filtered, which can confuse approvers. Either mark the old one as 'superseded' or filter approvals by latest per record_id.",
+    "files_router.upload_file: category is validated only when folder in {clients, client_sites}. If a future caller uploads to folder='quotations' with category='PAN' it is silently accepted and stored. Either gate the column to clients/client_sites or expose a per-folder allowed category set.",
+    "files_router: there is no max-files-per-parent guard - the Docs dialog can balloon if scripts spam uploads. Consider a soft cap (~50) or a paged file list endpoint.",
+    "approval_engine.client_onboarding chain hard-codes role sequence; if a tenant has no accounts_executive user, step 2 sits forever. Consider falling back to dept_head(MIS) or super_admin when no user holds the role.",
+    "ClientMap.jsx: the sidebar uses a sequential filter+sort on every search keystroke - fine at 5K sites, but consider useMemo + indexOf for sub-second filter latency at scale.",
+    "LeafletPinEditor: uses CDN-hosted marker icons (unpkg) - if the network blocks unpkg the marker becomes invisible. Bundle the marker PNGs locally as base64 or vendor them from /public to remove the runtime dependency.",
+    "Clients.jsx renders Docs+Edit+Site buttons per row - check for unique key warnings and consider virtualising the list once client count exceeds ~200."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration19_phase_d_clients.py (new, 13 tests)"],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100% on Phase D Client Management testids - Clients header Map button, per-client Docs buttons, pending/approval banners, ClientDocsDialog with category dropdown + FileUploader, /app/client-map Leaflet + sidebar + 1 geo row + map pin, New Site dialog Leaflet pin editor + lat/lng inputs + Use-my-location, sidebar nav-client-map link, Sales workspace Client Map tile."},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin) - login + all flows verified.",
+  "seed_data_creation": "Backend tests create TEST_PhaseD_<ts> clients (multiple, each cleaned up via DELETE in same test) and TEST_PhaseD_MAP_<ts> client with 3 sites (1 valid geo, 1 out-of-range, 1 empty geo) for sites-map fixture - all cleaned up in teardown. Approval docs created via POST /api/clients are NOT cleaned up (no DELETE endpoint exposed) - they will accumulate in db.approvals as 'approved' or 'rejected' historical entries.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase D Client Management testids: clients-map-btn (header), client-docs-{id} (per-client), site-docs-{id} (per-site, only inside expanded client tree), client-pending-{id} (amber banner under pending clients), client-approval-{id} (View approval link), client-resubmit-{id} (only on rejected clients - none exist in current dataset so could not visually verify, but Clients.jsx renders it from same array as pending so it should work the same). ClientDocsDialog testids: docs-category-select, docs-group-{category} (only appear when files exist with that category). LeafletPinEditor testids: leaflet-pin-editor, leaflet-use-my-location, site-field-geo-lat, site-field-geo-lng. ClientMap testids: client-map, client-map-sidebar, client-map-search, client-map-row-{id}, client-map-empty. Sidebar: nav-client-map (Commerce group). Endpoints: POST /api/clients now defaults pending_approval (super_admin can fast-track by sending status='active'), POST /api/clients/{id}/resubmit on rejected -> 200, on others -> 400, GET /api/sites/map -> only valid geo + status!=inactive, POST /api/uploads accepts category Form field. Run backend tests: cd /app && REACT_APP_BACKEND_URL=https://worksite-command.preview.emergentagent.com python -m pytest backend/tests/test_iteration19_phase_d_clients.py -v",
+  "rca of the issue": "Not a bug fix - new feature verification. Phase D adds (1) approval-gated client onboarding via 3-step chain, (2) document attachments with category taxonomy at client + site level, (3) Leaflet+OSM geo-pin per site with all-sites map view. All 5 backend endpoint variants pass automated tests; all 7 frontend testid groups render correctly; Leaflet marker icons load from unpkg CDN without errors. The only behavioural detail not explicitly stated in the spec is that /api/sites/map also excludes status='inactive' sites - flagged in action_items for confirmation."
+}

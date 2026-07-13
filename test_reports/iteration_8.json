@@ -1,0 +1,27 @@
+{
+  "summary": "Phase B (Sales pipeline upgrade) — full backend + frontend regression. Backend: 19/19 pytest cases pass in /app/backend/tests/test_phase_b_sales.py covering Phase A regression baseline (auth/me, dashboard summary, approval-matrix list), enquiry auto-numbering (ENQ-YYYY-#### regex + sequential increment), invalid service_type 400, all happy-path status transitions (open→under_review→submitted→negotiation→won), forbidden under_review→open & won→anything 400, invalid status value 400, lost terminal state, convert requires status='won' (400 otherwise), convert creates Order ORD-YYYY-#### + Project PRJ-YYYY-#### atomically and links enquiry, double-convert returns 409 with 'already converted', orders list exposes order_no/customer/contract_value/project_code/enquiry_no, quotation revise produces revision_no=1 then 2 with parent_id/root_id correctly chained, quote_number suffix ' Rev1'/' Rev2' without double-suffix, revisions endpoint sorted ASC by revision_no, revise on unknown id 404. Frontend (Playwright on https://worksite-command.preview.emergentagent.com): admin login OK, sidebar COMMERCE shows Enquiries/Quotations/Sales Orders as separate items, /app/enquiries lists rows with ENQ-2026-#### numbers, New Enquiry dialog creates ENQ-2026-0006 with auto-number visible, status select shows all 7 statuses, allowed chain to 'won' succeeds, attempted forbidden won→open shows error toast and row stays 'won', Convert button appears only when status='won' AND no order_id (verified hidden post-convert), Convert dialog creates ORD-2026-0004 + PRJ-2026-0004 atomically (project default-checked), /app/orders lists the converted order with ORD#/Customer/contract value/project_code/enquiry_no, /app/quotations exposes per-row History (quotations-revisions-{id}) and +Rev (quotations-revise-{id}) buttons; History dialog shows R0/R1/R2 entries with quote numbers, dates, totals, statuses; +Rev creates a new revision and the dialog grows from 2 to 3 entries. All flows green.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_phase_b_sales.py",
+    "/app/test_reports/pytest/iteration8_phase_b.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "sequences.next_sequence correctly uses findOneAndUpdate(upsert=True, return_document=True) on db.sequences keyed by '{PREFIX}-{YEAR}' — atomic per-prefix, per-year sequence with 4-digit zero-padding as specified.",
+    "convert endpoint guards both required state (status=='won' → 400) and idempotency (existing order_id → 409 'already converted'); both verified end-to-end and via 19th test.",
+    "quotation revise correctly walks the chain: root_id of the chain is derived from parent.root_id ?? parent.id, last revision_no is fetched via a sorted query against the union of {id: root_id} OR {root_id: root_id} — produces continuous Rev{n} numbering even when revise() is called on a non-root quotation.",
+    "Suggestion (non-blocking): convert_to_order is multi-document but not transactional — if db.orders.insert_one or db.enquiries.update_one fails after the project insert, the orphan PRJ doc + ORD doc remain. With Mongo replicaset, consider wrapping in a session.start_transaction(). Current behaviour matches the spec.",
+    "Suggestion (non-blocking): /api/orders does not yet support filter by status / date range — UI exposes only client-side search. Consider server-side filters when row counts grow.",
+    "Sidebar Commerce section already lists Enquiries / Quotations / Sales Orders separately as required."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase_b_sales.py (new — Phase B regression suite, 19 cases)"
+  ],
+  "success_rate": {"backend": "100% (19/19)", "frontend": "100%"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin). RBAC user test_site_engineer@erp.com / TestPass@123 still present (from iteration 7).",
+  "seed_data_creation": "Test created enquiries (TEST_UI Customer Z, TEST_PhaseB Customer A/B), one converted Order ORD-2026-0004, one auto-created Project PRJ-2026-0004, and the quotation revision chain QTN-PHASEB-1 / Rev1 / Rev2. Fixture cleans up enquiries+quotations by id at session teardown. The UI-created ENQ-2026-0006 + ORD-2026-0004 + PRJ-2026-0004 remain in DB for visual inspection — they can be deleted via /api/enquiries/{id} if needed.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase B sales pipeline (auto-numbering, status workflow, won→Order+Project convert, quotation revision chain) is stable. /app/backend/tests/test_phase_b_sales.py is safe to re-run as regression (≈2.1s). Sequences in this environment have advanced to ENQ-2026-0006 / ORD-2026-0004 / PRJ-2026-0004 / QTN sequences unchanged. The next_sequence helper is atomic but be aware the convert flow is multi-write and not wrapped in a Mongo transaction — fine for current scale, would be the place to look first if partial failures appear under load."
+}

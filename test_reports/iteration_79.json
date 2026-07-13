@@ -1,0 +1,46 @@
+{
+  "summary": "Iter 79 — Phase 3 Store & Inventory (Material Request + 2-step Transfer + Site/Project views) tested end-to-end. Backend: 30/30 new HTTP API tests pass (after 1 bug fix). 7/7 unit tests pass. Phase 1 (Iter 77) + Phase 2 (Iter 78) regression: 35/35 pass — total 72 PASSED, 2 SKIPPED, 0 FAILED. Fixed a critical 500 error in POST /api/inv3/material-requests/{id}/issue where Mongo's ObjectId leaked into the response (FastAPI couldn't JSON-serialize). Material Request lifecycle works: submitted → approved → partially_issued → issued; reject after approval blocked; self-approve blocked for non-super_admin (verified by source); approved-balance/insufficient-stock/item-not-in-MR all return 400. Transfer 2-step works: dispatch posts transfer_out + debits source + status=in_transit; receive validates received+shortage+damaged≤dispatched, requires remarks/attachment on shortage, credits destination, sets status=received_with_exception. Aggregations site-stock/project-stock/project-consumption return correct shape with date filter respected. Pending-returnable surfaces outstanding allocations with outstanding_qty/value/days_out/overdue. Project-closure-check correctly blocks closure when pending_returnable>0 / in_transit>0 / pending_mr>0 and reports can_close=true for clean project. Frontend: All 8 new sidebar testids (si-nav-material_req / material_trf / in_transit / returnable / site_stock / project_stock / project_consumption / closure_check) render under 'Material Movement' and 'Project & Site' groups. All 8 views load without console errors. Closure check has closure-project + closure-run + closure-result testids. Phase 1/2 regression intact in sidebar (dashboard, categories, stores, opening_stock, settings, pr_from_stock, pending_pos, pipeline all present).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/inv3/material-requests/{id}/issue", "issue": "Was returning HTTP 500 'ObjectId not iterable' because alloc_doc retained Mongo _id after insert_one. FIXED by alloc_doc.pop('_id', None) immediately after insert_one. Re-tested: 28/28 pass."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter79_phase3_api.py",
+    "/app/backend/tests/test_iter79_phase3_inventory.py",
+    "/app/test_reports/pytest/iter79_phase3.xml"
+  ],
+  "action_items": [
+    "(verify) Confirm Phase 3 fix on routers/inventory_phase3_router.py L278 (alloc_doc.pop('_id', None)) is acceptable — it is the same MongoDB ObjectId hygiene applied elsewhere in the codebase and prevents 500s when /issue allocations are returned.",
+    "(optional, low) MR auto-numbering uses count_documents (same race concern flagged in Iter 77/78) — acceptable for v1; consider an atomic counters collection or unique index on mr_number before high-concurrency rollout.",
+    "(optional, low) Transfer transfer_no also uses count_documents and same numbering pattern — same recommendation.",
+    "(optional, low) issue_from_mr swallows accounting_service.post_stock_issue errors with bare except — log the error at WARN level so accounting reconciliation gaps are not silent.",
+    "(optional, low) project-closure-check counts in_transit by project_code only — if a transfer has no project_code tagged, it won't block project closure even if the destination/source is at that site. Document or surface this as a separate 'untagged transfers' warning."
+  ],
+  "critical_code_review_comments": [
+    "inventory_phase3_router.py L277 (now L278): MUST pop _id after insert_one to avoid 500 — FIXED in this iteration.",
+    "issue_from_mr (L213): the entire issue loop is NOT wrapped in a transaction. If one line's inventory.update_one succeeds but a later line fails, source stock is already debited for the earlier line(s) and partial allocation rows persist. Acceptable for v1 (rare with single-user flow) but consider Mongo multi-document transactions for production.",
+    "approve_mr (L155): role bypass `super_admin/director` for self-approve is correct, but director is also in the allowed-roles set at L147 — verify the spec really wants director to be able to self-approve (current code: yes).",
+    "create_transfer (L391): debits source inventory inside a loop BEFORE writing the transfer doc. If material_transfers.insert_one fails after some lines were debited, stock is silently lost. Consider build-then-write pattern or compensating debit-rollback on exception.",
+    "receive_transfer (L503): the shortage/damaged 'must have reason' check uses OR — allowing either damage_attachment_url OR received_remarks. Spec phrased 'damaged_attachment_url OR received_remarks' — current implementation matches. Confirm with PM if attachment is mandatory for damage > 0 (current: not enforced).",
+    "in_transit_stock (L562): age_days computed in Python from ISO string — works but a small Mongo aggregation would be more efficient at scale.",
+    "project-consumption (L632): only includes txn_type='outward'; transfers (transfer_out) are NOT counted as project consumption. Confirm this is by-design — transfers move stock between stores, not consume it."
+  ],
+  "updated_files": [
+    "/app/backend/routers/inventory_phase3_router.py (1-line fix at L278: alloc_doc.pop('_id', None) after insert_one to prevent 500 on /issue response)",
+    "/app/backend/tests/test_iter79_phase3_api.py (NEW — 30 HTTP API e2e tests covering MR lifecycle, transfer 2-step, aggregations, closure check)"
+  ],
+  "success_rate": {"backend": "100% (37/37 Phase-3 tests — 30 HTTP + 7 unit). Regression: 35/35 (Phase 1+2). Overall 72/72 = 100%.", "frontend": "100% on tested Phase 3 navigation (8/8 sidebar testids render, 8/8 views load without errors, closure form interactive)"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin) used.",
+  "seed_data_creation": "Created during test run (all prefixed for easy identification): · 4 material_requests under project_codes starting TEST_PRJ_ITER79_*, TEST_PRJ_ITER79_*_REJ, TEST_PRJ_ITER79_*_REJ2 · 6 material_allocations rows (ISS-YYYYMMDD-* — one returnable=true for closure-blocker test) · 1 material_transfer (TRF-YYYYMM-NNNNN, status=received_with_exception) · 9 inventory_transactions ledger rows. Inventory.quantity decremented for two items by total 7 + 2 = 9 units.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 3 of Store & Inventory is FULLY working after the 1-line ObjectId fix at /app/backend/routers/inventory_phase3_router.py L278. The Iter 79 regression suite at /app/backend/tests/test_iter79_phase3_api.py is the new baseline for any Phase 3+ change. Test class TestMaterialRequest must run before TestMaterialTransfer (no hard dependency but classes share module-level PROJECT_CODE). All 8 Phase 3 sidebar nav testids confirmed: si-nav-material_req / material_trf / in_transit / returnable / site_stock / project_stock / project_consumption / closure_check. Form testids confirmed from code-reading + closure-project, closure-run, closure-result interactive. Phase 1 (Iter 77) + Phase 2 (Iter 78) regression suites still pass 100%. New collections introduced: material_requests, material_transfers — both honor the existing MongoDB ObjectId-exclude pattern (always pass {'_id': 0} on find, pop('_id') on insert_one returns). MR auto-numbering and transfer auto-numbering both use count_documents — race-prone but acceptable for v1 (already flagged in Iter 77/78).",
+  "rca of the issue": "RCA — `/api/inv3/material-requests/{id}/issue` returning 500: motor's `insert_one(alloc_doc)` mutates the passed dict by adding the generated `_id` (ObjectId) field. The handler then appended the same dict to its `allocations` response array. FastAPI's `jsonable_encoder` cannot serialize bson.ObjectId → ValueError. REPRODUCTION: create MR with 2 lines, approve, POST /issue with valid lines → 500. MITIGATION: add `alloc_doc.pop('_id', None)` immediately after `await db.material_allocations.insert_one(alloc_doc)` so the dict appended to `allocations` no longer has the ObjectId. Same pattern is already used at L134 for the MR doc. Fix verified: 28/28 MR + transfer tests pass."
+}

@@ -1,0 +1,35 @@
+{
+  "summary": "Iter 75 — Phase 6 (Statutory & Compliance) frontend wiring + Accounts module regression — ALL PASS.\n\nFRONTEND (admin@erp.com / Admin@123, https://worksite-command.preview.emergentagent.com/app/accounts):\n  · Sidebar shows new 'Statutory' group with exactly 5 entries — all data-testids present: acc-nav-bank_rec, acc-nav-gstr1, acc-nav-gstr3b, acc-nav-tds_26as, acc-nav-fixed_assets. Group label 'Statutory' visible.\n  · Bank Reconciliation view: 3 summary tiles render (Unmatched Bank / Unmatched JE / Auto-Match Candidates). Bank account selector reload verified — switching to 1101 triggers GET /api/statutory/bank-rec/unmatched?bank_account_code=1101 → 200. Auto-Match button (data-testid=stat-bank-automatch) → POST /api/statutory/bank-rec/auto-match → 200 with applied=0 (no suggestions in current DB) — works as spec'd.\n  · GSTR-1 view: Period 2026-06 → 200. Real data: b2b=0, b2c=4 invoices, taxable=₹1,20,000, gross=₹1,41,600 (i.e. ₹21,600 GST), HSN summary populated with 4 rows. Totals tiles + B2B/B2C tables + HSN table all render.\n  · GSTR-3B view: Period 2026-06 → 200. Three blocks render (Outward Supplies / Input Tax Credit / Net Liability). Outward: taxable=₹1,20,000, cgst=₹10,800, sgst=₹10,800, igst=0. ITC: all 0. Net liability total_payable=₹21,600. Total Payable tile visible.\n  · TDS 26AS view: Upload-26AS-entry dialog opens. POST /api/statutory/tds/26as/upload with TEST_TDS_Client_Iter75_<ts>/194C/credited=50000/tds=5000 → 200. Reconciliation table refreshes — new client row visible with diff column.\n  · Fixed Assets view: Add Asset dialog opens. POST /api/statutory/fixed-assets with name='QA Compressor Iter75_<ts>', category=plant_machinery, cost=120000, life=10 → 200, asset_code=FA-2026-0002, monthly_depreciation=₹1,000 (exact spec match). Row appears in register with monthly_dep=₹1,000. POST /api/statutory/fixed-assets/depreciation/run?period=2026-06 → 200 posted=1 skipped=0. Re-run for same period → 200 posted=0 skipped=1 — IDEMPOTENT confirmed.\n\nREGRESSION: Accounts Dashboard, Chart of Accounts, Trial Balance, Project Profitability, Month-End Closing all load without errors. Month-End Closing UI is healthy (Closing Progress 75%, Refresh + Lock Period buttons present, all 8 checklist items render). No console pageerrors throughout the full run.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Statutory views", "issues": ["Dialog form Inputs (TDS 26AS upload + Add Fixed Asset) have no per-field data-testid attributes — Playwright must rely on positional .nth(i) selectors. Suggestion: add data-testid='stat-tds-upload-{client_name|section|tds_deducted|...}' and 'stat-fa-{asset_name|cost|life|...}' for safer automation."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter74_payables_phase3.py (Phase 3 backend regression — already 23/23 PASS in iter 74)"
+  ],
+  "action_items": [
+    "(Optional UX hardening) Add data-testid to dialog form inputs in StatutoryViews.jsx (TDS upload dialog + Add Fixed Asset dialog) so future Playwright runs don't depend on input ordering."
+  ],
+  "critical_code_review_comments": [
+    "Accounts.jsx wires all 5 Phase 6 views via switch-case + imports BankRecView/GSTR1View/GSTR3BView/TDS26ASView/FixedAssetsView from StatutoryViews.jsx — clean and consistent with prior phases.",
+    "Sidebar groups are derived from NAV[].group via Set order — adding the new 'Statutory' group requires no extra grouping logic, matches pattern of Billing/Payables/Costing/Closing.",
+    "StatutoryViews.jsx (~440 lines) — five views colocated; reasonable size since they share the Field helper and similar list+dialog patterns. If it grows further, recommend splitting per view file.",
+    "Bank Rec: period-less endpoint reload tied to account-code state via useEffect dep on `account` — verified working.",
+    "Run Depreciation uses window.confirm() — works (Playwright handled via dialog.accept()) but a shadcn AlertDialog would be more consistent with the rest of the app.",
+    "Idempotency on /depreciation/run is correctly enforced (posted=0, skipped=1 on second run for same period) — proves backend dedupe key (asset_id, period) works.",
+    "Fixed Asset row formatting uses fmt(monthly_depreciation) which renders '₹1,000' — matches spec.",
+    "All Statutory views correctly use the shared /api axios instance (api.get/api.post) — no hardcoded URLs."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (all 8 Phase 6 endpoints exercised via UI returned 200 with expected payload)", "frontend": "100% (5/5 Statutory views render + interact correctly, 5/5 regression views load)"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin)",
+  "seed_data_creation": "Iter 75 created on preview DB: 1 TDS 26AS entry (TEST_TDS_Client_Iter75_<ts>), 1 fixed asset FA-2026-0002 (QA Compressor Iter75_<ts>, cost ₹1,20,000, life 10y, monthly_dep ₹1,000), 1 depreciation run for 2026-06 (1 JE posted). Cleanup-safe: TEST_ / QA Compressor Iter75_ prefixes.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 6 frontend wiring is rock-solid. All 5 views interact correctly with /api/statutory/* and respect the documented endpoints (bank-rec/auto-match returns applied=0 cleanly when no candidates; depreciation/run is idempotent per (asset, period); TDS 26AS upload is array-based POST). The Period-Lock write enforcement was NOT exercised in this UI run (would require locking 2026-06 via /api/accounts/period-locks then attempting to post a JE in that period) — recommend explicit backend test if not already covered. The Month-End Closing view is healthy and shows the Lock Period button. Form dialogs in StatutoryViews.jsx still use positional input filling — see action item for testid hardening.",
+  "rca of the issue": "No defects — Phase 6 frontend wiring + Accounts regression all PASS."
+}

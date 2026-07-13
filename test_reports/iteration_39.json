@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 39 — AI Auto-fill on New Employee (scan-prefill + pre-scanned upload). Full live E2E verified end-to-end. Backend: 8/8 pytest passed including live Gemini PAN extraction returning 'ABCDE1234F' on synthetic PNG, /documents/scan-prefill validation (400 on unknown doc_type, .txt, empty), RBAC (supervisor 403), pre-scanned upload via scan_result_json sets scan_status='scanned' + scan_result.from_prefill=true without burning a Gemini call, and the 3-KYC-prescanned recompute correctly flips employees.verification_status='verified'. Frontend: violet AI Auto-fill panel visible at top of New Employee dialog (hidden in Edit mode by formHeader mode check), PAN scan filled pan_number, Bank scan filled bank_ifsc, PAN value NOT overwritten on 2nd scan ✓, chips show 'PAN Card' and 'Bank Passbook / Statement' with × delete buttons, toast shows 'Scanned … filled N field(s) · M skipped (already set)'. After Save, sequential POST to /api/hr/employees/{newId}/documents attached BOTH docs with from_prefill=true verified via server-side GET.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration39_scan_prefill.py",
+    "/app/test_reports/pytest/iteration39.xml"
+  ],
+  "action_items": [
+    "Iteration 39 is production-ready. No code changes required.",
+    "(Optional nicety, not blocker) The 'Will be attached on save' label could also surface which form-keys were filled per chip; currently the toast does this aggregate-style which is fine."
+  ],
+  "critical_code_review_comments": [
+    "Backend _gemini_extract() shared helper is a clean refactor — both /documents/scan-prefill and /employees/{eid}/documents/{doc_id}/scan use it now. No duplication.",
+    "/documents/scan-prefill correctly maps extracted fields via DOC_FIELD_MAP with ID normalisation (re.sub for spaces/hyphens, .upper()) — matches frontend expectations for pan_number='ABCDE1234F'.",
+    "Upload endpoint with scan_result_json: gracefully falls back if JSON is malformed (try/except → pre=None, scan_status stays 'not_scanned'). Good defensive code.",
+    "When prescan is supplied, _build_verification is called inline AND _recompute_employee_verification is invoked — so verification_status correctly flips to 'verified' the moment the 3rd KYC doc is attached. Verified in pytest test_three_kyc_prescanned_flips_verification_status.",
+    "Frontend AIPrefillPanel: merge logic correctly checks merged[k] === undefined || '' || null before filling — never overwrites existing form data. Verified live (PAN not overwritten on 2nd scan).",
+    "Frontend file input cleared via document.querySelector after each scan — works (visible in screenshot, 'No file chosen' shown after first scan).",
+    "DataTableShell.save() captures created row from onCreate and passes to onAfterCreate — clean prop API. Errors in onAfterCreate are caught and swallowed (parent toasts), so a failed attach doesn't break the create flow."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration39_scan_prefill.py (new)"
+  ],
+  "success_rate": {"backend": "100% (8/8 pytest)", "frontend": "100% (E2E flow: panel visible → 2x scan → form filled → save → 2 docs attached server-side with from_prefill=true)"},
+  "test_credentials": "admin@erp.com/Admin@123 (super_admin), supervisor@erp.com/Super@1234 (RBAC 403)",
+  "seed_data_creation": "Backend pytest created TEST_IT39 employee + 3 docs (pan/aadhaar/bank) — cleaned up at end of module. Frontend E2E created TEST_UI39 employee + 2 docs (pan/bank) — cleaned up after assertions via DELETE /api/employees/{id}.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 39 (AI prefill for New Employee) is fully verified live. /api/hr/documents/scan-prefill works against Gemini 2.5 Pro (Universal Key has budget). The pre-scan upload skips Gemini entirely and is purely a DB write with verification computed from supplied raw_fields. The frontend AIPrefillPanel lives only in mode==='create' on Employees.jsx (Edit hides it). pendingDocs state is array of {id, doc_type, label, file, scanResult}; attachPendingDocs walks the array sequentially after Save and POSTs each with scan_result_json. If you re-run the Gemini live test and it 502s, that's environmental (budget cap) — accept as informational, NOT a code bug. All backend tests including the live Gemini test are in /app/backend/tests/test_iteration39_scan_prefill.py.",
+  "rca of the issue": "N/A — no bugs found. Implementation matches spec end-to-end."
+}

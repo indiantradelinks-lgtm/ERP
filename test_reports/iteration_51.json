@@ -1,0 +1,35 @@
+{
+  "summary": "Iter 51 ERP Approval Workflow Phase 2+3 — backend-only testing complete. Ran the new test_approval_phase23.py (10/10 PASS) covering version compare diff, 404 missing version, mandatory-attachment helper (400 enforcement only for configured types), reminder cron job idempotent invocation, 5-lane dashboard buckets (pending/rejected/revision_required/additional_info/resubmitted) with totals + resubmitted lane population after resubmit, analytics shape (window_days/totals[approvals,avg/p50/p95_cycle_days,rejections,info_requests,resubmits]/by_type/bottleneck_roles), analytics RBAC 401 unauth + 403 vendor (explicitly verified), in-app notifications inbox (/notifications/mine, ?unread_only=true, on-reject originator gets type='approval_rejected', POST /{id}/read, POST /read-all). Iter 50 closedloop regression 11/11 PASS, Iter 49 payroll regression 18/18 PASS, broader 84-test suite (Iter19/20/45/48) is 82/84 PASS with exactly the 2 documented pre-existing failures (test_full_payment_creates_journal_entry, test_outward_with_approved_pr_succeeds) — NOT regressions of Iter 51. Scheduler verified: _approval_reminder_job is registered with CronTrigger(hour=8, minute=0) in /app/backend/scheduler.py line 89.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_approval_phase23.py",
+    "/app/test_reports/pytest/iter51_phase23.xml",
+    "/app/test_reports/pytest/iter51_regression_50_49.xml",
+    "/app/test_reports/pytest/iter51_84suite.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "scheduler.py imports `core` at module load (line 11 chain via notifications_router); when /app/frontend/.env is loaded but /app/backend/.env is not, MONGO_URL is missing and import fails. Pytest works because sys.path injects /app/backend and the calling process has already loaded backend env. Acceptable, but consider load_dotenv inside core.py with a clear error if MONGO_URL is None.",
+    "_approval_reminder_job correctly registered (CronTrigger hour=8 minute=0, id='approval_reminders', replace_existing=True). _last_results dict pattern allows idempotency check from tests — good observability.",
+    "Notifications endpoints (/notifications/mine, /notifications/{id}/read, /notifications/read-all) live in approvals_router.py — consider extracting to notifications_router.py for cohesion, especially as inbox grows (out-of-scope for Iter 51).",
+    "approvals_router.py is becoming large with the additions (versions/compare, lanes, analytics, notifications). Monitor file size against the >700-line guideline; if it has crossed, plan an extraction in next iter.",
+    "Mongo _id exclusion is consistently applied in returned payloads (lanes/analytics/notifications/versions compare) — verified via response JSON parseability in tests.",
+    "Analytics RBAC: vendor explicitly receives 403 with detail 'not allowed' and unauth receives 401 — matches spec. RBAC allow-list (super_admin/director/general_manager/hr_executive/accounts_executive) appears correctly enforced."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% on Iter 51 (10/10), 100% on Iter 50 regression (11/11), 100% on Iter 49 regression (18/18), 97.6% on broader 84-suite (82/84 — 2 pre-existing failures unrelated to Iter 51)", "frontend": "n/a — backend-only request"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin), test_vendor_iter40@erp.com / Vendor@123 (vendor — used for analytics 403 verification)",
+  "seed_data_creation": "Transient approval docs created via the test's _mk_approval Mongo helper (id pattern 'itr51-<timestamp>'); cleaned up by _cleanup teardown which removes approvals + approval_versions + notifications by approval_id. Admin workflow-config is reset to defaults at end of mandatory_attachment test. No production data touched.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter 51 ships GREEN. The approval workflow now has: (a) /api/approvals/{id}/versions/compare (200/404), (b) /api/approvals/lanes (5 buckets + totals), (c) /api/approvals/analytics (RBAC-gated, totals/by_type/bottleneck_roles, window_days param), (d) /api/notifications/mine|{id}/read|read-all (unread count, unread_only filter, types: approval_rejected/approval_resubmitted/approval_info_requested), (e) admin config extended with escalation_days/reminder_days/auto_reminders_enabled, (f) assert_attachments_for_type helper for mandatory-attachment enforcement, (g) scheduler job _approval_reminder_job CronTrigger 08:00 UTC daily. The 2 broader-suite failures (test_full_payment_creates_journal_entry, test_outward_with_approved_pr_succeeds) are PRE-EXISTING from prior iters — they assert outward/payment behaviors that require an approved-PR/allocation flow which isn't seeded in those tests; do NOT attribute these to Iter 51 in future runs.",
+  "rca of the issue": "No new bugs. Pre-existing 2 failures stem from the procurement→outward chain requiring a real APPROVED Purchase Requisition or Material Allocation linkage (validation correctly returns 400 when neither pr_id nor allocation_id is provided/approved). Mitigation: the test fixtures need to actually create + approve a PR/allocation before posting outward; alternatively, those tests should be marked as expected-skip until refactored. This is documented in earlier iteration reports and is not in scope for Iter 51."
+}

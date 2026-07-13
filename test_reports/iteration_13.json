@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 13 — Employee & Project Allocation Management. Backend: 16/16 PASS in test_iteration13_allocation.py (~3.8s). Verified: (1) POST /api/employees with departments[]+allow_multi_dept=true auto-numbers EMP-YYYY-####, mirrors departments[0]→legacy department, persists on GET. (2) Single-dept string normalises to departments[]. (3) PUT /api/employees rejects multi-dept array with 400 'not approved for multi-department assignment' when allow_multi_dept=false. (4) POST /api/employees/{id}/move-department returns 400 on empty departments[], updates departments and writes employee_history action=department_move on success. (5) POST /api/deployments auto-numbers DEP-YYYY-#### and logs employee_history action=deployment_start; POST /deployments/{id}/end sets status=completed + end_date and logs deployment_end. (6) GET /api/allocation/idle-employees, /by-department, /by-project, /history all return correct shapes; history sorted desc by 'at'. (7) GET /api/me/scope: super_admin global=true with departments[] and active_projects[]; site_engineer global=false. (8) GET /api/projects/{code}/manpower returns project header + kpis{total_deployed,present_today,absent_today,distinct_depts}+by_role[]+by_department[]+deployments[]; 404 for unknown code. (9) RBAC visibility: site_engineer sees subset of /api/deployments and /api/safety-reports vs admin; returned deployments are constrained to scope.active_projects. Frontend Playwright (admin@erp.com / Admin@123): /app/employees renders new columns (Emp ID, Designation, Departments, Reports To, Branch, History) — all 6 present; New dialog exposes employees-field-departments-opt-Operations chip selector and employees-field-allow_multi_dept checkbox; 7 History (Log) buttons present and modal opens showing 'Allocation History — <name>'. /app/deployments renders Dep #, Role on Site, Shift columns; Manpower + End action buttons present on the active row; New dialog has deployments-field-project dropdown + site_role + shift selects. /app/projects/INVALID/manpower shows 'Project not found' + 'Back to Projects' button. /app/projects/PRJ-2026-0008/manpower renders full dashboard with 4 KPI cards (testids mp-kpi-total/present/absent/depts), By Role at Site + By Department panels, and Active Roster table. Auth: httpOnly cookies confirmed (no access_token in body); tests use requests.Session per user.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Multiple dialogs", "issues": ["React a11y warning: 'Missing Description or aria-describedby for DialogContent' — non-blocking but worth adding DialogDescription to satisfy Radix a11y."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration13_allocation.py",
+    "/app/test_reports/pytest/iteration13.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "scope._active_projects_for matches by employee_id OR name OR email — using name is fragile (collisions on common names like 'Rajesh'). A site_engineer named the same as a deployed worker would inherit those projects. Recommend dropping the name match and requiring employee_id/email linkage.",
+    "scope.PROJECT_SCOPED_ROLES uses set literal but crud_router PROJECT_SCOPED_COLLECTIONS includes 'projects' itself — meaning a site_engineer with zero active deployments will see ZERO projects (404 on any /projects route). Confirm this is intended; if not, /api/projects should remain visible (read-only) for project-scoped roles.",
+    "crud_router.update_item allow_multi_dept check uses payload.get('allow_multi_dept', before.get('allow_multi_dept')) — if the caller sends allow_multi_dept=True together with departments=[A,B] in the same PUT, the check passes even though the flag flip hasn't been persisted/approved. Once Phase 3 approval gate lands, this co-mutation must be a separate approval step or rejected.",
+    "allocation_router.move_department doesn't require departments to be in the master Departments list ['Executive','Operations','HSE','Finance','Stores','HR','Procurement','Scaffolding','Painting','Sales','IT']. A typo like 'HSe' will be stored. Add a server-side allow-list validation.",
+    "project_manpower's name_or_code = {'$in':[code,name]} can match the wrong project if two projects share a name/code segment. Use exact equality on code as primary and only fall back to name when project.code is empty.",
+    "employee_history.insert_one fires inside CRUD create_item even when deployment payload is missing employee_id (writes employee_id=''). Consider skipping the history row instead of writing an orphan one.",
+    "Frontend Projects.jsx Manpower button testid is `projects-manpower-{id}` (not `projects-mp-{id}` as hinted in the review-request testidPrefix list). Aligning testid prefixes across pages (mp-* vs manpower-*) would help test stability.",
+    "No pagination on /api/allocation/history — returns up to limit=200 (cap 500). With heavy deployment churn this grows unbounded; add cursor/skip pagination + index on (employee_id, at desc)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration13_allocation.py"],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "100% (28/28 UI checks; one playbook testid prefix mismatch is in test, not in app — Projects page button is `projects-manpower-{id}`)"},
+  "test_credentials": "admin@erp.com / Admin@123 and test_site_engineer@erp.com / TestPass@123 — both verified.",
+  "seed_data_creation": "Test created 4 throw-away employees + 1 deployment, all deleted in test_zzz_cleanup. No residual data.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iteration13_allocation.py is fast (~4s) and uses Session-based cookie auth (NOT Bearer body token — login response does NOT contain access_token). For frontend, real testid prefixes verified live: employees-add-btn, employees-save-btn, employees-field-departments-opt-<Dept>, employees-field-allow_multi_dept, employees-history-<id>, deployments-add-btn, deployments-mp-<id>, deployments-end-<id>, deployments-field-project/site_role/shift, projects-manpower-<id> (note: not projects-mp-), mp-kpi-total/present/absent/depts. Departments master list: Executive, Operations, HSE, Finance, Stores, HR, Procurement, Scaffolding, Painting, Sales, IT.",
+  "rca of the issue": "N/A — all features verified working."
+}

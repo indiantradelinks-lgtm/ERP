@@ -1,0 +1,36 @@
+{
+  "summary": "P&O Phase 2 Round 1 (Project Planning + BOQ) — backend 15/15 pytest PASS (6 baseline + 9 new extra-coverage tests), frontend e2e fully verified. Sidebar shows both new entries; Planning page renders, project select, milestone/risk/stakeholder add buttons, Save + Approve all wired. BOQ list page renders with filters + 1 existing BOQ; BOQ detail page exposes all required actions (Template / Export / Import / Add Line / Approve / Back), Add Line dialog works and totals recompute live (1→2 lines, subtotal 30,000→30,300, total 35,400→35,754). Phase 1 regression (7 P&O pages) load without 404.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Project Planning + BOQ", "issues": ["Emergent visual-editor tooling injects <span data-ve-dynamic> inside <option> tags (auto-instrumented at dev/preview build time), producing repeated React hydration warnings ('In HTML, <span> cannot be a child of <option>'). Not from app code — same pattern occurs across many existing P1 pages (ProjectDocuments etc.). Non-blocking, functionality fine. No fix required from main agent."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_proj_phase2_boq_planning_iter98.py",
+    "/app/backend/tests/test_iter98_phase2_extra.py",
+    "/app/test_reports/pytest/iter98_phase2_round1.xml",
+    "/app/test_reports/pytest/iter98_phase2_extra.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Backend Phase 2 router is clean — proper async/await, ObjectId stripped via projection (`{_id:0}`), env-vars sourced via core.db, audit hook wired on every mutating endpoint, role-gated approval, route /boqs/template declared BEFORE /boqs/{boq_id} so it is not shadowed (regression test added).",
+    "Approval re-approve idempotency on planning is good (early-return when already approved). BOQ approve does NOT short-circuit when already approved — re-approving overwrites approved_by/approved_at. Minor; consider same early-return pattern as planning for audit-noise hygiene.",
+    "approve_boq role gate omits project_manager (planning approve allows PM but BOQ approve does not) — by design per spec ('Director / GM / Dept Head') but worth a comment in the router to make the asymmetry intentional.",
+    "boq_no auto-numbering uses `count_documents({})` global counter — works but if two BOQs are created concurrently with same project_code they could collide on the {project_code}-{count+1} number. Low risk in single-tenant ERP; consider a per-project monotonic sequence in Round 2.",
+    "Excel import scope_type fallback uses `str(row[4] or 'service').strip() or 'service'` — fine. UOM similar. Empty-row detection only checks (None,'',' ') — won't catch rows containing only whitespace strings >1 char; acceptable.",
+    "Frontend page-project-boq + page-project-planning + page-boq-detail data-testids all wired correctly. plan-approve disappears after planning_status='approved' (correct UX). Add-line dialog has data-testids: boq-line-desc/qty/rate/save (all functional)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter98_phase2_extra.py (NEW)"
+  ],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "100%"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin) — verified working",
+  "seed_data_creation": "1 BOQ (BOQ-PRJ-2026-0033-0001 on Adani Power — DELHI, status=draft, 2 lines incl. UI test line). 1 planning record on project 511bf464-... was promoted to 'approved' during pytest run.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 2 Round 1 fully verified. Backend regression suite: /app/backend/tests/test_proj_phase2_boq_planning_iter98.py (6 tests — baseline) and /app/backend/tests/test_iter98_phase2_extra.py (9 tests — extra coverage on template route-ordering, project_id filter, list filtering, line DELETE recompute, BOQ DELETE cascade, import ?replace=true wipe, 404 on invalid project, 422 on missing title). Both pytest XMLs in /app/test_reports/pytest/. Run with: `export $(grep -v '^#' /app/frontend/.env | xargs) && pytest /app/backend/tests/test_proj_phase2_boq_planning_iter98.py /app/backend/tests/test_iter98_phase2_extra.py -v`. UI testids confirmed: page-project-planning, page-project-boq, page-boq-detail, plan-project-select, plan-add-milestone, plan-add-risk, plan-add-stakeholder, plan-save, plan-approve (only visible when planning_status=='draft'), boq-new, boq-filter-project, boq-filter-status, boq-row-*, boq-line-new, boq-line-desc, boq-line-qty, boq-line-rate, boq-line-save, boq-template-dl, boq-export, boq-import, boq-approve, boq-back. Hydration warning about <span> in <option> is Emergent tooling artifact, not app bug. Phase 1 P&O pages all load OK.",
+  "rca of the issue": "N/A — no functional issues found. The single React hydration warning observed (<span> child of <option>) is generated by Emergent's visual-editor instrumentation that adds tracking attributes (data-ve-dynamic, x-source-*) to dynamic JSX, including options. It is reproducible across multiple Phase-1 pages (ProjectDocuments etc.) and does not affect functionality."
+}

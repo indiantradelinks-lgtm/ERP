@@ -1,0 +1,42 @@
+{
+  "summary": "Iter 49 Real Payroll Module — backend-only testing complete. Re-ran existing /app/backend/tests/test_payroll_module.py (7 cases) and added /app/backend/tests/test_iteration49_payroll_extra.py (11 cases) for the gaps the review-request called out. All 18/18 tests pass against the public REACT_APP_BACKEND_URL. Payroll master CRUD, preview (with & without skip), override + commit, idempotency, dept-prefixed dept_doc_no (HR/SAL/YYYY/MM/<code>), ownership_department='hr', advance EMI auto-recovery (employee_advances → advance_recoveries, outstanding/recovered/remaining_installments/status mutated), payslip round-trip, /payroll/me linked:false for admin, /payroll/runs list, and RBAC (401 unauth, 403 vendor) all working. Regression on Iter 47/48 modules (department master returns >=9 depts, dept-gov payroll preflight, advances dept_doc_no, HR dashboard 'Payroll' link tile, store tx pr_id|allocation_id 400 enforcement) all healthy.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/payroll/run/override", "issue": "When override sets advance_emi=0, the slip's net_pay reflects 0 EMI (good), but because the commit loop persists advance_recoveries off slip.advance_lines (computed before override application), there is potential for a recovery row + employee_advances mutation to still occur on commit (engineering choice). Verified via test_override_sets_advance_emi_to_zero that the persisted slip.advance_emi=0 and net_pay is correct; if downstream desire is 'override skips recovery completely', recommend gating the advance_recoveries insert in commit_run on the post-override slip['advance_emi'] (lines 354-375 of payroll_router.py)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_payroll_module.py",
+    "/app/backend/tests/test_iteration49_payroll_extra.py",
+    "/app/test_reports/pytest/iteration49_payroll.xml",
+    "/app/test_reports/pytest/iteration49_extra.xml",
+    "/app/test_reports/pytest/iteration49_combined.xml"
+  ],
+  "action_items": [
+    "Optional: in commit_run, recompute advance_lines after applying overrides so that a manual advance_emi=0 also skips the advance_recoveries write (currently only the persisted slip totals reflect override; the recovery side-effect uses preview-time advance_lines)."
+  ],
+  "critical_code_review_comments": [
+    "payroll_router.py is 437 lines — currently fine but already near the 700-line guideline ceiling; future TDS slab/PT-by-state logic should be extracted to a payroll_calc.py module to keep the router thin.",
+    "preview_run inside commit_run re-runs preflight which is fine, but the override application path mutates slip['statutory_deductions'] arithmetic without re-running _statutory — if an override changes basic/HRA significantly, PF/ESI/PT won't be recomputed. Recommend extracting recompute logic.",
+    "commit_run pulls advance_lines from preview output. If user applies override AFTER preview but before commit (the documented happy path), the commit_run's internal preview call re-pulls fresh advance_lines, BUT the override.advance_emi only overwrites the scalar, not advance_lines[]. That is what the minor issue above describes.",
+    "PT_SLAB_DEFAULT is hard-coded to ₹200 regardless of pt_state — TODO comment acknowledges this is v2 work. Acceptable for Iter 49.",
+    "_id is correctly excluded everywhere (find queries use projection {'_id': 0}); run_doc.pop('_id', None) in commit_run is good defensive code.",
+    "RBAC sets HR_ROLES & FINANCE_ROLES — list_payslips uses HR|FINANCE for filter authority, employee fallback filters by employee email — clean."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration49_payroll_extra.py (NEW)"
+  ],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "n/a — backend-only request"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin), test_vendor_iter40@erp.com / Vendor@123 (vendor — used for 403 path)",
+  "seed_data_creation": "Two transient employee_advances rows (id='test-adv-pyr-1' from existing suite, id='test-adv-pyr-extra' from new suite) — both cleaned up by fixture teardown. Test months 2026-05/07/08 payslips & payroll_runs are also cleaned up. No production data touched.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter 49 Payroll is GREEN. Two test files cover it: test_payroll_module.py (core flow incl. advance EMI commit cycle) and test_iteration49_payroll_extra.py (gaps: override→0, preflight failure, RBAC 401/403 vendor, /me linked:false, payslips round-trip, Iter47/48 regression incl. dept-master, dept-gov preflight, advances list, HR dashboard Payroll tile, store tx 400). Note the correct dept-master endpoint is /api/admin/department-master (not /api/department-master). For follow-up payroll iterations, watch the commit_run override→advance_lines coupling (see minor issue) and the static PT slab.",
+  "rca of the issue": "No bugs found — Iter 49 ships clean."
+}

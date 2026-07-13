@@ -1,0 +1,60 @@
+{
+  "summary": "Iter 36 (HR P1: Letters + Exit & FNF + refactor regression) tested end-to-end. 27/28 backend tests pass; 1 backend logic bug found in gratuity computation. All frontend flows on /app/hr/letters and /app/hr/exit verified working with data-testids and proper gating.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/hr/exits/{eid}/compute-fnf",
+        "issue": "Gratuity is 0 for an employee whose tenure is EXACTLY 5 calendar years (joining_date=2021-04-15, last_working_day=2026-04-15). Root cause: _years_between() uses (e-s).days/365.25 which yields 4.9986 for 5 full calendar years (1826 days / 365.25). The strict `if tenure_years >= 5` check therefore fails, even though the response's `tenure_years` field shows 5.0 (rounded for display). Per Indian Gratuity Act an employee who completes 5 years IS eligible. Fix: use dateutil.relativedelta to compute completed years, OR round/floor tenure to nearest integer year for the eligibility check (`if math.floor(round(tenure_years, 4)) >= 5`).",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/hr/exits/{eid}/finalise",
+        "issue": "Relieving letter auto-render only sets `relieving_letter_id` on a best-effort try. If the relieving template exists but render raises (e.g., template uses a placeholder not in default context), finalise still succeeds silently — only a warning log is emitted. Consider returning a `relieving_letter_warning` field in the response when auto-render fails."
+      },
+      {
+        "endpoint": "POST /api/hr/exits/{eid}/compute-fnf",
+        "issue": "`pending_days` is taken from `last_working_day.day` (day-of-month), which assumes payroll was last paid on the 1st of the month. For mid-month joiners or off-cycle payroll, this can be wrong. Worth documenting the assumption."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration36_hr_letters_exit.py",
+    "/app/test_reports/pytest/iter36_results.xml"
+  ],
+  "action_items": [
+    "Fix gratuity eligibility math in /app/backend/routers/hr/exit_fnf.py::_years_between or compute_fnf — use relativedelta or floor-of-completed-years so an employee who has worked exactly 5 calendar years gets gratuity.",
+    "(Optional) Surface relieving-letter auto-render failures back to the caller of /finalise as a warning field.",
+    "(Optional) Document the pending_days assumption (last payroll = 1st of LWD month)."
+  ],
+  "critical_code_review_comments": [
+    "GOOD: hr_router.py monolith is gone — confirmed package at /app/backend/routers/hr/ with 5 sub-routers stitched in __init__.py.",
+    "GOOD: List endpoints (`/letter-templates`) exclude the binary field via projection — memory-safe.",
+    "GOOD: RBAC correctly enforced — supervisor gets 403 on both letter-templates POST and render; site_supervisor-style role blocked on laptop clearance approval.",
+    "GOOD: Letter render persists to db.hr_letters with X-Letter-Id header — verified, and merged DOCX contains real employee name (no `{ name }` leaks). Custom variable (increment_amount=50000) also merged correctly.",
+    "GOOD: FNF override endpoint correctly recomputes net_payable from the updated dict.",
+    "GOOD: Finalise gating works — blocks with 400 listing pending items when any clearance not approved.",
+    "BUG: Gratuity tenure calculation off by floating-point dust (see backend_issues.critical).",
+    "MINOR: exit_fnf.py `compute_fnf` doesn't validate that all clearance items are approved before computing — only finalise does. Acceptable, but worth noting.",
+    "MINOR: hr_letters and hr_exits collections store BSON Binary inline; for high-volume tenants this should move to GridFS. Out-of-scope for P1 but flag for P2."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration36_hr_letters_exit.py (NEW)"
+  ],
+  "success_rate": {
+    "backend": "27/28 = 96.4%",
+    "frontend": "100% of tested flows"
+  },
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin), supervisor@erp.com / Super@1234 (RBAC negative tests)",
+  "seed_data_creation": "Created several TEST_-prefixed employees for letter render + exit/FNF flows. Created TEST_OfferTemplate (kind=offer) and TEST_RelievingTemplate (kind=relieving) letter_templates. Created TEST_Iter36_GateEmp_* and TEST_Iter36_ExitEmp_* hr_exits rows. Cleanup not performed — main agent may wish to run a cleanup of TEST_-prefixed rows in db.employees, db.letter_templates, db.hr_exits, db.hr_letters.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All backend & frontend P1 endpoints/flows work except the gratuity tenure-floor bug. After main agent fixes _years_between (or the eligibility check) in exit_fnf.py, re-run /app/backend/tests/test_iteration36_hr_letters_exit.py::TestExitFnf::test_compute_fnf_math — it asserts gratuity within ±10 of 86538.46 for a 5y0d tenure. The same test file also exercises the refactor regression and all letters/exit happy paths.",
+  "rca_of_the_issue": "Gratuity bug RCA — In _years_between(start, end): returns (end-start).days / 365.25. For exactly 5 calendar years between 2021-04-15 and 2026-04-15, that span includes 1 leap year (2024), giving 1826 days. 1826/365.25 = 4.99863..., which is < 5. The eligibility guard `if tenure_years >= 5` therefore evaluates False and gratuity stays 0. Meanwhile the FNF response reports `tenure_years: round(4.99863, 2) = 5.0`, making the bug invisible to a casual eye. Reproduction: POST a fresh exit for an employee with joining_date=YYYY-04-15 and last_working_day=(YYYY+5)-04-15, approve all 8 clearance items, then POST /compute-fnf. Mitigation options (any one): (1) `from dateutil.relativedelta import relativedelta; tenure_years = relativedelta(end, start).years + relativedelta(end, start).months/12 + ...` and check `relativedelta(end,start).years >= 5`; (2) keep float math but compare with epsilon `if tenure_years >= 5 - 1e-3`; (3) compute completed-years as `(end.year - start.year) - (1 if (end.month, end.day) < (start.month, start.day) else 0)` and check >= 5."
+}

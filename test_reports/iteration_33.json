@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 33 — Data Cleanup Control Panel end-to-end test. 24/24 backend pytest cases pass (collections listing, RBAC 403 for non super_admin, browse with filters, orphan scan, preview-delete, soft-delete with archive, hard purge without archive, archive list/restore/restore-idempotency, purge). Full frontend e2e flow as super_admin verified: page renders, collection picker works, search filter narrows rows, row checkbox + 'Type DELETE' modal (disabled→enabled at exactly 'DELETE'), Archive & Delete soft-deletes the row, Archive tab restore brings it back, hard purge also works. Supervisor (non super_admin) does NOT see sidebar nav item AND /collections API returns 403.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration33_data_cleanup.py",
+    "/app/test_reports/pytest/iteration33.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "data_cleanup_router.purge_archive: `request: Request = None` is a workaround — FastAPI dependency injection will provide it; the None-guard is harmless but the default value is unnecessary and unusual. Consider declaring `request: Request` (no default) and ordering it before the Query param.",
+    "list_orphans loads up to 2000 rows into memory then nested-queries parent existence per row (N+1). For large collections (e.g. dprs, measurements) this can be slow. Consider batched $lookup or pre-collecting parent ids and a single $in lookup per parent collection.",
+    "browse_collection: `$regex` keyword search on un-indexed text fields will full-scan; OK for an admin tool but document the performance trade-off, or add a hard limit on `q` length.",
+    "ARCHIVE_TTL is metadata only — `expires_at` is computed but no Mongo TTL index is created on `cleanup_archive.expires_at`, so 'auto-delete after 30 days' will NOT happen unless a TTL index exists. Either create the index on startup or update the UI copy to say 'manual purge required after 30d'.",
+    "frontend purgeArchive uses window.confirm — fine, but Pure UX-wise it bypasses the typed-DELETE confirmation pattern used elsewhere. Consider unifying with the Confirm dialog for consistency."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration33_data_cleanup.py"],
+  "success_rate": {"backend": "100% (24/24)", "frontend": "100% (all 11 assertions in scope)"},
+  "test_credentials": "super_admin: admin@erp.com / Admin@123; supervisor (403 RBAC check): supervisor@erp.com / Super@1234",
+  "seed_data_creation": "Test creates TEST_uiseed_* / TEST_cleanup_* pr_categories via /api/procurement/master/categories and cleans them up via hard-purge through the cleanup endpoint itself. No residual seed data.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression suite at /app/backend/tests/test_iteration33_data_cleanup.py — set REACT_APP_BACKEND_URL before running. The suite is fully idempotent (creates its own seed, purges it). To rerun frontend, use Login.jsx data-testids (login-email, login-password, login-submit) and DataCleanup.jsx data-testids (cleanup-collection-select, cleanup-search, cleanup-apply-filters, cleanup-row-check-{id}, cleanup-open-confirm, cleanup-soft-toggle-bar, cleanup-confirm-input, cleanup-confirm-delete, archive-restore-{id}, cleanup-tab-archive/browse/orphans)."
+}

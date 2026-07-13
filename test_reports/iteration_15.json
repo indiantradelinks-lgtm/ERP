@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 15 — Phase 4 Allocation: drag-drop board, manpower shortage cron+endpoint, monthly deployment calendar, geo-tagged attendance. Backend 13/13 PASS in test_iteration15_phase4_allocation.py (~1.9s). Verified: (1) GET /api/allocation/shortages returns {total_shortfall, rows[]} with rows containing req_no, position, department, project, vacancies, deployed, shortfall — invariant vacancies-deployed==shortfall enforced. (2) GET /api/allocation/calendar (no args) returns current month with year/month/days/projects — start_offset and end_offset are clamped 1..days_in_month. (3) GET /api/allocation/calendar?year=2026&month=6 returns June 2026 (days=30, projects=[]). (4) GET /api/scheduler/status includes a 'shortage_scan' job with next_run_time containing '07:30'. (5) POST /api/attendance with geo_lat/geo_lng/geo_accuracy persists those fields verbatim and the subsequent GET /api/attendance lists the row with geo intact. (6) Phase 3 regression — /api/me/scope, /allocation/{by-department,by-project,idle-employees,resource-utilization,site-attendance,transfer-history,history} all still 200. Frontend Playwright (admin@erp.com / Admin@123): /app/allocation-board renders heading 'Manpower Allocation Board', board-idle-column (9 idle cards), 12 project columns (board-project-PRJ-2026-XXXX), board-refresh works, board-shortages strip rendered (live shortfall data exists in DB). Drag-drop simulation via Playwright's drag_to() SUCCEEDED — dragging board-idle-{empId} onto board-project-PRJ-2026-0008 opened the deploy dialog with correct title 'Deploy ABC' and 'Configure deployment to PRJ-2026-0008', all SITE_ROLE/SHIFT options rendered, board-deploy-confirm button visible. /app/deployment-calendar renders ('deployment-calendar' testid present, month name 'May' in DOM text). /app/attendance shows attendance-mark-present button + 'Geo' column header; clicking mark-present with mocked geolocation (19.0760, 72.8777) fires without error (no toast captured in 4.5s, button is responsive). HR workspace (/app/modules/hr) contains 'Allocation Board' link; Projects workspace (/app/modules/projects) contains 'Deployment Calendar' link.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "DeploymentCalendar", "issue": "Spec calls for prev/next/today nav buttons but they are NOT exposed via data-testid (calendar-prev, calendar-next, calendar-today were all not found in the DOM). Page renders the current month correctly, but month navigation cannot be reliably automated and may not exist as actual buttons. Inspect DeploymentCalendar.jsx and either add testids or implement the buttons.", "selector": "[data-testid=\"calendar-prev\"], [data-testid=\"calendar-next\"], [data-testid=\"calendar-today\"]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration15_phase4_allocation.py",
+    "/app/test_reports/pytest/iteration15.xml"
+  ],
+  "action_items": [
+    "(MEDIUM) Add data-testid=\"calendar-prev\" / \"calendar-next\" / \"calendar-today\" to the Deployment Calendar month navigation buttons in /app/frontend/src/pages/DeploymentCalendar.jsx — currently no such testids are exposed, blocking automated navigation tests. If buttons already exist with different testids, please rename for consistency. If buttons don't yet exist, implement them so month switching is testable end-to-end.",
+    "(INFO) Backend /api/allocation/calendar correctly accepts year+month query params and returns 200 with empty projects[] when no deployments overlap — verified for 2026-06."
+  ],
+  "critical_code_review_comments": [
+    "compute_manpower_shortages() does an N+1 query loop — one count_documents per recruitment_request. With ~50+ open requisitions this becomes slow. Consider a single aggregation grouping deployments by project+role then joining in Python.",
+    "compute_manpower_shortages() lower-cases position with replace(' ', '_') and compares against site_role/role. Existing deployments may have site_role values like 'site_engineer' (already snake_case) OR 'Site Engineer'. The current heuristic only matches the snake_case form; case-mismatched data will under-count deployed and over-state shortfalls. Either normalise both sides or use a $regex match.",
+    "/api/allocation/calendar uses status NOT IN ['pending_approval','withdrawn'] — so 'completed' deployments DO appear on the calendar. That's probably correct for historical view but should be confirmed against the spec; if only active should show, add 'completed' to the exclusion list.",
+    "AllocationBoard.jsx loads project manpower for ALL projects in parallel via N Promise.all calls — for 12+ projects (current DB state) that's 12 parallel HTTP calls on every reload. Consider a bulk /api/allocation/board endpoint server-side to flatten this.",
+    "Attendance.jsx Mark Present — if user denies geolocation, the toast says 'No geo: <message>' but the POST still goes through without geo fields. The button label says 'Mark Present (geo)' which sets the expectation that geo IS captured. Consider either failing the action when geo unavailable, or relabel as 'Mark Present (optional geo)'.",
+    "scheduler.py _shortage_job emails recipients filtered by role ∈ {hr_executive, general_manager, director} — the original spec mentions 'HR + Ops' (operations). 'general_manager' and 'director' are roles, not 'Operations' team members. If Operations is a department, the recipient filter should also include operations dept heads, not just role-based.",
+    "/api/allocation/calendar response uses 'days' as an integer count; consider also returning 'first_weekday' so the frontend can render a true calendar grid with proper day-of-week alignment without recomputing client-side."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration15_phase4_allocation.py (new)"
+  ],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "~92% — board, attendance, workspace links and DnD all verified; calendar nav buttons missing testids"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin) used and verified. test_pm@erp.com / PM@12345 and test_site_engineer@erp.com / TestPass@123 not exercised this iteration (no Phase 4-specific PM/site-engineer flows).",
+  "seed_data_creation": "1 transient TEST_GEO_EMP attendance row created + deleted in geo persistence test. No residual TEST_ data.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "DeploymentCalendar.jsx page exposes ONLY a single data-testid='deployment-calendar' on the page wrapper; the spec'd month nav buttons (calendar-prev/next/today) are NOT present. If main agent adds them, retest by visiting /app/deployment-calendar, clicking next then today, and confirming the month header text changes. Playwright drag_to() worked natively for the AllocationBoard HTML5 DnD on this Chromium build — no need to fall back to dispatch_event. Geo mocking requires page.context.grant_permissions(['geolocation'], origin=<base>) AND page.context.set_geolocation({...}) BEFORE the click; the toast may appear briefly and disappear before a 4.5s wait — use page.expect_event or check the DB row directly. Backend test file /app/backend/tests/test_iteration15_phase4_allocation.py is parameterised with REACT_APP_BACKEND_URL env; run with REACT_APP_BACKEND_URL=<url> pytest .... 12 active projects + 9 idle employees in the seeded DB at time of test.",
+  "rca of the issue": "N/A — Phase 4 backend is fully working. Sole frontend gap is missing calendar nav testids; this is a spec-coverage miss in DeploymentCalendar.jsx, not a logic bug."
+}
