@@ -4422,3 +4422,11 @@ None. 11 new collections auto-created on first write: `logistics_mobilizations`,
 - Store & Inventory: real stock adjustments from `logistics_stock_moves` (currently hook only).
 - Accounts module: fully consume `logistics_accounts_events` for auto-AP entries.
 
+
+### Iteration (Jul 14, 2026) — Category-wise Item Master seeding + v1.2 code restored
+
+- CONFIRMED: v1.2 code (grouped menuConfig navigation + full Safety Module) is restored in preview (commit `c4b47ad`) — matches live server.
+- NEW: `backend/scripts/seed_item_master.py` — idempotent seeder; added 2 new categories (IT Items, Office Furniture → now 14 in `inv_categories`) and 250 standard items across 12 categories (Scaffolding 33, PPE 36, Tools & Tackles 32, Consumables 28, Roof Sheeting 21, Painting 20, Rope Access 15, Machinery 15, Office/Admin 15, IT 14, Furniture 11, Vehicle 10). Codes: SCF/PPE/RSM/CON/PNT/RAE/TLT/MEQ/VEH/OFA/ITM/FUR-###.
+- CHANGED: `frontend/src/pages/Inventory.jsx` — Category dropdown in Item Master add/edit form now loads dynamically from `/api/inv/categories` (was hardcoded 6 slugs).
+- Verified: UI screenshot (Item Master lists seeded items category-wise), API check (14 categories, 272 items).
+**Status: COMPLETE & verified on preview.**

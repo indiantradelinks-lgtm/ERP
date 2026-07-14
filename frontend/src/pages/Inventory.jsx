@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import DataTableShell, { StatusBadge } from "@/components/DataTableShell";
 import useResource from "@/hooks/useResource";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,17 @@ export default function Inventory() {
   const [ledgerFor, setLedgerFor] = useState(null);
   const [bulkUploading, setBulkUploading] = useState(false);
   const [bulkResult, setBulkResult] = useState(null);
+  const [catOptions, setCatOptions] = useState(["scaffolding", "painting", "rope_access", "roof_sheeting", "ppe", "consumables"]);
   const fileRef = useRef(null);
+
+  useEffect(() => {
+    api.get("/inv/categories")
+      .then((res) => {
+        const names = (res.data || []).filter((c) => c.active !== false).map((c) => c.name).filter(Boolean);
+        if (names.length) setCatOptions(names);
+      })
+      .catch(() => {});
+  }, []);
 
   const downloadTemplate = async () => {
     try {
@@ -112,7 +122,7 @@ export default function Inventory() {
   const fields = [
     { key: "code", label: "Item Code" },
     { key: "name", label: "Item Name", full: true },
-    { key: "category", label: "Category", type: "select", options: ["scaffolding", "painting", "rope_access", "roof_sheeting", "ppe", "consumables"] },
+    { key: "category", label: "Category", type: "select", options: catOptions },
     { key: "uom", label: "UOM (nos/meter/kg)" },
     { key: "quantity", label: "Quantity", type: "number" },
     { key: "min_stock", label: "Min Stock", type: "number" },
