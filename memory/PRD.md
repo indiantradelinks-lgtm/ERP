@@ -4430,3 +4430,19 @@ None. 11 new collections auto-created on first write: `logistics_mobilizations`,
 - CHANGED: `frontend/src/pages/Inventory.jsx` — Category dropdown in Item Master add/edit form now loads dynamically from `/api/inv/categories` (was hardcoded 6 slugs).
 - Verified: UI screenshot (Item Master lists seeded items category-wise), API check (14 categories, 272 items).
 **Status: COMPLETE & verified on preview.**
+
+### Iteration (Jul 14, 2026) — Category-wise Bulk Material Allocation (matrix × approval gate)
+
+User choices: matrix qty per project (item rows × project columns) + strict stock check + approval required before stock deduction.
+
+**Backend** — NEW `routers/bulk_allocation_router.py` (registered in routers_registry after materials):
+- `GET /api/bulk-alloc/projects` (active+planned), `GET /api/bulk-alloc/items?category=`
+- `POST /api/bulk-alloc/requests` → strict stock validation, saves `bulk_allocation_requests` (BAL-#### seq) as pending_approval
+- `POST /api/bulk-alloc/requests/{id}/approve` → approver roles only (super_admin/GM/director/dept_head); race-safe stock decrement w/ rollback; creates individual `material_allocations` (ALC-####) + `inventory_transactions` outward per item×project
+- `POST /.../reject` with reason. All actions audited.
+
+**Frontend** — NEW `pages/store-inventory/BulkAllocation.jsx` wired into StoreInventory hub (`si-nav-bulk_alloc`, Operations group):
+- Tab 1 matrix: category select → items w/ stock rows × selected running projects columns; over-stock rows highlighted red + submit blocked; Tab 2: requests list w/ expand detail, Approve/Reject (role-gated).
+
+**Tested (curl E2E + UI screenshot)**: over-stock blocked (400) ✓, BAL-2026-0001 created ✓, approve created 3 ALC allocations & deducted stock (100→50, 50→25) ✓, visible in Material Allocations register ✓, matrix UI renders ✓.
+**Status: COMPLETE & verified on preview.**

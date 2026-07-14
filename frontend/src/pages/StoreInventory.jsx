@@ -47,6 +47,8 @@ import {
   StockValuationView, PhysicalStockCountView, FinalDashboardView, ReconcileCheckView,
 } from "./store-inventory/Phase5Views";
 
+import { BulkAllocationView } from "./store-inventory/BulkAllocation";
+
 // Re-use the existing pages so we don't duplicate any logic
 import Inventory from "./Inventory";
 import StoreTransactions from "./StoreTransactions";
@@ -68,6 +70,7 @@ const NAV = [
   { key: "transactions",  label: "Inventory Txns",       icon: ArrowRightLeft,  group: "Operations" },
   { key: "grn",           label: "GRN",                  icon: PackageCheck,    group: "Operations" },
   { key: "allocations",   label: "Material Allocations", icon: Truck,           group: "Operations" },
+  { key: "bulk_alloc",    label: "Bulk Allocation (Category)", icon: Boxes,     group: "Operations" },
   // ── Phase 2: Procurement / Accounts / Finance integration ──────────
   { key: "pr_from_stock", label: "PR from Stock",        icon: ClipboardList,   group: "Procurement Integration" },
   { key: "pending_pos",   label: "Pending POs for GRN",  icon: ShoppingCart,    group: "Procurement Integration" },
@@ -143,6 +146,7 @@ export default function StoreInventory() {
       case "transactions":  return <StoreTransactions />;
       case "grn":           return <Grn />;
       case "allocations":   return <MaterialAllocations />;
+      case "bulk_alloc":    return <BulkAllocationView />;
       // Phase 2 integration views
       case "pr_from_stock": return <PRFromStockView />;
       case "pending_pos":   return <PendingPOsView />;
