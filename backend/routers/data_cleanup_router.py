@@ -68,9 +68,9 @@ CLEANUP_COLLECTIONS: Dict[str, Dict[str, Any]] = {
     "vendors":                {"label": "Vendors", "tier": "dangerous", "key": "id", "date_field": "created_at", "parent_refs": []},
     "employees":              {"label": "Employees", "tier": "dangerous", "key": "id", "date_field": "created_at", "parent_refs": []},
     "deployments":            {"label": "Deployments", "tier": "safe", "key": "id", "date_field": "created_at", "parent_refs": [("project_id", "projects"), ("employee_id", "employees")]},
-    "pr_categories":          {"label": "Procurement Categories", "tier": "dangerous", "key": "id", "date_field": "created_at", "parent_refs": []},
-    "pr_items":               {"label": "Procurement Items", "tier": "caution", "key": "id", "date_field": "created_at", "parent_refs": [("category_id", "pr_categories")]},
-    "cost_centers":           {"label": "Cost Centers", "tier": "caution", "key": "id", "date_field": "created_at", "parent_refs": [("project_id", "projects"), ("category_id", "pr_categories")]},
+    "inv_categories":         {"label": "Item Categories (Unified)", "tier": "dangerous", "key": "id", "date_field": "created_at", "parent_refs": []},
+    "pr_items":               {"label": "Procurement Items", "tier": "caution", "key": "id", "date_field": "created_at", "parent_refs": [("category_id", "inv_categories")]},
+    "cost_centers":           {"label": "Cost Centers", "tier": "caution", "key": "id", "date_field": "created_at", "parent_refs": [("project_id", "projects"), ("category_id", "inv_categories")]},
 
     # ─ Workflow / Misc ─
     "approvals":              {"label": "Approvals", "tier": "safe", "key": "id", "date_field": "created_at", "parent_refs": []},

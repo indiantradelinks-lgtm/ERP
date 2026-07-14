@@ -4,7 +4,7 @@ This powers the PR creation dropdowns (department / project / site / category /
 item name) and the admin control panels for managing the master data.
 
 Collections used:
-  • db.pr_categories       — { id, code, name, gst_pct, default_hsn, active, ... }
+  • db.inv_categories       — { id, code, name, gst_pct, default_hsn, active, ... }
   • db.pr_items            — { id, code, name, category_id, category_code, unit,
                                hsn_sac, last_rate, default_vendor_id, active, ... }
   • db.cost_centers        — { id, project_id, project_code, category_id, category_code,
@@ -59,7 +59,7 @@ async def list_categories(active_only: bool = False, user: dict = Depends(get_cu
     q: Dict[str, Any] = {}
     if active_only:
         q["active"] = True
-    rows = await db.pr_categories.find(q, {"_id": 0}).sort([("name", 1)]).to_list(500)
+    rows = await db.inv_categories.find(q, {"_id": 0}).sort([("name", 1)]).to_list(500)
     # Attach live item count
     code_counts: Dict[str, int] = {}
     pipeline = [{"$group": {"_id": "$category_code", "n": {"$sum": 1}}}]
@@ -74,29 +74,29 @@ async def list_categories(active_only: bool = False, user: dict = Depends(get_cu
 async def create_category(payload: CategoryIn, request: Request,
                           user: dict = Depends(require_permission("procurement_master", "write"))):
     code = payload.code.strip().upper()
-    if await db.pr_categories.find_one({"code": code}):
+    if await db.inv_categories.find_one({"code": code}):
         raise HTTPException(status_code=400, detail=f"Category code '{code}' already exists")
     doc = payload.model_dump()
     doc["code"] = code
     doc["id"] = new_id()
     doc["created_at"] = now_iso()
     doc["created_by"] = user.get("name") or user.get("email")
-    await db.pr_categories.insert_one(doc)
-    await audit(user=user, action="create", resource="pr_categories", record_id=doc["id"], after=doc, ip=_ip(request))
+    await db.inv_categories.insert_one(doc)
+    await audit(user=user, action="create", resource="inv_categories", record_id=doc["id"], after=doc, ip=_ip(request))
     return _strip(doc)
 
 
 @router.put("/categories/{cid}")
 async def update_category(cid: str, payload: CategoryUpdate, request: Request,
                           user: dict = Depends(require_permission("procurement_master", "write"))):
-    existing = await db.pr_categories.find_one({"id": cid}, {"_id": 0})
+    existing = await db.inv_categories.find_one({"id": cid}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Category not found")
     patch = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
     if "code" in patch:
         patch["code"] = patch["code"].strip().upper()
         if patch["code"] != existing.get("code"):
-            if await db.pr_categories.find_one({"code": patch["code"], "id": {"$ne": cid}}):
+            if await db.inv_categories.find_one({"code": patch["code"], "id": {"$ne": cid}}):
                 raise HTTPException(status_code=400, detail="Code already in use")
             # Cascade rename — keep linked items, cost centers, and any open PO/GRN line items in sync
             await db.pr_items.update_many({"category_id": cid}, {"$set": {"category_code": patch["code"]}})
@@ -113,9 +113,9 @@ async def update_category(cid: str, payload: CategoryUpdate, request: Request,
             )
     patch["updated_at"] = now_iso()
     patch["updated_by"] = user.get("name") or user.get("email")
-    await db.pr_categories.update_one({"id": cid}, {"$set": patch})
-    row = await db.pr_categories.find_one({"id": cid}, {"_id": 0})
-    await audit(user=user, action="update", resource="pr_categories", record_id=cid, after=patch, ip=_ip(request))
+    await db.inv_categories.update_one({"id": cid}, {"$set": patch})
+    row = await db.inv_categories.find_one({"id": cid}, {"_id": 0})
+    await audit(user=user, action="update", resource="inv_categories", record_id=cid, after=patch, ip=_ip(request))
     return _strip(row)
 
 
@@ -127,10 +127,10 @@ async def delete_category(cid: str, request: Request,
     if item_links or cc_links:
         raise HTTPException(status_code=400,
                             detail=f"Cannot delete — category has {item_links} item(s) and {cc_links} cost center(s) linked. Deactivate instead.")
-    res = await db.pr_categories.delete_one({"id": cid})
+    res = await db.inv_categories.delete_one({"id": cid})
     if not res.deleted_count:
         raise HTTPException(status_code=404, detail="Category not found")
-    await audit(user=user, action="delete", resource="pr_categories", record_id=cid, after={}, ip=_ip(request))
+    await audit(user=user, action="delete", resource="inv_categories", record_id=cid, after={}, ip=_ip(request))
     return {"ok": True}
 
 
@@ -160,7 +160,7 @@ class ItemUpdate(BaseModel):
 
 
 async def _resolve_category(category_id: str) -> Dict[str, Any]:
-    cat = await db.pr_categories.find_one({"id": category_id}, {"_id": 0})
+    cat = await db.inv_categories.find_one({"id": category_id}, {"_id": 0})
     if not cat:
         raise HTTPException(status_code=400, detail=f"category_id '{category_id}' does not exist")
     return cat
@@ -359,7 +359,7 @@ async def auto_provision(project_id: str, request: Request,
     """Create a cost center for every active category that doesn't already have
     one for this project. Idempotent."""
     proj = await _resolve_project(project_id)
-    cats = await db.pr_categories.find({"active": True}, {"_id": 0}).to_list(500)
+    cats = await db.inv_categories.find({"active": True}, {"_id": 0}).to_list(500)
     existing = {c["category_id"] async for c in db.cost_centers.find(
         {"project_id": project_id}, {"_id": 0, "category_id": 1})}
     created: List[Dict[str, Any]] = []
@@ -427,7 +427,7 @@ async def pr_dropdowns(project_id: Optional[str] = None,
     else:
         sites = await db.sites.find({}, site_proj).sort([("site_code", 1)]).to_list(500)
 
-    categories = await db.pr_categories.find({"active": True}, {"_id": 0}).sort([("name", 1)]).to_list(500)
+    categories = await db.inv_categories.find({"active": True}, {"_id": 0}).sort([("name", 1)]).to_list(500)
     items_rows = await db.pr_items.find({"active": True}, {"_id": 0}).sort([("category_code", 1), ("name", 1)]).to_list(2000)
     items_by_category: Dict[str, List[Dict[str, Any]]] = {}
     for it in items_rows:
@@ -449,21 +449,21 @@ async def pr_dropdowns(project_id: Optional[str] = None,
 
 # ──────────────────────────────────────── SEED HELPER ─────────────────────────
 DEFAULT_CATEGORIES = [
-    ("SCAFF", "Scaffolding Material", "Cuplock, tubular, accessories", 18, "7308"),
-    ("PAINT", "Paints & Coatings", "Primers, finishes, thinners", 18, "3208"),
+    ("SCAFFOLD", "Scaffolding Material", "Cuplock, tubular, accessories", 18, "7308"),
+    ("PAINT", "Painting Material", "Primers, finishes, thinners", 18, "3208"),
     ("CONSUM", "Consumables", "Brushes, rollers, abrasives", 18, "9603"),
-    ("PPE", "PPE & Safety", "Helmets, harnesses, gloves, glasses", 18, "6506"),
+    ("PPE", "PPE and Safety Items", "Helmets, harnesses, gloves, glasses", 18, "6506"),
     ("FAST", "Fasteners & Hardware", "Bolts, nuts, screws, anchors", 18, "7318"),
     ("INSUL", "Insulation Material", "Rock wool, glass wool, claddings", 18, "6806"),
-    ("ROOF", "Roofing Material", "GI sheets, ridge, flashing", 18, "7210"),
-    ("ROPE", "Rope Access Gear", "Ropes, descenders, ascenders, anchors", 18, "5607"),
-    ("TOOL", "Tools & Tackles", "Power tools, hand tools, rigging gear", 18, "8205"),
-    ("OFFICE", "Office & Stationery", "Printing, stationery, IT consumables", 18, "4820"),
+    ("ROOF", "Roof Sheeting Material", "GI sheets, ridge, flashing", 18, "7210"),
+    ("ROPE", "Rope Access Equipment", "Ropes, descenders, ascenders, anchors", 18, "5607"),
+    ("TOOLS", "Tools and Tackles", "Power tools, hand tools, rigging gear", 18, "8205"),
+    ("OFFICE", "Office/Administrative Items", "Printing, stationery, IT consumables", 18, "4820"),
 ]
 
 
 async def seed_master_if_empty() -> int:
-    n = await db.pr_categories.count_documents({})
+    n = await db.inv_categories.count_documents({})
     if n > 0:
         return 0
     docs = []
@@ -480,5 +480,5 @@ async def seed_master_if_empty() -> int:
             "created_via": "seed",
         })
     if docs:
-        await db.pr_categories.insert_many(docs)
+        await db.inv_categories.insert_many(docs)
     return len(docs)

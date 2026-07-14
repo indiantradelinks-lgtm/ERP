@@ -4472,3 +4472,21 @@ Fixes:
 Verified via UI automation: created category ELE with 3 sub-categories → "Created" toast, row rendered, no crash; test category deleted after.
 Answer to user Q2: "Item Category Master" (sidebar submenu) and "Item Categories" (store hub) are the SAME view/collection (`inv_categories`); Item Master's category dropdown also reads it (single source of truth).
 **Status: COMPLETE & verified on preview.**
+
+### Iteration (Jul 14, 2026) — Category Master UNIFICATION (pr_categories → inv_categories)
+
+User discovered sidebar "Item Category Master" (/app/admin/categories → pr_categories) and store "Item Categories" (inv_categories) were DIFFERENT masters w/ diverged data. User chose full unification (option a).
+
+**Migration** (`scripts/unify_categories.py`, one-time, idempotent):
+- Mapped 10 pr_categories → inv equivalents (SCAFF→SCAFFOLD, TOOL→TOOLS, etc.); created 2 new (FAST Fasteners & Hardware, INSUL Insulation Material); dropped 3 junk (ABC/XYZ/TEST, unreferenced); copied gst_pct/default_hsn onto inv docs
+- Rewrote refs: 6 PRs (items[].category_id+category), 6 cost_centers (id/code/name), 1 pr_item, 3 vendor category-code fields
+- pr_categories backed up to `pr_categories_backup_unify` then DROPPED
+
+**Code changes**:
+- `procurement_master_router.py`: all db.pr_categories → db.inv_categories (CRUD, items resolve, cost-center auto-provision, seed); seed defaults renamed to inv naming
+- `vendors_router.py`: vendor-categories endpoint → inv_categories
+- `data_cleanup_router.py`: registry entry + parent_refs updated to inv_categories
+
+**Verified**: /api/inv/categories == /api/procurement/master/categories (16 identical codes); 0 orphan refs; /api/vendor-categories 16; 27 PRs load w/ remapped names; cost centers remapped; admin UI screenshot shows unified list w/ GST/HSN, junk gone.
+inv_categories is now THE single category master (16 categories).
+**Status: COMPLETE & verified on preview.**

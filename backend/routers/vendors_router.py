@@ -4,7 +4,7 @@ Replaces the generic CRUD vendors endpoints with a dedicated, richer pipeline:
   • Auto vendor_code: VND-0001, VND-0002, … (year-less, atomic)
   • Status lifecycle: draft → pending_approval → approved | rejected → blocked | inactive
   • Multi-address, multi-bank, MSME slot, typed document attachments
-  • Categories[] — references db.pr_categories codes (master-driven)
+  • Categories[] — references db.inv_categories codes (master-driven)
   • "Submit for Approval" endpoint creates a chain entry of type=`vendor`
   • Admin status overrides (block / inactivate / reactivate)
   • Documents are tracked in two places:
@@ -160,11 +160,11 @@ async def get_vendor(vid: str, user: dict = Depends(require_permission("vendors"
 @router.get("/vendor-categories")
 async def list_vendor_categories(active_only: bool = True,
                                   user: dict = Depends(get_current_user)):
-    """Master-driven category source. Reuses pr_categories (SCAFF, PAINT, ROPE, …)."""
+    """Master-driven category source. Reuses inv_categories (SCAFF, PAINT, ROPE, …)."""
     q: Dict[str, Any] = {}
     if active_only:
         q["active"] = True
-    rows = await db.pr_categories.find(q, {"_id": 0}).sort("name", 1).to_list(500)
+    rows = await db.inv_categories.find(q, {"_id": 0}).sort("name", 1).to_list(500)
     # Live vendor count per category
     counts: Dict[str, int] = {}
     pipeline = [{"$unwind": "$categories"}, {"$group": {"_id": "$categories", "n": {"$sum": 1}}}]
