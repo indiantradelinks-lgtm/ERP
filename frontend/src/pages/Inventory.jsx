@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { QRCodeSVG } from "qrcode.react";
 import { QrCode, Printer, BookOpenCheck, Download, Upload, Loader2 } from "lucide-react";
 import StockLedger from "@/components/StockLedger";
-import { api } from "@/lib/api";
+import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 
 export default function Inventory() {
@@ -40,7 +40,7 @@ export default function Inventory() {
       URL.revokeObjectURL(url);
       toast.success("Item Master template downloaded");
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Failed to download template");
+      toast.error(apiErrorMessage(e, "Failed to download template"));
     }
   };
 
@@ -58,7 +58,7 @@ export default function Inventory() {
       toast.success(`Bulk update done · ${resp.data.summary.updated} updated, ${resp.data.summary.created} created`);
       r.refresh?.();
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Bulk import failed");
+      toast.error(apiErrorMessage(err, "Bulk import failed"));
     } finally {
       setBulkUploading(false);
       if (fileRef.current) fileRef.current.value = "";

@@ -4458,3 +4458,17 @@ User choices: matrix qty per project (item rows × project columns) + strict sto
 
 **Tested**: JSON math verified (30×₹450 + 25×₹85 = ₹15,625 ✓), Excel export 200/valid workbook ✓, UI screenshot ✓. Note: seeded items default rate ₹0 — user must set rates (Item Master bulk update) for values to populate.
 **Status: COMPLETE & verified on preview.**
+
+### Iteration (Jul 14, 2026) — BUG FIX: Category create crash ("Objects are not valid as a React child")
+
+Root cause (2 stacked bugs):
+1. Category form sent `sub_categories` as comma-string; backend `CategoryIn.sub_categories: List[str]` → 422.
+2. `toast.error(e.response?.data?.detail || ...)` rendered the 422 detail ARRAY into the toast → React crash.
+
+Fixes:
+- `MasterViews.jsx`: all 13 toast handlers now use `apiErrorMessage()` (formats 422 arrays into strings); `MasterCRUD` gained `csv: true` field support (string→array on save, array→string on edit); sub_categories field marked csv.
+- `Inventory.jsx` + `hooks/useResource.js`: same apiErrorMessage fix (create/update/delete toasts).
+
+Verified via UI automation: created category ELE with 3 sub-categories → "Created" toast, row rendered, no crash; test category deleted after.
+Answer to user Q2: "Item Category Master" (sidebar submenu) and "Item Categories" (store hub) are the SAME view/collection (`inv_categories`); Item Master's category dropdown also reads it (single source of truth).
+**Status: COMPLETE & verified on preview.**

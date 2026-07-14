@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { api } from "@/lib/api";
+import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -55,7 +55,7 @@ export default function useResource(resource) {
       toast.success("Created");
       return row;
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Create failed");
+      toast.error(apiErrorMessage(e, "Create failed"));
     }
   }, [resource]);
 
@@ -65,7 +65,7 @@ export default function useResource(resource) {
       setData((d) => d.map((r) => (r.id === id ? row : r)));
       toast.success("Updated");
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Update failed");
+      toast.error(apiErrorMessage(e, "Update failed"));
     }
   }, [resource]);
 
@@ -76,7 +76,7 @@ export default function useResource(resource) {
       setData((d) => d.filter((r) => r.id !== id));
       toast.success("Deleted");
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Delete failed");
+      toast.error(apiErrorMessage(e, "Delete failed"));
     }
   }, [resource]);
 

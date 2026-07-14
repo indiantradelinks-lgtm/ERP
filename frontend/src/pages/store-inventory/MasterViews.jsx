@@ -7,7 +7,7 @@
  * any of their functionality.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api } from "@/lib/api";
+import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,7 @@ export function InventoryDashboardView() {
       const r = await api.get("/inv/dashboard");
       setD(r.data);
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Failed to load dashboard");
+      toast.error(apiErrorMessage(e, "Failed to load dashboard"));
     } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
@@ -150,7 +150,7 @@ function MasterCRUD({ title, endpoint, columns, formFields, testid, requiredFiel
     try {
       const r = await api.get(endpoint);
       setRows(r.data);
-    } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
+    } catch (e) { toast.error(apiErrorMessage(e, "Load failed")); }
   };
   useEffect(() => { load(); }, [endpoint]);
 
@@ -159,7 +159,11 @@ function MasterCRUD({ title, endpoint, columns, formFields, testid, requiredFiel
     const blank = formFields.reduce((acc, f) => ({ ...acc, [f.key]: f.default ?? "" }), {});
     setForm(blank);
   };
-  const startEdit = (row) => { setEditing(row.id); setForm({ ...row }); };
+  const startEdit = (row) => {
+    const f = { ...row };
+    formFields.forEach((fd) => { if (fd.csv && Array.isArray(f[fd.key])) f[fd.key] = f[fd.key].join(", "); });
+    setEditing(row.id); setForm(f);
+  };
 
   const save = async () => {
     for (const k of requiredFields) {
@@ -167,19 +171,25 @@ function MasterCRUD({ title, endpoint, columns, formFields, testid, requiredFiel
         toast.error(`${k} is required`); return;
       }
     }
+    const payload = { ...form };
+    formFields.forEach((f) => {
+      if (f.csv && typeof payload[f.key] === "string") {
+        payload[f.key] = payload[f.key].split(",").map((s) => s.trim()).filter(Boolean);
+      }
+    });
     setBusy(true);
     try {
       if (editing === "new") {
-        await api.post(endpoint, form);
+        await api.post(endpoint, payload);
         toast.success("Created");
       } else {
-        await api.put(`${endpoint}/${editing}`, form);
+        await api.put(`${endpoint}/${editing}`, payload);
         toast.success("Updated");
       }
       setEditing(null);
       load();
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Save failed");
+      toast.error(apiErrorMessage(e, "Save failed"));
     } finally { setBusy(false); }
   };
 
@@ -190,7 +200,7 @@ function MasterCRUD({ title, endpoint, columns, formFields, testid, requiredFiel
       toast.success("Deleted");
       load();
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Delete failed");
+      toast.error(apiErrorMessage(e, "Delete failed"));
     }
   };
 
@@ -208,7 +218,7 @@ function MasterCRUD({ title, endpoint, columns, formFields, testid, requiredFiel
       URL.revokeObjectURL(url);
       toast.success("Template downloaded");
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Failed to download template");
+      toast.error(apiErrorMessage(e, "Failed to download template"));
     }
   };
   const uploadBulkFile = async (e) => {
@@ -223,7 +233,7 @@ function MasterCRUD({ title, endpoint, columns, formFields, testid, requiredFiel
       toast.success(`Bulk update done · ${resp.data.summary.updated} updated, ${resp.data.summary.created} created`);
       load();
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Bulk import failed");
+      toast.error(apiErrorMessage(err, "Bulk import failed"));
     } finally {
       setBulkBusy(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -362,7 +372,7 @@ export const CategoryMasterView = () => (
       { key: "code", label: "Code" }, { key: "name", label: "Name" },
       { key: "description", label: "Description", full: true, type: "textarea" },
       { key: "sub_categories", label: "Sub-categories (comma separated)", full: true,
-        type: "text" },
+        type: "text", csv: true },
       { key: "active", label: "Active", type: "checkbox", default: true },
     ]}
   />
@@ -502,7 +512,7 @@ export function OpeningStockView() {
       ]);
       setRows(r.data); setItems(i.data); setStores(s.data);
       if (s.data.length && !form.store_id) setForm(f => ({ ...f, store_id: s.data[0].id }));
-    } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
+    } catch (e) { toast.error(apiErrorMessage(e, "Load failed")); }
   };
   useEffect(() => { load(); }, []);
 
@@ -537,7 +547,7 @@ export function OpeningStockView() {
                  lines: [{ item_id: "", quantity: "", rate: "", condition: "new" }] });
       load();
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Create failed");
+      toast.error(apiErrorMessage(e, "Create failed"));
     } finally { setBusy(false); }
   };
 
@@ -547,7 +557,7 @@ export function OpeningStockView() {
       toast.success("Approved & posted");
       load();
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Approval failed");
+      toast.error(apiErrorMessage(e, "Approval failed"));
     }
   };
 
@@ -688,7 +698,7 @@ export function StockBalanceView() {
     try {
       const r = await api.get(`/inv/stock-balance?only_in_stock=${onlyInStock}`);
       setRows(r.data.rows); setTotals(r.data.totals);
-    } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
+    } catch (e) { toast.error(apiErrorMessage(e, "Load failed")); }
   };
   useEffect(() => { load(); }, [onlyInStock]);
 
@@ -749,7 +759,7 @@ export function InventorySettingsView() {
     try {
       const r = await api.get("/inv/settings");
       setS(r.data);
-    } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
+    } catch (e) { toast.error(apiErrorMessage(e, "Load failed")); }
   };
   useEffect(() => { load(); }, []);
 
@@ -759,7 +769,7 @@ export function InventorySettingsView() {
       await api.put("/inv/settings", s);
       toast.success("Settings saved");
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Save failed");
+      toast.error(apiErrorMessage(e, "Save failed"));
     } finally { setBusy(false); }
   };
 
@@ -769,7 +779,7 @@ export function InventorySettingsView() {
       const r = await api.post("/inv/seed-defaults");
       toast.success(`Seeded · ${r.data.categories_added} categories, ${r.data.units_added} units`);
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Seed failed");
+      toast.error(apiErrorMessage(e, "Seed failed"));
     }
   };
 
