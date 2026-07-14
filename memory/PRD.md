@@ -4446,3 +4446,15 @@ User choices: matrix qty per project (item rows × project columns) + strict sto
 
 **Tested (curl E2E + UI screenshot)**: over-stock blocked (400) ✓, BAL-2026-0001 created ✓, approve created 3 ALC allocations & deducted stock (100→50, 50→25) ✓, visible in Material Allocations register ✓, matrix UI renders ✓.
 **Status: COMPLETE & verified on preview.**
+
+### Iteration (Jul 14, 2026) — Project Material Register
+
+**Backend** (appended to `routers/bulk_allocation_router.py`):
+- `GET /api/bulk-alloc/project-register/{project_id}` — allocations (allocated_to_type=project) grouped by category (via inventory lookup); per item: issued/returned/net qty, rate, value; category subtotals + grand total + date range
+- `GET /api/bulk-alloc/project-register/{project_id}/export` — branded Excel (openpyxl StreamingResponse)
+- `GET /bulk-alloc/projects?all=true` returns all projects for register selection
+
+**Frontend** — NEW `pages/store-inventory/ProjectRegister.jsx` wired into StoreInventory hub (`si-nav-project_register`, Project & Site group): project selector, 4 KPI cards, category-grouped table w/ subtotals + grand total, Excel download.
+
+**Tested**: JSON math verified (30×₹450 + 25×₹85 = ₹15,625 ✓), Excel export 200/valid workbook ✓, UI screenshot ✓. Note: seeded items default rate ₹0 — user must set rates (Item Master bulk update) for values to populate.
+**Status: COMPLETE & verified on preview.**

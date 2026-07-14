@@ -236,3 +236,127 @@ async def reject_bulk_request(req_id: str, payload: RejectIn, request: Request,
     await db.bulk_allocation_requests.update_one({"id": req_id}, {"$set": upd})
     await audit(user=user, action="reject", resource="bulk_allocation_requests", record_id=req_id, after=upd, ip=_ip(request))
     return {**req, **upd}
+
+
+# ─── Project Material Register ───────────────────────────────────────────────
+
+async def _build_register(project_id: str) -> dict:
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0, "id": 1, "code": 1, "name": 1, "status": 1, "client_name": 1})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    allocs = await db.material_allocations.find(
+        {"allocated_to_type": "project", "project_id": project_id}, {"_id": 0}
+    ).to_list(5000)
+
+    item_ids = [a["item_id"] for a in allocs if a.get("item_id")]
+    inv = {i["id"]: i for i in await db.inventory.find(
+        {"id": {"$in": item_ids}}, {"_id": 0, "id": 1, "code": 1, "category": 1, "rate": 1}
+    ).to_list(5000)}
+
+    by_cat: dict = {}
+    dates = []
+    for a in allocs:
+        item = inv.get(a.get("item_id"), {})
+        cat = item.get("category") or "Uncategorized"
+        key = (a.get("item_id") or a.get("item_name"), a.get("item_name"))
+        bucket = by_cat.setdefault(cat, {})
+        row = bucket.setdefault(key, {
+            "code": item.get("code") or "-", "item_name": a.get("item_name"),
+            "unit": a.get("unit") or "Nos", "rate": float(item.get("rate") or 0),
+            "issued_qty": 0.0, "returned_qty": 0.0, "allocations": 0, "last_issue_date": "",
+        })
+        row["issued_qty"] += float(a.get("quantity") or 0)
+        row["returned_qty"] += float(a.get("returned_qty") or 0)
+        row["allocations"] += 1
+        d = a.get("issue_date") or ""
+        row["last_issue_date"] = max(row["last_issue_date"], d)
+        if d:
+            dates.append(d)
+
+    categories = []
+    grand_value = grand_issued = 0.0
+    for cat in sorted(by_cat):
+        items = []
+        cat_value = cat_issued = 0.0
+        for row in sorted(by_cat[cat].values(), key=lambda r: r["code"]):
+            row["net_qty"] = row["issued_qty"] - row["returned_qty"]
+            row["value"] = round(row["net_qty"] * row["rate"], 2)
+            cat_value += row["value"]
+            cat_issued += row["issued_qty"]
+            items.append(row)
+        categories.append({"category": cat, "items": items,
+                           "total_value": round(cat_value, 2), "total_issued": cat_issued})
+        grand_value += cat_value
+        grand_issued += cat_issued
+
+    return {
+        "project": project,
+        "categories": categories,
+        "grand_total_value": round(grand_value, 2),
+        "grand_total_issued": grand_issued,
+        "total_allocations": len(allocs),
+        "date_from": min(dates) if dates else None,
+        "date_to": max(dates) if dates else None,
+    }
+
+
+@router.get("/bulk-alloc/project-register/{project_id}")
+async def project_material_register(project_id: str,
+                                    user: dict = Depends(require_permission("material_allocations", "read"))):
+    return await _build_register(project_id)
+
+
+@router.get("/bulk-alloc/project-register/{project_id}/export")
+async def project_material_register_export(project_id: str,
+                                           user: dict = Depends(require_permission("material_allocations", "read"))):
+    import io
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    reg = await _build_register(project_id)
+    p = reg["project"]
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Material Register"
+
+    bold = Font(bold=True)
+    head_fill = PatternFill("solid", fgColor="1E3A8A")
+    head_font = Font(bold=True, color="FFFFFF")
+    cat_fill = PatternFill("solid", fgColor="E2E8F0")
+
+    ws.append(["INDIAN TRADE LINKS — Project Material Register"])
+    ws["A1"].font = Font(bold=True, size=14)
+    ws.append([f"Project: {p.get('code')} · {p.get('name')}   |   Status: {p.get('status')}   |   Period: {reg['date_from'] or '-'} to {reg['date_to'] or '-'}"])
+    ws.append([])
+    header = ["Category", "Code", "Item", "Unit", "Issued Qty", "Returned Qty", "Net Qty", "Rate (INR)", "Value (INR)"]
+    ws.append(header)
+    for c in ws[ws.max_row]:
+        c.font = head_font
+        c.fill = head_fill
+        c.alignment = Alignment(horizontal="center")
+
+    for cat in reg["categories"]:
+        for it in cat["items"]:
+            ws.append([cat["category"], it["code"], it["item_name"], it["unit"],
+                       it["issued_qty"], it["returned_qty"], it["net_qty"], it["rate"], it["value"]])
+        ws.append([f"{cat['category']} — Subtotal", "", "", "", cat["total_issued"], "", "", "", cat["total_value"]])
+        for c in ws[ws.max_row]:
+            c.font = bold
+            c.fill = cat_fill
+
+    ws.append([])
+    ws.append(["GRAND TOTAL", "", "", "", reg["grand_total_issued"], "", "", "", reg["grand_total_value"]])
+    for c in ws[ws.max_row]:
+        c.font = Font(bold=True, size=12)
+
+    widths = [26, 12, 40, 8, 12, 13, 10, 12, 14]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[ws.cell(row=4, column=i).column_letter].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"material_register_{p.get('code', project_id)}.xlsx"
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f'attachment; filename="{fname}"'})

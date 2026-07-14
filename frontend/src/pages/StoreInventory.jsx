@@ -48,6 +48,7 @@ import {
 } from "./store-inventory/Phase5Views";
 
 import { BulkAllocationView } from "./store-inventory/BulkAllocation";
+import { ProjectRegisterView } from "./store-inventory/ProjectRegister";
 
 // Re-use the existing pages so we don't duplicate any logic
 import Inventory from "./Inventory";
@@ -87,6 +88,7 @@ const NAV = [
   { key: "site_stock",    label: "Site-wise Stock",      icon: MapPin,          group: "Project & Site" },
   { key: "project_stock", label: "Project-wise Stock",   icon: FolderOpen,      group: "Project & Site" },
   { key: "project_consumption", label: "Project Consumption", icon: BarChart3,  group: "Project & Site" },
+  { key: "project_register", label: "Project Material Register", icon: FileText, group: "Project & Site" },
   { key: "closure_check", label: "Project Closure Check", icon: FolderCheck,    group: "Project & Site" },
   // ── Phase 4: Safety / Tools / Damage / Scrap / HR clearance ────────
   { key: "tool_register", label: "Tool Register",         icon: Drill,           group: "Safety & Tools" },
@@ -163,6 +165,7 @@ export default function StoreInventory() {
       case "site_stock":    return <SiteStockView />;
       case "project_stock": return <ProjectStockView />;
       case "project_consumption": return <ProjectConsumptionView />;
+      case "project_register": return <ProjectRegisterView />;
       case "closure_check": return <ProjectClosureCheckView />;
       // Phase 4
       case "tool_register": return <ToolRegisterView />;
