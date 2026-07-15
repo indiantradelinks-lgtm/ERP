@@ -4506,3 +4506,13 @@ inv_categories is now THE single category master (16 categories).
 - UI: 5th KPI card "Total Tonnage (MT)", Weight (Kg) column, weight in subtotal + grand total rows; Excel export gains Unit Wt + Weight columns and "X Kg (Y MT)" grand total
 - Verified: 669.5 kg = 0.669 MT (30×21.4 + 25×1.1) in API, Excel, and UI screenshot. (Note: an earlier edit race corrupted ProjectRegister.jsx table rows — repaired and re-verified.)
 **Status: COMPLETE & verified on preview.**
+
+### Iteration (Jul 15, 2026) — Items-under-Categories unified with Item Master (pr_items retired)
+
+User found "Items in <category>" dialog (admin/Categories) read from `pr_items` (junk test data), not the Item Master. Fixed by pointing all `/procurement/master/items` endpoints (GET/POST/PUT/DELETE) at `db.inventory` with a compatibility mapper (`_inv_to_master`: unit↔uom, last_rate↔rate, hsn_sac↔hsn_code, active↔is_active, category name↔category_id). Consumers unaffected: admin Categories dialog, ops/ProjectResources material picklist, MasterSelect Item dropdowns.
+- Create via dialog now inserts into inventory (visible in Store Item Master immediately)
+- Delete guarded: blocked if stock > 0 or open allocations
+- Category `item_count` badge now aggregates inventory by category name
+- `pr_items` collection left untouched as passive backup (no longer read/written)
+Tested: 33 scaffolding items in dialog w/ rates, create→ItemMaster roundtrip, delete guards, counts per category — all verified (curl + UI screenshot).
+**Status: COMPLETE & verified on preview.**

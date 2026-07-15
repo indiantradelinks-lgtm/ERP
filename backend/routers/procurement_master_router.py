@@ -60,13 +60,13 @@ async def list_categories(active_only: bool = False, user: dict = Depends(get_cu
     if active_only:
         q["active"] = True
     rows = await db.inv_categories.find(q, {"_id": 0}).sort([("name", 1)]).to_list(500)
-    # Attach live item count
-    code_counts: Dict[str, int] = {}
-    pipeline = [{"$group": {"_id": "$category_code", "n": {"$sum": 1}}}]
-    async for r in db.pr_items.aggregate(pipeline):
-        code_counts[r["_id"] or ""] = r["n"]
+    # Attach live item count from the unified Item Master (inventory, keyed by category name)
+    name_counts: Dict[str, int] = {}
+    pipeline = [{"$group": {"_id": "$category", "n": {"$sum": 1}}}]
+    async for r in db.inventory.aggregate(pipeline):
+        name_counts[r["_id"] or ""] = r["n"]
     for r in rows:
-        r["item_count"] = code_counts.get(r.get("code"), 0)
+        r["item_count"] = name_counts.get(r.get("name"), 0)
     return rows
 
 
@@ -166,16 +166,41 @@ async def _resolve_category(category_id: str) -> Dict[str, Any]:
     return cat
 
 
+def _inv_to_master(doc: Dict[str, Any], cat_by_name: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """Map an inventory (Item Master) doc to the procurement master item shape."""
+    cat = cat_by_name.get(doc.get("category") or "", {})
+    return {
+        "id": doc.get("id"),
+        "code": doc.get("code"),
+        "name": doc.get("name"),
+        "unit": doc.get("unit") or doc.get("uom") or "Nos",
+        "last_rate": doc.get("rate") or 0,
+        "hsn_sac": doc.get("hsn_code") or doc.get("hsn_sac"),
+        "description": doc.get("description"),
+        "category_id": cat.get("id"),
+        "category_code": cat.get("code"),
+        "category_name": doc.get("category"),
+        "active": doc.get("is_active", True) is not False,
+        "stock_qty": doc.get("quantity") or 0,
+    }
+
+
+async def _cat_by_name() -> Dict[str, Dict[str, Any]]:
+    return {c["name"]: c for c in await db.inv_categories.find({}, {"_id": 0}).to_list(500)}
+
+
 @router.get("/items")
 async def list_items(category_id: Optional[str] = None, active_only: bool = False,
                      user: dict = Depends(get_current_user)):
     q: Dict[str, Any] = {}
     if category_id:
-        q["category_id"] = category_id
+        cat = await _resolve_category(category_id)
+        q["category"] = cat.get("name")
     if active_only:
-        q["active"] = True
-    rows = await db.pr_items.find(q, {"_id": 0}).sort([("category_code", 1), ("name", 1)]).to_list(2000)
-    return rows
+        q["is_active"] = {"$ne": False}
+    cats = await _cat_by_name()
+    rows = await db.inventory.find(q, {"_id": 0}).sort([("category", 1), ("code", 1)]).to_list(3000)
+    return [_inv_to_master(r, cats) for r in rows]
 
 
 @router.post("/items")
@@ -183,52 +208,79 @@ async def create_item(payload: ItemIn, request: Request,
                       user: dict = Depends(require_permission("procurement_master", "write"))):
     cat = await _resolve_category(payload.category_id)
     code = payload.code.strip().upper()
-    if await db.pr_items.find_one({"code": code}):
-        raise HTTPException(status_code=400, detail=f"Item code '{code}' already exists")
-    doc = payload.model_dump()
-    doc["code"] = code
-    doc["category_code"] = cat.get("code")
-    doc["category_name"] = cat.get("name")
-    if not doc.get("hsn_sac"):
-        doc["hsn_sac"] = cat.get("default_hsn")
-    doc["id"] = new_id()
-    doc["created_at"] = now_iso()
-    doc["created_by"] = user.get("name") or user.get("email")
-    await db.pr_items.insert_one(doc)
-    await audit(user=user, action="create", resource="pr_items", record_id=doc["id"], after=doc, ip=_ip(request))
-    return _strip(doc)
+    if await db.inventory.find_one({"code": code}):
+        raise HTTPException(status_code=400, detail=f"Item code '{code}' already exists in Item Master")
+    doc = {
+        "id": new_id(),
+        "code": code,
+        "name": payload.name,
+        "category": cat.get("name"),
+        "unit": payload.unit,
+        "uom": payload.unit,
+        "rate": payload.last_rate or 0,
+        "hsn_code": payload.hsn_sac or cat.get("default_hsn"),
+        "description": payload.description,
+        "quantity": 0,
+        "min_stock": 0,
+        "location": "Main Store",
+        "is_active": payload.active,
+        "created_at": now_iso(),
+        "created_by": user.get("name") or user.get("email"),
+    }
+    await db.inventory.insert_one(doc)
+    await audit(user=user, action="create", resource="inventory", record_id=doc["id"], after=doc, ip=_ip(request))
+    return _inv_to_master(_strip(doc), await _cat_by_name())
 
 
 @router.put("/items/{iid}")
 async def update_item(iid: str, payload: ItemUpdate, request: Request,
                       user: dict = Depends(require_permission("procurement_master", "write"))):
-    existing = await db.pr_items.find_one({"id": iid}, {"_id": 0})
+    existing = await db.inventory.find_one({"id": iid}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Item not found")
-    patch = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
-    if "code" in patch:
-        patch["code"] = patch["code"].strip().upper()
-        if patch["code"] != existing.get("code") and await db.pr_items.find_one({"code": patch["code"], "id": {"$ne": iid}}):
+    src = payload.model_dump(exclude_none=True)
+    patch: Dict[str, Any] = {}
+    if "code" in src:
+        code = src["code"].strip().upper()
+        if code != existing.get("code") and await db.inventory.find_one({"code": code, "id": {"$ne": iid}}):
             raise HTTPException(status_code=400, detail="Code already in use")
-    if "category_id" in patch:
-        cat = await _resolve_category(patch["category_id"])
-        patch["category_code"] = cat.get("code")
-        patch["category_name"] = cat.get("name")
+        patch["code"] = code
+    if "name" in src:
+        patch["name"] = src["name"]
+    if "description" in src:
+        patch["description"] = src["description"]
+    if "unit" in src:
+        patch["unit"] = src["unit"]
+        patch["uom"] = src["unit"]
+    if "last_rate" in src:
+        patch["rate"] = src["last_rate"]
+    if "hsn_sac" in src:
+        patch["hsn_code"] = src["hsn_sac"]
+    if "active" in src:
+        patch["is_active"] = src["active"]
+    if "category_id" in src:
+        cat = await _resolve_category(src["category_id"])
+        patch["category"] = cat.get("name")
     patch["updated_at"] = now_iso()
     patch["updated_by"] = user.get("name") or user.get("email")
-    await db.pr_items.update_one({"id": iid}, {"$set": patch})
-    row = await db.pr_items.find_one({"id": iid}, {"_id": 0})
-    await audit(user=user, action="update", resource="pr_items", record_id=iid, after=patch, ip=_ip(request))
-    return _strip(row)
+    await db.inventory.update_one({"id": iid}, {"$set": patch})
+    row = await db.inventory.find_one({"id": iid}, {"_id": 0})
+    await audit(user=user, action="update", resource="inventory", record_id=iid, after=patch, ip=_ip(request))
+    return _inv_to_master(row, await _cat_by_name())
 
 
 @router.delete("/items/{iid}")
 async def delete_item(iid: str, request: Request,
                       user: dict = Depends(require_permission("procurement_master", "delete"))):
-    res = await db.pr_items.delete_one({"id": iid})
-    if not res.deleted_count:
+    item = await db.inventory.find_one({"id": iid}, {"_id": 0})
+    if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    await audit(user=user, action="delete", resource="pr_items", record_id=iid, after={}, ip=_ip(request))
+    if (item.get("quantity") or 0) > 0:
+        raise HTTPException(status_code=400, detail=f"Cannot delete — '{item.get('name')}' has stock ({item.get('quantity')}). Adjust stock to zero first.")
+    if await db.material_allocations.find_one({"item_id": iid, "status": "issued"}):
+        raise HTTPException(status_code=400, detail=f"Cannot delete — '{item.get('name')}' has open allocations. Return them first.")
+    await db.inventory.delete_one({"id": iid})
+    await audit(user=user, action="delete", resource="inventory", record_id=iid, after={}, ip=_ip(request))
     return {"ok": True}
 
 
