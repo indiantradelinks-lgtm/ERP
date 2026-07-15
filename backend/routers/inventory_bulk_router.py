@@ -44,6 +44,7 @@ ITEM_FIELDS = [
     "rate", "location", "store_location", "store_id",
     "batch", "serial_no", "vendor_name", "asset_tag",
     "description", "remarks", "hsn_code", "is_active",
+    "unit_weight_kg", "size", "material_spec", "material_type", "grade", "make",
 ]
 
 

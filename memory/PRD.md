@@ -4490,3 +4490,12 @@ User discovered sidebar "Item Category Master" (/app/admin/categories → pr_cat
 **Verified**: /api/inv/categories == /api/procurement/master/categories (16 identical codes); 0 orphan refs; /api/vendor-categories 16; 27 PRs load w/ remapped names; cost centers remapped; admin UI screenshot shows unified list w/ GST/HSN, junk gone.
 inv_categories is now THE single category master (16 categories).
 **Status: COMPLETE & verified on preview.**
+
+### Iteration (Jul 15, 2026) — Standard Material Library (specifications on Item Master)
+
+- Item Master extended with spec fields: unit_weight_kg, size, material_spec (IS/EN/ASTM), material_type, grade, make, hsn_code + description
+- `Inventory.jsx`: form gains Specifications fields; table gains "Specification" column (size · spec · grade · weight, tooltip: type · make)
+- `inventory_bulk_router.ITEM_FIELDS` whitelist extended → spec columns now in bulk Excel template/import
+- NEW `scripts/seed_material_specs.py`: filled standard Indian-spec data on 59 seeded items (all 33 scaffolding items w/ IS 1161/IS 2306 specs + unit weights, key PPE w/ IS 2925/IS 3521/IS 15298, roof sheeting AZ150/AS 3566, consumables IS 814 electrodes, painting IS 13213 etc.). Idempotent, only fills empty fields.
+- Verified: API shows specs on SCF-001, bulk template has spec columns, UI screenshot shows Specification column.
+**Status: COMPLETE & verified on preview.**

@@ -93,6 +93,14 @@ export default function Inventory() {
     { key: "name", label: "Item" },
     { key: "category", label: "Category", render: (r) => (r.category || "").replaceAll("_", " ") },
     { key: "uom", label: "UOM" },
+    {
+      key: "_spec",
+      label: "Specification",
+      render: (r) => {
+        const bits = [r.size, r.material_spec, r.grade, r.unit_weight_kg ? `${r.unit_weight_kg} kg` : null].filter(Boolean);
+        return bits.length ? <span className="text-xs text-slate-600" title={[r.material_type, r.make].filter(Boolean).join(" · ")}>{bits.join(" · ")}</span> : "—";
+      },
+    },
     { key: "quantity", label: "Qty" },
     { key: "min_stock", label: "Min" },
     { key: "rate", label: "Rate", render: (r) => "₹ " + Number(r.rate || 0).toLocaleString("en-IN") },
@@ -128,6 +136,14 @@ export default function Inventory() {
     { key: "min_stock", label: "Min Stock", type: "number" },
     { key: "rate", label: "Rate (INR)", type: "number" },
     { key: "location", label: "Location" },
+    { key: "unit_weight_kg", label: "Unit Weight (Kg)", type: "number" },
+    { key: "size", label: "Size / Dimension" },
+    { key: "material_spec", label: "Material Specification (IS/EN/ASTM)" },
+    { key: "material_type", label: "Material Type" },
+    { key: "grade", label: "Grade / Class" },
+    { key: "make", label: "Make / Brand" },
+    { key: "hsn_code", label: "HSN Code" },
+    { key: "description", label: "Description / Remarks", full: true },
   ];
 
   return (
