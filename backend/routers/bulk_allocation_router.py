@@ -250,7 +250,7 @@ async def _build_register(project_id: str) -> dict:
 
     item_ids = [a["item_id"] for a in allocs if a.get("item_id")]
     inv = {i["id"]: i for i in await db.inventory.find(
-        {"id": {"$in": item_ids}}, {"_id": 0, "id": 1, "code": 1, "category": 1, "rate": 1}
+        {"id": {"$in": item_ids}}, {"_id": 0, "id": 1, "code": 1, "category": 1, "rate": 1, "unit_weight_kg": 1}
     ).to_list(5000)}
 
     by_cat: dict = {}
@@ -263,6 +263,7 @@ async def _build_register(project_id: str) -> dict:
         row = bucket.setdefault(key, {
             "code": item.get("code") or "-", "item_name": a.get("item_name"),
             "unit": a.get("unit") or "Nos", "rate": float(item.get("rate") or 0),
+            "unit_weight_kg": float(item.get("unit_weight_kg") or 0),
             "issued_qty": 0.0, "returned_qty": 0.0, "allocations": 0, "last_issue_date": "",
         })
         row["issued_qty"] += float(a.get("quantity") or 0)
@@ -274,26 +275,32 @@ async def _build_register(project_id: str) -> dict:
             dates.append(d)
 
     categories = []
-    grand_value = grand_issued = 0.0
+    grand_value = grand_issued = grand_weight = 0.0
     for cat in sorted(by_cat):
         items = []
-        cat_value = cat_issued = 0.0
+        cat_value = cat_issued = cat_weight = 0.0
         for row in sorted(by_cat[cat].values(), key=lambda r: r["code"]):
             row["net_qty"] = row["issued_qty"] - row["returned_qty"]
             row["value"] = round(row["net_qty"] * row["rate"], 2)
+            row["weight_kg"] = round(row["net_qty"] * row["unit_weight_kg"], 2)
             cat_value += row["value"]
             cat_issued += row["issued_qty"]
+            cat_weight += row["weight_kg"]
             items.append(row)
         categories.append({"category": cat, "items": items,
-                           "total_value": round(cat_value, 2), "total_issued": cat_issued})
+                           "total_value": round(cat_value, 2), "total_issued": cat_issued,
+                           "total_weight_kg": round(cat_weight, 2)})
         grand_value += cat_value
         grand_issued += cat_issued
+        grand_weight += cat_weight
 
     return {
         "project": project,
         "categories": categories,
         "grand_total_value": round(grand_value, 2),
         "grand_total_issued": grand_issued,
+        "grand_total_weight_kg": round(grand_weight, 2),
+        "grand_total_weight_mt": round(grand_weight / 1000, 3),
         "total_allocations": len(allocs),
         "date_from": min(dates) if dates else None,
         "date_to": max(dates) if dates else None,
@@ -329,7 +336,7 @@ async def project_material_register_export(project_id: str,
     ws["A1"].font = Font(bold=True, size=14)
     ws.append([f"Project: {p.get('code')} · {p.get('name')}   |   Status: {p.get('status')}   |   Period: {reg['date_from'] or '-'} to {reg['date_to'] or '-'}"])
     ws.append([])
-    header = ["Category", "Code", "Item", "Unit", "Issued Qty", "Returned Qty", "Net Qty", "Rate (INR)", "Value (INR)"]
+    header = ["Category", "Code", "Item", "Unit", "Issued Qty", "Returned Qty", "Net Qty", "Unit Wt (Kg)", "Weight (Kg)", "Rate (INR)", "Value (INR)"]
     ws.append(header)
     for c in ws[ws.max_row]:
         c.font = head_font
@@ -339,18 +346,21 @@ async def project_material_register_export(project_id: str,
     for cat in reg["categories"]:
         for it in cat["items"]:
             ws.append([cat["category"], it["code"], it["item_name"], it["unit"],
-                       it["issued_qty"], it["returned_qty"], it["net_qty"], it["rate"], it["value"]])
-        ws.append([f"{cat['category']} — Subtotal", "", "", "", cat["total_issued"], "", "", "", cat["total_value"]])
+                       it["issued_qty"], it["returned_qty"], it["net_qty"],
+                       it["unit_weight_kg"], it["weight_kg"], it["rate"], it["value"]])
+        ws.append([f"{cat['category']} — Subtotal", "", "", "", cat["total_issued"], "", "", "",
+                   cat["total_weight_kg"], "", cat["total_value"]])
         for c in ws[ws.max_row]:
             c.font = bold
             c.fill = cat_fill
 
     ws.append([])
-    ws.append(["GRAND TOTAL", "", "", "", reg["grand_total_issued"], "", "", "", reg["grand_total_value"]])
+    ws.append(["GRAND TOTAL", "", "", "", reg["grand_total_issued"], "", "", "",
+               f"{reg['grand_total_weight_kg']} Kg ({reg['grand_total_weight_mt']} MT)", "", reg["grand_total_value"]])
     for c in ws[ws.max_row]:
         c.font = Font(bold=True, size=12)
 
-    widths = [26, 12, 40, 8, 12, 13, 10, 12, 14]
+    widths = [26, 12, 40, 8, 12, 13, 10, 12, 16, 12, 14]
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[ws.cell(row=4, column=i).column_letter].width = w
 

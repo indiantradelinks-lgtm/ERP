@@ -67,8 +67,9 @@ export function ProjectRegisterView() {
 
       {reg && !loading && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
             {[["Total Value", inr(reg.grand_total_value)],
+              ["Total Tonnage", `${reg.grand_total_weight_mt ?? 0} MT`],
               ["Total Issued Qty", reg.grand_total_issued],
               ["Categories", reg.categories.length],
               ["Allocations", reg.total_allocations]].map(([l, v]) => (
@@ -92,6 +93,7 @@ export function ProjectRegisterView() {
                     <th className="text-right px-2 py-2">Issued</th>
                     <th className="text-right px-2 py-2">Returned</th>
                     <th className="text-right px-2 py-2">Net</th>
+                    <th className="text-right px-2 py-2">Weight (Kg)</th>
                     <th className="text-right px-3 py-2">Rate</th>
                     <th className="text-right px-3 py-2">Value</th>
                   </tr>
@@ -103,7 +105,10 @@ export function ProjectRegisterView() {
                   <tr className="border-t-2 border-slate-800 bg-slate-100 font-bold">
                     <td colSpan={3} className="px-3 py-2">GRAND TOTAL</td>
                     <td className="text-right px-2 font-mono-data">{reg.grand_total_issued}</td>
-                    <td colSpan={3}></td>
+                    <td></td>
+                    <td></td>
+                    <td className="text-right px-2 font-mono-data" data-testid="project-register-grand-weight">{reg.grand_total_weight_kg} <span className="text-[10px] text-slate-500">({reg.grand_total_weight_mt} MT)</span></td>
+                    <td></td>
                     <td className="text-right px-3 font-mono-data" data-testid="project-register-grand-total">{inr(reg.grand_total_value)}</td>
                   </tr>
                 </tbody>
@@ -120,7 +125,7 @@ function CategoryRows({ cat }) {
   return (
     <>
       <tr className="bg-slate-50 border-t">
-        <td colSpan={8} className="px-3 py-1.5 font-semibold text-slate-700 text-xs uppercase tracking-wider">{cat.category}</td>
+        <td colSpan={9} className="px-3 py-1.5 font-semibold text-slate-700 text-xs uppercase tracking-wider">{cat.category}</td>
       </tr>
       {cat.items.map((it) => (
         <tr key={it.code + it.item_name} className="border-t">
@@ -130,6 +135,7 @@ function CategoryRows({ cat }) {
           <td className="text-right px-2 font-mono-data">{it.issued_qty}</td>
           <td className="text-right px-2 font-mono-data">{it.returned_qty || ""}</td>
           <td className="text-right px-2 font-mono-data font-medium">{it.net_qty}</td>
+          <td className="text-right px-2 font-mono-data">{it.weight_kg ? it.weight_kg : "—"}</td>
           <td className="text-right px-3 font-mono-data">{inr(it.rate)}</td>
           <td className="text-right px-3 font-mono-data">{inr(it.value)}</td>
         </tr>
@@ -137,7 +143,10 @@ function CategoryRows({ cat }) {
       <tr className="border-t bg-slate-50/70 font-medium">
         <td colSpan={3} className="px-3 py-1.5 text-xs text-slate-600">Subtotal — {cat.category}</td>
         <td className="text-right px-2 font-mono-data">{cat.total_issued}</td>
-        <td colSpan={3}></td>
+        <td></td>
+        <td></td>
+        <td className="text-right px-2 font-mono-data">{cat.total_weight_kg || ""}</td>
+        <td></td>
         <td className="text-right px-3 font-mono-data">{inr(cat.total_value)}</td>
       </tr>
     </>

@@ -4499,3 +4499,10 @@ inv_categories is now THE single category master (16 categories).
 - NEW `scripts/seed_material_specs.py`: filled standard Indian-spec data on 59 seeded items (all 33 scaffolding items w/ IS 1161/IS 2306 specs + unit weights, key PPE w/ IS 2925/IS 3521/IS 15298, roof sheeting AZ150/AS 3566, consumables IS 814 electrodes, painting IS 13213 etc.). Idempotent, only fills empty fields.
 - Verified: API shows specs on SCF-001, bulk template has spec columns, UI screenshot shows Specification column.
 **Status: COMPLETE & verified on preview.**
+
+### Iteration (Jul 15, 2026) — Tonnage in Project Material Register
+
+- `_build_register` now pulls unit_weight_kg from inventory; per item weight_kg = net_qty × unit_weight; category total_weight_kg; grand_total_weight_kg + grand_total_weight_mt
+- UI: 5th KPI card "Total Tonnage (MT)", Weight (Kg) column, weight in subtotal + grand total rows; Excel export gains Unit Wt + Weight columns and "X Kg (Y MT)" grand total
+- Verified: 669.5 kg = 0.669 MT (30×21.4 + 25×1.1) in API, Excel, and UI screenshot. (Note: an earlier edit race corrupted ProjectRegister.jsx table rows — repaired and re-verified.)
+**Status: COMPLETE & verified on preview.**
