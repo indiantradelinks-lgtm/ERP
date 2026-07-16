@@ -16,6 +16,7 @@ export default function Inventory() {
   const [bulkUploading, setBulkUploading] = useState(false);
   const [bulkResult, setBulkResult] = useState(null);
   const [catOptions, setCatOptions] = useState(["scaffolding", "painting", "rope_access", "roof_sheeting", "ppe", "consumables"]);
+  const [uomOptions, setUomOptions] = useState(["Nos", "Kg", "Mtr", "Ltr", "Set", "Pair", "Roll", "Ream", "SqMtr", "Box", "Bag"]);
   const fileRef = useRef(null);
 
   useEffect(() => {
@@ -23,6 +24,12 @@ export default function Inventory() {
       .then((res) => {
         const names = (res.data || []).filter((c) => c.active !== false).map((c) => c.name).filter(Boolean);
         if (names.length) setCatOptions(names);
+      })
+      .catch(() => {});
+    api.get("/inv/units")
+      .then((res) => {
+        const names = [...new Set((res.data || []).map((u) => u.name || u.code).filter(Boolean))].sort();
+        if (names.length) setUomOptions((prev) => [...new Set([...names, ...prev])]);
       })
       .catch(() => {});
   }, []);
@@ -128,22 +135,31 @@ export default function Inventory() {
     },
   ];
   const fields = [
-    { key: "code", label: "Item Code" },
-    { key: "name", label: "Item Name", full: true },
-    { key: "category", label: "Category", type: "select", options: catOptions },
-    { key: "uom", label: "UOM (nos/meter/kg)" },
+    { key: "code", label: "Item Code", required: true },
+    { key: "name", label: "Item Name", required: true },
+    { key: "category", label: "Category", type: "select", options: catOptions, required: true },
+    { key: "uom", label: "UOM / Unit", type: "select", options: uomOptions, required: true },
     { key: "quantity", label: "Quantity", type: "number" },
     { key: "min_stock", label: "Min Stock", type: "number" },
+    { key: "max_stock", label: "Max Stock", type: "number" },
+    { key: "reorder_level", label: "Reorder Level", type: "number" },
     { key: "rate", label: "Rate (INR)", type: "number" },
     { key: "location", label: "Location" },
+    { key: "store_location", label: "Store Location" },
+    { key: "batch", label: "Batch" },
+    { key: "serial_no", label: "Serial No" },
+    { key: "vendor_name", label: "Vendor Name" },
+    { key: "asset_tag", label: "Asset Tag" },
+    { key: "hsn_code", label: "HSN Code" },
+    { key: "is_active", label: "Active", type: "checkbox", checkboxLabel: "Item is active" },
     { key: "unit_weight_kg", label: "Unit Weight (Kg)", type: "number" },
     { key: "size", label: "Size / Dimension" },
     { key: "material_spec", label: "Material Specification (IS/EN/ASTM)" },
     { key: "material_type", label: "Material Type" },
     { key: "grade", label: "Grade / Class" },
     { key: "make", label: "Make / Brand" },
-    { key: "hsn_code", label: "HSN Code" },
-    { key: "description", label: "Description / Remarks", full: true },
+    { key: "description", label: "Description", full: true },
+    { key: "remarks", label: "Remarks", full: true },
   ];
 
   return (

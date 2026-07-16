@@ -39,13 +39,16 @@ router = APIRouter(prefix="/inv-bulk", tags=["inventory-bulk"])
 
 # ───────────────────────── ITEMS ─────────────────────────
 ITEM_FIELDS = [
-    "code", "item_code", "name", "category", "category_id",
-    "uom", "unit", "quantity", "min_stock", "max_stock", "reorder_level",
-    "rate", "location", "store_location", "store_id",
+    "code", "name", "category", "uom",
+    "quantity", "min_stock", "max_stock", "reorder_level",
+    "rate", "location", "store_location",
     "batch", "serial_no", "vendor_name", "asset_tag",
-    "description", "remarks", "hsn_code", "is_active",
+    "hsn_code", "is_active",
     "unit_weight_kg", "size", "material_spec", "material_type", "grade", "make",
+    "description", "remarks",
 ]
+
+REQUIRED_ITEM_FIELDS = ["code", "name", "category", "uom"]
 
 
 def _xlsx_response(wb: Workbook, fname: str) -> StreamingResponse:
@@ -77,18 +80,56 @@ def _instructions_sheet(wb: Workbook, title: str, allowed_fields: List[str]) -> 
 @router.get("/items/template")
 async def items_template(user: dict = Depends(require_permission("inventory", "write"))):
     """Download current inventory items as an editable xlsx template."""
+    from openpyxl.worksheet.datavalidation import DataValidation
+    from openpyxl.utils import get_column_letter
+    from openpyxl.styles import PatternFill
+
     rows = await db.inventory.find({}, {"_id": 0}).sort("code", 1).to_list(20000)
     wb = Workbook()
     ws = wb.active
     ws.title = "Items"
     headers = ["id"] + ITEM_FIELDS
     ws.append(headers)
-    for col_idx, _ in enumerate(headers, 1):
+    req_fill = PatternFill("solid", fgColor="FDE68A")
+    for col_idx, h in enumerate(headers, 1):
         c = ws.cell(row=1, column=col_idx)
         c.font = c.font.copy(bold=True)
+        if h in REQUIRED_ITEM_FIELDS:
+            c.fill = req_fill
     for r in rows:
         ws.append([r.get(h, "") if r.get(h) is not None else "" for h in headers])
+
+    # Dropdown lists (hidden LISTS sheet): category, uom, is_active
+    cats = [c["name"] for c in await db.inv_categories.find(
+        {"active": {"$ne": False}}, {"_id": 0, "name": 1}).sort("name", 1).to_list(500)]
+    unit_docs = await db.inv_units.find({}, {"_id": 0, "name": 1, "code": 1}).to_list(300)
+    uoms = sorted({(u.get("name") or u.get("code")) for u in unit_docs if u.get("name") or u.get("code")}
+                  | {r.get("uom") for r in rows if r.get("uom")})
+    lists = wb.create_sheet("LISTS")
+    for i, v in enumerate(cats, 1):
+        lists.cell(row=i, column=1, value=v)
+    for i, v in enumerate(uoms, 1):
+        lists.cell(row=i, column=2, value=v)
+    lists.cell(row=1, column=3, value="TRUE")
+    lists.cell(row=2, column=3, value="FALSE")
+    lists.sheet_state = "hidden"
+
+    max_dv_row = len(rows) + 501
+    for field, list_col, list_len in [("category", "A", len(cats)), ("uom", "B", len(uoms)), ("is_active", "C", 2)]:
+        if list_len == 0:
+            continue
+        col = get_column_letter(headers.index(field) + 1)
+        dv = DataValidation(type="list", formula1=f"=LISTS!${list_col}$1:${list_col}${list_len}",
+                            allow_blank=True, showErrorMessage=True,
+                            error="Pick a value from the dropdown list")
+        ws.add_data_validation(dv)
+        dv.add(f"{col}2:{col}{max_dv_row}")
+
     _instructions_sheet(wb, "Item Master", ITEM_FIELDS)
+    inst = wb["INSTRUCTIONS"]
+    inst.append([])
+    inst.append([f"Required fields for NEW rows (highlighted yellow): {', '.join(REQUIRED_ITEM_FIELDS)}"])
+    inst.append(["`category`, `uom` and `is_active` have dropdown lists — pick from the list."])
     fname = f"item-master-bulk-template-{datetime.now(timezone.utc).date()}.xlsx"
     return _xlsx_response(wb, fname)
 
@@ -104,7 +145,7 @@ async def items_import(file: UploadFile = File(...),
         sheet_name="Items",
         allowed_fields=ITEM_FIELDS,
         match_by_secondary=("code", "item_code"),
-        required_new_field="name",
+        required_new_field=tuple(REQUIRED_ITEM_FIELDS),
         audit_resource="inventory",
     )
 
@@ -253,10 +294,12 @@ async def _generic_import(*, file: UploadFile, user: dict,
                 per_row.append({"row": ri, "id": rec_id, "action": "skipped", "error": "not found"})
             else:
                 # Create new record
-                if not patch.get(required_new_field):
+                req = required_new_field if isinstance(required_new_field, (tuple, list)) else (required_new_field,)
+                missing = [f for f in req if not patch.get(f)]
+                if missing:
                     summary["skipped"] += 1
-                    summary["errors"].append({"row": ri, "error": f"blank id and blank {required_new_field} — row ignored"})
-                    per_row.append({"row": ri, "action": "skipped", "error": f"blank id+{required_new_field}"})
+                    summary["errors"].append({"row": ri, "error": f"blank id and missing required field(s): {', '.join(missing)} — row ignored"})
+                    per_row.append({"row": ri, "action": "skipped", "error": f"missing {', '.join(missing)}"})
                     continue
                 new_doc = {
                     "id": new_id(),

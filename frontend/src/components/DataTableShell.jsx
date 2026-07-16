@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import { downloadExport } from "@/lib/exports";
 import RowAttachments from "@/components/RowAttachments";
 
@@ -187,6 +188,12 @@ export default function DataTableShell({
   };
 
   const save = async () => {
+    for (const f of fields) {
+      if (f.required && (form[f.key] === undefined || form[f.key] === null || String(form[f.key]).trim() === "")) {
+        toast.error(`${f.label} is required`);
+        return;
+      }
+    }
     const payload = { ...form };
     fields.forEach((f) => {
       if (f.type === "number" && payload[f.key] !== undefined && payload[f.key] !== "") {

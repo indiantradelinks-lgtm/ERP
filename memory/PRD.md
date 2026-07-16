@@ -4516,3 +4516,14 @@ User found "Items in <category>" dialog (admin/Categories) read from `pr_items` 
 - `pr_items` collection left untouched as passive backup (no longer read/written)
 Tested: 33 scaffolding items in dialog w/ rates, create→ItemMaster roundtrip, delete guards, counts per category — all verified (curl + UI screenshot).
 **Status: COMPLETE & verified on preview.**
+
+### Iteration (Jul 16, 2026) — Item form == Bulk Template (exact match)
+
+Canonical field list applied to BOTH the Inventory & Stores add/edit form and the bulk Excel template (same names + order):
+code*, name*, category*, uom* | quantity, min_stock, max_stock, reorder_level | rate, location, store_location | batch, serial_no, vendor_name, asset_tag | hsn_code, is_active | unit_weight_kg, size, material_spec, material_type, grade, make | description, remarks
+- `inventory_bulk_router.ITEM_FIELDS` reordered; aliases removed (item_code/category_id/unit/store_id); REQUIRED_ITEM_FIELDS=[code,name,category,uom]
+- Template: required headers highlighted yellow, hidden LISTS sheet + Excel DataValidation dropdowns for category/uom/is_active, instructions updated; import now enforces ALL 4 required fields on new rows (multi-field skip messages)
+- Form (`Inventory.jsx`): full 25-field set in template order; category + uom dropdowns (uom from /inv/units); is_active checkbox; required flags
+- `DataTableShell.jsx`: generic required-field validation on save (toast) — benefits all pages using `required`
+Tested: template headers exact-match ✓, 3 dropdown validations ✓, required highlight ✓, import skips row missing category ✓ creates valid row ✓, UI dialog order/dropdowns/required toast ✓.
+**Status: COMPLETE & verified on preview.**
