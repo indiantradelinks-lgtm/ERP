@@ -276,6 +276,7 @@ function PRDialog({ form, setForm, dropdowns, onSave, onClose }) {
         <div className="space-y-3">
           {form.items.map((it, idx) => {
             const itemOptions = (dropdowns.items_by_category[it.category_id] || []).map((m) => ({ value: m.id, label: `${m.code} · ${m.name}` }));
+            const vendorOptions = (dropdowns.vendors_by_category?.[it.category_id] || []);
             const ccMatch = (dropdowns.cost_centers || []).find((c) => c.category_id === it.category_id);
             return (
               <div key={idx} className="border border-border rounded-sm p-3 bg-muted/20 grid grid-cols-1 md:grid-cols-6 gap-2" data-testid={`pr-item-${idx}`}>
@@ -311,7 +312,27 @@ function PRDialog({ form, setForm, dropdowns, onSave, onClose }) {
                 <Field label="Required by" type="date" value={it.required_date} onChange={(v) => updateItem(idx, { required_date: v })} testid={`pr-item-${idx}-req`} />
                 <div className="md:col-span-3"><Field label="Description" value={it.description} onChange={(v) => updateItem(idx, { description: v })} /></div>
                 <div className="md:col-span-2"><Field label="Tech Specs" value={it.technical_specs} onChange={(v) => updateItem(idx, { technical_specs: v })} /></div>
-                <Field label="Suggested Vendor" value={it.vendor_suggestion} onChange={(v) => updateItem(idx, { vendor_suggestion: v })} />
+                <div>
+                  <Label className="text-[10px] uppercase tracking-wider">Suggested Vendor</Label>
+                  {vendorOptions.length > 0 ? (
+                    <>
+                      <select value={vendorOptions.some((v) => v.name === it.vendor_suggestion) ? it.vendor_suggestion : ""}
+                        onChange={(e) => updateItem(idx, { vendor_suggestion: e.target.value })}
+                        className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm mt-1"
+                        data-testid={`pr-item-${idx}-vendor-select`}>
+                        <option value="">— select vendor —</option>
+                        {vendorOptions.map((v) => <option key={v.id} value={v.name}>{v.vendor_code ? `${v.vendor_code} · ` : ""}{v.name}</option>)}
+                      </select>
+                      <Input value={vendorOptions.some((v) => v.name === it.vendor_suggestion) ? "" : it.vendor_suggestion}
+                        onChange={(e) => updateItem(idx, { vendor_suggestion: e.target.value })}
+                        className="h-7 rounded-sm mt-1 text-[11px]" placeholder="…or type custom vendor" data-testid={`pr-item-${idx}-vendor`} />
+                    </>
+                  ) : (
+                    <Input value={it.vendor_suggestion} onChange={(e) => updateItem(idx, { vendor_suggestion: e.target.value })}
+                      className="h-9 rounded-sm mt-1" data-testid={`pr-item-${idx}-vendor`}
+                      placeholder={it.category_id ? "No vendors mapped to this category" : "Select category first"} />
+                  )}
+                </div>
                 <div className="md:col-span-6">
                   <RateContractHint
                     itemId={it.item_id}

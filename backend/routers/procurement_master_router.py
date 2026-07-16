@@ -480,10 +480,36 @@ async def pr_dropdowns(project_id: Optional[str] = None,
         sites = await db.sites.find({}, site_proj).sort([("site_code", 1)]).to_list(500)
 
     categories = await db.inv_categories.find({"active": True}, {"_id": 0}).sort([("name", 1)]).to_list(500)
-    items_rows = await db.pr_items.find({"active": True}, {"_id": 0}).sort([("category_code", 1), ("name", 1)]).to_list(2000)
+    # Items grouped by category — unified Item Master (db.inventory, keyed by category name)
+    cat_id_by_name = {c.get("name"): c.get("id") for c in categories}
+    cat_id_by_code = {c.get("code"): c.get("id") for c in categories}
+    items_rows = await db.inventory.find(
+        {"is_active": {"$ne": False}},
+        {"_id": 0, "id": 1, "code": 1, "name": 1, "category": 1, "unit": 1, "uom": 1, "rate": 1, "hsn_code": 1},
+    ).sort([("category", 1), ("code", 1)]).to_list(5000)
     items_by_category: Dict[str, List[Dict[str, Any]]] = {}
     for it in items_rows:
-        items_by_category.setdefault(it.get("category_id") or "", []).append(it)
+        cid = cat_id_by_name.get(it.get("category") or "")
+        if not cid:
+            continue
+        items_by_category.setdefault(cid, []).append({
+            "id": it["id"], "code": it.get("code"), "name": it.get("name"),
+            "unit": it.get("unit") or it.get("uom") or "Nos",
+            "last_rate": it.get("rate") or 0, "hsn_sac": it.get("hsn_code"),
+        })
+
+    # Vendors grouped by category — Vendor Master `categories[]` holds category codes
+    vendor_rows = await db.vendors.find(
+        {"categories": {"$exists": True, "$ne": []}, "status": {"$nin": ["blacklisted", "inactive"]}},
+        {"_id": 0, "id": 1, "name": 1, "vendor_code": 1, "categories": 1},
+    ).sort([("name", 1)]).to_list(2000)
+    vendors_by_category: Dict[str, List[Dict[str, Any]]] = {}
+    for v in vendor_rows:
+        for code in v.get("categories", []):
+            cid = cat_id_by_code.get(code)
+            if cid:
+                vendors_by_category.setdefault(cid, []).append(
+                    {"id": v["id"], "name": v.get("name"), "vendor_code": v.get("vendor_code")})
 
     cost_centers: List[Dict[str, Any]] = []
     if project_id:
@@ -495,6 +521,7 @@ async def pr_dropdowns(project_id: Optional[str] = None,
         "sites": sites,
         "categories": categories,
         "items_by_category": items_by_category,
+        "vendors_by_category": vendors_by_category,
         "cost_centers": cost_centers,
     }
 

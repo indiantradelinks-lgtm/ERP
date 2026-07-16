@@ -4527,3 +4527,10 @@ code*, name*, category*, uom* | quantity, min_stock, max_stock, reorder_level | 
 - `DataTableShell.jsx`: generic required-field validation on save (toast) — benefits all pages using `required`
 Tested: template headers exact-match ✓, 3 dropdown validations ✓, required highlight ✓, import skips row missing category ✓ creates valid row ✓, UI dialog order/dropdowns/required toast ✓.
 **Status: COMPLETE & verified on preview.**
+
+### Iteration (Jul 16, 2026) — PR form: category-wise Item + Vendor dropdowns
+
+- `pr_dropdowns` (procurement_master_router): items_by_category now built from unified `db.inventory` (was stale pr_items); NEW `vendors_by_category` — vendors (excl. blacklisted/inactive) grouped by category id via their `categories[]` codes
+- `PurchaseRequisitions.jsx`: Suggested Vendor is now a category-filtered dropdown (vendor_code · name, stores name in vendor_suggestion) + "…or type custom vendor" fallback input; when category has no mapped vendors → free-text with hint placeholder; Item dropdown unchanged but now fed by Item Master
+- Tested: Scaffolding → 33 items + 2 vendors; IT Items → 14 items + "No vendors mapped" placeholder; dynamic refilter on category change (UI screenshot + curl).
+**Status: COMPLETE & verified on preview.**
