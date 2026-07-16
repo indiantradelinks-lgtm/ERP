@@ -1,11 +1,24 @@
+import { useEffect, useState } from "react";
 import DataTableShell from "@/components/DataTableShell";
 import useResource from "@/hooks/useResource";
 import { toneFor } from "@/lib/statusTone";
+import { api } from "@/lib/api";
 
 const ASSET_STATUS_TONE = { in_use: "success", maintenance: "warning", disposed: "danger" };
 
 export default function Assets() {
   const r = useResource("assets");
+  const [catOptions, setCatOptions] = useState(["Machinery and Equipment", "Vehicle/Logistics Items", "IT Items", "Tools and Tackles", "Office Furniture"]);
+
+  useEffect(() => {
+    api.get("/inv/categories")
+      .then((res) => {
+        const names = (res.data || []).filter((c) => c.active !== false).map((c) => c.name).filter(Boolean);
+        if (names.length) setCatOptions(names);
+      })
+      .catch(() => {});
+  }, []);
+
   const columns = [
     { key: "asset_id", label: "Asset ID" },
     { key: "name", label: "Asset" },
@@ -19,7 +32,7 @@ export default function Assets() {
   const fields = [
     { key: "asset_id", label: "Asset ID" },
     { key: "name", label: "Asset Name", full: true },
-    { key: "category", label: "Category", type: "select", options: ["equipment", "vehicle", "it", "tools"] },
+    { key: "category", label: "Category", type: "select", options: catOptions },
     { key: "purchase_date", label: "Purchase Date", type: "date" },
     { key: "cost", label: "Cost (INR)", type: "number" },
     { key: "location", label: "Location" },
@@ -27,5 +40,5 @@ export default function Assets() {
     { key: "depreciation_rate", label: "Depreciation %", type: "number" },
     { key: "status", label: "Status", type: "select", options: ["available", "in_use", "maintenance", "disposed"] },
   ];
-  return <DataTableShell title="Asset Management" description="Equipment register, allocation, maintenance and depreciation." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="assets" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} attachmentsParentType="assets" />;
+  return <DataTableShell title="Asset Management" description="Equipment register, allocation, maintenance and depreciation. Categories come from the unified Item Category Master." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="assets" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} attachmentsParentType="assets" />;
 }

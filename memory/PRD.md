@@ -4534,3 +4534,8 @@ Tested: template headers exact-match ✓, 3 dropdown validations ✓, required h
 - `PurchaseRequisitions.jsx`: Suggested Vendor is now a category-filtered dropdown (vendor_code · name, stores name in vendor_suggestion) + "…or type custom vendor" fallback input; when category has no mapped vendors → free-text with hint placeholder; Item dropdown unchanged but now fed by Item Master
 - Tested: Scaffolding → 33 items + 2 vendors; IT Items → 14 items + "No vendors mapped" placeholder; dynamic refilter on category change (UI screenshot + curl).
 **Status: COMPLETE & verified on preview.**
+
+### Iteration (Jul 16, 2026) — Asset categories unified with Category Master
+
+User asked how to modify asset category. Answered (Assets → edit → Category dropdown → Save) AND unified: `Assets.jsx` category dropdown was hardcoded (equipment/vehicle/it/tools) — now loads from /inv/categories (unified master). Migrated 3 existing assets 'equipment' → 'Machinery and Equipment'. Verified via UI screenshot (16 master categories in dropdown).
+**Status: COMPLETE & verified on preview.**
