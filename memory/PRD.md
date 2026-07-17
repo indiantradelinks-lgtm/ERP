@@ -4562,3 +4562,16 @@ Central engine, zero changes to existing auto-generation/workflows:
 Tested: registry 18 ✓, search ✓, override (TATA-00002→CUST-OVR-001) ✓, case-insensitive duplicate blocked ✓, non-admin 403 ✓, UI screenshot ✓.
 NOTE: pre-existing duplicate codes discovered in old test data (2 clients shared TATA-00002 — one renamed to TATA-00002-B during testing; 2 quotations share QTN-2026-0020). Engine prevents NEW duplicates.
 **Status: COMPLETE & verified on preview.**
+
+### Iteration (Jul 17, 2026) — Code Override: automatic system-wide propagation
+
+Ran a live schema scan to find every denormalized code copy, then added evidence-based `PROPAGATION` map + `_propagate()` to code_override_router:
+- projects.code → material_allocations.project_code, purchase_requisitions.project_code, purchase_orders.project, inventory_transactions.issued_to, bulk_allocation_requests.lines[].allocations[].project_code (arrayFilters)
+- quotations.quote_number → enquiries.quotation_no, approvals.reference + payload.quote_number (type=quotation)
+- enquiries.enquiry_no → quotations.enquiry_no, approvals.reference; sites.site_code → enquiries.site_code
+- PR# → purchase_orders.pr_number + approvals.reference; PO# → grn.po_number, purchase_requisitions.po_number, approvals.reference; GRN# → purchase_orders.last_grn_number
+- ALC# → logistics_dispatch_requests/vehicle_allocations.allocation_no
+- History snapshots (approval_versions, employee_bulk_updates.before, audit/logistics logs) intentionally EXCLUDED to preserve transaction history
+- Response + audit log now include per-collection propagation counts; UI toast shows "updated in N linked record(s)"; console description updated
+Tested live: PRJ-2025-02→PRJ-2025-02X propagated 7 refs across 5 collections, 0 old refs remained; reverted (7 back). QTN-2026-0011 → 3 refs propagated + reverted. All original data restored.
+**Status: COMPLETE & verified on preview.**

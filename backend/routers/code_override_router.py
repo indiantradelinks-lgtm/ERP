@@ -43,6 +43,59 @@ class OverrideIn(BaseModel):
     new_code: str
 
 
+# Evidence-based propagation map (from live schema scan):
+# resource -> [(collection, field, extra_filter)] — every place the code value is denormalized.
+# History/audit snapshots (approval_versions, employee_bulk_updates.before, audit logs) are
+# intentionally excluded to preserve transaction history.
+PROPAGATION = {
+    "sites": [("enquiries", "site_code", None)],
+    "enquiries": [("quotations", "enquiry_no", None), ("approvals", "reference", {"type": "enquiry"})],
+    "quotations": [
+        ("enquiries", "quotation_no", None),
+        ("approvals", "reference", {"type": "quotation"}),
+        ("approvals", "payload.quote_number", {"type": "quotation"}),
+    ],
+    "purchase_requisitions": [("purchase_orders", "pr_number", None), ("approvals", "reference", {"type": "purchase_requisition"})],
+    "purchase_orders": [
+        ("grn", "po_number", None),
+        ("purchase_requisitions", "po_number", None),
+        ("approvals", "reference", {"type": "purchase_order"}),
+    ],
+    "grn": [("purchase_orders", "last_grn_number", None)],
+    "projects": [
+        ("material_allocations", "project_code", None),
+        ("purchase_requisitions", "project_code", None),
+        ("purchase_orders", "project", None),
+        ("inventory_transactions", "issued_to", None),
+    ],
+    "material_allocations": [
+        ("logistics_dispatch_requests", "allocation_no", None),
+        ("logistics_vehicle_allocations", "allocation_no", None),
+    ],
+}
+
+
+async def _propagate(resource: str, old_code: str, new_code: str) -> dict:
+    """Rewrite every active denormalized copy of the old code. Returns {collection.field: modified_count}."""
+    results = {}
+    for coll, field, extra in PROPAGATION.get(resource, []):
+        q = {field: old_code}
+        if extra:
+            q.update(extra)
+        res = await db[coll].update_many(q, {"$set": {field: new_code}})
+        if res.modified_count:
+            results[f"{coll}.{field}"] = res.modified_count
+    if resource == "projects":
+        res = await db.bulk_allocation_requests.update_many(
+            {"lines.allocations.project_code": old_code},
+            {"$set": {"lines.$[].allocations.$[a].project_code": new_code}},
+            array_filters=[{"a.project_code": old_code}],
+        )
+        if res.modified_count:
+            results["bulk_allocation_requests.lines.allocations.project_code"] = res.modified_count
+    return results
+
+
 def _entry(resource: str) -> dict:
     e = CODE_REGISTRY.get(resource)
     if not e:
@@ -108,7 +161,10 @@ async def apply_override(payload: OverrideIn, request: Request,
         "updated_at": now_iso(),
     }
     await db[e["collection"]].update_one({"id": payload.record_id}, {"$set": upd})
+    propagated = await _propagate(payload.resource, old_code, new_code) if old_code else {}
     ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or (request.client.host if request.client else "unknown")
     await audit(user=user, action="code_override", resource=e["collection"], record_id=payload.record_id,
-                after={"field": e["field"], "old": old_code, "new": new_code}, ip=ip)
-    return {"ok": True, "resource": payload.resource, "field": e["field"], "old_code": old_code, "new_code": new_code}
+                after={"field": e["field"], "old": old_code, "new": new_code, "propagated": propagated}, ip=ip)
+    return {"ok": True, "resource": payload.resource, "field": e["field"], "old_code": old_code,
+            "new_code": new_code, "propagated": propagated,
+            "propagated_total": sum(propagated.values())}
