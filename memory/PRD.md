@@ -4610,3 +4610,15 @@ Resource Planning lines convert directly into Resource Requests:
 - LESSON LEARNED: parallel search_replace calls on the SAME file clobber each other (lost EMPTY-constants + imports edits twice this session). Same-file edits must be sequential.
 Tested: curl from-plan (3 mixed lines → 3 RRs pending_approval, correct type mapping, plan rows stamped, re-convert blocked) ✓; full UI flow (add line → select → convert → toast "Raised 1 request (RR-2026-0024) · submitted for approval" → green badge) ✓. All test data cleaned.
 **Status: COMPLETE & verified on preview.**
+
+### Iteration (Jul 17, 2026) — Resource Plan Bulk Upload + Quick Qty Entry
+
+User choices: 1b (per-tab templates), 2c (qty entry can go to Plan OR raise Requests).
+- NEW backend `routers/resource_plan_bulk_router.py` (registered in routers_registry, prefix /resource-plan):
+  - `GET /resource-plan/template?type=material|manpower|tools` — xlsx per tab: PLAN sheet (typed columns), INSTRUCTIONS, REFERENCE (items+categories from inventory / hr_designations), VALUES (enums).
+  - `POST /resource-plan/upload/{project_id}?type=` — multipart xlsx import into project_resources. Resolves category by name (inv_categories), item by code OR name (inventory; unknown → custom item), designation by name/code. Rows with qty/count ≤0 auto-skipped (skipped_zero). Per-row errors returned (unknown category/designation). Wrong-template guard.
+  - `POST /resource-plan/quick-fill/{project_id}` — {mode: plan|request, lines:[{kind: item|manpower, ref_id, quantity}]}. Zero-qty lines auto-eliminated. plan-mode: items → material lines (tool-category items → tools lines) w/ uom+rate from master, designations → manpower lines. request-mode: DRAFT resource requests via shared _bulk_create (max 50). All-zero → 400.
+- NEW frontend `pages/ops/ResourcePlanBulkDialogs.jsx`: BulkUploadDialog (template download blob + file upload + result panel w/ per-row errors) and QuickQtyDialog (full item master grouped by category w/ sticky headers + Manpower tab of all designations, search filter, qty-only inputs w/ green highlight, live "N selected", destination radio Plan/Requests-drafts). Wired into ProjectResources toolbar: "Quick Qty Entry" + "Bulk Upload" (hidden on Sub-Contract tab).
+Tested: 3 templates download+parse ✓; material upload (2 created incl. custom item, 1 zero skipped, 1 unknown-category error) ✓; manpower upload (1 created, 1 zero skipped, 1 unknown-designation error) ✓; quick-fill plan mode (tool item auto-mapped to tools line, zero skipped) ✓; quick-fill request mode (2 draft RRs) ✓; all-zero 400 ✓; UI dialogs render w/ 272 items ✓. Test data cleaned.
+NOTE: pre-existing junk test items visible in item master (AUTO-GRN category, TEST Bolt/Nut) — from earlier iterations' test data, not touched.
+**Status: COMPLETE & verified on preview.**

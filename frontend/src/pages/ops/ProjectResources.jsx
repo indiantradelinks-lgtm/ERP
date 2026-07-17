@@ -22,6 +22,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Users, Package, Wrench, Briefcase, Plus, Pencil, Trash2, RefreshCcw, Send } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import ApprovalDocsGate, { validateApprovalDocs, emptyApprovalDocs } from "@/components/ApprovalDocsGate";
+import { BulkUploadDialog, QuickQtyDialog } from "./ResourcePlanBulkDialogs";
 import { useAuth } from "@/contexts/AuthContext";
 
 const EMPTY = {
@@ -66,6 +67,8 @@ export default function ProjectResources() {
   const [form, setForm]       = useState(EMPTY);
   const [selected, setSelected] = useState([]);
   const [convertOpen, setConvertOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
   const { user } = useAuth() || {};
   const canEdit = !["sales_executive", "store_incharge"].includes(user?.role);
 
@@ -206,6 +209,10 @@ export default function ProjectResources() {
                   <Send className="h-4 w-4 mr-1" /> Raise Request ({selected.length})
                 </Button>
               )}
+              <Button variant="outline" onClick={() => setQuickOpen(true)} data-testid="rp-quick-btn">Quick Qty Entry</Button>
+              {active !== "subcontract" && (
+                <Button variant="outline" onClick={() => setBulkOpen(true)} data-testid="rp-bulk-btn">Bulk Upload</Button>
+              )}
               <Button onClick={openNew} data-testid="rp-new"><Plus className="h-4 w-4 mr-1" /> Add {labelOf(active)}</Button>
             </div>
           )}
@@ -254,6 +261,20 @@ export default function ProjectResources() {
           projectId={projectId} rows={selectedRows} type={active}
           onClose={() => setConvertOpen(false)}
           onSaved={() => { setConvertOpen(false); setSelected([]); load(); }}
+        />
+      )}
+      {bulkOpen && (
+        <BulkUploadDialog
+          projectId={projectId} type={active}
+          onClose={() => setBulkOpen(false)}
+          onSaved={() => { setBulkOpen(false); load(); }}
+        />
+      )}
+      {quickOpen && (
+        <QuickQtyDialog
+          projectId={projectId} items={items} designations={designations}
+          onClose={() => setQuickOpen(false)}
+          onSaved={() => { setQuickOpen(false); load(); }}
         />
       )}
     </div>
