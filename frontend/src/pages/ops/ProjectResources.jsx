@@ -50,6 +50,7 @@ export default function ProjectResources() {
   // pickers
   const [designations, setDesignations] = useState([]);
   const [items, setItems]               = useState([]);
+  const [categories, setCategories]     = useState([]);
   const [vendors, setVendors]           = useState([]);
   // edit
   const [editing, setEditing] = useState(null);
@@ -61,6 +62,7 @@ export default function ProjectResources() {
     api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {});
     api.get("/hr1/designations").then((r) => setDesignations(r.data || [])).catch(() => setDesignations([]));
     api.get("/procurement/master/items").then((r) => setItems(r.data || [])).catch(() => setItems([]));
+    api.get("/procurement/master/categories", { params: { active_only: true } }).then((r) => setCategories(r.data || [])).catch(() => setCategories([]));
     api.get("/vendors").then((r) => setVendors(r.data || [])).catch(() => setVendors([]));
   }, []);
 
@@ -84,8 +86,15 @@ export default function ProjectResources() {
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
   };
 
-  const openNew = () => { setEditing({}); setForm({ ...EMPTY, resource_type: active }); };
-  const openEdit = (r) => { setEditing(r); setForm({ ...EMPTY, ...r, wbs_id: r.wbs_id || "", activity_id: r.activity_id || "" }); };
+  const openNew = () => { setEditing({}); setForm({ ...EMPTY, resource_type: active, tool_category: active === "tools" ? "Tools and Tackles" : "" }); };
+  const openEdit = (r) => {
+    setEditing(r);
+    setForm({
+      ...EMPTY, ...r, wbs_id: r.wbs_id || "", activity_id: r.activity_id || "",
+      material_custom: r.resource_type === "material" && !r.item_id && !!r.item_name,
+      tool_custom: r.resource_type === "tools" && !r.tool_item_id && !!r.tool_name,
+    });
+  };
 
   const save = async () => {
     if (!projectId) { toast.error("Pick a project"); return; }
@@ -99,14 +108,22 @@ export default function ProjectResources() {
         activity_id: form.activity_id || null,
         designation_id: form.designation_id || null,
         item_id: form.item_id || null,
+        tool_item_id: form.tool_item_id || null,
         vendor_id: form.vendor_id || null,
+        rental_vendor_id: form.tool_owned_or_rented === "rented" ? (form.rental_vendor_id || null) : null,
+        rental_vendor_name: form.tool_owned_or_rented === "rented" ? (form.rental_vendor_name || "") : "",
         count_required: Number(form.count_required) || 0,
         mandays: Number(form.mandays) || 0,
         daily_rate: Number(form.daily_rate) || 0,
         quantity: Number(form.quantity) || 0,
         unit_rate: Number(form.unit_rate) || 0,
         days: Number(form.days) || 0,
-        value: Number(form.value) || 0,
+        sub_qty: Number(form.sub_qty) || 0,
+        sub_unit_rate: Number(form.sub_unit_rate) || 0,
+        retention_pct: Number(form.retention_pct) || 0,
+        value: form.basis === "unit_rate"
+          ? (Number(form.sub_qty) || 0) * (Number(form.sub_unit_rate) || 0)
+          : Number(form.value) || 0,
       };
       if (editing?.id) {
         await api.put(`/proj-phase2/resources/${editing.id}`, payload);
@@ -200,7 +217,7 @@ export default function ProjectResources() {
           <ResourceForm
             type={active} form={form} setForm={setForm}
             wbsNodes={wbsNodes} activities={activities}
-            designations={designations} items={items} vendors={vendors}
+            designations={designations} items={items} categories={categories} vendors={vendors}
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
@@ -261,7 +278,14 @@ function ResourceTable({ type, rows, wbsMap, actMap, canEdit, onEdit, onRemove }
           <tr key={r.id} className="border-b hover:bg-slate-50/50" data-testid={`rp-row-${r.id}`}>
             {type === "manpower" && (
               <>
-                <td className="px-2 py-1">{r.designation_name || "—"}</td>
+                <td className="px-2 py-1">
+                  <div>{r.designation_name || "—"}</div>
+                  <div className="text-[10px] text-slate-500">
+                    {[r.skill_level?.replaceAll("_", " "), r.shift && r.shift !== "general" ? `${r.shift} shift` : null,
+                      (r.deploy_from || r.deploy_to) ? `${r.deploy_from || "…"} → ${r.deploy_to || "…"}` : null]
+                      .filter(Boolean).join(" · ")}
+                  </div>
+                </td>
                 <td className="px-2 py-1 text-right font-mono">{r.count_required || 0}</td>
                 <td className="px-2 py-1 text-right font-mono">{r.mandays || 0}</td>
                 <td className="px-2 py-1 text-right font-mono">{Number(r.daily_rate || 0).toLocaleString("en-IN")}</td>
@@ -269,7 +293,10 @@ function ResourceTable({ type, rows, wbsMap, actMap, canEdit, onEdit, onRemove }
             )}
             {type === "material" && (
               <>
-                <td className="px-2 py-1"><span className="font-mono text-xs text-primary mr-1">{r.item_code || ""}</span>{r.item_name || "—"}</td>
+                <td className="px-2 py-1">
+                  <div><span className="font-mono text-xs text-primary mr-1">{r.item_code || ""}</span>{r.item_name || "—"}</div>
+                  {r.category && <div className="text-[10px] text-blue-700">{r.category}</div>}
+                </td>
                 <td className="px-2 py-1 text-xs">{r.uom || "—"}</td>
                 <td className="px-2 py-1 text-right font-mono">{r.quantity || 0}</td>
                 <td className="px-2 py-1 text-right font-mono">{Number(r.unit_rate || 0).toLocaleString("en-IN")}</td>
@@ -278,8 +305,16 @@ function ResourceTable({ type, rows, wbsMap, actMap, canEdit, onEdit, onRemove }
             )}
             {type === "tools" && (
               <>
-                <td className="px-2 py-1">{r.tool_name || "—"}</td>
-                <td className="px-2 py-1 text-xs">{r.tool_owned_or_rented || "—"}</td>
+                <td className="px-2 py-1">
+                  <div>{r.tool_name || "—"}</div>
+                  <div className="text-[10px] text-slate-500">
+                    {[r.tool_category, r.specification, r.mobilization_date ? `mob: ${r.mobilization_date}` : null].filter(Boolean).join(" · ")}
+                  </div>
+                </td>
+                <td className="px-2 py-1 text-xs">
+                  {r.tool_owned_or_rented || "—"}
+                  {r.tool_owned_or_rented === "rented" && r.rental_vendor_name && <div className="text-[10px] text-slate-500">{r.rental_vendor_name}</div>}
+                </td>
                 <td className="px-2 py-1 text-right font-mono">{r.count_required || 0}</td>
                 <td className="px-2 py-1 text-right font-mono">{r.days || 0}</td>
                 <td className="px-2 py-1 text-right font-mono">{Number(r.daily_rate || 0).toLocaleString("en-IN")}</td>
@@ -287,10 +322,19 @@ function ResourceTable({ type, rows, wbsMap, actMap, canEdit, onEdit, onRemove }
             )}
             {type === "subcontract" && (
               <>
-                <td className="px-2 py-1"><span className="font-mono text-xs text-primary mr-1">{r.vendor_code || ""}</span>{r.vendor_name || "—"}</td>
+                <td className="px-2 py-1">
+                  <div><span className="font-mono text-xs text-primary mr-1">{r.vendor_code || ""}</span>{r.vendor_name || "—"}</div>
+                  <div className="text-[10px] text-slate-500">
+                    {[(r.work_start || r.work_end) ? `${r.work_start || "…"} → ${r.work_end || "…"}` : null,
+                      r.contact_person, r.retention_pct ? `retention ${r.retention_pct}%` : null].filter(Boolean).join(" · ")}
+                  </div>
+                </td>
                 <td className="px-2 py-1">{r.scope || "—"}</td>
-                <td className="px-2 py-1 text-xs">{r.basis || "—"}</td>
-                <td className="px-2 py-1 text-right font-mono">{Number(r.value || 0).toLocaleString("en-IN")}</td>
+                <td className="px-2 py-1 text-xs">
+                  {(r.basis || "—").replaceAll("_", " ")}
+                  {r.basis === "unit_rate" && !!r.sub_qty && <div className="text-[10px] text-slate-500 font-mono">{r.sub_qty} × ₹{Number(r.sub_unit_rate || 0).toLocaleString("en-IN")}</div>}
+                </td>
+                <td className="px-2 py-1 text-right font-mono">{Number(r.total_cost || r.value || 0).toLocaleString("en-IN")}</td>
               </>
             )}
             <td className="px-2 py-1 text-xs">
@@ -315,7 +359,8 @@ function ResourceTable({ type, rows, wbsMap, actMap, canEdit, onEdit, onRemove }
   );
 }
 
-function ResourceForm({ type, form, setForm, wbsNodes, activities, designations, items, vendors }) {
+function ResourceForm({ type, form, setForm, wbsNodes, activities, designations, items, categories, vendors }) {
+  const catItems = (cat) => items.filter((i) => (i.category_name || "") === cat);
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       {type === "manpower" && (
@@ -330,27 +375,55 @@ function ResourceForm({ type, form, setForm, wbsNodes, activities, designations,
               {designations.map((d) => <option key={d.id} value={d.id}>{d.code} · {d.name}</option>)}
             </select>
           </F>
+          <F label="Skill Level">
+            <select value={form.skill_level || ""} onChange={(e) => setForm({ ...form, skill_level: e.target.value })} className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm" data-testid="rp-form-skill">
+              {SKILL_LEVELS.map((s) => <option key={s} value={s}>{s ? s.replaceAll("_", " ") : "— not set —"}</option>)}
+            </select>
+          </F>
           <F label="Count Required"><Input type="number" value={form.count_required} onChange={(e) => setForm({ ...form, count_required: e.target.value })} /></F>
           <F label="Mandays"><Input type="number" value={form.mandays} onChange={(e) => setForm({ ...form, mandays: e.target.value })} /></F>
           <F label="Daily Rate (₹)"><Input type="number" value={form.daily_rate} onChange={(e) => setForm({ ...form, daily_rate: e.target.value })} data-testid="rp-form-daily-rate" /></F>
+          <F label="Shift">
+            <select value={form.shift || "general"} onChange={(e) => setForm({ ...form, shift: e.target.value })} className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm" data-testid="rp-form-shift">
+              {SHIFTS.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </F>
+          <F label="Deploy From"><Input type="date" value={form.deploy_from || ""} onChange={(e) => setForm({ ...form, deploy_from: e.target.value })} data-testid="rp-form-deploy-from" /></F>
+          <F label="Deploy To"><Input type="date" value={form.deploy_to || ""} onChange={(e) => setForm({ ...form, deploy_to: e.target.value })} data-testid="rp-form-deploy-to" /></F>
         </>
       )}
       {type === "material" && (
         <>
-          <F label="Item *" full>
-            <select value={form.item_id || ""} onChange={(e) => {
-              const id = e.target.value;
-              const it = items.find((x) => x.id === id);
-              setForm({
-                ...form, item_id: id,
-                item_code: it?.code || "", item_name: it?.name || "",
-                uom: it?.unit || form.uom,
-                unit_rate: it?.last_rate || form.unit_rate,
-              });
-            }} className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm" data-testid="rp-form-item">
-              <option value="">— select item —</option>
-              {items.map((i) => <option key={i.id} value={i.id}>{i.code} · {i.name}</option>)}
+          <F label="Category *">
+            <select value={form.category || ""} onChange={(e) => setForm({ ...form, category: e.target.value, item_id: "", item_code: "", item_name: "", material_custom: false })}
+                     className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm" data-testid="rp-form-category">
+              <option value="">— select category —</option>
+              {categories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
             </select>
+          </F>
+          <F label="Item *">
+            {form.material_custom ? (
+              <div className="flex gap-1">
+                <Input value={form.item_name} onChange={(e) => setForm({ ...form, item_name: e.target.value })} placeholder="Custom item name" data-testid="rp-form-custom-item" autoFocus />
+                <Button size="sm" variant="ghost" className="h-9 px-2" title="Back to list" onClick={() => setForm({ ...form, material_custom: false, item_name: "", item_id: "" })}>✕</Button>
+              </div>
+            ) : (
+              <select value={form.item_id || ""} onChange={(e) => {
+                const id = e.target.value;
+                if (id === "__custom__") { setForm({ ...form, item_id: "", item_code: "", item_name: "", material_custom: true }); return; }
+                const it = items.find((x) => x.id === id);
+                setForm({
+                  ...form, item_id: id,
+                  item_code: it?.code || "", item_name: it?.name || "",
+                  uom: it?.unit || form.uom,
+                  unit_rate: it?.last_rate || form.unit_rate,
+                });
+              }} disabled={!form.category} className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm disabled:opacity-50" data-testid="rp-form-item">
+                <option value="">{form.category ? "— select item —" : "select category first"}</option>
+                {catItems(form.category).map((i) => <option key={i.id} value={i.id}>{i.code} · {i.name}</option>)}
+                <option value="__custom__">✎ Other / custom item…</option>
+              </select>
+            )}
           </F>
           <F label="UOM"><Input value={form.uom} onChange={(e) => setForm({ ...form, uom: e.target.value })} /></F>
           <F label="Source">
@@ -364,15 +437,54 @@ function ResourceForm({ type, form, setForm, wbsNodes, activities, designations,
       )}
       {type === "tools" && (
         <>
-          <F label="Tool / Equipment *" full><Input value={form.tool_name} onChange={(e) => setForm({ ...form, tool_name: e.target.value })} placeholder="Welding Machine / Scaffold Frame …" data-testid="rp-form-tool" /></F>
+          <F label="Tool Category">
+            <select value={form.tool_category || ""} onChange={(e) => setForm({ ...form, tool_category: e.target.value, tool_item_id: "", tool_name: form.tool_custom ? form.tool_name : "" })}
+                     className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm" data-testid="rp-form-tool-category">
+              <option value="">— select category —</option>
+              {categories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+          </F>
+          <F label="Tool / Equipment *">
+            {form.tool_custom ? (
+              <div className="flex gap-1">
+                <Input value={form.tool_name} onChange={(e) => setForm({ ...form, tool_name: e.target.value })} placeholder="Custom tool name" data-testid="rp-form-tool" autoFocus />
+                <Button size="sm" variant="ghost" className="h-9 px-2" title="Back to list" onClick={() => setForm({ ...form, tool_custom: false, tool_name: "", tool_item_id: "" })}>✕</Button>
+              </div>
+            ) : (
+              <select value={form.tool_item_id || ""} onChange={(e) => {
+                const id = e.target.value;
+                if (id === "__custom__") { setForm({ ...form, tool_item_id: "", tool_name: "", tool_custom: true }); return; }
+                const it = items.find((x) => x.id === id);
+                setForm({ ...form, tool_item_id: id, tool_name: it?.name || "" });
+              }} disabled={!form.tool_category} className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm disabled:opacity-50" data-testid="rp-form-tool-item">
+                <option value="">{form.tool_category ? "— select tool —" : "select category first"}</option>
+                {catItems(form.tool_category).map((i) => <option key={i.id} value={i.id}>{i.code} · {i.name}</option>)}
+                <option value="__custom__">✎ Other / custom tool…</option>
+              </select>
+            )}
+          </F>
+          <F label="Specification" full><Input value={form.specification || ""} onChange={(e) => setForm({ ...form, specification: e.target.value })} placeholder="Capacity / size / model …" data-testid="rp-form-spec" /></F>
           <F label="Owned / Rented">
-            <select value={form.tool_owned_or_rented} onChange={(e) => setForm({ ...form, tool_owned_or_rented: e.target.value })} className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm">
+            <select value={form.tool_owned_or_rented} onChange={(e) => setForm({ ...form, tool_owned_or_rented: e.target.value })} className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm" data-testid="rp-form-oor">
               {TOOL_OOR.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </F>
+          {form.tool_owned_or_rented === "rented" && (
+            <F label="Rental Vendor">
+              <select value={form.rental_vendor_id || ""} onChange={(e) => {
+                const id = e.target.value;
+                const v = vendors.find((x) => x.id === id);
+                setForm({ ...form, rental_vendor_id: id, rental_vendor_name: v?.name || "" });
+              }} className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm" data-testid="rp-form-rental-vendor">
+                <option value="">— select vendor —</option>
+                {vendors.map((v) => <option key={v.id} value={v.id}>{v.vendor_code} · {v.name}</option>)}
+              </select>
+            </F>
+          )}
           <F label="Count"><Input type="number" value={form.count_required} onChange={(e) => setForm({ ...form, count_required: e.target.value })} /></F>
           <F label="Days"><Input type="number" value={form.days} onChange={(e) => setForm({ ...form, days: e.target.value })} /></F>
           <F label="Daily Rate (₹)"><Input type="number" value={form.daily_rate} onChange={(e) => setForm({ ...form, daily_rate: e.target.value })} /></F>
+          <F label="Mobilization Date"><Input type="date" value={form.mobilization_date || ""} onChange={(e) => setForm({ ...form, mobilization_date: e.target.value })} data-testid="rp-form-mob-date" /></F>
         </>
       )}
       {type === "subcontract" && (
@@ -388,12 +500,30 @@ function ResourceForm({ type, form, setForm, wbsNodes, activities, designations,
             </select>
           </F>
           <F label="Basis">
-            <select value={form.basis} onChange={(e) => setForm({ ...form, basis: e.target.value })} className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm">
-              {SUB_BASIS.map((s) => <option key={s} value={s}>{s}</option>)}
+            <select value={form.basis} onChange={(e) => setForm({ ...form, basis: e.target.value })} className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm" data-testid="rp-form-basis">
+              {SUB_BASIS.map((s) => <option key={s} value={s}>{s.replaceAll("_", " ")}</option>)}
             </select>
           </F>
           <F label="Scope of Work" full><Textarea rows={2} value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value })} /></F>
-          <F label="Value (₹)"><Input type="number" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} data-testid="rp-form-value" /></F>
+          {form.basis === "unit_rate" ? (
+            <>
+              <F label="Quantity *"><Input type="number" value={form.sub_qty} onChange={(e) => setForm({ ...form, sub_qty: e.target.value })} data-testid="rp-form-sub-qty" /></F>
+              <F label="Unit Rate (₹) *"><Input type="number" value={form.sub_unit_rate} onChange={(e) => setForm({ ...form, sub_unit_rate: e.target.value })} data-testid="rp-form-sub-rate" /></F>
+              <F label="Value (auto)" full>
+                <div className="h-9 flex items-center px-2 rounded-sm border bg-slate-50 text-sm font-mono font-semibold" data-testid="rp-form-value-auto">
+                  ₹ {((Number(form.sub_qty) || 0) * (Number(form.sub_unit_rate) || 0)).toLocaleString("en-IN")}
+                </div>
+              </F>
+            </>
+          ) : (
+            <F label="Value (₹)"><Input type="number" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} data-testid="rp-form-value" /></F>
+          )}
+          <F label="Work Start"><Input type="date" value={form.work_start || ""} onChange={(e) => setForm({ ...form, work_start: e.target.value })} data-testid="rp-form-work-start" /></F>
+          <F label="Work End"><Input type="date" value={form.work_end || ""} onChange={(e) => setForm({ ...form, work_end: e.target.value })} data-testid="rp-form-work-end" /></F>
+          <F label="Contact Person"><Input value={form.contact_person || ""} onChange={(e) => setForm({ ...form, contact_person: e.target.value })} data-testid="rp-form-contact" /></F>
+          <F label="Contact Phone"><Input value={form.contact_phone || ""} onChange={(e) => setForm({ ...form, contact_phone: e.target.value })} /></F>
+          <F label="Retention %"><Input type="number" value={form.retention_pct} onChange={(e) => setForm({ ...form, retention_pct: e.target.value })} data-testid="rp-form-retention" /></F>
+          <F label="Payment Terms"><Input value={form.payment_terms || ""} onChange={(e) => setForm({ ...form, payment_terms: e.target.value })} placeholder="e.g. 30 days from RA bill" /></F>
         </>
       )}
 
@@ -439,8 +569,14 @@ function labelOf(t) {
 }
 function validate(f) {
   if (f.resource_type === "manpower" && !f.designation_id) return "Pick a designation";
-  if (f.resource_type === "material" && !f.item_id) return "Pick a material item";
-  if (f.resource_type === "tools" && !f.tool_name?.trim()) return "Tool name is required";
-  if (f.resource_type === "subcontract" && !f.vendor_id) return "Pick a vendor";
+  if (f.resource_type === "material") {
+    if (!f.category) return "Pick a material category";
+    if (!f.item_id && !f.item_name?.trim()) return "Pick an item or enter a custom item name";
+  }
+  if (f.resource_type === "tools" && !f.tool_name?.trim()) return "Pick a tool or enter a tool name";
+  if (f.resource_type === "subcontract") {
+    if (!f.vendor_id) return "Pick a vendor";
+    if (f.basis === "unit_rate" && !(Number(f.sub_qty) > 0 && Number(f.sub_unit_rate) > 0)) return "Enter quantity and unit rate for unit-rate basis";
+  }
   return true;
 }

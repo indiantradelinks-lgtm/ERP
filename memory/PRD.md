@@ -4590,3 +4590,14 @@ PM raises MULTIPLE resource requests in one submission (user picks: 1a each line
   - Table shows category/designation subtitle under item; edit stays single-record (EditRRDialog).
 Tested E2E: curl bulk (3 lines: consumable+asset+manpower) → 3 RRs pending_approval w/ approvals visible to admin ✓; validation errors (missing designation, qty 0, missing docs) ✓; full UI flow via Playwright (dialog, category→item cascade, manpower designation, docs N/A, "Created 2 requests · 2 submitted" toast, table render) ✓. Test data cleaned up.
 **Status: COMPLETE & verified on preview.**
+
+### Iteration (Jul 17, 2026) — Resource Planning detailed forms (all 4 tabs)
+
+User choices: 1b, 2a, 3a, 4a. Upgraded `/app/ops/resources` (ProjectResources.jsx + projects_ops_phase2r2_router.py ResourceIn):
+- **Material**: Category dropdown (inv_categories) → Item dropdown filtered by category (auto UOM/rate) + custom-item free-text escape; `category` stored on the row & shown as subtitle. Validation: category + (item or custom name).
+- **Manpower**: added deploy_from/deploy_to dates, shift (general/day/night/rotational), skill_level (highly_skilled/skilled/semi_skilled/unskilled); shown as subtitle under designation.
+- **Tools**: Category → tool dropdown from Item Master (defaults "Tools and Tackles") + custom option, specification, rental vendor picker (visible only when rented), mobilization date; stored tool_item_id/tool_category/rental_vendor_id.
+- **Sub-Contract**: work_start/work_end, basis=unit_rate now shows Qty + Unit Rate with live auto-calc value (read-only) and backend `_resource_total` computes qty×rate; contact person/phone, retention %, payment terms. Table shows period/contact/retention subtitle + qty×rate breakdown.
+- Fixed legacy `_enrich_resource` material lookup: db.pr_items → db.inventory (unified item master).
+Tested: curl POST all 4 types w/ new fields — totals correct (MP 180×900=162000, TOOL 2×30×500=30000, SUB unit_rate 120×850=102000) ✓; UI screenshots of Material cascade + Sub-Contract auto-value form ✓. Test rows cleaned.
+**Status: COMPLETE & verified on preview.**

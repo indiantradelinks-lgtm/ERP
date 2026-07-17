@@ -320,11 +320,16 @@ class ResourceIn(BaseModel):
     count_required: Optional[float] = 0
     mandays: Optional[float] = 0
     daily_rate: Optional[float] = 0
+    deploy_from: Optional[str] = ""
+    deploy_to: Optional[str] = ""
+    shift: Optional[str] = "general"           # general | day | night | rotational
+    skill_level: Optional[str] = ""            # highly_skilled | skilled | semi_skilled | unskilled
 
     # ---- material ----
     item_id: Optional[str] = None
     item_code: Optional[str] = ""
     item_name: Optional[str] = ""
+    category: Optional[str] = ""
     uom: Optional[str] = ""
     quantity: Optional[float] = 0
     unit_rate: Optional[float] = 0
@@ -332,7 +337,13 @@ class ResourceIn(BaseModel):
 
     # ---- tools / equipment ----
     tool_name: Optional[str] = ""
+    tool_item_id: Optional[str] = None
+    tool_category: Optional[str] = ""
+    specification: Optional[str] = ""
     tool_owned_or_rented: Optional[str] = "owned"   # owned | rented
+    rental_vendor_id: Optional[str] = None
+    rental_vendor_name: Optional[str] = ""
+    mobilization_date: Optional[str] = ""
     days: Optional[float] = 0
 
     # ---- subcontract ----
@@ -342,6 +353,14 @@ class ResourceIn(BaseModel):
     scope: Optional[str] = ""
     basis: Optional[str] = "lumpsum"           # lumpsum | unit_rate
     value: Optional[float] = 0
+    sub_qty: Optional[float] = 0
+    sub_unit_rate: Optional[float] = 0
+    work_start: Optional[str] = ""
+    work_end: Optional[str] = ""
+    contact_person: Optional[str] = ""
+    contact_phone: Optional[str] = ""
+    retention_pct: Optional[float] = 0
+    payment_terms: Optional[str] = ""
 
 
 def _resource_total(d: dict) -> float:
@@ -359,6 +378,11 @@ def _resource_total(d: dict) -> float:
     if rt == "tools":
         return round(float(d.get("count_required") or 1) * float(d.get("days") or 0) * float(d.get("daily_rate") or 0), 2)
     if rt == "subcontract":
+        if d.get("basis") == "unit_rate":
+            qty = float(d.get("sub_qty") or 0)
+            rate = float(d.get("sub_unit_rate") or 0)
+            if qty and rate:
+                return round(qty * rate, 2)
         return float(d.get("value") or 0)
     return 0.0
 
@@ -371,14 +395,16 @@ async def _enrich_resource(doc: dict) -> dict:
         if d:
             doc["designation_name"] = d.get("name") or d.get("code") or ""
     elif rt == "material" and doc.get("item_id") and not doc.get("item_name"):
-        d = await db.pr_items.find_one({"id": doc["item_id"]}, {"_id": 0, "name": 1, "code": 1, "unit": 1, "last_rate": 1})
+        d = await db.inventory.find_one({"id": doc["item_id"]}, {"_id": 0, "name": 1, "code": 1, "unit": 1, "uom": 1, "rate": 1, "category": 1})
         if d:
             doc["item_name"] = d.get("name") or ""
             doc["item_code"] = d.get("code") or doc.get("item_code") or ""
+            if not doc.get("category"):
+                doc["category"] = d.get("category") or ""
             if not doc.get("uom"):
-                doc["uom"] = d.get("unit") or ""
+                doc["uom"] = d.get("unit") or d.get("uom") or ""
             if not doc.get("unit_rate"):
-                doc["unit_rate"] = d.get("last_rate") or 0
+                doc["unit_rate"] = d.get("rate") or 0
     elif rt == "subcontract" and doc.get("vendor_id") and not doc.get("vendor_name"):
         d = await db.vendors.find_one({"id": doc["vendor_id"]}, {"_id": 0, "name": 1, "vendor_code": 1})
         if d:
