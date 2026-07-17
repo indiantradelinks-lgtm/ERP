@@ -4539,3 +4539,15 @@ Tested: template headers exact-match ✓, 3 dropdown validations ✓, required h
 
 User asked how to modify asset category. Answered (Assets → edit → Category dropdown → Save) AND unified: `Assets.jsx` category dropdown was hardcoded (equipment/vehicle/it/tools) — now loads from /inv/categories (unified master). Migrated 3 existing assets 'equipment' → 'Machinery and Equipment'. Verified via UI screenshot (16 master categories in dropdown).
 **Status: COMPLETE & verified on preview.**
+
+### Iteration (Jul 17, 2026) — BUG FIX: Quotation Internal Approval Status sync
+
+Root cause: 6 legacy quotation approvals (May 30) had `record_id: None` — every writeback in approvals_router silently skipped (`if updated.get("record_id")`), so quotations stayed "pending" forever. Secondary: mirror writes `info_required` but frontend only mapped `additional_info_required`; no auto-refresh on the Quotations page.
+
+Fixes:
+- `approvals_router.py`: new `_quotation_match()` helper (record_id → else quote_number/reference fallback) used in all 3 writeback spots (intermediate mirror, final approve, `_mirror_downstream_record`); early-return relaxed for quotations
+- `scripts/repair_quotation_approval_sync.py`: backfilled record_id on all 6 legacy approvals + latest-approval status resync
+- `Quotations.jsx`: added `info_required` to APPROVAL_LABEL/TONE/subline; real-time auto-refresh (15s polling + window focus + visibilitychange refetch); fixed missing useEffect import (caused a brief view crash — repaired & verified)
+
+E2E tested live: intermediate approve → "Pending at Director (Step 2/2)" ✓; final approve → "Approved / All steps cleared" ✓; reject → "Rejected at Department Head" + reason ✓ (QTN-2026-0020/0011 used — were TEST-client quotations).
+**Status: COMPLETE & verified on preview.**

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import DataTableShell, { StatusBadge } from "@/components/DataTableShell";
 import useResource from "@/hooks/useResource";
 import { useAuth } from "@/contexts/AuthContext";
@@ -20,12 +20,12 @@ const QUOTE_STATUS_TONE = {
 const APPROVAL_TONE = {
   approved: "success", pending: "warning", in_progress: "warning",
   rejected: "danger", rejected_revision_required: "danger",
-  additional_info_required: "warning", not_sent: "neutral",
+  additional_info_required: "warning", info_required: "warning", not_sent: "neutral",
 };
 const APPROVAL_LABEL = {
   approved: "Approved", pending: "Pending", in_progress: "In Progress",
   rejected: "Rejected", rejected_revision_required: "Revision Required",
-  additional_info_required: "Info Needed", not_sent: "Not Sent",
+  additional_info_required: "Info Needed", info_required: "Info Needed", not_sent: "Not Sent",
 };
 const NEXT_STATUS_OPTIONS = {
   draft: ["under_review", "costing_pending", "submitted", "cancelled"],
@@ -40,6 +40,15 @@ const NEXT_STATUS_OPTIONS = {
 
 export default function Quotations() {
   const r = useResource("quotations");
+
+  useEffect(() => {
+    const iv = setInterval(() => r.reload(), 15000);
+    const onFocus = () => r.reload();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => { clearInterval(iv); window.removeEventListener("focus", onFocus); document.removeEventListener("visibilitychange", onFocus); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const { user } = useAuth() || {};
   // Iter 91 — Direct edit (pencil icon) is restricted to super_admin only.
   // The backend PUT /quotations/{id} also enforces this; non-admins should
@@ -146,7 +155,7 @@ export default function Quotations() {
           sub = "All steps cleared";
         } else if (a === "rejected" || a === "rejected_revision_required") {
           sub = stepLabel || "Rejected — please re-send";
-        } else if (a === "additional_info_required") {
+        } else if (a === "additional_info_required" || a === "info_required") {
           sub = stepLabel || "Approver requested info";
         }
         return (

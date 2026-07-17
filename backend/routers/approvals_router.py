@@ -127,6 +127,15 @@ class ResubmitIn(BaseModel):
     payload_patch: Optional[dict] = None   # optional in-place edits to approval.payload
 
 
+def _quotation_match(approval: dict) -> Optional[dict]:
+    """Locate the quotation for an approval — by record_id, else by quote_number (legacy approvals)."""
+    if approval.get("record_id"):
+        return {"id": approval["record_id"]}
+    if approval.get("reference"):
+        return {"quote_number": approval["reference"]}
+    return None
+
+
 @router.post("/approvals/{approval_id}/action")
 async def approval_action(approval_id: str, payload: ApprovalAction, user: dict = Depends(get_current_user)):
     approval = await db.approvals.find_one({"id": approval_id}, {"_id": 0})
@@ -163,7 +172,7 @@ async def approval_action(approval_id: str, payload: ApprovalAction, user: dict 
 
     # Iter 62.1 — Quotation: keep the denormalised "pending at <step>" mirror
     # in sync on every action (approve-but-still-in-progress, reject, info_request).
-    if updated.get("type") == "quotation" and updated.get("record_id"):
+    if updated.get("type") == "quotation" and _quotation_match(updated):
         chain = updated.get("chain") or []
         cidx = updated.get("current_step") or 0
         astatus = updated.get("status")
@@ -196,7 +205,7 @@ async def approval_action(approval_id: str, payload: ApprovalAction, user: dict 
             q_set["approval_current_step_index"] = cidx
             q_set["approval_total_steps"] = len(chain)
         if len(q_set) > 1:
-            await db.quotations.update_one({"id": updated["record_id"]}, {"$set": q_set})
+            await db.quotations.update_one(_quotation_match(updated), {"$set": q_set})
 
     from routers.notifications_router import notify_approval_pending, notify_approval_decided
     from notification_service import notify_revision_required, notify_info_requested, notify_resubmitted
@@ -248,9 +257,9 @@ async def approval_action(approval_id: str, payload: ApprovalAction, user: dict 
                     {"$set": {"status": "approved", "approved_at": now_iso(),
                               "updated_at": now_iso()}},
                 )
-            elif updated.get("type") == "quotation" and updated.get("record_id"):
+            elif updated.get("type") == "quotation" and _quotation_match(updated):
                 await db.quotations.update_one(
-                    {"id": updated["record_id"]},
+                    _quotation_match(updated),
                     {"$set": {"approval_status": "approved",
                               "approval_decided_at": now_iso(),
                               "approval_current_step_role": None,
@@ -481,7 +490,7 @@ async def _mirror_downstream_record(approval: dict, *, status: str, reason: Opti
     """
     record_id = approval.get("record_id") or approval.get("reference")
     atype = approval.get("type")
-    if not record_id or not atype:
+    if not atype or (not record_id and atype != "quotation"):
         return
     # Skip — handled by their own hooks
     if atype in {"employee_advance", "deployment", "department_move"}:
@@ -520,6 +529,10 @@ async def _mirror_downstream_record(approval: dict, *, status: str, reason: Opti
         }
         if reason is not None:
             set_doc["approval_reject_reason"] = reason
+        match = _quotation_match(approval)
+        if match:
+            await db.quotations.update_one(match, {"$set": set_doc})
+        return
     await db[coll].update_one({"id": record_id}, {"$set": set_doc})
 
 
