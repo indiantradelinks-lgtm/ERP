@@ -4575,3 +4575,18 @@ Ran a live schema scan to find every denormalized code copy, then added evidence
 - Response + audit log now include per-collection propagation counts; UI toast shows "updated in N linked record(s)"; console description updated
 Tested live: PRJ-2025-02→PRJ-2025-02X propagated 7 refs across 5 collections, 0 old refs remained; reverted (7 back). QTN-2026-0011 → 3 refs propagated + reverted. All original data restored.
 **Status: COMPLETE & verified on preview.**
+
+### Iteration (Jul 17, 2026) — Multi-line Resource Requests (bulk raise)
+
+PM raises MULTIPLE resource requests in one submission (user picks: 1a each line = own RR/approval, 2a designations from HR master, 3c item dropdown + custom option):
+- Backend `resource_requests_router.py`:
+  - NEW `POST /ops/resource-requests/bulk` — {project_id, required_date, site_location, priority, justification, submit, docs-gate fields, lines[≤50]}. Each line → own RR doc (own RR-#### via sequence) with shared `batch_id`. Per-line validation (manpower→designation required, others→item_name, qty>0). `submit:true` auto-submits every line for approval (docs gate pre-validated before any insert so failures leave no orphan drafts).
+  - NEW `GET /ops/resource-requests/meta/designations` — hr_designations (projects.read so PMs/coordinators can access).
+  - Refactored single-submit endpoint into shared `_submit_rr()` helper (approval chain + service-owner notifications).
+  - RR docs now store `category`, `designation`, `designation_id`; ResourceRequestUpdate accepts them.
+- Frontend `ResourceRequests.jsx`:
+  - New Request → MultiRRDialog: header (project/date/priority/site/justification) + dynamic lines. Material types (asset/consumable/ppe/tool): Category dropdown (inv_categories via /procurement/master/categories) → Item dropdown (unified item master, filtered by category, auto-fills unit) + "Other/custom item" free-text escape. Manpower: Designation dropdown + qty (unit=Persons). Other types: free text.
+  - "Submit all for approval immediately" checkbox (default ON) reveals embedded ApprovalDocsGate (upload or N/A+reason) — satisfies universal approval-docs gate for the whole batch.
+  - Table shows category/designation subtitle under item; edit stays single-record (EditRRDialog).
+Tested E2E: curl bulk (3 lines: consumable+asset+manpower) → 3 RRs pending_approval w/ approvals visible to admin ✓; validation errors (missing designation, qty 0, missing docs) ✓; full UI flow via Playwright (dialog, category→item cascade, manpower designation, docs N/A, "Created 2 requests · 2 submitted" toast, table render) ✓. Test data cleaned up.
+**Status: COMPLETE & verified on preview.**

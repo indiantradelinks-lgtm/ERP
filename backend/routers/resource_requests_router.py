@@ -76,6 +76,9 @@ class ResourceRequestIn(BaseModel):
 
 class ResourceRequestUpdate(BaseModel):
     item_name: Optional[str] = None
+    category: Optional[str] = None
+    designation: Optional[str] = None
+    designation_id: Optional[str] = None
     quantity: Optional[float] = None
     unit: Optional[str] = None
     required_date: Optional[str] = None
@@ -83,6 +86,31 @@ class ResourceRequestUpdate(BaseModel):
     priority: Optional[str] = None
     justification: Optional[str] = None
     attachments: Optional[List[Dict[str, Any]]] = None
+
+
+class BulkLine(BaseModel):
+    resource_type: str
+    item_name: Optional[str] = None
+    category: Optional[str] = None
+    designation_id: Optional[str] = None
+    designation: Optional[str] = None
+    quantity: float = 1
+    unit: Optional[str] = None
+    justification: Optional[str] = None
+
+
+class BulkRequestIn(BaseModel):
+    project_id: str
+    required_date: Optional[str] = None
+    site_location: Optional[str] = None
+    priority: str = "medium"
+    justification: Optional[str] = None
+    submit: bool = False
+    documents: List[str] = []
+    linked_attachments: List[str] = []
+    documents_not_required: bool = False
+    documents_not_required_reason: Optional[str] = None
+    lines: List[BulkLine] = Field(..., min_length=1, max_length=50)
 
 
 class ServiceIn(BaseModel):
@@ -195,21 +223,15 @@ async def delete_resource_request(rid: str, request: Request,
     return {"ok": True}
 
 
-@router.post("/ops/resource-requests/{rid}/submit")
-async def submit_resource_request(rid: str, request: Request, body: Optional[dict] = None,
-                                    user: dict = Depends(require_permission("projects", "write"))):
+async def _submit_rr(rr: Dict[str, Any], user: dict, body: Optional[dict] = None) -> str:
+    """Build approval chain, mark pending_approval, notify service owner. Returns approval_id."""
     from approval_engine import insert_approval, copy_approval_doc_fields
-    rr = await db.resource_requests.find_one({"id": rid}, {"_id": 0})
-    if not rr:
-        raise HTTPException(status_code=404, detail="Not found")
-    if rr.get("status") not in {"draft", "rejected"}:
-        raise HTTPException(status_code=400, detail=f"Cannot submit in '{rr.get('status')}' state")
     chain = await build_chain("resource_request")
     approval_doc = {
         "id": new_id(),
         "type": "resource_request",
         "module": "resource_requests",
-        "record_id": rid,
+        "record_id": rr["id"],
         "title": f"Resource Request {rr['rr_no']} — {rr['resource_type']} × {rr.get('quantity')}",
         "summary": f"{rr.get('item_name')} for project {rr.get('project_name')} ({rr.get('priority')} priority)",
         "requested_by": user.get("name") or user.get("email"),
@@ -223,13 +245,11 @@ async def submit_resource_request(rid: str, request: Request, body: Optional[dic
     }
     copy_approval_doc_fields(approval_doc, body)
     await insert_approval(approval_doc)
-    await db.resource_requests.update_one({"id": rid}, {"$set": {
+    await db.resource_requests.update_one({"id": rr["id"]}, {"$set": {
         "status": "pending_approval", "approval_id": approval_doc["id"],
         "submitted_at": now_iso(), "submitted_by_id": user.get("id"),
         "updated_at": now_iso(),
     }})
-    # Notify approvers via existing approval-router fanout (handled in approval_engine on insert).
-    # We additionally bell-notify the service owner role so they see what's pending.
     owner_role = SERVICE_OWNER.get(rr["resource_type"])
     if owner_role:
         users = await db.users.find({"role": owner_role, "active": True}, {"_id": 0, "id": 1}).to_list(20)
@@ -241,8 +261,108 @@ async def submit_resource_request(rid: str, request: Request, body: Optional[dic
                     "message": f"{rr['resource_type']} × {rr.get('quantity')} requested for {rr.get('project_name')} — pending approval.",
                     "link": "/app/ops/resource-requests", "read": False, "at": now_iso(),
                 })
+    return approval_doc["id"]
+
+
+@router.get("/ops/resource-requests/meta/designations")
+async def rr_designations(user: dict = Depends(require_permission("projects", "read"))):
+    """Designation master for manpower request lines (readable by project roles)."""
+    return await db.hr_designations.find(
+        {"active": {"$ne": False}}, {"_id": 0, "id": 1, "code": 1, "name": 1}
+    ).sort("name", 1).to_list(500)
+
+
+@router.post("/ops/resource-requests/bulk")
+async def create_bulk_resource_requests(payload: BulkRequestIn, request: Request,
+                                          user: dict = Depends(require_permission("projects", "write"))):
+    proj = await db.projects.find_one({"id": payload.project_id}, {"_id": 0})
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if payload.submit:
+        has_docs = bool(payload.documents or payload.linked_attachments)
+        na_ok = payload.documents_not_required and len((payload.documents_not_required_reason or "").strip()) >= 5
+        if not has_docs and not na_ok:
+            raise HTTPException(status_code=400, detail="Reference documents are required for approval submission. Attach at least one file or mark 'Not Applicable' with a reason (min 5 chars).")
+    desig_by_id = {d["id"]: d for d in await db.hr_designations.find({}, {"_id": 0}).to_list(500)}
+    prepared: List[Dict[str, Any]] = []
+    for idx, line in enumerate(payload.lines, start=1):
+        if line.resource_type not in RESOURCE_TYPES:
+            raise HTTPException(status_code=400, detail=f"Line {idx}: invalid resource_type '{line.resource_type}'")
+        item_name = (line.item_name or "").strip()
+        designation = (line.designation or "").strip()
+        if line.resource_type == "manpower":
+            if line.designation_id and line.designation_id in desig_by_id:
+                designation = desig_by_id[line.designation_id]["name"]
+            if not designation:
+                raise HTTPException(status_code=400, detail=f"Line {idx}: designation is required for manpower")
+            item_name = item_name or designation
+        elif not item_name:
+            raise HTTPException(status_code=400, detail=f"Line {idx}: item name is required")
+        if line.quantity <= 0:
+            raise HTTPException(status_code=400, detail=f"Line {idx}: quantity must be greater than 0")
+        prepared.append({
+            "resource_type": line.resource_type,
+            "item_name": item_name,
+            "category": (line.category or "").strip() or None,
+            "designation": designation or None,
+            "designation_id": line.designation_id or None,
+            "quantity": line.quantity,
+            "unit": line.unit or ("Persons" if line.resource_type == "manpower" else "Nos"),
+            "justification": line.justification or payload.justification,
+        })
+    batch_id = new_id()
+    created: List[Dict[str, Any]] = []
+    for p in prepared:
+        doc = {
+            **p,
+            "id": new_id(),
+            "rr_no": await next_sequence("RR"),
+            "status": "draft",
+            "batch_id": batch_id,
+            "project_id": payload.project_id,
+            "project_name": proj.get("name"),
+            "project_manager_id": proj.get("project_manager_id"),
+            "project_coordinator_id": proj.get("project_coordinator_id"),
+            "required_date": payload.required_date,
+            "site_location": payload.site_location,
+            "priority": payload.priority,
+            "attachments": [],
+            "requested_by": user.get("name") or user.get("email"),
+            "requested_by_id": user.get("id"),
+            "created_at": now_iso(),
+        }
+        await db.resource_requests.insert_one(doc)
+        doc.pop("_id", None)
+        created.append(doc)
+    submitted = 0
+    if payload.submit:
+        doc_body = {
+            "documents": payload.documents,
+            "linked_attachments": payload.linked_attachments,
+            "documents_not_required": payload.documents_not_required,
+            "documents_not_required_reason": payload.documents_not_required_reason,
+        }
+        for doc in created:
+            await _submit_rr(doc, user, doc_body)
+            submitted += 1
+    await audit(user=user, action="bulk_create", resource="resource_requests", record_id=batch_id,
+                after={"count": len(created), "rr_nos": [c["rr_no"] for c in created], "submitted": submitted},
+                ip=_ip(request))
+    return {"ok": True, "batch_id": batch_id, "count": len(created), "submitted": submitted,
+            "rr_nos": [c["rr_no"] for c in created]}
+
+
+@router.post("/ops/resource-requests/{rid}/submit")
+async def submit_resource_request(rid: str, request: Request, body: Optional[dict] = None,
+                                    user: dict = Depends(require_permission("projects", "write"))):
+    rr = await db.resource_requests.find_one({"id": rid}, {"_id": 0})
+    if not rr:
+        raise HTTPException(status_code=404, detail="Not found")
+    if rr.get("status") not in {"draft", "rejected"}:
+        raise HTTPException(status_code=400, detail=f"Cannot submit in '{rr.get('status')}' state")
+    approval_id = await _submit_rr(rr, user, body)
     await audit(user=user, action="submit", resource="resource_requests", record_id=rid, ip=_ip(request))
-    return {"ok": True, "approval_id": approval_doc["id"]}
+    return {"ok": True, "approval_id": approval_id}
 
 
 @router.post("/ops/resource-requests/{rid}/cancel")
