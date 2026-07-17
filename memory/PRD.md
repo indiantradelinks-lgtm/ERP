@@ -4629,3 +4629,13 @@ Root cause: ProjectResources.jsx loaded designations from `GET /hr1/designations
 Fix: page now loads from `GET /ops/resource-requests/meta/designations` (projects.read gate, active-only) with /hr1 fallback; dropdown shows a helpful empty-state message ("No active designations — add via HR → Designations"). Verified: inactive designations excluded; PM UI E2E — dropdown lists designations, selection saves ("Resource added", row persisted with designation_name + rate). QuickQtyDialog manpower list uses the same fixed source.
 NOTE: if user saw this on PRODUCTION, they must redeploy to pick up the fix.
 **Status: FIXED & verified on preview.**
+
+### Bug fix (Jul 17, 2026) — HR Designation Master "not working"
+
+Root cause CONFIRMED: HR menu items "Designation Master" & "Skill / Trade Master" pointed to the generic /app/admin/dropdowns page (dropdown_options collection) — records created there NEVER reached db.hr_designations / db.hr_skills, which is what manpower dropdowns (Resource Planning/Requests, employees) actually read. Backend CRUD (/api/hr1/designations, /api/hr1/skills) existed but had no UI.
+Fix:
+- NEW `pages/hr/HrMasters.jsx` at /app/hr/masters — tabbed Designation (code/name/level/active) + Skill/Trade (code/name/category/3 requirement flags/active) CRUD bound to /hr1 endpoints, with search, one-click active/inactive toggle, delete guard message (backend blocks delete when employees reference designation).
+- menuConfig: both HR Masters entries now point to /app/hr/masters (skills entry uses ?tab=skills), perm changed from superAdminOnly → employees so HR executives can manage. Route added in App.js.
+Tested: API CRUD create/update/delete ✓; new designation instantly visible in manpower dropdown source (/ops/resource-requests/meta/designations) ✓; UI create via dialog + row listing + skills tab ✓. Test records cleaned.
+NOTE: user must REDEPLOY for production to get this fix.
+**Status: FIXED & verified on preview.**

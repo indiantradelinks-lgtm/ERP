@@ -136,6 +136,7 @@ import DataLinkage from "@/pages/admin/DataLinkage";
 import DepartmentMaster from "@/pages/admin/DepartmentMaster";
 import DeptGovernance from "@/pages/admin/DeptGovernance";
 import Onboarding from "@/pages/hr/Onboarding";
+import HrMasters from "@/pages/hr/HrMasters";
 import Employee360 from "@/pages/hr/Employee360";
 import Leave from "@/pages/hr/Leave";
 import HrLetters from "@/pages/hr/HrLetters";
@@ -299,6 +300,7 @@ export default function App() {
             <Route path="/app/admin/department-master" element={<ProtectedShell><DepartmentMaster /></ProtectedShell>} />
             <Route path="/app/admin/dept-governance" element={<ProtectedShell><DeptGovernance /></ProtectedShell>} />
             <Route path="/app/hr/onboarding" element={<ProtectedShell><Onboarding /></ProtectedShell>} />
+            <Route path="/app/hr/masters" element={<ProtectedShell><HrMasters /></ProtectedShell>} />
             <Route path="/app/hr/employee-360" element={<ProtectedShell><Employee360 /></ProtectedShell>} />
             <Route path="/app/hr/leave" element={<ProtectedShell><Leave /></ProtectedShell>}/>
             <Route path="/app/hr/letters" element={<ProtectedShell><HrLetters /></ProtectedShell>}/>
