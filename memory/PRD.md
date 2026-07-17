@@ -4551,3 +4551,14 @@ Fixes:
 
 E2E tested live: intermediate approve → "Pending at Director (Step 2/2)" ✓; final approve → "Approved / All steps cleared" ✓; reject → "Rejected at Department Head" + reason ✓ (QTN-2026-0020/0011 used — were TEST-client quotations).
 **Status: COMPLETE & verified on preview.**
+
+### Iteration (Jul 17, 2026) — Admin-Only Auto Code Override (system-wide)
+
+Central engine, zero changes to existing auto-generation/workflows:
+- NEW `routers/code_override_router.py` (guard: require_super_admin): CODE_REGISTRY of 18 code types (clients customer_code, sites site_code, enquiries enquiry_no, quotations quote_number, PR/PO/GRN numbers, projects code, vendors code, inventory code, assets asset_id, allocations ALC, employees emp_code, work_orders wo_no, bulk allocations BAL, challans, material_requests, rfqs)
+- Endpoints: GET /admin/code-override/registry, GET .../records?resource&q (search by code/name), POST /admin/code-override {resource, record_id, new_code}
+- Validations: non-empty, ≤60 chars, case-insensitive uniqueness within collection, record exists, no-op rejected. Stores code_override_previous/by/at on the record + audit log entry (action=code_override)
+- NEW `pages/admin/CodeOverride.jsx` at /app/admin/code-override; menuConfig "Auto Code Override" (superAdminOnly, KeyRound icon)
+Tested: registry 18 ✓, search ✓, override (TATA-00002→CUST-OVR-001) ✓, case-insensitive duplicate blocked ✓, non-admin 403 ✓, UI screenshot ✓.
+NOTE: pre-existing duplicate codes discovered in old test data (2 clients shared TATA-00002 — one renamed to TATA-00002-B during testing; 2 quotations share QTN-2026-0020). Engine prevents NEW duplicates.
+**Status: COMPLETE & verified on preview.**

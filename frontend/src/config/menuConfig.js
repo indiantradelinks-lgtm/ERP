@@ -36,7 +36,7 @@ import {
   Warehouse, DollarSign, FileSignature, History, Settings as SettingsIcon, Network,
   CalendarRange, Ruler, AlertTriangle, PlusSquare, Layers, Lock, Landmark, LineChart,
   Bell, TrendingUp, Calculator, FileBarChart, Stethoscope, Fuel, Route, FilePlus2,
-  Database, Siren, FileSpreadsheet, Hotel, LogOut,
+  Database, Siren, FileSpreadsheet, Hotel, LogOut, KeyRound,
 } from "lucide-react";
 
 // ─── Department registry ─────────────────────────────────────────────────
@@ -368,6 +368,7 @@ export const MENU_ITEMS = [
   { department: "admin", label: "Admin Console",              to: "/app/admin",                      icon: ShieldCheck,   testid: "nav-admin", end: true, superAdminOnly: true },
   { department: "admin", label: "User Management",            to: "/app/admin/users",                icon: Users,         testid: "nav-admin-users", superAdminOnly: true },
   { department: "admin", label: "Role Management",            to: "/app/admin/role-register",        icon: ShieldCheck,   testid: "nav-admin-role-register", superAdminOnly: true },
+  { department: "admin", label: "Auto Code Override",         to: "/app/admin/code-override",        icon: KeyRound,      testid: "nav-admin-code-override", superAdminOnly: true },
   { department: "admin", label: "Role Catalog",               to: "/app/admin/role-catalog",         icon: ShieldPlus,    testid: "nav-admin-role-catalog", superAdminOnly: true },
   { department: "admin", label: "Permission Management",      to: "/app/admin/security-center",      icon: Lock,          testid: "nav-admin-security-center", superAdminOnly: true },
   { department: "admin", label: "Security Center",            to: "/app/admin/security-center",      icon: ShieldCheck,   testid: "nav-admin-security", superAdminOnly: true },

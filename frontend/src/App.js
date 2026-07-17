@@ -124,6 +124,7 @@ import ConditionLibrary from "@/pages/admin/ConditionLibrary";
 import UserManagement from "@/pages/admin/UserManagement";
 import RoleRegister from "@/pages/admin/RoleRegister";
 import Categories from "@/pages/admin/Categories";
+import CodeOverride from "@/pages/admin/CodeOverride";
 import CostCenters from "@/pages/admin/CostCenters";
 import DataCleanup from "@/pages/admin/DataCleanup";
 import EmailSettings from "@/pages/admin/EmailSettings";
@@ -286,6 +287,7 @@ export default function App() {
             <Route path="/app/admin/users" element={<ProtectedShell><UserManagement /></ProtectedShell>} />
             <Route path="/app/admin/role-register" element={<ProtectedShell><RoleRegister /></ProtectedShell>} />
             <Route path="/app/admin/categories" element={<ProtectedShell><Categories /></ProtectedShell>} />
+            <Route path="/app/admin/code-override" element={<ProtectedShell><CodeOverride /></ProtectedShell>} />
             <Route path="/app/admin/cost-centers" element={<ProtectedShell><CostCenters /></ProtectedShell>} />
             <Route path="/app/admin/data-cleanup" element={<ProtectedShell><DataCleanup /></ProtectedShell>} />
             <Route path="/app/admin/email-settings" element={<ProtectedShell><EmailSettings /></ProtectedShell>} />

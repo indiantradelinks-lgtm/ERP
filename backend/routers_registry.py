@@ -75,6 +75,7 @@ from routers.clients_router import router as clients_router
 from routers.procurement_router import router as procurement_router
 from routers.materials_router import router as materials_router
 from routers.bulk_allocation_router import router as bulk_allocation_router
+from routers.code_override_router import router as code_override_router
 from routers.inventory_intel_router import router as inventory_intel_router
 from routers.inventory_master_router import router as inventory_master_router
 from routers.inventory_phase2_router import router as inventory_phase2_router
@@ -175,6 +176,7 @@ ROUTERS_IN_ORDER: List[Tuple[str, APIRouter]] = [
     ("linkage", linkage_router),
     ("materials", materials_router),
     ("bulk_allocation", bulk_allocation_router),
+    ("code_override", code_override_router),
     ("notifications", notifications_router),
     ("onedrive", onedrive_router),
     ("procurement", procurement_router),
