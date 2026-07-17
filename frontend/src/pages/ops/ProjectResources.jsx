@@ -74,7 +74,15 @@ export default function ProjectResources() {
 
   useEffect(() => {
     api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {});
-    api.get("/hr1/designations").then((r) => setDesignations(r.data || [])).catch(() => setDesignations([]));
+    // Designations via projects-scoped endpoint (active only) — /hr1/designations needs employees.read
+    // which PM-adjacent roles (coordinator, site engineer, supervisor) don't have.
+    api.get("/ops/resource-requests/meta/designations")
+      .then((r) => setDesignations(r.data || []))
+      .catch(() => {
+        api.get("/hr1/designations")
+          .then((r) => setDesignations((r.data || []).filter((d) => d.active !== false)))
+          .catch(() => setDesignations([]));
+      });
     api.get("/procurement/master/items").then((r) => setItems(r.data || [])).catch(() => setItems([]));
     api.get("/procurement/master/categories", { params: { active_only: true } }).then((r) => setCategories(r.data || [])).catch(() => setCategories([]));
     api.get("/vendors").then((r) => setVendors(r.data || [])).catch(() => setVendors([]));
@@ -433,8 +441,8 @@ function ResourceForm({ type, form, setForm, wbsNodes, activities, designations,
               const d = designations.find((x) => x.id === id);
               setForm({ ...form, designation_id: id, designation_name: d?.name || "" });
             }} className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm" data-testid="rp-form-designation">
-              <option value="">— select —</option>
-              {designations.map((d) => <option key={d.id} value={d.id}>{d.code} · {d.name}</option>)}
+              <option value="">{designations.length ? "— select —" : "No active designations — add via HR → Designations"}</option>
+              {designations.map((d) => <option key={d.id} value={d.id}>{d.code ? `${d.code} · ` : ""}{d.name}</option>)}
             </select>
           </F>
           <F label="Skill Level">

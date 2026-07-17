@@ -4622,3 +4622,10 @@ User choices: 1b (per-tab templates), 2c (qty entry can go to Plan OR raise Requ
 Tested: 3 templates download+parse ✓; material upload (2 created incl. custom item, 1 zero skipped, 1 unknown-category error) ✓; manpower upload (1 created, 1 zero skipped, 1 unknown-designation error) ✓; quick-fill plan mode (tool item auto-mapped to tools line, zero skipped) ✓; quick-fill request mode (2 draft RRs) ✓; all-zero 400 ✓; UI dialogs render w/ 272 items ✓. Test data cleaned.
 NOTE: pre-existing junk test items visible in item master (AUTO-GRN category, TEST Bolt/Nut) — from earlier iterations' test data, not touched.
 **Status: COMPLETE & verified on preview.**
+
+### Bug fix (Jul 17, 2026) — Manpower Designation dropdown empty in Resource Planning
+
+Root cause: ProjectResources.jsx loaded designations from `GET /hr1/designations` which is gated by `employees.read` — roles like project_coordinator, site_engineer, supervisor get 403 → empty dropdown (silently caught). Proven via curl: site_engineer 403 on /hr1/designations but 200 on the projects-scoped endpoint.
+Fix: page now loads from `GET /ops/resource-requests/meta/designations` (projects.read gate, active-only) with /hr1 fallback; dropdown shows a helpful empty-state message ("No active designations — add via HR → Designations"). Verified: inactive designations excluded; PM UI E2E — dropdown lists designations, selection saves ("Resource added", row persisted with designation_name + rate). QuickQtyDialog manpower list uses the same fixed source.
+NOTE: if user saw this on PRODUCTION, they must redeploy to pick up the fix.
+**Status: FIXED & verified on preview.**
