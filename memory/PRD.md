@@ -4601,3 +4601,12 @@ User choices: 1b, 2a, 3a, 4a. Upgraded `/app/ops/resources` (ProjectResources.js
 - Fixed legacy `_enrich_resource` material lookup: db.pr_items → db.inventory (unified item master).
 Tested: curl POST all 4 types w/ new fields — totals correct (MP 180×900=162000, TOOL 2×30×500=30000, SUB unit_rate 120×850=102000) ✓; UI screenshots of Material cascade + Sub-Contract auto-value form ✓. Test rows cleaned.
 **Status: COMPLETE & verified on preview.**
+
+### Iteration (Jul 17, 2026) — Plan → Request (one-click conversion)
+
+Resource Planning lines convert directly into Resource Requests:
+- Backend: NEW `POST /ops/resource-requests/from-plan` {project_id, resource_ids[≤50], header fields, submit, docs-gate}. Refactored bulk creation into shared `_bulk_create()` used by /bulk and /from-plan. Mapping: manpower plan→manpower RR (designation, count, Persons); material plan→ppe/tool/consumable by category keyword (ppe/safety→ppe, tool→tool, else consumable) w/ item+category+uom; tools plan→tool RR (spec becomes justification). Subcontract lines rejected (vendor/PO flow). Guards: missing lines 404, already-converted 400 (lists RR nos). On success plan rows stamped rr_batch_id/rr_id/rr_no/rr_requested_at/by.
+- Frontend (ProjectResources.jsx): row checkboxes on manpower/material/tools tabs (hidden on subcontract), "Raise Request (n)" button, ConvertDialog (line summary, required date/priority/site/justification, submit-immediately + ApprovalDocsGate). Converted rows show green RR-no badge instead of checkbox (dup-proof).
+- LESSON LEARNED: parallel search_replace calls on the SAME file clobber each other (lost EMPTY-constants + imports edits twice this session). Same-file edits must be sequential.
+Tested: curl from-plan (3 mixed lines → 3 RRs pending_approval, correct type mapping, plan rows stamped, re-convert blocked) ✓; full UI flow (add line → select → convert → toast "Raised 1 request (RR-2026-0024) · submitted for approval" → green badge) ✓. All test data cleaned.
+**Status: COMPLETE & verified on preview.**

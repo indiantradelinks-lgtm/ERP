@@ -19,7 +19,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Users, Package, Wrench, Briefcase, Plus, Pencil, Trash2, RefreshCcw } from "lucide-react";
+import { Users, Package, Wrench, Briefcase, Plus, Pencil, Trash2, RefreshCcw, Send } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import ApprovalDocsGate, { validateApprovalDocs, emptyApprovalDocs } from "@/components/ApprovalDocsGate";
 import { useAuth } from "@/contexts/AuthContext";
 
 const EMPTY = {
@@ -27,17 +29,24 @@ const EMPTY = {
   wbs_id: "", activity_id: "", required_by_date: "", remarks: "",
   // manpower
   designation_id: "", designation_name: "", count_required: 0, mandays: 0, daily_rate: 0,
+  deploy_from: "", deploy_to: "", shift: "general", skill_level: "",
   // material
-  item_id: "", item_code: "", item_name: "", uom: "", quantity: 0, unit_rate: 0, source: "stock",
+  item_id: "", item_code: "", item_name: "", category: "", uom: "", quantity: 0, unit_rate: 0, source: "stock",
+  material_custom: false,
   // tools
-  tool_name: "", tool_owned_or_rented: "owned", days: 0,
+  tool_name: "", tool_item_id: "", tool_category: "", specification: "", tool_owned_or_rented: "owned",
+  rental_vendor_id: "", rental_vendor_name: "", mobilization_date: "", days: 0, tool_custom: false,
   // subcontract
   vendor_id: "", vendor_code: "", vendor_name: "", scope: "", basis: "lumpsum", value: 0,
+  sub_qty: 0, sub_unit_rate: 0, work_start: "", work_end: "", contact_person: "", contact_phone: "",
+  retention_pct: 0, payment_terms: "",
 };
 
 const SOURCES = ["stock", "purchase", "client_supply"];
 const TOOL_OOR = ["owned", "rented"];
 const SUB_BASIS = ["lumpsum", "unit_rate"];
+const SHIFTS = ["general", "day", "night", "rotational"];
+const SKILL_LEVELS = ["", "highly_skilled", "skilled", "semi_skilled", "unskilled"];
 
 export default function ProjectResources() {
   const [projects, setProjects]   = useState([]);
@@ -55,6 +64,8 @@ export default function ProjectResources() {
   // edit
   const [editing, setEditing] = useState(null);
   const [form, setForm]       = useState(EMPTY);
+  const [selected, setSelected] = useState([]);
+  const [convertOpen, setConvertOpen] = useState(false);
   const { user } = useAuth() || {};
   const canEdit = !["sales_executive", "store_incharge"].includes(user?.role);
 
@@ -67,6 +78,7 @@ export default function ProjectResources() {
   }, []);
 
   useEffect(() => {
+    setSelected([]);
     if (!projectId) { setRows([]); setSummary({}); setWbsNodes([]); setActivities([]); return; }
     load();
   }, [projectId, active]);
@@ -146,6 +158,9 @@ export default function ProjectResources() {
 
   const wbsMap = useMemo(() => Object.fromEntries(wbsNodes.map((w) => [w.id, w])), [wbsNodes]);
   const actMap = useMemo(() => Object.fromEntries(activities.map((a) => [a.id, a])), [activities]);
+  const convertible = active !== "subcontract" && canEdit;
+  const toggleSelect = (id) => setSelected((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id]);
+  const selectedRows = rows.filter((r) => selected.includes(r.id));
 
   return (
     <div className="p-6 space-y-4" data-testid="page-project-resources">
@@ -185,7 +200,14 @@ export default function ProjectResources() {
             <TabsTrigger value="subcontract" data-testid="rp-tab-subcontract"><Briefcase className="h-3.5 w-3.5 mr-1" />Sub-Contract</TabsTrigger>
           </TabsList>
           {canEdit && projectId && (
-            <Button onClick={openNew} data-testid="rp-new"><Plus className="h-4 w-4 mr-1" /> Add {labelOf(active)}</Button>
+            <div className="flex gap-2">
+              {convertible && selected.length > 0 && (
+                <Button variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50" onClick={() => setConvertOpen(true)} data-testid="rp-convert-btn">
+                  <Send className="h-4 w-4 mr-1" /> Raise Request ({selected.length})
+                </Button>
+              )}
+              <Button onClick={openNew} data-testid="rp-new"><Plus className="h-4 w-4 mr-1" /> Add {labelOf(active)}</Button>
+            </div>
           )}
         </div>
 
@@ -202,6 +224,7 @@ export default function ProjectResources() {
                   <ResourceTable
                     type={active} rows={rows} wbsMap={wbsMap} actMap={actMap}
                     canEdit={canEdit}
+                    selectable={convertible} selected={selected} onToggle={toggleSelect}
                     onEdit={openEdit} onRemove={remove}
                   />
                 </div>
@@ -225,15 +248,24 @@ export default function ProjectResources() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {convertOpen && (
+        <ConvertDialog
+          projectId={projectId} rows={selectedRows} type={active}
+          onClose={() => setConvertOpen(false)}
+          onSaved={() => { setConvertOpen(false); setSelected([]); load(); }}
+        />
+      )}
     </div>
   );
 }
 
 // ──────────────────────────────── Sub-components ────────────────────────────────
-function ResourceTable({ type, rows, wbsMap, actMap, canEdit, onEdit, onRemove }) {
+function ResourceTable({ type, rows, wbsMap, actMap, canEdit, selectable, selected, onToggle, onEdit, onRemove }) {
   return (
     <table className="w-full text-sm">
       <thead><tr className="border-b text-left text-xs uppercase tracking-wider text-muted-foreground">
+        {selectable && <th className="px-2 py-2 w-8"></th>}
         {type === "manpower" && (
           <>
             <th className="px-2 py-2">Designation</th>
@@ -276,6 +308,15 @@ function ResourceTable({ type, rows, wbsMap, actMap, canEdit, onEdit, onRemove }
       <tbody>
         {rows.map((r) => (
           <tr key={r.id} className="border-b hover:bg-slate-50/50" data-testid={`rp-row-${r.id}`}>
+            {selectable && (
+              <td className="px-2 py-1">
+                {r.rr_batch_id ? (
+                  <span className="inline-block px-1.5 py-0.5 text-[9px] font-bold rounded border bg-green-50 border-green-300 text-green-700 whitespace-nowrap" title={`Requested as ${r.rr_no}`} data-testid={`rp-rr-badge-${r.id}`}>{r.rr_no}</span>
+                ) : (
+                  <Checkbox checked={selected.includes(r.id)} onCheckedChange={() => onToggle(r.id)} data-testid={`rp-select-${r.id}`} />
+                )}
+              </td>
+            )}
             {type === "manpower" && (
               <>
                 <td className="px-2 py-1">
@@ -566,6 +607,84 @@ function F({ label, full, children }) {
 
 function labelOf(t) {
   return ({ manpower: "Manpower", material: "Material", tools: "Tools", subcontract: "Sub-Contract" })[t] || t;
+}
+
+function ConvertDialog({ projectId, rows, type, onClose, onSaved }) {
+  const [head, setHead] = useState({ required_date: "", site_location: "", priority: "medium", justification: "", submit: true });
+  const [docs, setDocs] = useState(emptyApprovalDocs());
+  const [saving, setSaving] = useState(false);
+  const setH = (k, v) => setHead((h) => ({ ...h, [k]: v }));
+
+  const lineLabel = (r) => {
+    if (r.resource_type === "manpower") return `${r.designation_name || "Manpower"} × ${r.count_required || 1} Persons`;
+    if (r.resource_type === "material") return `${r.item_name} × ${r.quantity || 1} ${r.uom || "Nos"}${r.category ? ` (${r.category})` : ""}`;
+    return `${r.tool_name} × ${r.count_required || 1} Nos${r.tool_category ? ` (${r.tool_category})` : ""}`;
+  };
+
+  const go = async () => {
+    if (head.submit) {
+      const err = validateApprovalDocs(docs);
+      if (err) { toast.error(err); return; }
+    }
+    setSaving(true);
+    try {
+      const r = await api.post("/ops/resource-requests/from-plan", {
+        project_id: projectId,
+        resource_ids: rows.map((x) => x.id),
+        required_date: head.required_date || null,
+        site_location: head.site_location || null,
+        priority: head.priority,
+        justification: head.justification || null,
+        submit: head.submit,
+        ...(head.submit ? docs : {}),
+      });
+      const d = r.data;
+      toast.success(`Raised ${d.count} request${d.count > 1 ? "s" : ""} (${(d.rr_nos || []).join(", ")})${d.submitted ? " · submitted for approval" : " · saved as drafts"}`);
+      onSaved();
+    } catch (e) { toast.error(e.response?.data?.detail || "Conversion failed"); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>Raise Resource Request{rows.length > 1 ? "s" : ""} from Plan</DialogTitle></DialogHeader>
+        <div className="border rounded-sm divide-y bg-slate-50/60 text-sm" data-testid="rp-convert-lines">
+          {rows.map((r) => (
+            <div key={r.id} className="px-3 py-1.5 flex items-center justify-between">
+              <span>{lineLabel(r)}</span>
+              <span className="text-[10px] uppercase tracking-wider text-slate-500">{r.resource_type}</span>
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <F label="Required Date"><Input type="date" value={head.required_date} onChange={(e) => setH("required_date", e.target.value)} data-testid="rp-convert-date" /></F>
+          <F label="Priority">
+            <select value={head.priority} onChange={(e) => setH("priority", e.target.value)} className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm" data-testid="rp-convert-priority">
+              {["low", "medium", "high", "critical"].map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </F>
+          <F label="Site Location"><Input value={head.site_location} onChange={(e) => setH("site_location", e.target.value)} /></F>
+          <F label="Justification / Remarks"><Input value={head.justification} onChange={(e) => setH("justification", e.target.value)} placeholder="As per project resource plan" /></F>
+        </div>
+        {head.submit && (
+          <ApprovalDocsGate parentType="resource_requests" value={docs} onChange={setDocs} testidPrefix="rp-convert-docs" />
+        )}
+        <DialogFooter className="flex items-center sm:justify-between gap-3">
+          <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+            <Checkbox checked={head.submit} onCheckedChange={(v) => setH("submit", !!v)} data-testid="rp-convert-autosubmit" />
+            Submit for approval immediately
+          </label>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button onClick={go} disabled={saving} data-testid="rp-convert-save">
+              <Send className="h-4 w-4 mr-1" />{saving ? "Raising…" : `Raise ${rows.length} Request${rows.length > 1 ? "s" : ""}`}
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 function validate(f) {
   if (f.resource_type === "manpower" && !f.designation_id) return "Pick a designation";

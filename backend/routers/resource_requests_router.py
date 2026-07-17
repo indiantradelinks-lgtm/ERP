@@ -275,6 +275,12 @@ async def rr_designations(user: dict = Depends(require_permission("projects", "r
 @router.post("/ops/resource-requests/bulk")
 async def create_bulk_resource_requests(payload: BulkRequestIn, request: Request,
                                           user: dict = Depends(require_permission("projects", "write"))):
+    result = await _bulk_create(payload, user, _ip(request))
+    result.pop("created_docs", None)
+    return result
+
+
+async def _bulk_create(payload: BulkRequestIn, user: dict, ip: str) -> Dict[str, Any]:
     proj = await db.projects.find_one({"id": payload.project_id}, {"_id": 0})
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -347,9 +353,100 @@ async def create_bulk_resource_requests(payload: BulkRequestIn, request: Request
             submitted += 1
     await audit(user=user, action="bulk_create", resource="resource_requests", record_id=batch_id,
                 after={"count": len(created), "rr_nos": [c["rr_no"] for c in created], "submitted": submitted},
-                ip=_ip(request))
+                ip=ip)
     return {"ok": True, "batch_id": batch_id, "count": len(created), "submitted": submitted,
-            "rr_nos": [c["rr_no"] for c in created]}
+            "rr_nos": [c["rr_no"] for c in created], "created_docs": created}
+
+
+class FromPlanIn(BaseModel):
+    project_id: str
+    resource_ids: List[str] = Field(..., min_length=1, max_length=50)
+    required_date: Optional[str] = None
+    site_location: Optional[str] = None
+    priority: str = "medium"
+    justification: Optional[str] = None
+    submit: bool = False
+    documents: List[str] = []
+    linked_attachments: List[str] = []
+    documents_not_required: bool = False
+    documents_not_required_reason: Optional[str] = None
+
+
+def _material_rr_type(category: str) -> str:
+    c = (category or "").lower()
+    if "ppe" in c or "safety" in c:
+        return "ppe"
+    if "tool" in c:
+        return "tool"
+    return "consumable"
+
+
+@router.post("/ops/resource-requests/from-plan")
+async def create_requests_from_plan(payload: FromPlanIn, request: Request,
+                                      user: dict = Depends(require_permission("projects", "write"))):
+    """Convert Resource Planning lines (project_resources) into resource requests."""
+    rows = await db.project_resources.find(
+        {"id": {"$in": payload.resource_ids}, "project_id": payload.project_id}, {"_id": 0}
+    ).to_list(100)
+    found = {r["id"]: r for r in rows}
+    missing = [rid for rid in payload.resource_ids if rid not in found]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"{len(missing)} plan line(s) not found for this project")
+    already = [r for r in rows if r.get("rr_batch_id")]
+    if already:
+        raise HTTPException(status_code=400, detail=f"Already converted to requests: {', '.join(r.get('rr_no') or r['id'][:8] for r in already)}")
+    ordered = [found[rid] for rid in payload.resource_ids]
+    lines: List[BulkLine] = []
+    for r in ordered:
+        rt = r.get("resource_type")
+        if rt == "manpower":
+            lines.append(BulkLine(
+                resource_type="manpower",
+                designation_id=r.get("designation_id"),
+                designation=r.get("designation_name"),
+                quantity=float(r.get("count_required") or 1),
+                unit="Persons",
+            ))
+        elif rt == "material":
+            lines.append(BulkLine(
+                resource_type=_material_rr_type(r.get("category")),
+                item_name=r.get("item_name"),
+                category=r.get("category"),
+                quantity=float(r.get("quantity") or 1),
+                unit=r.get("uom") or "Nos",
+            ))
+        elif rt == "tools":
+            lines.append(BulkLine(
+                resource_type="tool",
+                item_name=r.get("tool_name"),
+                category=r.get("tool_category"),
+                quantity=float(r.get("count_required") or 1),
+                unit="Nos",
+                justification=r.get("specification") or None,
+            ))
+        else:
+            raise HTTPException(status_code=400, detail=f"Plan line type '{rt}' cannot be converted to a resource request (sub-contract goes via vendor/PO flow)")
+    bulk = BulkRequestIn(
+        project_id=payload.project_id,
+        required_date=payload.required_date or (ordered[0].get("required_by_date") or None),
+        site_location=payload.site_location,
+        priority=payload.priority,
+        justification=payload.justification,
+        submit=payload.submit,
+        documents=payload.documents,
+        linked_attachments=payload.linked_attachments,
+        documents_not_required=payload.documents_not_required,
+        documents_not_required_reason=payload.documents_not_required_reason,
+        lines=lines,
+    )
+    result = await _bulk_create(bulk, user, _ip(request))
+    created = result.pop("created_docs", [])
+    for plan_row, rr_doc in zip(ordered, created):
+        await db.project_resources.update_one({"id": plan_row["id"]}, {"$set": {
+            "rr_batch_id": result["batch_id"], "rr_id": rr_doc["id"], "rr_no": rr_doc["rr_no"],
+            "rr_requested_at": now_iso(), "rr_requested_by": user.get("name") or user.get("email"),
+        }})
+    return result
 
 
 @router.post("/ops/resource-requests/{rid}/submit")
