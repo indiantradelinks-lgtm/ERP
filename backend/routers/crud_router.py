@@ -135,6 +135,10 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
                 doc["department"] = depts[0]
             if "allow_multi_dept" not in doc:
                 doc["allow_multi_dept"] = False
+            # Master Category split — Employee Master vs Worker/Labour Master
+            doc["master_category"] = doc.get("master_category") or "employee"
+            if doc["master_category"] not in ("employee", "worker"):
+                raise HTTPException(status_code=400, detail="master_category must be 'employee' or 'worker'")
             # Indian statutory ID + employment-type validation
             errs = validate_employee_compliance(doc)
             if errs:
@@ -254,6 +258,8 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
             errs = validate_employee_compliance(payload)
             if errs:
                 raise HTTPException(status_code=400, detail=" · ".join(errs))
+            if "master_category" in payload and payload["master_category"] not in ("employee", "worker"):
+                raise HTTPException(status_code=400, detail="master_category must be 'employee' or 'worker'")
         before = await db[collection].find_one({"id": item_id}, {"_id": 0})
         if collection == "employees" and before is not None:
             new_depts = payload.get("departments")

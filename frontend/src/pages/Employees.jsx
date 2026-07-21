@@ -34,8 +34,26 @@ const MARITAL_OPTIONS = ["Single", "Married", "Divorced", "Widowed"];
 const BLOOD_GROUP_OPTIONS = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-", "Unknown"];
 const RELATION_OPTIONS = ["Father", "Mother", "Spouse", "Son", "Daughter", "Brother", "Sister", "Other"];
 
-export default function Employees() {
+const MASTER_CATEGORY_OPTIONS = [
+  { value: "employee", label: "Employee Master" },
+  { value: "worker", label: "Worker / Labour Master" },
+];
+const MASTER_META = {
+  employee: {
+    title: "Employee Master · HR",
+    description: "Staff & office personnel records with department mappings, reporting hierarchy and allocation history.",
+    testidPrefix: "employees",
+  },
+  worker: {
+    title: "Worker / Labour Master · HR",
+    description: "Site workers & labour records — daily wages, contractual and permanent workers with compliance details.",
+    testidPrefix: "workers",
+  },
+};
+
+export default function Employees({ master = "employee" }) {
   const r = useResource("employees");
+  const meta = MASTER_META[master];
   const DEPARTMENT_OPTIONS = useDepartments();
   const [histOpen, setHistOpen] = useState(false);
   const [histRows, setHistRows] = useState([]);
@@ -93,6 +111,11 @@ export default function Employees() {
   ];
 
   const fields = [
+    // ─── Master Category (mandatory split) ───
+    { key: "_sec_master", type: "section", label: "Master Category", hint: "Decides which master this record belongs to" },
+    { key: "master_category", label: "Master Category", type: "select", options: MASTER_CATEGORY_OPTIONS, required: true,
+      help: "Employee Master = staff/office personnel · Worker/Labour Master = site workers" },
+
     // ─── Identity & Role ───
     { key: "_sec_identity", type: "section", label: "Identity & Role", hint: "Basic employment record" },
     { key: "employee_id", label: "Employee ID (auto)" },
@@ -307,15 +330,17 @@ export default function Employees() {
   return (
     <>
       <DataTableShell
-        title="Employees · HR Master"
-        description="Full personnel record with department mappings, reporting hierarchy and allocation history."
-        data={r.data}
+        key={master}
+        title={meta.title}
+        description={meta.description}
+        data={(r.data || []).filter((row) => (row.master_category || "employee") === master)}
         columns={columns}
         fields={fields}
         onCreate={r.create}
         onUpdate={r.update}
         onDelete={r.remove}
-        testidPrefix="employees"
+        testidPrefix={meta.testidPrefix}
+        createDefaults={{ master_category: master }}
         exportResource={r.exportResource}
         canWrite={r.canWrite}
         canDelete={r.canDelete}

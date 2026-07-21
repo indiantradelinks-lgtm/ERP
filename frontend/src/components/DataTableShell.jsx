@@ -163,6 +163,7 @@ export default function DataTableShell({
   extraActions,
   formHeader,           // (mode: 'create'|'edit', form, setForm) => ReactNode — slot above the form
   onAfterCreate,        // async (createdRow, form) => void — fires after a successful create
+  createDefaults,       // object — initial form values when creating a new record
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -178,7 +179,7 @@ export default function DataTableShell({
 
   const startCreate = () => {
     setEditing(null);
-    setForm({});
+    setForm({ ...(createDefaults || {}) });
     setOpen(true);
   };
   const startEdit = (row) => {

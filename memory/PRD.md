@@ -4649,3 +4649,12 @@ User asks: complete role list dynamic; matrix must mirror full sidebar hierarchy
 TESTED by testing_agent (iteration_138.json): 100% backend (6/6 pytest incl. instant 403↔200 flip for sales_executive on /api/projects, super_admin auto-re-add, catalog-driven roles incl 'pro_coor') + 100% frontend (11 dept accordions, HR 40 menu rows, all role columns, save toast + persistence after reload, Role Catalog 20 roles, User Mgmt dropdown 20 roles). Regression suite: /app/backend/tests/test_role_register.py (idempotent). Baseline overrides (safety_reports, ppe_issuance) preserved.
 NOTE: REDEPLOY needed for production.
 **Status: FIXED & verified by testing agent.**
+
+### Feature (Jul 21, 2026) — Employee Master / Worker-Labour Master split
+
+- Backend (crud_router.py employees hooks): `master_category` field ('employee' | 'worker') — defaults to 'employee' on create (legacy-safe, no migration needed: missing field reads as employee), validated on create & update (400 on invalid).
+- Frontend: Employees.jsx now takes `master` prop; new route /app/workers renders <Employees master="worker" />; menuConfig "Worker / Labour Master" → /app/workers (was duplicate of /app/employees). Lists are filtered by (row.master_category || 'employee') === master → zero overlap, independent search/filters/CRUD per master (DataTableShell). Create form has MANDATORY "Master Category" select (top section), prefilled with the current master via new DataTableShell `createDefaults` prop. Titles/testids per master (employees-* / workers-*). Changing category on edit moves the record to the other master.
+- DataTableShell.jsx: added `createDefaults` prop.
+Tested: API create worker/default/invalid ✓; UI both pages show only their own records (no leak either way) ✓; create dialog on Worker master shows mandatory prefilled category ✓. Test records deleted.
+NOTE: bulk template/import still operates on the full employees collection (both masters) — enhancement backlog: include master_category column. REDEPLOY needed for production.
+**Status: COMPLETE & verified on preview.**

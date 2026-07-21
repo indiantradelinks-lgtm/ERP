@@ -132,7 +132,7 @@ export const MENU_ITEMS = [
   // ═══════════════ 4. HUMAN RESOURCES ═══════════════
   { department: "hr", parentLabel: "Core",      label: "HR Dashboard",            to: "/app/hr/command-center",     icon: LayoutDashboard, testid: "nav-hr-dashboard", perm: "hr_onboarding" },
   { department: "hr", parentLabel: "Core",      label: "Employee Master",         to: "/app/employees",             icon: HardHat,         testid: "nav-employees", perm: "employees" },
-  { department: "hr", parentLabel: "Core",      label: "Worker / Labour Master",  to: "/app/employees",             icon: Users,           testid: "nav-workers", perm: "employees" },
+  { department: "hr", parentLabel: "Core",      label: "Worker / Labour Master",  to: "/app/workers",               icon: Users,           testid: "nav-workers", perm: "employees" },
   { department: "hr", parentLabel: "Core",      label: "Onboarding",              to: "/app/hr/onboarding",         icon: UserPlus,        testid: "nav-hr-onboarding", perm: "hr_onboarding" },
   { department: "hr", parentLabel: "Core",      label: "Employee 360",            to: "/app/hr/employee-360",       icon: UserCircle,      testid: "nav-hr-emp360", perm: "hr_employee_360" },
   { department: "hr", parentLabel: "Core",      label: "Department Master",       to: "/app/admin/department-master", icon: Building2,     testid: "nav-hr-dept", superAdminOnly: true },

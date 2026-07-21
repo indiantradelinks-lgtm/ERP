@@ -232,6 +232,7 @@ export default function App() {
             <Route path="/app/clients" element={<ProtectedShell><Clients /></ProtectedShell>} />
             <Route path="/app/vendors" element={<ProtectedShell><Vendors /></ProtectedShell>} />
             <Route path="/app/employees" element={<ProtectedShell><Employees /></ProtectedShell>} />
+            <Route path="/app/workers" element={<ProtectedShell><Employees master="worker" /></ProtectedShell>} />
             <Route path="/app/attendance" element={<ProtectedShell><Attendance /></ProtectedShell>} />
             <Route path="/app/projects" element={<ProtectedShell><Projects /></ProtectedShell>} />
             <Route path="/app/ops/handovers" element={<ProtectedShell><ContractHandovers /></ProtectedShell>} />
