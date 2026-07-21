@@ -34,6 +34,20 @@ export function AuthProvider({ children }) {
     fetchMe();
   }, [fetchMe]);
 
+  // Re-fetch permissions when the tab regains focus so RBAC changes made by
+  // an admin propagate to already-logged-in sessions without a re-login.
+  useEffect(() => {
+    const onFocus = () => {
+      if (document.visibilityState === "visible" && user && user !== false) loadPermissions();
+    };
+    document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onFocus);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [user, loadPermissions]);
+
   const login = useCallback(async (email, password) => {
     try {
       const { data } = await api.post("/auth/login", { email, password });

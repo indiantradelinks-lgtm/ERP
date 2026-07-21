@@ -1,0 +1,24 @@
+{
+  "summary": "Iter 138 – Role × Permission Matrix fix VERIFIED end-to-end. Backend: 6/6 pytest pass (GET /api/admin/role-register returns 20 catalog-driven roles incl. custom 'pro_coor' + 83 resources; PUT applies overrides instantly – sales_executive gets 403 on /api/projects when denied, 200 when granted; super_admin auto-re-added to every override; unknown role/resource → 400; role-catalog list matches register). Frontend: /app/admin/role-register renders 'Role × Permission Matrix' with 11 department accordions (dashboard, sales, ops, hr, store, procurement, accounts, finance, safety, logistics, admin) matching sidebar; expanding HR shows 40 menu rows; column headers list all 19 non-super_admin roles including pro_coor + wildcard column; 'Other API Resources' section present; 'By Resource' view lists all 83 resources; toggling employees.read for sales_executive and clicking rr-save produced toast 'Saved — permissions live everywhere · 3 resource(s) overridden' and override persisted after page reload. Role Catalog page shows all 20 roles with user counts. User Management → Create modal role dropdown lists all 20 roles from catalog (super_admin…pro_coor). Baseline overrides (safety_reports, ppe_issuance) restored via PUT at end of tests. Super admin retained full /api/projects access even when its role was the only key in the override.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_role_register.py",
+    "/app/test_reports/pytest/iter138_role_register.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "RoleRegister.jsx `slug()` uses `department + label` – if two menus in the same dept ever share a label the generated data-testid will collide. Low risk today.",
+    "PERMISSIONS_BASE.projects.write contains an unknown role token 'manager_o_p' (not in role catalog, not in ROLES). It survives validation only because PERMISSIONS_BASE is not cleaned on load. Consider a startup validator that logs unknown role tokens in code defaults.",
+    "GET /api/admin/role-register calls _resolved() twice (once for `resources`, once for `effective`) – minor optimization only.",
+    "reset endpoint uses require_permission('role_register','delete') which is fine but is unusual – 'reset' is a POST that many admins expect to be gated by write. Not a bug, just a note."
+  ],
+  "updated_files": ["/app/backend/tests/test_role_register.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@erp.com / Admin@123, sales@erp.com / Sales@123",
+  "seed_data_creation": "None – no test users created. Temporary 'projects' override was added during tests and REMOVED at teardown; baseline (safety_reports, ppe_issuance) preserved.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Baseline rbac_overrides in preview DB has exactly 2 keys: safety_reports & ppe_issuance. Custom role 'pro_coor' exists in role_catalog. Pytest regression suite at /app/backend/tests/test_role_register.py is idempotent (auto-restores overrides on teardown) and can be re-run any time. If PERMISSIONS_BASE's stray 'manager_o_p' role is ever cleaned up, update the test expectations accordingly.",
+  "rca of the issue": "N/A – no unresolved issue."
+}
