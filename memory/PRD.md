@@ -4639,3 +4639,13 @@ Fix:
 Tested: API CRUD create/update/delete ✓; new designation instantly visible in manpower dropdown source (/ops/resource-requests/meta/designations) ✓; UI create via dialog + row listing + skills tab ✓. Test records cleaned.
 NOTE: user must REDEPLOY for production to get this fix.
 **Status: FIXED & verified on preview.**
+
+### Bug fix (Jul 21, 2026) — Role × Permission Matrix module overhaul
+
+User asks: complete role list dynamic; matrix must mirror full sidebar hierarchy; no menu missing; dynamic load; per-menu permissions; instant save/propagation; super admin always full; role-scoped visibility.
+- `RoleRegister.jsx` REWRITTEN: default "By Menu" view built from MENU_ITEMS/DEPARTMENTS (same menuConfig the sidebar renders — guaranteed parity, 11 depts / 312 menus): collapsible department sections → parentLabel sub-group headers → menu rows w/ route + bound-resource chip; V/E/D 18px mini-toggles per role column (+ wildcard "everyone" col); Super-Admin-only lock badges; no-gate menus labelled "visible to all"; "Other API Resources" section covers resources not bound to menus (nothing missing); "By Resource" flat view retained; search, expand/collapse all, per-row Revert, Reset-to-defaults. Roles columns come from role_catalog (DB, 20 roles incl custom) — fully dynamic.
+- save() now calls AuthContext.refresh() → sidebar/pages/buttons update instantly for current session; `AuthContext.jsx` re-fetches /auth/permissions on window focus/visibilitychange so other open sessions pick up RBAC changes without re-login. Backend override engine (set_overrides) already applied instantly to API gates — unchanged.
+- Cleaned stray unknown role token "manager_o_p" from PERMISSIONS_BASE (projects/quotations).
+TESTED by testing_agent (iteration_138.json): 100% backend (6/6 pytest incl. instant 403↔200 flip for sales_executive on /api/projects, super_admin auto-re-add, catalog-driven roles incl 'pro_coor') + 100% frontend (11 dept accordions, HR 40 menu rows, all role columns, save toast + persistence after reload, Role Catalog 20 roles, User Mgmt dropdown 20 roles). Regression suite: /app/backend/tests/test_role_register.py (idempotent). Baseline overrides (safety_reports, ppe_issuance) preserved.
+NOTE: REDEPLOY needed for production.
+**Status: FIXED & verified by testing agent.**
