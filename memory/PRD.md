@@ -4658,3 +4658,9 @@ NOTE: REDEPLOY needed for production.
 Tested: API create worker/default/invalid ✓; UI both pages show only their own records (no leak either way) ✓; create dialog on Worker master shows mandatory prefilled category ✓. Test records deleted.
 NOTE: bulk template/import still operates on the full employees collection (both masters) — enhancement backlog: include master_category column. REDEPLOY needed for production.
 **Status: COMPLETE & verified on preview.**
+
+### Feature (Jul 21, 2026) — Bulk Update: Master Category column
+
+`employees_bulk_router.py`: added `master_category` to ALLOWED_FIELDS (col 3 of template). Template export fills effective value ('employee' default for legacy rows). Import normalises friendly spellings ("Worker / Labour Master", "labour", "staff", etc. → employee|worker) via _MASTER_ALIASES; invalid values skip the row with a clear per-row error; __CLEAR__ on master_category resets to 'employee' (never blank); new rows default to employee. Moving = same doc, field update only → zero loss/duplication (verified count stable). Instructions sheet documents the column.
+Tested via curl: template contains column + correct values ✓; flip both directions incl. alias ✓; invalid 'contractor' → per-row error ✓; no duplication ✓. Test records deleted. REDEPLOY needed for production.
+**Status: COMPLETE & verified on preview.**

@@ -30,7 +30,7 @@ router = APIRouter(prefix="/employees/bulk", tags=["employees-bulk"])
 
 # Fields the user is allowed to bulk-edit. Anything else in the xlsx is ignored.
 ALLOWED_FIELDS = [
-    "name", "employee_id", "department", "designation", "skill_name",
+    "name", "employee_id", "master_category", "department", "designation", "skill_name",
     "phone", "email", "status", "role", "employment_type",
     "date_of_joining", "date_of_birth", "gender",
     "pan", "aadhaar", "pf_uan", "esic_no",
@@ -45,6 +45,23 @@ ALLOWED_FIELDS = [
 
 # Columns added for display only — we skip them when applying updates.
 DISPLAY_ONLY = {"_status_hint", "_warning"}
+
+# Accepted spellings for master_category → canonical value
+_MASTER_ALIASES = {
+    "employee": "employee", "employee master": "employee", "staff": "employee",
+    "worker": "worker", "labour": "worker", "labor": "worker",
+    "worker master": "worker", "worker/labour": "worker", "worker / labour": "worker",
+    "worker-labour": "worker", "worker-labour master": "worker",
+    "worker / labour master": "worker", "worker/labour master": "worker",
+}
+
+
+def _normalise_master_category(val) -> str:
+    key = str(val).strip().lower()
+    out = _MASTER_ALIASES.get(key)
+    if not out:
+        raise ValueError(f"invalid master_category '{val}' — use 'employee' or 'worker'")
+    return out
 
 
 @router.get("/template")
@@ -61,7 +78,13 @@ async def download_template(user: dict = Depends(require_permission("employees",
         c = ws.cell(row=1, column=col_idx)
         c.font = c.font.copy(bold=True)
     for r in rows:
-        ws.append([r.get(h, "") if r.get(h) is not None else "" for h in headers])
+        vals = []
+        for h in headers:
+            if h == "master_category":
+                vals.append(r.get("master_category") or "employee")
+            else:
+                vals.append(r.get(h, "") if r.get(h) is not None else "")
+        ws.append(vals)
 
     # Instructions sheet
     inst = wb.create_sheet("INSTRUCTIONS")
@@ -72,6 +95,8 @@ async def download_template(user: dict = Depends(require_permission("employees",
     inst.append(["3. To explicitly clear a value, type the literal text:  __CLEAR__"])
     inst.append(["4. Adding NEW rows (blank id) will create new employees."])
     inst.append(["5. Save as .xlsx and re-upload via the Employees page → Bulk Update."])
+    inst.append(["6. master_category: 'employee' (Employee Master) or 'worker' (Worker/Labour Master)."])
+    inst.append(["   Changing it moves the record to the other master instantly — no data is lost."])
     inst.append([])
     inst.append(["Allowed columns:"])
     for f in ALLOWED_FIELDS:
@@ -126,6 +151,7 @@ async def import_bulk(file: UploadFile = File(...),
 
         # Build a patch dict of only allowed fields
         patch: Dict[str, Any] = {}
+        row_error = None
         for f in ALLOWED_FIELDS:
             if f not in row_dict:
                 continue
@@ -133,9 +159,23 @@ async def import_bulk(file: UploadFile = File(...),
             if val is None or (isinstance(val, str) and val.strip() == ""):
                 continue
             if isinstance(val, str) and val.strip() == "__CLEAR__":
-                patch[f] = None
+                # master_category can never be blank — clearing resets to Employee Master
+                patch[f] = "employee" if f == "master_category" else None
+                continue
+            if f == "master_category":
+                try:
+                    patch[f] = _normalise_master_category(val)
+                except ValueError as ve:
+                    row_error = str(ve)
+                    break
                 continue
             patch[f] = val
+
+        if row_error:
+            summary["skipped"] += 1
+            summary["errors"].append({"row": ri, "id": emp_id, "error": row_error})
+            per_row.append({"row": ri, "id": emp_id, "action": "skipped", "error": row_error})
+            continue
 
         if not patch and emp_id:
             summary["unchanged"] += 1
@@ -187,6 +227,7 @@ async def import_bulk(file: UploadFile = File(...),
                 new_doc = {
                     "id": new_id(),
                     "status": "active",
+                    "master_category": "employee",
                     "created_at": now_iso(),
                     "created_by": user.get("name") or user.get("email"),
                     "bulk_update_snapshot_id": snapshot_id,
