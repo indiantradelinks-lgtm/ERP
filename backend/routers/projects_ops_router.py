@@ -37,6 +37,44 @@ from sequences import next_sequence
 logger = logging.getLogger("erp.ops")
 router = APIRouter(tags=["projects-ops"])
 
+
+async def backfill_project_manager_assignments():
+    """Startup self-heal:
+    1) Projects whose handover has an allocated PM but never got the ids synced
+       (old first-allocation bug) — copy ids from the handover.
+    2) Projects with manager ids but missing display names — resolve from users.
+    Idempotent; safe to run on every boot (fixes production on redeploy)."""
+    fixed = 0
+    async for h in db.project_handovers.find(
+            {"project_id": {"$nin": [None, ""]}, "project_manager_id": {"$nin": [None, ""]}},
+            {"_id": 0, "project_id": 1, "project_manager_id": 1, "project_coordinator_id": 1, "reporting_manager_id": 1}):
+        proj = await db.projects.find_one({"id": h["project_id"]}, {"_id": 0, "id": 1, "project_manager_id": 1})
+        if proj and not proj.get("project_manager_id"):
+            await db.projects.update_one({"id": h["project_id"]}, {"$set": {
+                "project_manager_id": h.get("project_manager_id"),
+                "project_coordinator_id": h.get("project_coordinator_id"),
+                "reporting_manager_id": h.get("reporting_manager_id"),
+            }})
+            fixed += 1
+    async for p in db.projects.find(
+            {"project_manager_id": {"$nin": [None, ""]},
+             "$or": [{"project_manager_name": {"$exists": False}}, {"project_manager_name": None}, {"project_manager_name": ""}]},
+            {"_id": 0, "id": 1, "project_manager_id": 1, "project_coordinator_id": 1, "reporting_manager_id": 1}):
+        sets = {}
+        for id_key, name_key in (("project_manager_id", "project_manager_name"),
+                                   ("project_coordinator_id", "project_coordinator_name"),
+                                   ("reporting_manager_id", "reporting_manager_name")):
+            uid = p.get(id_key)
+            if uid:
+                u = await db.users.find_one({"id": uid}, {"_id": 0, "name": 1, "email": 1})
+                if u:
+                    sets[name_key] = u.get("name") or u.get("email")
+        if sets:
+            await db.projects.update_one({"id": p["id"]}, {"$set": sets})
+            fixed += 1
+    if fixed:
+        logger.info(f"[projects] Backfilled manager assignment/name on {fixed} project(s)")
+
 ALLOWED_STATUSES = {
     "draft", "submitted", "under_review",
     "allocated", "active", "on_hold",
@@ -568,12 +606,17 @@ async def allocate_handover(hid: str, payload: AllocateIn, request: Request,
         except Exception as e:
             logger.warning(f"Failed to mirror handover files: {e}")
 
-    # If a project already exists, sync the assignment so MyProjects keeps working.
-    if project_id and not is_first_allocation:
+    # Sync the assignment (ids + display names) onto the project record —
+    # ALWAYS, including the first allocation, so the Projects Master "Manager"
+    # column and PM project-scoping work.
+    if project_id:
         await db.projects.update_one({"id": project_id}, {"$set": {
             "project_manager_id": payload.project_manager_id,
+            "project_manager_name": pm_label,
             "project_coordinator_id": payload.project_coordinator_id,
+            "project_coordinator_name": pc_label,
             "reporting_manager_id": payload.reporting_manager_id,
+            "reporting_manager_name": rm_label,
             "department": payload.department,
             "priority": payload.priority,
             "updated_at": now_iso(),

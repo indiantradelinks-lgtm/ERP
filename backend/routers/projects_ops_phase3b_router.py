@@ -59,6 +59,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from scope import apply_project_scope
 from core import db, require_permission, now_iso, new_id
 from audit import audit
 
@@ -168,6 +169,7 @@ async def list_measurements(project_id: Optional[str] = None,
         q["project_id"] = project_id
     if status:
         q["status"] = status
+    q = await apply_project_scope(user, q)
     rows = await db.measurement_sheets.find(q, {"_id": 0}).sort("measurement_date", -1).to_list(2000)
     return rows
 
@@ -434,7 +436,7 @@ async def list_issues(project_id: Optional[str] = None,
         q["status"] = status
     if impact:
         q["impact"] = impact
-    return await db.site_issues.find(q, {"_id": 0}).sort("issue_date", -1).to_list(2000)
+    return await db.site_issues.find(await apply_project_scope(user, q), {"_id": 0}).sort("issue_date", -1).to_list(2000)
 
 
 @router.post("/issues")
@@ -559,7 +561,7 @@ class DelayIn(BaseModel):
 async def list_delays(project_id: Optional[str] = None,
                       user: dict = Depends(require_permission("projects", "read"))):
     q = {"project_id": project_id} if project_id else {}
-    return await db.delay_records.find(q, {"_id": 0}).sort("delay_date", -1).to_list(2000)
+    return await db.delay_records.find(await apply_project_scope(user, q), {"_id": 0}).sort("delay_date", -1).to_list(2000)
 
 
 @router.post("/delays")
@@ -625,7 +627,7 @@ async def list_cinst(project_id: Optional[str] = None,
         q["project_id"] = project_id
     if status:
         q["status"] = status
-    return await db.client_instructions.find(q, {"_id": 0}).sort("instruction_date", -1).to_list(2000)
+    return await db.client_instructions.find(await apply_project_scope(user, q), {"_id": 0}).sort("instruction_date", -1).to_list(2000)
 
 
 @router.post("/client-instructions")
@@ -697,7 +699,7 @@ async def list_extra(project_id: Optional[str] = None,
         q["project_id"] = project_id
     if approval_status:
         q["approval_status"] = approval_status
-    return await db.extra_works.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    return await db.extra_works.find(await apply_project_scope(user, q), {"_id": 0}).sort("created_at", -1).to_list(2000)
 
 
 @router.post("/extra-works")

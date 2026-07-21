@@ -52,6 +52,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from scope import apply_project_scope
 from core import db, require_permission, now_iso, new_id
 from audit import audit
 
@@ -172,6 +173,7 @@ async def list_dprs(project_id: Optional[str] = None,
             q["dpr_date"]["$gte"] = from_date
         if to_date:
             q["dpr_date"]["$lte"] = to_date
+    q = await apply_project_scope(user, q)
     rows = await db.dprs.find(q, {"_id": 0}).sort("dpr_date", -1).to_list(2000)
     return rows
 

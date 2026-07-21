@@ -35,6 +35,8 @@ DEPT_SCOPED_ROLES = {"dept_head"}
 PROJECT_SCOPED_ROLES = {
     "site_engineer", "supervisor", "safety_officer", "store_incharge",
 }
+# PM/Coordinator: scoped to the projects they were assigned via Contract Handover
+PM_SCOPED_ROLES = {"project_manager", "project_coordinator"}
 
 
 def _user_departments(user: dict) -> List[str]:
@@ -87,16 +89,68 @@ async def _active_projects_for(user: dict) -> List[str]:
     return out
 
 
+async def assigned_projects_for(user: dict) -> List[dict]:
+    """Projects where the user is the allocated PM / Coordinator / Reporting Manager
+    (assignment happens via Contract Handover allocation)."""
+    uid = user.get("id")
+    if not uid:
+        return []
+    q = {"$or": [
+        {"project_manager_id": uid},
+        {"project_coordinator_id": uid},
+        {"reporting_manager_id": uid},
+    ]}
+    return await db.projects.find(q, {"_id": 0, "id": 1, "code": 1, "name": 1}).to_list(500)
+
+
 async def resolve_scope(user: dict) -> Dict[str, list]:
     """Return {role, global, departments, active_projects} for `user`."""
     role = user.get("role")
     is_global = role in GLOBAL_ROLES or role == "super_admin"
+    active = await _active_projects_for(user)
+    if role in PM_SCOPED_ROLES:
+        for p in await assigned_projects_for(user):
+            for token in (p.get("code"), p.get("name")):
+                if token and token not in active:
+                    active.append(token)
     return {
         "role": role,
         "global": is_global,
         "departments": _user_departments(user),
-        "active_projects": await _active_projects_for(user),
+        "active_projects": active,
     }
+
+
+async def allowed_project_ids(user: dict) -> List[str] | None:
+    """Project ids the user may access. None = unrestricted."""
+    role = user.get("role")
+    if role in GLOBAL_ROLES or role == "super_admin":
+        return None
+    if role in PM_SCOPED_ROLES:
+        return [p["id"] for p in await assigned_projects_for(user)]
+    if role in PROJECT_SCOPED_ROLES:
+        active = await _active_projects_for(user)
+        if not active:
+            return []
+        rows = await db.projects.find({"$or": [{"code": {"$in": active}}, {"name": {"$in": active}}]},
+                                        {"_id": 0, "id": 1}).to_list(500)
+        return [r["id"] for r in rows]
+    return None
+
+
+async def apply_project_scope(user: dict, q: dict, id_field: str = "project_id",
+                                code_field: str | None = None) -> dict:
+    """Merge a project-visibility clause into an existing Mongo query.
+    No-op for unrestricted roles. Empty assignment list matches nothing."""
+    ids = await allowed_project_ids(user)
+    if ids is None:
+        return q
+    clause: dict = {id_field: {"$in": ids}}
+    if code_field:
+        projs = await db.projects.find({"id": {"$in": ids}}, {"_id": 0, "code": 1, "name": 1}).to_list(500)
+        tokens = [t for p in projs for t in (p.get("code"), p.get("name")) if t]
+        clause = {"$or": [clause, {code_field: {"$in": tokens}}]}
+    return {"$and": [q, clause]} if q else clause
 
 
 async def project_filter(user: dict, project_field: str = "project") -> dict | None:
@@ -110,12 +164,49 @@ async def project_filter(user: dict, project_field: str = "project") -> dict | N
     role = user.get("role")
     if role in GLOBAL_ROLES or role == "super_admin":
         return None
+    if role in PM_SCOPED_ROLES:
+        # PM/Coordinator: rows tied to projects assigned via Contract Handover
+        # (match by project code OR name — collections store either) + any
+        # deployment-based assignments.
+        allowed = await _active_projects_for(user)
+        for p in await assigned_projects_for(user):
+            for token in (p.get("code"), p.get("name")):
+                if token and token not in allowed:
+                    allowed.append(token)
+        if not allowed:
+            return {"_no_match_sentinel_": True}
+        return {project_field: {"$in": allowed}}
     if role not in PROJECT_SCOPED_ROLES:
         return None
     projects = await _active_projects_for(user)
     if not projects:
         return {"_no_match_sentinel_": True}  # forces empty result set
     return {project_field: {"$in": projects}}
+
+
+async def projects_collection_filter(user: dict) -> dict | None:
+    """Visibility filter for the `projects` collection itself.
+
+    PM/Coordinator roles only see projects where they are the allocated
+    PM / Coordinator / Reporting Manager. Site-level roles see projects that
+    match their active deployments (by code or name). Global roles see all.
+    """
+    role = user.get("role")
+    if role in GLOBAL_ROLES or role == "super_admin":
+        return None
+    uid = user.get("id")
+    if role in PM_SCOPED_ROLES:
+        return {"$or": [
+            {"project_manager_id": uid},
+            {"project_coordinator_id": uid},
+            {"reporting_manager_id": uid},
+        ]}
+    if role in PROJECT_SCOPED_ROLES:
+        active = await _active_projects_for(user)
+        if not active:
+            return {"_no_match_sentinel_": True}
+        return {"$or": [{"code": {"$in": active}}, {"name": {"$in": active}}]}
+    return None
 
 
 def department_filter(user: dict, field: str = "departments") -> dict | None:

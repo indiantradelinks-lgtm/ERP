@@ -50,6 +50,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from scope import apply_project_scope
 from core import db, require_permission, now_iso, new_id
 
 
@@ -121,7 +122,7 @@ async def list_permits(project_id: Optional[str] = None,
         q["project_id"] = project_id
     if status:
         q["status"] = status
-    rows = await db.work_permits.find(q, {"_id": 0}).sort("valid_to", 1).to_list(2000)
+    rows = await db.work_permits.find(await apply_project_scope(user, q), {"_id": 0}).sort("valid_to", 1).to_list(2000)
     # auto-tag expired
     for r in rows:
         r["status"] = _derive_permit_status(r.get("valid_to") or "", r.get("status"))

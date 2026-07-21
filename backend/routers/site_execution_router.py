@@ -17,6 +17,7 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 
+from scope import apply_project_scope
 from core import db, require_permission, now_iso, new_id, logger
 from audit import audit
 from sequences import next_sequence, stamp_dept_doc
@@ -86,7 +87,7 @@ async def list_dprs(project_code: Optional[str] = None,
         q["service_type"] = service_type
     if date:
         q["date"] = date
-    rows = await db.dprs.find(q, {"_id": 0}).sort("date", -1).to_list(1000)
+    rows = await db.dprs.find(await apply_project_scope(user, q, id_field="project_id", code_field="project_code"), {"_id": 0}).sort("date", -1).to_list(1000)
     return rows
 
 
@@ -283,7 +284,7 @@ async def list_measurements(project_code: Optional[str] = None,
         q["items.service"] = service
     if po_id:
         q["po_id"] = po_id
-    rows = await db.measurements.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    rows = await db.measurements.find(await apply_project_scope(user, q, id_field="project_id", code_field="project_code"), {"_id": 0}).sort("created_at", -1).to_list(1000)
     return rows
 
 

@@ -1,0 +1,28 @@
+{
+  "summary": "Iter139: Verified PM project scoping + Manager column across API and UI. 15/16 backend tests passed (1 skipped - grn endpoint returns empty for admin so scope comparison trivial). UI tests confirmed PM sees exactly 3 assigned projects with correct Manager names; admin sees all 22 with backfilled PM names.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/app/ops/resources", "issues": ["Project selector uses native HTML <select> (data-testid=rp-project-select) instead of shadcn Select — inconsistent with rest of app but functionally correct (correctly lists only PM's 3 assigned projects)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter139_pm_scoping.py", "/app/test_reports/pytest/iter139.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "PM scoping verified across: /api/projects (3 vs admin 22), /api/dprs, /api/proj-phase3/{measurements,issues,delays,client-instructions,extra-works,permits}, /api/deployments, /api/purchase-orders. All scoped rows have project_id/project code within PM's allowed set.",
+    "GET /api/projects/{id} returns 403 for unassigned project as required.",
+    "Manager column: every project with project_manager_id also has project_manager_name populated. UI renders name (Dept Head HSE, Dept Head Ops, Test PM, Super Admin, etc.) correctly in Manager column.",
+    "site_engineer test_site_engineer@erp.com /api/projects returns 200 with empty list (no error) — sentinel correctly applied.",
+    "Note: review mentioned endpoints /api/measurements, /api/issues, /api/delays, /api/client-instructions, /api/extra-works, /api/permits — actual mounted paths are /api/proj-phase3/* (prefix in projects_ops_phase3b/c routers). Not a bug but review wording could be clearer."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter139_pm_scoping.py"],
+  "success_rate": {"backend": "94% (15/16 executed, 1 skipped)", "frontend": "100%"},
+  "test_credentials": "admin@erp.com/Admin@123, test_pm@erp.com/PM@12345, test_site_engineer@erp.com/TestPass@123 — all verified working",
+  "seed_data_creation": "None — used existing PM assignments only, no data modified",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "PM (test_pm@erp.com) is assigned to PRJ-2025-01 (PM), PRJ-2026-0027 & PRJ-2026-0020 (coordinator/reporting) — do not remove. Endpoint paths: dedicated phase3 routers mounted at /api/proj-phase3/{measurements,issues,delays,client-instructions,extra-works,permits}. purchase-orders at /api/purchase-orders (hyphen, not underscore). grn endpoint at /api/grn (singular).",
+  "rca of the issue": "N/A — feature verification, no issues found"
+}

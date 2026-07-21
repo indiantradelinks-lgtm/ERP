@@ -37,7 +37,8 @@ export default function Projects() {
         return st ? `${st.code} · ${st.name}` : (r.type || "").replaceAll("_", " ");
       } },
     { key: "site", label: "Site" },
-    { key: "manager", label: "Manager" },
+    { key: "manager", label: "Manager",
+      render: (r) => r.project_manager_name || r.manager || <span className="text-muted-foreground">—</span> },
     { key: "contract_value", label: "Contract Value",
       render: (r) => "₹ " + Number(r.contract_value || r.budget || 0).toLocaleString("en-IN") },
     {

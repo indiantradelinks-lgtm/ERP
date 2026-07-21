@@ -8,7 +8,7 @@ from core import db, require_permission, get_current_user, now_iso, new_id, logg
 from approval_engine import build_chain, insert_approval, copy_approval_doc_fields
 from audit import audit
 from sequences import next_sequence
-from scope import project_filter, department_filter
+from scope import project_filter, department_filter, projects_collection_filter
 from india_compliance import validate_employee_compliance
 
 
@@ -55,7 +55,13 @@ async def _list_filter(collection: str, user: dict) -> dict:
     the user has full visibility.
     """
     filt: dict = {}
-    if collection in PROJECT_SCOPED_COLLECTIONS:
+    if collection == "projects":
+        pq = await projects_collection_filter(user)
+        if pq is not None:
+            if pq.get("_no_match_sentinel_"):
+                return {"id": "__never_matches__"}
+            filt.update(pq)
+    elif collection in PROJECT_SCOPED_COLLECTIONS:
         proj_q = await project_filter(user)
         if proj_q is not None:
             if proj_q.get("_no_match_sentinel_"):
@@ -238,6 +244,11 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
         row = await db[collection].find_one({"id": item_id}, {"_id": 0})
         if not row:
             raise HTTPException(status_code=404, detail="Not found")
+        if collection == "projects":
+            pq = await projects_collection_filter(user)
+            if pq is not None:
+                if pq.get("_no_match_sentinel_") or not await db.projects.find_one({"$and": [{"id": item_id}, pq]}, {"_id": 0, "id": 1}):
+                    raise HTTPException(status_code=403, detail="You don't have access to this project")
         return row
 
     @router.put(f"/{resource}/{{item_id}}")

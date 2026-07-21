@@ -175,6 +175,16 @@ async def on_startup():
 
 
 @app.on_event("startup")
+async def backfill_project_managers_on_startup():
+    """Idempotent self-heal — syncs PM assignments/names from handovers onto projects."""
+    try:
+        from routers.projects_ops_router import backfill_project_manager_assignments
+        await backfill_project_manager_assignments()
+    except Exception as e:
+        logger.warning(f"PM assignment backfill failed: {e}")
+
+
+@app.on_event("startup")
 async def seed_quotation_conditions_on_startup():
     """Idempotent — populates the condition library if empty. Runs even if the
     main startup block bailed early on an unrelated index error."""
