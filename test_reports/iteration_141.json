@@ -1,0 +1,41 @@
+{
+  "verdict": "fixed",
+  "user_reported_bug": "Fix the Project Manager sync issue: The Project Manager (Projects & Operations) assigned in Contract Handovers is not appearing in the Projects Master → Manager field. Ensure the assigned manager is automatically synced, saved, and displayed correctly across all related modules.",
+  "summary": "No relevant testing skill found. Focused API + UI retest passed: target handover 4a16236b-68bd-45d4-b0a3-6b08f54d98ec now returns and displays project_manager_label 'Test PM' in Contract Handovers instead of truncated id, fresh re-allocation persists the label on the handover and project_manager_name on project 147f9689-ff9d-421a-9f7b-69e5dae8800e, and Projects Master shows Manager 'Test PM'. Admin sees all projects; test_pm sees only assigned projects. No APIs were mocked. Production must be redeployed to receive this fix/backfill.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/bug_verification_plan_141_pm_sync_retest.md",
+    "/app/tests/pm_sync_retest_141.py",
+    "/app/test_reports/pm_sync_retest_141_api_output.json"
+  ],
+  "action_items": [
+    "Redeploy production so the label persistence, list hydration, and startup backfill are active outside preview."
+  ],
+  "critical_code_review_comments": [
+    "backend/routers/projects_ops_router.py now persists project_manager_label/project_coordinator_label/reporting_manager_label in allocate_handover and hydrates missing labels in list_handovers. ContractHandovers.jsx still has a truncated-id fallback, but runtime evidence proves the target and legacy rows now receive labels for existing users."
+  ],
+  "updated_files": [
+    "/app/test_reports/bug_verification_plan_141_pm_sync_retest.md",
+    "/app/tests/pm_sync_retest_141.py",
+    "/app/test_reports/pm_sync_retest_141_api_output.json",
+    "/app/test_reports/bug_verification_141.json",
+    "/app/test_reports/iteration_141.json"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "100%"
+  },
+  "seed_data_creation": "No new seed data created. Re-allocated existing target handover to the same Test PM to verify persistence; test_pm assignments were preserved.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Verified exact previous failure and quick regression in preview. API evidence: target handover before/after reallocation has project_manager_label 'Test PM'; Mongo handover doc persisted project_manager_label; project doc has project_manager_name 'Test PM'; no GET /api/ops/handovers rows with existing assignee users are missing labels; admin /api/projects count 23; test_pm /api/projects count 4 and all are assigned to that PM. UI evidence: /app/ops/handovers target row shows 'PM: Test PM' and not 'PM: f4abf0'; /app/projects filtered PRJ-2026-0035 shows Manager 'Test PM'.",
+  "rca_of_the_issue": "The previous failure was missing label propagation for Contract Handovers list rows. The fix now stores labels during allocation and hydrates legacy rows at list time, preventing the frontend fallback to project_manager_id.slice(0, 6)."
+}

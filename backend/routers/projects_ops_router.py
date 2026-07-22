@@ -390,6 +390,17 @@ async def list_handovers(status: Optional[str] = None,
         q["status"] = status
     rows = await db.project_handovers.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
     rows = await _hydrate_project_client_from_sales(rows)
+    # Hydrate assignee display labels for rows allocated before labels were persisted
+    need_ids = {r.get(k) for r in rows for k in ("project_manager_id", "project_coordinator_id", "reporting_manager_id")
+                if r.get(k) and not r.get(k.replace("_id", "_label"))}
+    if need_ids:
+        users = {u["id"]: (u.get("name") or u.get("email"))
+                 for u in await db.users.find({"id": {"$in": list(need_ids)}}, {"_id": 0, "id": 1, "name": 1, "email": 1}).to_list(500)}
+        for r in rows:
+            for k in ("project_manager_id", "project_coordinator_id", "reporting_manager_id"):
+                lk = k.replace("_id", "_label")
+                if r.get(k) and not r.get(lk):
+                    r[lk] = users.get(r[k])
     return rows
 
 
@@ -591,8 +602,11 @@ async def allocate_handover(hid: str, payload: AllocateIn, request: Request,
         "status": "active" if is_first_allocation else h.get("status"),
         "project_id": project_id,
         "project_manager_id": payload.project_manager_id,
+        "project_manager_label": pm_label,
         "project_coordinator_id": payload.project_coordinator_id,
+        "project_coordinator_label": pc_label,
         "reporting_manager_id": payload.reporting_manager_id,
+        "reporting_manager_label": rm_label,
         "department": payload.department,
         "priority": payload.priority,
         "expected_start_date": payload.expected_start_date,

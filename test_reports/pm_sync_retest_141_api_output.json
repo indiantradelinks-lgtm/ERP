@@ -1,0 +1,64 @@
+{
+  "ok": true,
+  "evidence": {
+    "api": "http://localhost:8001/api",
+    "target_handover_before": {
+      "id": "4a16236b-68bd-45d4-b0a3-6b08f54d98ec",
+      "handover_no": "CHO-2026-0029",
+      "project_id": "147f9689-ff9d-421a-9f7b-69e5dae8800e",
+      "project_code": "PRJ-2026-0035",
+      "project_manager_id": "f4abf031-9eaa-4fdb-bba8-8828fdc4f467",
+      "project_manager_label": "Test PM"
+    },
+    "target_handover_after": {
+      "id": "4a16236b-68bd-45d4-b0a3-6b08f54d98ec",
+      "handover_no": "CHO-2026-0029",
+      "project_id": "147f9689-ff9d-421a-9f7b-69e5dae8800e",
+      "project_code": "PRJ-2026-0035",
+      "project_manager_id": "f4abf031-9eaa-4fdb-bba8-8828fdc4f467",
+      "project_manager_label": "Test PM"
+    },
+    "allocation_response": {
+      "ok": true,
+      "handover_id": "4a16236b-68bd-45d4-b0a3-6b08f54d98ec",
+      "project_id": "147f9689-ff9d-421a-9f7b-69e5dae8800e",
+      "status": "active"
+    },
+    "mongo_handover_persisted": {
+      "id": "4a16236b-68bd-45d4-b0a3-6b08f54d98ec",
+      "project_id": "147f9689-ff9d-421a-9f7b-69e5dae8800e",
+      "project_manager_id": "f4abf031-9eaa-4fdb-bba8-8828fdc4f467",
+      "project_manager_label": "Test PM",
+      "project_coordinator_label": null,
+      "reporting_manager_label": null
+    },
+    "mongo_project_synced": {
+      "id": "147f9689-ff9d-421a-9f7b-69e5dae8800e",
+      "code": "PRJ-2026-0035",
+      "name": "ONGC \u2014 ORD-2026-0012",
+      "project_manager_id": "f4abf031-9eaa-4fdb-bba8-8828fdc4f467",
+      "project_manager_name": "Test PM"
+    },
+    "admin_projects_count": 23,
+    "target_project_api": {
+      "id": "147f9689-ff9d-421a-9f7b-69e5dae8800e",
+      "code": "PRJ-2026-0035",
+      "name": "ONGC \u2014 ORD-2026-0012",
+      "project_manager_id": "f4abf031-9eaa-4fdb-bba8-8828fdc4f467",
+      "project_manager_name": "Test PM"
+    },
+    "pm_user": {
+      "id": "f4abf031-9eaa-4fdb-bba8-8828fdc4f467",
+      "email": "test_pm@erp.com",
+      "role": "project_manager"
+    },
+    "pm_projects_count": 4,
+    "pm_project_ids": [
+      "147f9689-ff9d-421a-9f7b-69e5dae8800e",
+      "20f4846b-6260-41f5-9d56-31b1af5f0594",
+      "3b27faf2-9dc7-4b23-8698-ed34eb178e87",
+      "e3ca94e2-e59a-441d-919d-a643f295fbac"
+    ],
+    "legacy_hydration_missing_label_count": 0
+  }
+}
