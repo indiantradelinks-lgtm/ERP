@@ -1,0 +1,10 @@
+{
+  "frontend_base": "https://worksite-command.preview.emergentagent.com",
+  "api_base": "https://worksite-command.preview.emergentagent.com/api",
+  "project_code": "PRJ-2026-0035",
+  "project_id": "147f9689-ff9d-421a-9f7b-69e5dae8800e",
+  "project_manager_id": "f4abf031-9eaa-4fdb-bba8-8828fdc4f467",
+  "project_manager_name": "Test PM",
+  "manager_render_source": "Test PM",
+  "ui_code_contract": "Projects.jsx Manager column renders project_manager_name || manager || \u2014"
+}

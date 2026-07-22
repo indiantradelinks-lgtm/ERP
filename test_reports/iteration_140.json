@@ -1,0 +1,68 @@
+{
+  "verdict": "not_fixed",
+  "user_reported_bug": "Fix the Project Manager sync issue: The Project Manager (Projects & Operations) assigned in Contract Handovers is not appearing in the Projects Master \u2192 Manager field. Ensure the assigned manager is automatically synced, saved, and displayed correctly across all related modules.",
+  "summary": "No relevant testing skill found. Focused API + UI verification shows the main Projects Master sync is working: reallocating handover 4a16236b-68bd-45d4-b0a3-6b08f54d98ec to Test PM updates project 147f9689-ff9d-421a-9f7b-69e5dae8800e with project_manager_id/name, and /app/projects displays Test PM in the Manager column. However, the related Contract Handovers list still displays the PM as truncated id 'f4abf0' instead of 'Test PM', so the assigned manager is not displayed correctly across all related modules.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/ops/handovers",
+        "issue": "Target handover 4a16236b-68bd-45d4-b0a3-6b08f54d98ec returns project_manager_id but no project_manager_label, causing the handover list/card allocation label to fall back to a truncated id instead of the PM name.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ContractHandovers allocation column",
+        "issue": "For PRJ-2026-0035 / CHO-2026-0029, UI shows 'PM: f4abf0' instead of 'PM: Test PM'.",
+        "selector": "data-testid=ops-row-4a16236b-68bd-45d4-b0a3-6b08f54d98ec",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Contract Handover allocate -> related handover list display",
+        "issue": "Allocation stores/syncs PM id/name to Projects Master, but the handover list endpoint does not hydrate or persist project_manager_label for list rows.",
+        "affected_selectors": [
+          "data-testid=ops-row-4a16236b-68bd-45d4-b0a3-6b08f54d98ec"
+        ]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/bug_verification_plan_pm_sync.md",
+    "/app/tests/test_pm_sync_bug_verification.py",
+    "/app/tests/check_pm_sync_ui.py",
+    "/app/tests/check_handover_list_label_pm_sync.py",
+    "/app/test_reports/pm_sync_ui_api_probe.json"
+  ],
+  "action_items": [
+    "Fix GET /api/ops/handovers to include project_manager_label/project_coordinator_label/reporting_manager_label, or persist these label fields during allocation, so Contract Handovers cards/list display names instead of truncated ids.",
+    "Retest the exact target handover in /app/ops/handovers after the label fix: allocation column must show 'PM: Test PM'."
+  ],
+  "critical_code_review_comments": [
+    "allocate_handover resolves pm_label and syncs project_manager_name to db.projects, but set_doc saved to db.project_handovers does not include project_manager_label. list_handovers also does not hydrate label fields, unlike get_handover and my_projects. This is why the list UI falls back to r.project_manager_id.slice(0, 6).",
+    "Projects.jsx Manager column is correct for Projects Master: it renders project_manager_name || manager || '\u2014'."
+  ],
+  "updated_files": [
+    "/app/test_reports/bug_verification_plan_pm_sync.md",
+    "/app/tests/test_pm_sync_bug_verification.py",
+    "/app/tests/check_pm_sync_ui.py",
+    "/app/tests/check_handover_list_label_pm_sync.py",
+    "/app/test_reports/pm_sync_ui_api_probe.json",
+    "/app/test_reports/bug_verification_140.json",
+    "/app/test_reports/iteration_140.json"
+  ],
+  "success_rate": {
+    "backend": "91%",
+    "frontend": "50%"
+  },
+  "seed_data_creation": "Created one disposable linked submitted handover/project to verify first-allocation sync, then cleaned both records up. No permanent seed data intentionally left behind; test_pm assignments were not removed.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Primary Projects Master sync passed in preview, including first allocation, invalid id guard, backfill health, PM-scoped /api/projects, and PM /api/ops/my-projects. Remaining failing proof: GET /api/ops/handovers target row lacks project_manager_label and /app/ops/handovers shows PM: f4abf0. No APIs were mocked.",
+  "rca_of_the_issue": "The previous bug root cause (project sync only on reassignment) appears fixed for db.projects. The remaining related-module issue is display-label propagation: list_handovers returns raw handover rows without hydrating labels, while allocation does not store project_manager_label in the handover document. ContractHandovers.jsx renders r.project_manager_label || r.project_manager_id.slice(0,6), so list rows show a truncated id. Reproduction: admin reallocate the target handover to Test PM, open /app/projects (shows Test PM), then open /app/ops/handovers (shows PM: f4abf0)."
+}

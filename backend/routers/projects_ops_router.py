@@ -60,15 +60,19 @@ async def backfill_project_manager_assignments():
             {"project_manager_id": {"$nin": [None, ""]},
              "$or": [{"project_manager_name": {"$exists": False}}, {"project_manager_name": None}, {"project_manager_name": ""}]},
             {"_id": 0, "id": 1, "project_manager_id": 1, "project_coordinator_id": 1, "reporting_manager_id": 1}):
+        h = await db.project_handovers.find_one(
+            {"project_id": p["id"]},
+            {"_id": 0, "project_manager_label": 1, "project_coordinator_label": 1, "reporting_manager_label": 1})
         sets = {}
-        for id_key, name_key in (("project_manager_id", "project_manager_name"),
-                                   ("project_coordinator_id", "project_coordinator_name"),
-                                   ("reporting_manager_id", "reporting_manager_name")):
+        for id_key, name_key, h_key in (("project_manager_id", "project_manager_name", "project_manager_label"),
+                                          ("project_coordinator_id", "project_coordinator_name", "project_coordinator_label"),
+                                          ("reporting_manager_id", "reporting_manager_name", "reporting_manager_label")):
             uid = p.get(id_key)
             if uid:
                 u = await db.users.find_one({"id": uid}, {"_id": 0, "name": 1, "email": 1})
-                if u:
-                    sets[name_key] = u.get("name") or u.get("email")
+                label = (u or {}).get("name") or (u or {}).get("email") or (h or {}).get(h_key)
+                if label:
+                    sets[name_key] = label
         if sets:
             await db.projects.update_one({"id": p["id"]}, {"$set": sets})
             fixed += 1
@@ -527,6 +531,13 @@ async def allocate_handover(hid: str, payload: AllocateIn, request: Request,
     pm_label = await _label(payload.project_manager_id)
     pc_label = await _label(payload.project_coordinator_id)
     rm_label = await _label(payload.reporting_manager_id)
+    # Guard: never save an assignment that points at a non-existent user —
+    # that's how "Manager" ends up blank in Projects Master.
+    for uid, label, what in ((payload.project_manager_id, pm_label, "Project Manager"),
+                              (payload.project_coordinator_id, pc_label, "Project Coordinator"),
+                              (payload.reporting_manager_id, rm_label, "Reporting Manager")):
+        if uid and not label:
+            raise HTTPException(status_code=400, detail=f"{what} user not found — refresh the user list and pick again")
 
     is_first_allocation = h.get("status") in {"submitted", "under_review"}
 
