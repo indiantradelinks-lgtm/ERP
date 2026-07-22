@@ -4673,3 +4673,14 @@ Tested via curl: template contains column + correct values ✓; flip both direct
 TESTED by testing_agent (iteration_139.json): backend 15/16 (1 trivially skipped), frontend 100%. PM sees 3/22 projects, 403 on others, all module lists filtered; admin + site_engineer regressions clean. Regression suite: /app/backend/tests/test_iter139_pm_scoping.py.
 NOTE: REDEPLOY for production (backfill runs automatically at boot).
 **Status: COMPLETE & verified by testing agent.**
+
+### Bug fix (Jul 22, 2026) — PM sync re-report: full verification + remaining gaps closed
+
+Re-reported "PM not appearing in Projects Master Manager field" (likely PRODUCTION, not redeployed since prior fix). This session:
+1. Added 400 guard in allocate_handover when assignee id doesn't resolve to a real user ("... user not found — refresh the user list").
+2. Backfill now falls back to handover *_label when the user record was deleted (healed PRJ-2026-0035 dangling row).
+3. allocate_handover set_doc now persists project_manager_label / project_coordinator_label / reporting_manager_label on the handover doc (was id-only → cards showed 'PM: f4abf0').
+4. list_handovers hydrates missing labels for legacy rows via batch users lookup.
+VERIFIED by bug_testing_agent twice: bug_verification_140 (not_fixed — caught the handover-card label gap) → fixed → bug_verification_141 (**fixed**, 100% backend + frontend: allocation syncs name to project + Manager column shows 'Test PM' + handover card shows 'PM: Test PM' + legacy hydration + PM scoping regression clean).
+USER MUST REDEPLOY — production heals automatically at startup (backfill).
+**Status: FIXED & verified by bug_testing_agent (iteration_141).**
