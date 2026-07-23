@@ -66,7 +66,10 @@ export default function Employee360() {
       const r = await api.get("/employees");
       const rows = r.data || [];
       setEmployees(rows);
-      if (searchParams.get("tab") === "docs" && rows.length && !selected) load360(rows[0]);
+      const empParam = searchParams.get("emp");
+      const target = empParam ? rows.find((e) => e.id === empParam) : null;
+      if (target) load360(target);
+      else if (searchParams.get("tab") === "docs" && rows.length && !selected) load360(rows[0]);
     } catch (e) { toast.error(apiErrorMessage(e, "Load employees failed")); }
   };
   useEffect(() => { loadEmps(); }, []); // eslint-disable-line

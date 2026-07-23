@@ -12,7 +12,7 @@ import {
 import {
   Table, TableHeader, TableRow, TableHead, TableBody, TableCell,
 } from "@/components/ui/table";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import {
@@ -326,9 +326,116 @@ function ControlsView() {
   );
 }
 
+// ─────────── PENDING DOCUMENTS DIGEST ───────────
+function PendingDocsDigest() {
+  const nav = useNavigate();
+  const [data, setData] = useState(null);
+  const [master, setMaster] = useState("employee");
+  const [q, setQ] = useState("");
+
+  useEffect(() => { (async () => {
+    try { setData((await api.get("/hr5/pending-documents", { params: { master } })).data); }
+    catch (e) { toast.error(apiErrorMessage(e)); }
+  })(); }, [master]);
+
+  const rows = useMemo(() => {
+    let r = data?.rows || [];
+    if (q.trim()) {
+      const s = q.toLowerCase();
+      r = r.filter((x) => [x.name, x.emp_code, x.department, x.designation].some((v) => (v || "").toLowerCase().includes(s)));
+    }
+    return r;
+  }, [data, q]);
+
+  const kpis = [
+    { label: "Total", value: data?.total_employees ?? "—", tone: "" },
+    { label: "Fully Verified", value: data?.fully_verified ?? "—", tone: "text-emerald-700" },
+    { label: "Docs Pending", value: data?.pending_count ?? "—", tone: "text-rose-700" },
+  ];
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-3">
+        {kpis.map((k) => (
+          <Card key={k.label} data-testid={`pdocs-kpi-${k.label.toLowerCase().replace(/ /g, "-")}`}>
+            <CardContent className="p-3">
+              <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{k.label}</div>
+              <div className={`text-2xl font-semibold ${k.tone}`}>{k.value}</div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <div className="flex gap-2 items-center flex-wrap">
+        <Input className="h-9 w-64" placeholder="Search name / code / dept…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="pdocs-search" />
+        <Select value={master} onValueChange={setMaster}>
+          <SelectTrigger className="h-9 w-48" data-testid="pdocs-master"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="employee">Employee Master</SelectItem>
+            <SelectItem value="worker">Worker / Labour Master</SelectItem>
+          </SelectContent>
+        </Select>
+        <span className="text-[11px] text-muted-foreground">Key KYC docs tracked: Aadhaar · PAN · Bank Proof</span>
+      </div>
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Code</TableHead>
+                <TableHead>Employee</TableHead>
+                <TableHead>Dept / Designation</TableHead>
+                <TableHead>Missing</TableHead>
+                <TableHead>Uploaded, Not Verified</TableHead>
+                <TableHead className="text-right">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.length === 0 && (
+                <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
+                  {data ? "All key documents verified — nothing to chase 🎉" : "Loading…"}
+                </TableCell></TableRow>
+              )}
+              {rows.map((r) => (
+                <TableRow key={r.employee_id} data-testid={`pdocs-row-${r.employee_id}`}>
+                  <TableCell className="font-mono text-xs">{r.emp_code || "—"}</TableCell>
+                  <TableCell className="font-semibold">{r.name}</TableCell>
+                  <TableCell>
+                    <div className="text-sm">{r.designation || "—"}</div>
+                    <div className="text-[11px] text-muted-foreground uppercase">{r.department || "—"}</div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-1 flex-wrap">
+                      {r.missing.map((d) => <Badge key={d} variant="outline" className="border-rose-300 text-rose-800 bg-rose-50 text-[10px]">{d}</Badge>)}
+                      {r.missing.length === 0 && <span className="text-muted-foreground text-xs">—</span>}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-1 flex-wrap">
+                      {r.unverified.map((d) => <Badge key={d} variant="outline" className="border-amber-300 text-amber-800 bg-amber-50 text-[10px]">{d}</Badge>)}
+                      {r.unverified.length === 0 && <span className="text-muted-foreground text-xs">—</span>}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button size="sm" variant="outline" className="h-7"
+                      onClick={() => nav(`/app/hr/employee-360?tab=docs&emp=${r.employee_id}`)}
+                      data-testid={`pdocs-open-${r.employee_id}`}>
+                      Open Docs
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // ─────────── PARENT HUB ───────────
 export default function HrPhase5() {
-  const [tab, setTab] = useState("dashboard");
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState(searchParams.get("tab") === "pending-docs" ? "pending-docs" : "dashboard");
   return (
     <div className="space-y-4">
       <div>
@@ -340,12 +447,14 @@ export default function HrPhase5() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="dashboard" data-testid="hr5-tab-dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger value="pending-docs" data-testid="hr5-tab-pending-docs">Pending Docs</TabsTrigger>
           <TabsTrigger value="reports" data-testid="hr5-tab-reports">Reports Center</TabsTrigger>
           <TabsTrigger value="audit" data-testid="hr5-tab-audit">Audit Trail</TabsTrigger>
           <TabsTrigger value="integration" data-testid="hr5-tab-integration">Integration</TabsTrigger>
           <TabsTrigger value="controls" data-testid="hr5-tab-controls">Final Controls</TabsTrigger>
         </TabsList>
         <TabsContent value="dashboard"><FinalDashboard /></TabsContent>
+        <TabsContent value="pending-docs"><PendingDocsDigest /></TabsContent>
         <TabsContent value="reports"><ReportsCenter /></TabsContent>
         <TabsContent value="audit"><AuditTrailView /></TabsContent>
         <TabsContent value="integration"><IntegrationView /></TabsContent>

@@ -163,6 +163,10 @@ async def final_hr_dashboard(user: dict = Depends(require_permission("hr_onboard
     mob_pending = await n("hr_mobilizations", {"status": "open"})
     demob_pending = await n("hr_demobilizations", {"status": "open"})
 
+    # KYC docs pending — employees whose key docs (Aadhaar/PAN/Bank) aren't all verified
+    kyc_pending = await n("employees", {"status": {"$ne": "inactive"},
+                                        "verification_status": {"$ne": "verified"}})
+
     cards = [
         {"key": "total_active_employees", "label": "Active Employees", "value": total_employees, "link": "/app/employees", "severity": "info"},
         {"key": "total_active_workers", "label": "Active Workers", "value": total_workers, "link": "/app/employees", "severity": "info"},
@@ -194,9 +198,54 @@ async def final_hr_dashboard(user: dict = Depends(require_permission("hr_onboard
         {"key": "project_cost_month", "label": f"Manpower Cost ({month})", "value": round(project_cost, 2), "link": "/app/hr/payroll-statutory?tab=project-cost", "severity": "info"},
         {"key": "mob_pending", "label": "Mobilizations Open", "value": mob_pending, "link": "/app/hr/manpower-planning?tab=mobilization", "severity": "medium" if mob_pending else "low"},
         {"key": "demob_pending", "label": "Demobilizations Open", "value": demob_pending, "link": "/app/hr/manpower-planning?tab=demobilization", "severity": "medium" if demob_pending else "low"},
+        {"key": "kyc_docs_pending", "label": "KYC Docs Pending", "value": kyc_pending, "link": "/app/hr/command-center?tab=pending-docs", "severity": "high" if kyc_pending else "low"},
     ]
     return {"as_of": now_iso(), "month": month, "last_payroll_month": last_month,
             "cards": cards, "total_cards": len(cards)}
+
+
+@router.get("/pending-documents")
+async def pending_documents(master: str = "employee", limit: int = 300,
+                            user: dict = Depends(require_permission("hr_onboarding", "read"))):
+    """Digest of employees whose key KYC docs (Aadhaar / PAN / Bank) are missing or unverified."""
+    KEY_DOCS = {"aadhaar": "Aadhaar", "pan": "PAN", "bank_passbook": "Bank Proof"}
+    q: dict = {"status": {"$ne": "inactive"}}
+    if master == "worker":
+        q["master_category"] = "worker"
+    else:
+        q["$or"] = [{"master_category": {"$in": [None, "", "employee"]}},
+                    {"master_category": {"$exists": False}}]
+    emps = await db.employees.find(
+        q, {"_id": 0, "id": 1, "emp_code": 1, "employee_id": 1, "name": 1,
+            "department": 1, "designation": 1, "verification_status": 1}).sort("name", 1).to_list(3000)
+    files = await db.files.find(
+        {"parent_type": "employees", "is_deleted": False, "doc_type": {"$in": list(KEY_DOCS)}},
+        {"_id": 0, "parent_id": 1, "doc_type": 1, "verification": 1}).to_list(20000)
+    by_emp: dict = {}
+    for f in files:
+        st = "verified" if (f.get("verification") or {}).get("overall") == "verified" else "unverified"
+        cur = by_emp.setdefault(f["parent_id"], {})
+        if cur.get(f["doc_type"]) != "verified":
+            cur[f["doc_type"]] = st
+    rows = []
+    fully = 0
+    for e in emps:
+        docs = by_emp.get(e["id"], {})
+        missing = [KEY_DOCS[k] for k in KEY_DOCS if k not in docs]
+        unverified = [KEY_DOCS[k] for k in KEY_DOCS if docs.get(k) == "unverified"]
+        if not missing and not unverified:
+            fully += 1
+            continue
+        rows.append({
+            "employee_id": e["id"],
+            "emp_code": e.get("employee_id") or e.get("emp_code") or "",
+            "name": e.get("name"), "department": e.get("department"),
+            "designation": e.get("designation"),
+            "missing": missing, "unverified": unverified,
+            "verification_status": e.get("verification_status") or "pending",
+        })
+    return {"total_employees": len(emps), "fully_verified": fully,
+            "pending_count": len(rows), "rows": rows[:limit]}
 
 
 # ──────────────────────────────────────────────────────────────────────────────

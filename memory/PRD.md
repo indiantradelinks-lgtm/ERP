@@ -4710,3 +4710,9 @@ User asks: 1) Onboarding must auto-fetch ALL employees from Employee Master and 
 - Menu fix: nav-doc-verify now points to `/app/hr/employee-360?tab=docs`; Employee360 reads ?tab= (useSearchParams) and auto-selects first employee when arriving via that link so the AI doc-verification tab opens directly.
 - Tested: testing_agent iteration_143 — backend 100% (4/4 pytest incl. reuse + regression), frontend 95→100% after polish (auto-select on ?tab=docs verified by screenshot; docs tab active). Test data cleaned.
 **Status: COMPLETE & verified by testing_agent.**
+
+### Feature (Jul 23, 2026) — "Pending Documents" digest on HR Dashboard ✅
+- Backend (hr_phase5_router.py): NEW `GET /hr5/pending-documents?master=employee|worker` — per active employee, key KYC docs (Aadhaar/PAN/Bank Proof) checked against db.files (parent_type=employees) → rows list missing[] + unverified[] chips; summary {total_employees, fully_verified, pending_count}. NEW dashboard card `kyc_docs_pending` (severity high) on /hr5/dashboard linking to the digest.
+- Frontend: HR Command Center (/app/hr/command-center) gets a "Pending Docs" tab (hr5-tab-pending-docs, deep-linkable via ?tab=pending-docs): 3 KPIs (Total/Fully Verified/Docs Pending), search + master select, table with red "Missing" and amber "Uploaded, Not Verified" badges, "Open Docs" button per row → /app/hr/employee-360?tab=docs&emp={id}. Employee360 now honours ?emp= (auto-selects that employee) in addition to ?tab=docs.
+- Self-tested: curl (42 total / 42 pending / card severity=high) + Playwright e2e (digest renders 42 rows; Open Docs lands on Arjun Reddy's Documents tab, active).
+**Status: COMPLETE & self-tested (curl + e2e screenshot flow).**
