@@ -4684,3 +4684,14 @@ Re-reported "PM not appearing in Projects Master Manager field" (likely PRODUCTI
 VERIFIED by bug_testing_agent twice: bug_verification_140 (not_fixed — caught the handover-card label gap) → fixed → bug_verification_141 (**fixed**, 100% backend + frontend: allocation syncs name to project + Manager column shows 'Test PM' + handover card shows 'PM: Test PM' + legacy hydration + PM scoping regression clean).
 USER MUST REDEPLOY — production heals automatically at startup (backfill).
 **Status: FIXED & verified by bug_testing_agent (iteration_141).**
+
+### Feature (Jul 23, 2026) — Monthly Attendance Bulk Upload (per master)
+
+User choices: separate templates per master (Employee / Worker-Labour); uploaded entries land as PENDING APPROVAL.
+- NEW backend `routers/attendance_bulk_router.py` (prefix /hr2/attendance/bulk, registered):
+  - `GET /template?month=YYYY-MM&master=employee|worker` — xlsx grid: 1 row per active person from the matching master (db.employees by master_category), 1 col per day of month; INSTRUCTIONS sheet with codes.
+  - `POST /upload?month&master&project_code(optional)` — codes P/A/HD/L/WO/H/OD (+OT via "P+2" → overtime_hours); blank cells skipped; invalid codes / unknown people / future dates / month-locked projects (hr_attendance_locks) / locked entries → per-row errors; existing (person+date) entries UPDATED not duplicated; docs mirror mark_attendance shape with approval_status=pending, source=upload, person_type per master. Audited.
+- Frontend HrPhase2.jsx AttendanceView: "Monthly Bulk Upload" button → AttendanceBulkDialog (month picker, master select, optional project code, template download, upload, result panel with per-row errors).
+Tested via curl: both templates (42 employees / worker), upload created 4 (P,A,HD,P+2 w/ OT=2) all pending, invalid 'XX' error, blanks skipped, re-upload → 0 created/4 updated (no dupes), register shows rows ✓. UI dialog verified by screenshot. Test data cleaned.
+Also parked: Paystack (currency mismatch — awaiting user decision) & SendGrid (awaiting scope + API key + verified sender). User pivoted to attendance instead.
+**Status: COMPLETE & verified on preview.**

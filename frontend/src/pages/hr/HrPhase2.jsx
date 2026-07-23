@@ -247,6 +247,7 @@ function AttendanceView() {
   const [form, setForm] = useState({ status: "present", source: "manual", date: today(), shift_code: "GEN" });
   const [selected, setSelected] = useState(new Set());
   const [lockOpen, setLockOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [lockForm, setLockForm] = useState({ month: monthIso(), project_code: "", reason: "" });
   const [locks, setLocks] = useState([]);
 
@@ -317,6 +318,9 @@ function AttendanceView() {
         <CardHeader className="flex flex-row items-center justify-between flex-wrap gap-2">
           <CardTitle className="text-sm flex items-center gap-2"><ClipboardCheck className="h-4 w-4" /> Attendance Register</CardTitle>
           <div className="flex gap-2 flex-wrap">
+            <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)} data-testid="att-bulk-btn">
+              Monthly Bulk Upload
+            </Button>
             <Button size="sm" variant="outline" onClick={() => setLockOpen(true)} data-testid="att-lock-btn">
               <Lock className="h-4 w-4 mr-1" /> Lock Month
             </Button>
@@ -488,7 +492,95 @@ function AttendanceView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {bulkOpen && <AttendanceBulkDialog onClose={() => setBulkOpen(false)} onDone={() => { setBulkOpen(false); load(); }} />}
     </div>
+  );
+}
+
+function AttendanceBulkDialog({ onClose, onDone }) {
+  const [month, setMonth] = useState(monthIso());
+  const [master, setMaster] = useState("employee");
+  const [projectCode, setProjectCode] = useState("");
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const downloadTemplate = async () => {
+    try {
+      const r = await api.get("/hr2/attendance/bulk/template", { params: { month, master }, responseType: "blob" });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `attendance_${master}_${month}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { toast.error("Template download failed"); }
+  };
+
+  const upload = async () => {
+    if (!file) { toast.error("Choose the filled .xlsx first"); return; }
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const qs = new URLSearchParams({ month, master, ...(projectCode ? { project_code: projectCode } : {}) });
+      const r = await api.post(`/hr2/attendance/bulk/upload?${qs}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      setResult(r.data);
+      const d = r.data;
+      if (d.created + d.updated > 0) toast.success(`Marked ${d.created + d.updated} entr${d.created + d.updated > 1 ? "ies" : "y"} (pending approval)`);
+      else toast.error("Nothing marked — check errors below");
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader><DialogTitle>Monthly Attendance — Bulk Upload</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-2">
+            <Field label="Month">
+              <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} data-testid="att-bulk-month" />
+            </Field>
+            <Field label="Master">
+              <select value={master} onChange={(e) => setMaster(e.target.value)}
+                       className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm" data-testid="att-bulk-master">
+                <option value="employee">Employee Master</option>
+                <option value="worker">Worker / Labour Master</option>
+              </select>
+            </Field>
+            <Field label="Project Code (optional)">
+              <Input value={projectCode} onChange={(e) => setProjectCode(e.target.value)} placeholder="PRJ-…" data-testid="att-bulk-project" />
+            </Field>
+          </div>
+          <Button variant="outline" onClick={downloadTemplate} data-testid="att-bulk-template">
+            Download {master === "worker" ? "Worker" : "Employee"} template for {month}
+          </Button>
+          <div className="text-[11px] text-muted-foreground">
+            Codes: P present · A absent · HD half-day · L leave · WO weekly off · H holiday · OD on-duty · OT like "P+2". Blank = skipped. Entries land as <b>pending approval</b>.
+          </div>
+          <Field label="Filled template">
+            <Input type="file" accept=".xlsx" onChange={(e) => setFile(e.target.files?.[0] || null)} data-testid="att-bulk-file" />
+          </Field>
+          {result && (
+            <div className="border rounded-sm p-3 text-sm bg-slate-50 space-y-1" data-testid="att-bulk-result">
+              <div>✓ Created: <b>{result.created}</b> · Updated: <b>{result.updated}</b> · Blank skipped: {result.skipped_blank} · Errors: {result.error_count}</div>
+              {(result.errors || []).slice(0, 8).map((e, i) => <div key={i} className="text-xs text-red-600">Row {e.row}: {e.error}</div>)}
+              {result.error_count > 8 && <div className="text-xs text-slate-500">…and {result.error_count - 8} more</div>}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => ((result?.created || 0) + (result?.updated || 0) > 0 ? onDone() : onClose())}>
+            {(result?.created || 0) + (result?.updated || 0) > 0 ? "Done" : "Close"}
+          </Button>
+          <Button onClick={upload} disabled={busy || !file} data-testid="att-bulk-upload">
+            {busy ? "Uploading…" : "Upload"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
