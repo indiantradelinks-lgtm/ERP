@@ -4695,3 +4695,10 @@ User choices: separate templates per master (Employee / Worker-Labour); uploaded
 Tested via curl: both templates (42 employees / worker), upload created 4 (P,A,HD,P+2 w/ OT=2) all pending, invalid 'XX' error, blanks skipped, re-upload → 0 created/4 updated (no dupes), register shows rows ✓. UI dialog verified by screenshot. Test data cleaned.
 Also parked: Paystack (currency mismatch — awaiting user decision) & SendGrid (awaiting scope + API key + verified sender). User pivoted to attendance instead.
 **Status: COMPLETE & verified on preview.**
+
+### Feature (Jul 23, 2026) — Attendance Center (iteration_142) ✅
+Fulfills ERP request: 1) Delhi HR marks Head Office attendance (daily + monthly), 2) Project Coordinator / Site Admin / PM mark daily+OT for their assigned projects only, 3) project-wise register filtered by date/designation/status.
+- Page `/app/attendance-center` (pages/hr/AttendanceCenter.jsx) wired into App.js + menuConfig ("Attendance Center" under HR > Attendance, nav-attendance-center). Two tabs: Daily Sheet (status buttons P/A/HD/L/WO/OD + OT input + mark-all + save-as-pending) and Register (date range/designation/status filters). Monthly Upload button reuses AttendanceBulkDialog.
+- RBAC/scoping: day-sheet GET now calls _guard_project_access (read scoping); project-scoped roles get 403 on HEAD-OFFICE ("Head Office attendance is managed by HR"); attendance_register in hr_phase2_router now applies apply_project_scope(code_field=project_code) — PMs only see their projects' rows. Frontend hides HO option for project roles (pc/pm/supervisor/site_engineer) and shows empty-state (ac-no-projects) when no projects assigned.
+- Tested: testing_agent iteration_142 — 15/15 backend pytest + 100% frontend flows (admin HO flow, PM scoped flow, save→pending badge, register reflects saves, monthly dialog, sidebar nav). Polish applied post-test: removed emoji from HO option (hydration warning), added no-projects empty state.
+**Status: COMPLETE & verified by testing_agent.**

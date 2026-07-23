@@ -55,7 +55,7 @@ export default function AttendanceCenter() {
             <Label className="text-[10px] uppercase tracking-wider">Location / Project</Label>
             <select value={scope} onChange={(e) => setScope(e.target.value)}
                      className="h-9 mt-1 w-64 rounded-sm border border-input bg-background px-2 text-sm" data-testid="ac-scope">
-              {!isProjectRole && <option value="HEAD-OFFICE">🏢 Head Office (Delhi)</option>}
+              {!isProjectRole && <option value="HEAD-OFFICE">Head Office (Delhi)</option>}
               {projects.map((p) => <option key={p.id} value={p.code}>{p.code} · {p.name}</option>)}
             </select>
           </div>
@@ -81,7 +81,11 @@ export default function AttendanceCenter() {
       </Tabs>
 
       {tab === "daily" ? (
-        <DailySheet scope={scope} master={master} />
+        scope ? <DailySheet scope={scope} master={master} /> : (
+          <div className="text-sm bg-amber-50 border border-amber-200 text-amber-700 rounded px-3 py-6 text-center" data-testid="ac-no-projects">
+            No projects assigned to you yet — ask your admin to assign you via Contract Handovers.
+          </div>
+        )
       ) : (
         <Register scope={scope} />
       )}
