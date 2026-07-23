@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   User, Award, Shield, MapPinned, Clock, Wallet, FolderArchive,
   Search, Plus, Trash2, CalendarDays, BadgeCheck, AlertTriangle, ScrollText,
@@ -35,7 +36,8 @@ export default function Employee360() {
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState(null);
   const [data, setData] = useState(null);
-  const [tab, setTab] = useState("personal");
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState(searchParams.get("tab") === "docs" ? "docs" : "personal");
   const [skillForm, setSkillForm] = useState({ skill: "", level: "intermediate", years: 0, notes: "" });
   const [skillOpen, setSkillOpen] = useState(false);
   const [certForm, setCertForm] = useState({ name: "", issuer: "", issue_date: "", expiry_date: "", cert_no: "", notes: "" });

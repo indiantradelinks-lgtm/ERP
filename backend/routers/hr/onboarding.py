@@ -63,6 +63,83 @@ async def list_onboardings(status: Optional[str] = None,
     return await db.onboardings.find(q, {"_id": 0}).sort([("created_at", -1)]).to_list(500)
 
 
+@router.get("/onboardings/employee-status")
+async def onboarding_employee_status(master: str = "employee",
+                                     user: dict = Depends(require_permission("hr_onboarding", "read"))):
+    """All active employees from Employee Master joined with their onboarding state."""
+    q: Dict[str, Any] = {"status": {"$ne": "inactive"}}
+    if master == "worker":
+        q["master_category"] = "worker"
+    else:
+        q["$or"] = [{"master_category": {"$in": [None, "", "employee"]}}, {"master_category": {"$exists": False}}]
+    emps = await db.employees.find(q, {"_id": 0, "id": 1, "emp_code": 1, "employee_id": 1, "name": 1,
+                                        "email": 1, "department": 1, "designation": 1,
+                                        "joining_date": 1}).sort("name", 1).to_list(3000)
+    obs = await db.onboardings.find({}, {"_id": 0, "id": 1, "employee_id": 1, "email": 1,
+                                          "status": 1, "stages": 1}).to_list(3000)
+    by_emp = {o["employee_id"]: o for o in obs if o.get("employee_id")}
+    by_email = {o["email"].lower(): o for o in obs if o.get("email")}
+    rows: List[Dict[str, Any]] = []
+    counts = {"completed": 0, "in_progress": 0, "not_started": 0}
+    for e in emps:
+        o = by_emp.get(e["id"]) or by_email.get((e.get("email") or "").lower())
+        if o:
+            stages = o.get("stages") or []
+            done = sum(1 for s in stages if s.get("done"))
+            status = "completed" if o.get("status") == "completed" else "in_progress"
+            pct = 100 if status == "completed" else (round(done / len(stages) * 100) if stages else 0)
+        else:
+            status, pct, done, stages = "not_started", 0, 0, []
+        counts[status] += 1
+        rows.append({
+            "employee_id": e["id"],
+            "emp_code": e.get("employee_id") or e.get("emp_code") or "",
+            "name": e.get("name"), "department": e.get("department"),
+            "designation": e.get("designation"), "joining_date": e.get("joining_date"),
+            "onboarding_id": o.get("id") if o else None,
+            "status": status, "progress_pct": pct,
+            "stages_done": done, "stages_total": len(stages) or len(ONBOARDING_STAGES),
+        })
+    return {"total": len(rows), **counts, "rows": rows}
+
+
+class StartForEmployeeIn(BaseModel):
+    employee_id: str
+
+
+@router.post("/onboardings/start-for-employee")
+async def start_for_employee(payload: StartForEmployeeIn, request: Request,
+                             user: dict = Depends(require_permission("hr_onboarding", "write"))):
+    """Start an onboarding checklist for an employee who already exists in Employee Master.
+    Completing it will NOT create a duplicate employee — only the remaining triggers fire."""
+    emp = await db.employees.find_one({"id": payload.employee_id}, {"_id": 0})
+    if not emp:
+        raise HTTPException(404, "Employee not found in Employee Master")
+    existing = await db.onboardings.find_one({"employee_id": payload.employee_id}, {"_id": 0, "id": 1})
+    if existing:
+        raise HTTPException(400, "An onboarding checklist already exists for this employee")
+    doc = {
+        "id": new_id(),
+        "name": emp.get("name"), "email": emp.get("email"), "phone": emp.get("phone"),
+        "role": emp.get("role") or "supervisor", "department": emp.get("department"),
+        "joining_date": emp.get("joining_date"), "designation": emp.get("designation"),
+        "salary": emp.get("salary"), "candidate_id": None,
+        "site_id": emp.get("site_id"), "project_id": emp.get("project_id"),
+        "notes": "Checklist started for existing Employee Master record",
+        "for_existing_employee": True,
+        "stages": _fresh_stages(),
+        "status": "in_progress",
+        "completed_at": None, "employee_id": emp["id"], "user_id": None,
+        "created_at": now_iso(),
+        "created_by": user.get("name") or user.get("email"),
+    }
+    await db.onboardings.insert_one(doc)
+    await audit(user=user, action="hr_onboarding_start_existing", resource="onboardings",
+                record_id=doc["id"], after={"employee_id": emp["id"], "name": emp.get("name")},
+                ip=ip_of(request))
+    return strip_id(doc)
+
+
 @router.get("/onboardings/{oid}")
 async def get_onboarding(oid: str, user: dict = Depends(require_permission("hr_onboarding", "read"))):
     row = await db.onboardings.find_one({"id": oid}, {"_id": 0})
@@ -140,19 +217,29 @@ async def complete_onboarding(oid: str, payload: CompleteIn, request: Request,
     department, role = row.get("department"), row.get("role") or "supervisor"
     triggers: Dict[str, Any] = {}
 
-    emp_code = await next_emp_code()
-    employee = {
-        "id": new_id(), "emp_code": emp_code,
-        "name": name, "email": email, "phone": row.get("phone"),
-        "role": role, "department": department,
-        "departments": [department] if department else [],
-        "designation": row.get("designation"),
-        "joining_date": row.get("joining_date") or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-        "salary": row.get("salary") or 0, "status": "active",
-        "onboarding_id": oid, "site_id": row.get("site_id"), "project_id": row.get("project_id"),
-        "created_at": now_iso(), "created_by": user.get("name") or user.get("email"),
-    }
-    await db.employees.insert_one(employee)
+    employee = None
+    if row.get("employee_id"):
+        employee = await db.employees.find_one({"id": row["employee_id"]}, {"_id": 0})
+    if employee:
+        name = employee.get("name") or name
+        email = email or employee.get("email")
+        emp_code = employee.get("employee_id") or employee.get("emp_code") or ""
+        await db.employees.update_one({"id": employee["id"]}, {"$set": {"onboarding_id": oid}})
+        triggers["employee_reused"] = True
+    else:
+        emp_code = await next_emp_code()
+        employee = {
+            "id": new_id(), "emp_code": emp_code,
+            "name": name, "email": email, "phone": row.get("phone"),
+            "role": role, "department": department,
+            "departments": [department] if department else [],
+            "designation": row.get("designation"),
+            "joining_date": row.get("joining_date") or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            "salary": row.get("salary") or 0, "status": "active",
+            "onboarding_id": oid, "site_id": row.get("site_id"), "project_id": row.get("project_id"),
+            "created_at": now_iso(), "created_by": user.get("name") or user.get("email"),
+        }
+        await db.employees.insert_one(employee)
     triggers["employee_id"] = employee["id"]
     triggers["emp_code"] = emp_code
 

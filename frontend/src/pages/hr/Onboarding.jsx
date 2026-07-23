@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import {
-  UserPlus, CheckCircle2, Circle, Trash2, Search, Plus,
-  IdCard, Hammer, ShieldCheck, MapPinned, FileCheck, ChevronRight, Zap,
+  UserPlus, CheckCircle2, Circle, Trash2, Search, Plus, Users, PlayCircle,
+  IdCard, Hammer, ShieldCheck, MapPinned, FileCheck, ChevronRight, Zap, ListChecks,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import {
 import {
   Table, TableHeader, TableRow, TableHead, TableBody, TableCell,
 } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { api, apiErrorMessage, stripEmpty } from "@/lib/api";
@@ -36,6 +37,12 @@ const ROLES = [
   "store_incharge", "purchase_officer", "accounts_executive", "hr_executive", "client_rep",
 ];
 
+const STATUS_BADGE = {
+  completed: <Badge className="bg-emerald-100 text-emerald-900 border-emerald-300 rounded-sm">Completed</Badge>,
+  in_progress: <Badge variant="outline" className="rounded-sm border-amber-300 text-amber-900 bg-amber-50">In Progress</Badge>,
+  not_started: <Badge variant="outline" className="rounded-sm border-slate-300 text-slate-600 bg-slate-50">Not Started</Badge>,
+};
+
 const blankForm = () => ({
   name: "", email: "", phone: "",
   role: "supervisor", department: "", joining_date: "",
@@ -43,9 +50,7 @@ const blankForm = () => ({
 });
 
 export default function Onboarding() {
-  const [rows, setRows] = useState([]);
-  const [statusFilter, setStatusFilter] = useState("");
-  const [q, setQ] = useState("");
+  const [tab, setTab] = useState("status");
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState(blankForm());
   const [detail, setDetail] = useState(null);
@@ -53,24 +58,8 @@ export default function Onboarding() {
   const [completeOpts, setCompleteOpts] = useState({
     create_login: true, default_password: "", issue_ppe_kit: true, schedule_induction: true,
   });
-
-  const load = async () => {
-    try {
-      const params = {};
-      if (statusFilter) params.status = statusFilter;
-      const r = await api.get("/hr/onboardings", { params });
-      setRows(r.data || []);
-    } catch (e) { toast.error(apiErrorMessage(e, "Load failed")); }
-  };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [statusFilter]);
-
-  const filtered = useMemo(() => {
-    if (!q.trim()) return rows;
-    const s = q.toLowerCase();
-    return rows.filter((r) =>
-      [r.name, r.email, r.department, r.designation].some((v) => (v || "").toLowerCase().includes(s))
-    );
-  }, [rows, q]);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refresh = () => setRefreshKey((k) => k + 1);
 
   const create = async () => {
     if (!form.name.trim()) { toast.error("Name is required"); return; }
@@ -78,15 +67,22 @@ export default function Onboarding() {
       const payload = stripEmpty({ ...form, salary: form.salary ? Number(form.salary) : null });
       await api.post("/hr/onboardings", payload);
       toast.success("Onboarding created");
-      setCreating(false); setForm(blankForm()); load();
+      setCreating(false); setForm(blankForm()); refresh();
     } catch (e) { toast.error(apiErrorMessage(e, "Create failed")); }
+  };
+
+  const openOnboarding = async (oid) => {
+    try {
+      const r = await api.get(`/hr/onboardings/${oid}`);
+      setDetail(r.data);
+    } catch (e) { toast.error(apiErrorMessage(e, "Load failed")); }
   };
 
   const advance = async (oid, stage_key) => {
     try {
       const r = await api.post(`/hr/onboardings/${oid}/advance`, { stage_key });
       setDetail(r.data);
-      load();
+      refresh();
     } catch (e) { toast.error(apiErrorMessage(e, "Advance failed")); }
   };
 
@@ -94,122 +90,49 @@ export default function Onboarding() {
     if (!detail) return;
     try {
       const r = await api.post(`/hr/onboardings/${detail.id}/complete`, completeOpts);
-      toast.success(`Onboarded. EMP ${r.data.triggers?.emp_code || "—"} created. PPE & Induction auto-scheduled.`);
-      setCompleting(false); setDetail(null); load();
+      const reused = r.data.triggers?.employee_reused;
+      toast.success(reused
+        ? `Onboarding completed for existing employee ${r.data.triggers?.emp_code || ""}. Triggers fired.`
+        : `Onboarded. EMP ${r.data.triggers?.emp_code || "—"} created. PPE & Induction auto-scheduled.`);
+      setCompleting(false); setDetail(null); refresh();
     } catch (e) { toast.error(apiErrorMessage(e, "Complete failed")); }
-  };
-
-  const remove = async (oid) => {
-    if (!window.confirm("Delete this onboarding record?")) return;
-    try {
-      await api.delete(`/hr/onboardings/${oid}`);
-      toast.success("Deleted"); load();
-    } catch (e) { toast.error(apiErrorMessage(e, "Delete failed")); }
-  };
-
-  const progressPct = (r) => {
-    if (!r.stages?.length) return 0;
-    const done = r.stages.filter((s) => s.done).length;
-    return Math.round((done / r.stages.length) * 100);
   };
 
   return (
     <div className="space-y-6" data-testid="hr-onboarding-page">
-      <div>
-        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary mb-1.5 flex items-center gap-2">
-          <UserPlus className="h-3 w-3" /> Human Resources
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary mb-1.5 flex items-center gap-2">
+            <UserPlus className="h-3 w-3" /> Human Resources
+          </div>
+          <h1 className="font-display font-black text-3xl tracking-tight">Onboarding</h1>
+          <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
+            Auto-synced with Employee Master — every employee shows an onboarding completion status.
+            New manpower who just got selected can be onboarded via "New Onboarding" (completing it creates their master record).
+          </p>
         </div>
-        <h1 className="font-display font-black text-3xl tracking-tight">Onboarding</h1>
-        <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
-          Multi-stage joiner checklist. Completion auto-creates the employee record, login,
-          PPE kit issuance, safety induction training and default leave balances.
-        </p>
+        <Button className="h-9 rounded-sm" onClick={() => { setForm(blankForm()); setCreating(true); }} data-testid="onb-new">
+          <Plus className="h-4 w-4 mr-1.5" /> New Onboarding
+        </Button>
       </div>
 
-      <div className="bg-card border border-border rounded-sm">
-        <div className="p-4 border-b border-border flex flex-wrap items-center gap-2">
-          <div className="relative w-64">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input className="pl-9 h-9 rounded-sm" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="onb-search" />
-          </div>
-          <Select value={statusFilter || "__all"} onValueChange={(v) => setStatusFilter(v === "__all" ? "" : v)}>
-            <SelectTrigger className="h-9 w-40 rounded-sm" data-testid="onb-status-filter">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all">All status</SelectItem>
-              <SelectItem value="in_progress">In Progress</SelectItem>
-              <SelectItem value="completed">Completed</SelectItem>
-            </SelectContent>
-          </Select>
-          <span className="text-[11px] text-muted-foreground">{filtered.length} of {rows.length}</span>
-          <Button className="ml-auto h-9 rounded-sm" onClick={() => { setForm(blankForm()); setCreating(true); }} data-testid="onb-new">
-            <Plus className="h-4 w-4 mr-1.5" /> New Onboarding
-          </Button>
-        </div>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Joiner</TableHead>
-              <TableHead>Role / Dept</TableHead>
-              <TableHead>Joining</TableHead>
-              <TableHead>Progress</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.length === 0 && (
-              <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">No onboardings.</TableCell></TableRow>
-            )}
-            {filtered.map((r) => (
-              <TableRow key={r.id} data-testid={`onb-row-${r.id}`}>
-                <TableCell>
-                  <div className="font-semibold">{r.name}</div>
-                  <div className="text-[11px] text-muted-foreground">{r.email || "—"} · {r.phone || "—"}</div>
-                </TableCell>
-                <TableCell>
-                  <div className="text-sm">{r.designation || r.role}</div>
-                  <div className="text-[11px] text-muted-foreground uppercase tracking-wider">{r.department || "—"}</div>
-                </TableCell>
-                <TableCell className="text-[12px]">{r.joining_date || "—"}</TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2 min-w-[160px]">
-                    <div className="flex-1 h-1.5 bg-secondary rounded-full overflow-hidden">
-                      <div className="h-full bg-primary transition-all" style={{ width: `${progressPct(r)}%` }} />
-                    </div>
-                    <span className="text-[11px] tabular text-muted-foreground">{progressPct(r)}%</span>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  {r.status === "completed"
-                    ? <Badge className="bg-emerald-100 text-emerald-900 border-emerald-300 rounded-sm">Completed</Badge>
-                    : <Badge variant="outline" className="rounded-sm border-amber-300 text-amber-900 bg-amber-50">In Progress</Badge>}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="inline-flex gap-1">
-                    <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={() => setDetail(r)} data-testid={`onb-open-${r.id}`}>
-                      Open <ChevronRight className="h-3 w-3 ml-1" />
-                    </Button>
-                    {r.status !== "completed" && (
-                      <Button size="sm" variant="outline" className="h-7 rounded-sm text-destructive border-destructive/40" onClick={() => remove(r.id)} data-testid={`onb-delete-${r.id}`}>
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList>
+          <TabsTrigger value="status" data-testid="onb-tab-status"><Users className="h-3.5 w-3.5 mr-1" />Employee Status</TabsTrigger>
+          <TabsTrigger value="pipeline" data-testid="onb-tab-pipeline"><ListChecks className="h-3.5 w-3.5 mr-1" />Onboarding Pipeline</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {tab === "status"
+        ? <EmployeeStatusTab refreshKey={refreshKey} onOpen={openOnboarding} onStarted={refresh} />
+        : <PipelineTab refreshKey={refreshKey} onOpen={setDetail} onChanged={refresh} />}
 
       {/* Create dialog */}
       <Dialog open={creating} onOpenChange={setCreating}>
         <DialogContent className="max-w-2xl rounded-sm">
           <DialogHeader>
             <DialogTitle className="font-display flex items-center gap-2"><UserPlus className="h-4 w-4 text-primary" /> New Onboarding</DialogTitle>
-            <DialogDescription>Capture joiner details. You can advance stages from the Open view.</DialogDescription>
+            <DialogDescription>For new manpower who just got selected (not yet in Employee Master). Completing the checklist creates their master record.</DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-2">
             <Field label="Full Name *" value={form.name} onChange={(v) => setForm({ ...form, name: v })} testid="onb-form-name" />
@@ -247,6 +170,9 @@ export default function Onboarding() {
             <DialogTitle className="font-display flex items-center gap-2"><UserPlus className="h-4 w-4 text-primary" /> {detail?.name}</DialogTitle>
             <DialogDescription>
               {detail?.designation || detail?.role} · {detail?.department || "—"} · Joining {detail?.joining_date || "—"}
+              {detail?.for_existing_employee && (
+                <Badge variant="outline" className="ml-2 rounded-sm border-blue-300 text-blue-800 bg-blue-50">Existing Employee</Badge>
+              )}
               {detail?.status === "completed" && (
                 <Badge className="ml-2 bg-emerald-100 text-emerald-900 border-emerald-300 rounded-sm">Completed</Badge>
               )}
@@ -278,7 +204,7 @@ export default function Onboarding() {
               {detail.status === "completed" && detail.triggers && (
                 <div className="bg-emerald-50 border border-emerald-300 rounded-sm p-3 text-[12px] space-y-1">
                   <div className="font-bold uppercase tracking-wider text-emerald-900 flex items-center gap-1"><Zap className="h-3 w-3" /> Auto-Triggers Fired</div>
-                  <div>Employee Code: <span className="font-mono">{detail.triggers.emp_code}</span></div>
+                  <div>Employee Code: <span className="font-mono">{detail.triggers.emp_code}</span>{detail.triggers.employee_reused && <span className="ml-1 text-blue-800">(existing master record reused)</span>}</div>
                   {detail.triggers.user_login && <div>Login: <span className="font-mono">{detail.triggers.user_login === "created" ? `Created (pwd: ${detail.triggers.default_password})` : "Existing user reused"}</span></div>}
                   {detail.triggers.ppe_issuance_id && <div>PPE Kit Issuance: <span className="font-mono">{detail.triggers.ppe_issuance_id.slice(0, 8)}…</span></div>}
                   {detail.triggers.safety_training_id && <div>Safety Induction: <span className="font-mono">{detail.triggers.safety_training_id.slice(0, 8)}…</span></div>}
@@ -289,6 +215,11 @@ export default function Onboarding() {
               {completing && (
                 <div className="bg-card border border-primary/40 rounded-sm p-3 space-y-2">
                   <div className="text-[11px] uppercase tracking-wider font-bold text-primary">Completion Triggers</div>
+                  {detail.for_existing_employee && (
+                    <div className="text-[12px] text-blue-800 bg-blue-50 border border-blue-200 rounded-sm px-2 py-1.5">
+                      This person already exists in Employee Master — no duplicate record will be created.
+                    </div>
+                  )}
                   <label className="flex items-center gap-2 text-sm">
                     <Checkbox checked={completeOpts.create_login} onCheckedChange={(v) => setCompleteOpts({ ...completeOpts, create_login: !!v })} data-testid="onb-opt-login" />
                     Create login user (email + password)
@@ -328,6 +259,246 @@ export default function Onboarding() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function EmployeeStatusTab({ refreshKey, onOpen, onStarted }) {
+  const [data, setData] = useState(null);
+  const [master, setMaster] = useState("employee");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [q, setQ] = useState("");
+  const [starting, setStarting] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await api.get("/hr/onboardings/employee-status", { params: { master } });
+      setData(r.data);
+    } catch (e) { toast.error(apiErrorMessage(e, "Load failed")); }
+  }, [master]);
+  useEffect(() => { load(); }, [load, refreshKey]);
+
+  const filtered = useMemo(() => {
+    let rows = data?.rows || [];
+    if (statusFilter) rows = rows.filter((r) => r.status === statusFilter);
+    if (q.trim()) {
+      const s = q.toLowerCase();
+      rows = rows.filter((r) => [r.name, r.emp_code, r.department, r.designation].some((v) => (v || "").toLowerCase().includes(s)));
+    }
+    return rows;
+  }, [data, statusFilter, q]);
+
+  const startChecklist = async (row) => {
+    setStarting(row.employee_id);
+    try {
+      const r = await api.post("/hr/onboardings/start-for-employee", { employee_id: row.employee_id });
+      toast.success(`Checklist started for ${row.name}`);
+      onStarted();
+      onOpen(r.data.id);
+    } catch (e) { toast.error(apiErrorMessage(e, "Could not start checklist")); }
+    finally { setStarting(null); }
+  };
+
+  const kpis = [
+    { label: "Total Employees", value: data?.total ?? "—", tone: "text-foreground", key: "" },
+    { label: "Onboarding Complete", value: data?.completed ?? "—", tone: "text-emerald-700", key: "completed" },
+    { label: "In Progress", value: data?.in_progress ?? "—", tone: "text-amber-700", key: "in_progress" },
+    { label: "Not Started", value: data?.not_started ?? "—", tone: "text-slate-600", key: "not_started" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {kpis.map((k) => (
+          <button key={k.label} onClick={() => setStatusFilter(k.key)}
+            className={`bg-card border rounded-sm p-3 text-left transition-colors hover:border-primary/50 ${statusFilter === k.key ? "border-primary" : "border-border"}`}
+            data-testid={`onb-kpi-${k.key || "total"}`}>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{k.label}</div>
+            <div className={`text-2xl font-black tabular ${k.tone}`}>{k.value}</div>
+          </button>
+        ))}
+      </div>
+
+      <div className="bg-card border border-border rounded-sm">
+        <div className="p-4 border-b border-border flex flex-wrap items-center gap-2">
+          <div className="relative w-64">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input className="pl-9 h-9 rounded-sm" placeholder="Search name / code / dept…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="onb-status-search" />
+          </div>
+          <Select value={master} onValueChange={setMaster}>
+            <SelectTrigger className="h-9 w-48 rounded-sm" data-testid="onb-status-master"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="employee">Employee Master</SelectItem>
+              <SelectItem value="worker">Worker / Labour Master</SelectItem>
+            </SelectContent>
+          </Select>
+          <span className="text-[11px] text-muted-foreground">{filtered.length} of {data?.total ?? 0}</span>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Code</TableHead>
+              <TableHead>Employee</TableHead>
+              <TableHead>Dept / Designation</TableHead>
+              <TableHead>Joining</TableHead>
+              <TableHead>Progress</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Action</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filtered.length === 0 && (
+              <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">No employees match.</TableCell></TableRow>
+            )}
+            {filtered.map((r) => (
+              <TableRow key={r.employee_id} data-testid={`onb-emp-${r.employee_id}`}>
+                <TableCell className="font-mono-data text-xs">{r.emp_code || "—"}</TableCell>
+                <TableCell className="font-semibold">{r.name}</TableCell>
+                <TableCell>
+                  <div className="text-sm">{r.designation || "—"}</div>
+                  <div className="text-[11px] text-muted-foreground uppercase tracking-wider">{r.department || "—"}</div>
+                </TableCell>
+                <TableCell className="text-[12px]">{r.joining_date || "—"}</TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2 min-w-[140px]">
+                    <div className="flex-1 h-1.5 bg-secondary rounded-full overflow-hidden">
+                      <div className={`h-full transition-all ${r.status === "completed" ? "bg-emerald-600" : "bg-primary"}`} style={{ width: `${r.progress_pct}%` }} />
+                    </div>
+                    <span className="text-[11px] tabular text-muted-foreground">{r.progress_pct}%</span>
+                  </div>
+                </TableCell>
+                <TableCell>{STATUS_BADGE[r.status]}</TableCell>
+                <TableCell className="text-right">
+                  {r.onboarding_id ? (
+                    <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={() => onOpen(r.onboarding_id)} data-testid={`onb-emp-open-${r.employee_id}`}>
+                      Open <ChevronRight className="h-3 w-3 ml-1" />
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="outline" className="h-7 rounded-sm text-primary border-primary/40"
+                      disabled={starting === r.employee_id}
+                      onClick={() => startChecklist(r)} data-testid={`onb-emp-start-${r.employee_id}`}>
+                      <PlayCircle className="h-3 w-3 mr-1" /> {starting === r.employee_id ? "Starting…" : "Start Checklist"}
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+function PipelineTab({ refreshKey, onOpen, onChanged }) {
+  const [rows, setRows] = useState([]);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [q, setQ] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      const params = {};
+      if (statusFilter) params.status = statusFilter;
+      const r = await api.get("/hr/onboardings", { params });
+      setRows(r.data || []);
+    } catch (e) { toast.error(apiErrorMessage(e, "Load failed")); }
+  }, [statusFilter]);
+  useEffect(() => { load(); }, [load, refreshKey]);
+
+  const filtered = useMemo(() => {
+    if (!q.trim()) return rows;
+    const s = q.toLowerCase();
+    return rows.filter((r) =>
+      [r.name, r.email, r.department, r.designation].some((v) => (v || "").toLowerCase().includes(s))
+    );
+  }, [rows, q]);
+
+  const remove = async (oid) => {
+    if (!window.confirm("Delete this onboarding record?")) return;
+    try {
+      await api.delete(`/hr/onboardings/${oid}`);
+      toast.success("Deleted"); onChanged();
+    } catch (e) { toast.error(apiErrorMessage(e, "Delete failed")); }
+  };
+
+  const progressPct = (r) => {
+    if (!r.stages?.length) return 0;
+    const done = r.stages.filter((s) => s.done).length;
+    return Math.round((done / r.stages.length) * 100);
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-sm">
+      <div className="p-4 border-b border-border flex flex-wrap items-center gap-2">
+        <div className="relative w-64">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input className="pl-9 h-9 rounded-sm" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="onb-search" />
+        </div>
+        <Select value={statusFilter || "__all"} onValueChange={(v) => setStatusFilter(v === "__all" ? "" : v)}>
+          <SelectTrigger className="h-9 w-40 rounded-sm" data-testid="onb-status-filter">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all">All status</SelectItem>
+            <SelectItem value="in_progress">In Progress</SelectItem>
+            <SelectItem value="completed">Completed</SelectItem>
+          </SelectContent>
+        </Select>
+        <span className="text-[11px] text-muted-foreground">{filtered.length} of {rows.length}</span>
+      </div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Joiner</TableHead>
+            <TableHead>Role / Dept</TableHead>
+            <TableHead>Joining</TableHead>
+            <TableHead>Progress</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {filtered.length === 0 && (
+            <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">No onboardings.</TableCell></TableRow>
+          )}
+          {filtered.map((r) => (
+            <TableRow key={r.id} data-testid={`onb-row-${r.id}`}>
+              <TableCell>
+                <div className="font-semibold">{r.name}
+                  {r.for_existing_employee && <Badge variant="outline" className="ml-2 rounded-sm border-blue-300 text-blue-800 bg-blue-50 text-[10px]">Existing</Badge>}
+                </div>
+                <div className="text-[11px] text-muted-foreground">{r.email || "—"} · {r.phone || "—"}</div>
+              </TableCell>
+              <TableCell>
+                <div className="text-sm">{r.designation || r.role}</div>
+                <div className="text-[11px] text-muted-foreground uppercase tracking-wider">{r.department || "—"}</div>
+              </TableCell>
+              <TableCell className="text-[12px]">{r.joining_date || "—"}</TableCell>
+              <TableCell>
+                <div className="flex items-center gap-2 min-w-[160px]">
+                  <div className="flex-1 h-1.5 bg-secondary rounded-full overflow-hidden">
+                    <div className="h-full bg-primary transition-all" style={{ width: `${progressPct(r)}%` }} />
+                  </div>
+                  <span className="text-[11px] tabular text-muted-foreground">{progressPct(r)}%</span>
+                </div>
+              </TableCell>
+              <TableCell>{r.status === "completed" ? STATUS_BADGE.completed : STATUS_BADGE.in_progress}</TableCell>
+              <TableCell className="text-right">
+                <div className="inline-flex gap-1">
+                  <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={() => onOpen(r)} data-testid={`onb-open-${r.id}`}>
+                    Open <ChevronRight className="h-3 w-3 ml-1" />
+                  </Button>
+                  {r.status !== "completed" && (
+                    <Button size="sm" variant="outline" className="h-7 rounded-sm text-destructive border-destructive/40" onClick={() => remove(r.id)} data-testid={`onb-delete-${r.id}`}>
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </div>
   );
 }

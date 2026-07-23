@@ -139,7 +139,7 @@ export const MENU_ITEMS = [
   { department: "hr", parentLabel: "Masters",   label: "Designation Master",      to: "/app/hr/masters",            icon: Tag,             testid: "nav-designations", perm: "employees" },
   { department: "hr", parentLabel: "Masters",   label: "Skill / Trade Master",    to: "/app/hr/masters?tab=skills", icon: Tag,             testid: "nav-skills", perm: "employees" },
   { department: "hr", parentLabel: "Documents", label: "Employee Documents",      to: "/app/hr/letters",            icon: ScrollText,      testid: "nav-emp-docs", perm: "hr_letters" },
-  { department: "hr", parentLabel: "Documents", label: "Document Verification",   to: "/app/hr/onboarding",         icon: ClipboardCheck,  testid: "nav-doc-verify", perm: "hr_onboarding" },
+  { department: "hr", parentLabel: "Documents", label: "Document Verification",   to: "/app/hr/employee-360?tab=docs", icon: ClipboardCheck,  testid: "nav-doc-verify", perm: "hr_onboarding" },
   { department: "hr", parentLabel: "Compliance", label: "Medical Fitness Register", to: "/app/hr/letters",          icon: Stethoscope,     testid: "nav-medical", perm: "hr_letters" },
   { department: "hr", parentLabel: "Compliance", label: "Police Verification",    to: "/app/hr/letters",            icon: ShieldCheck,     testid: "nav-police-verify", perm: "hr_letters" },
   { department: "hr", parentLabel: "Compliance", label: "Training & Certification", to: "/app/safety-trainings",    icon: GraduationCap,   testid: "nav-training", perm: "safety_trainings" },
