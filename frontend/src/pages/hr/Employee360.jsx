@@ -64,10 +64,12 @@ export default function Employee360() {
   const loadEmps = async () => {
     try {
       const r = await api.get("/employees");
-      setEmployees(r.data || []);
+      const rows = r.data || [];
+      setEmployees(rows);
+      if (searchParams.get("tab") === "docs" && rows.length && !selected) load360(rows[0]);
     } catch (e) { toast.error(apiErrorMessage(e, "Load employees failed")); }
   };
-  useEffect(() => { loadEmps(); }, []);
+  useEffect(() => { loadEmps(); }, []); // eslint-disable-line
 
   const filtered = useMemo(() => {
     if (!q.trim()) return employees;
