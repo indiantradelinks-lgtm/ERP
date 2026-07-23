@@ -498,7 +498,7 @@ function AttendanceView() {
   );
 }
 
-function AttendanceBulkDialog({ onClose, onDone }) {
+export function AttendanceBulkDialog({ onClose, onDone }) {
   const [month, setMonth] = useState(monthIso());
   const [master, setMaster] = useState("employee");
   const [projectCode, setProjectCode] = useState("");

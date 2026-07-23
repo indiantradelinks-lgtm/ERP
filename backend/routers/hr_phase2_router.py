@@ -443,6 +443,7 @@ async def list_locks(user: dict = Depends(require_permission("attendance", "read
 async def attendance_register(from_date: Optional[str] = None, to_date: Optional[str] = None,
                               project_code: Optional[str] = None,
                               employee_id: Optional[str] = None,
+                              designation: Optional[str] = None,
                               status: Optional[str] = None,
                               approval_status: Optional[str] = None,
                               limit: int = 500,
@@ -458,6 +459,8 @@ async def attendance_register(from_date: Optional[str] = None, to_date: Optional
         q["project_code"] = project_code
     if employee_id:
         q["employee_id"] = employee_id
+    if designation:
+        q["designation"] = designation
     if status:
         q["status"] = status
     if approval_status:

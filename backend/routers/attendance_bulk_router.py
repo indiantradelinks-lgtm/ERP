@@ -15,8 +15,10 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
+from pydantic import BaseModel, Field
 
 from core import db, require_permission, now_iso, new_id
+from scope import allowed_project_ids
 from audit import audit
 
 router = APIRouter(prefix="/hr2/attendance/bulk", tags=["attendance-bulk"])
@@ -83,6 +85,126 @@ async def bulk_template(month: str, master: str = "employee",
     return StreamingResponse(
         buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="attendance_{master}_{month}.xlsx"'})
+
+
+class DaySheetEntry(BaseModel):
+    employee_id: str
+    status: str
+    overtime_hours: float = 0.0
+
+
+class DaySheetIn(BaseModel):
+    date: str
+    project_code: str = "HEAD-OFFICE"
+    master: str = "employee"
+    entries: List[DaySheetEntry] = Field(..., min_length=1, max_length=2000)
+
+
+async def _guard_project_access(user: dict, project_code: str):
+    """Coordinators/PMs may only mark attendance for their own projects."""
+    ids = await allowed_project_ids(user)
+    if ids is None or project_code == "HEAD-OFFICE":
+        if ids is not None and project_code == "HEAD-OFFICE" and user.get("role") in ("project_coordinator", "project_manager"):
+            raise HTTPException(403, "Head Office attendance is managed by HR")
+        return
+    projs = await db.projects.find({"id": {"$in": ids}}, {"_id": 0, "code": 1, "name": 1}).to_list(500)
+    tokens = {t for p in projs for t in (p.get("code"), p.get("name")) if t}
+    if project_code not in tokens:
+        raise HTTPException(403, "You can only mark attendance for your assigned projects")
+
+
+@router.get("/day-sheet")
+async def day_sheet(date: str, master: str = "employee", project_code: str = "HEAD-OFFICE",
+                     designation: str | None = None, q: str | None = None,
+                     only_project_people: bool = False,
+                     user: dict = Depends(require_permission("attendance", "read"))):
+    people = await _people(master)
+    if designation:
+        people = [p for p in people if (p.get("designation") or "") == designation]
+    if only_project_people and project_code != "HEAD-OFFICE":
+        people = [p for p in people if p.get("current_project_code") == project_code]
+    if q:
+        s = q.lower()
+        people = [p for p in people if s in (p.get("name") or "").lower() or s in (p.get("employee_id") or p.get("emp_code") or "").lower()]
+    existing = {a["employee_id"]: a for a in await db.attendance.find(
+        {"date": date, "employee_id": {"$in": [p["id"] for p in people]}},
+        {"_id": 0, "employee_id": 1, "status": 1, "overtime_hours": 1, "approval_status": 1, "locked": 1, "project_code": 1}).to_list(3000)}
+    locked = bool(await db.hr_attendance_locks.find_one({"month": date[:7], "project_code": project_code, "locked": True}, {"_id": 0, "id": 1}))
+    rows = []
+    for p in people:
+        a = existing.get(p["id"], {})
+        rows.append({
+            "employee_id": p["id"],
+            "code": p.get("employee_id") or p.get("emp_code") or "",
+            "name": p.get("name"),
+            "designation": p.get("designation") or "",
+            "status": a.get("status"),
+            "overtime_hours": a.get("overtime_hours") or 0,
+            "approval_status": a.get("approval_status"),
+            "entry_locked": bool(a.get("locked")),
+        })
+    designations = sorted({p.get("designation") for p in await _people(master) if p.get("designation")})
+    return {"date": date, "project_code": project_code, "month_locked": locked,
+            "designations": designations, "rows": rows}
+
+
+@router.post("/day-sheet")
+async def save_day_sheet(payload: DaySheetIn,
+                           user: dict = Depends(require_permission("attendance", "write"))):
+    if payload.master not in MASTERS:
+        raise HTTPException(400, "master must be 'employee' or 'worker'")
+    await _guard_project_access(user, payload.project_code)
+    if datetime.fromisoformat(payload.date).date() > datetime.now(timezone.utc).date():
+        raise HTTPException(400, "Cannot mark attendance for a future date")
+    if await db.hr_attendance_locks.find_one({"month": payload.date[:7], "project_code": payload.project_code, "locked": True}, {"_id": 0, "id": 1}):
+        raise HTTPException(400, f"{payload.date[:7]} is locked for {payload.project_code}")
+    people = {p["id"]: p for p in await _people(payload.master)}
+    created = updated = 0
+    errors: List[Dict[str, Any]] = []
+    for e in payload.entries:
+        person = people.get(e.employee_id)
+        if not person:
+            errors.append({"employee_id": e.employee_id, "error": "Unknown or inactive person"})
+            continue
+        if e.status not in set(CODE_MAP.values()):
+            errors.append({"employee_id": e.employee_id, "error": f"Invalid status '{e.status}'"})
+            continue
+        base = {
+            "status": e.status, "overtime_hours": e.overtime_hours or 0.0,
+            "total_hours": 8.0 if e.status in ("present", "on_duty") else (4.0 if e.status == "half_day" else 0.0),
+            "hours": 8.0 if e.status in ("present", "on_duty") else (4.0 if e.status == "half_day" else 0.0),
+            "project_code": payload.project_code,
+            "source": "day_sheet",
+            "approval_status": "pending",
+            "approved_by_id": None, "approved_by_name": None, "approved_at": None,
+            "marked_by_id": user["id"], "marked_by_name": user.get("name") or user.get("email"),
+        }
+        existing = await db.attendance.find_one({"employee_id": e.employee_id, "date": payload.date}, {"_id": 0, "id": 1, "locked": 1})
+        if existing:
+            if existing.get("locked"):
+                errors.append({"employee_id": e.employee_id, "error": "Entry locked"})
+                continue
+            await db.attendance.update_one({"id": existing["id"]}, {"$set": base})
+            updated += 1
+        else:
+            await db.attendance.insert_one({
+                "id": new_id(), "employee_id": e.employee_id,
+                "employee_name": person.get("name"),
+                "employee_code": person.get("employee_id") or person.get("emp_code"),
+                "person_type": "worker" if payload.master == "worker" else "employee",
+                "date": payload.date, "site_location": None,
+                "department": person.get("department"), "designation": person.get("designation"),
+                "skill": None, "shift_code": None,
+                "in_time": None, "out_time": None, "check_in": None, "check_out": None,
+                "remarks": None, "attachment_url": None,
+                "locked": False, "lock_id": None,
+                "created_at": now_iso(), **base,
+            })
+            created += 1
+    await audit(user=user, action="day_sheet", resource="attendance",
+                record_id=f"{payload.project_code}:{payload.date}",
+                after={"created": created, "updated": updated, "errors": len(errors)}, ip="attendance-bulk")
+    return {"ok": True, "created": created, "updated": updated, "errors": errors}
 
 
 @router.post("/upload")

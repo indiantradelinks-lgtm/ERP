@@ -39,8 +39,8 @@ PERMISSIONS_BASE = {
         "delete": {"super_admin", "hr_executive"},
     },
     "attendance": {
-        "read": {"super_admin", "director", "general_manager", "dept_head", "hr_executive", "supervisor", "project_manager"},
-        "write": {"super_admin", "hr_executive", "supervisor", "project_manager"},
+        "read": {"super_admin", "director", "general_manager", "dept_head", "hr_executive", "supervisor", "project_manager", "project_coordinator", "admin_executive"},
+        "write": {"super_admin", "hr_executive", "supervisor", "project_manager", "project_coordinator", "admin_executive"},
         "delete": {"super_admin", "hr_executive"},
     },
     "projects": {
