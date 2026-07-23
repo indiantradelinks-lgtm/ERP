@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from core import db, get_current_user, require_permission, now_iso, new_id
 from audit import audit
+from scope import apply_project_scope
 
 
 router = APIRouter(prefix="/hr2", tags=["hr-phase2"])
@@ -465,6 +466,7 @@ async def attendance_register(from_date: Optional[str] = None, to_date: Optional
         q["status"] = status
     if approval_status:
         q["approval_status"] = approval_status
+    q = await apply_project_scope(user, q, id_field="project_id", code_field="project_code")
     rows = await db.attendance.find(q, {"_id": 0}).sort([("date", -1)]).limit(limit).to_list(limit)
     return rows
 

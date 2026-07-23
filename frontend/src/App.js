@@ -148,6 +148,7 @@ import HrPhase2 from "@/pages/hr/HrPhase2";
 import HrPhase3 from "@/pages/hr/HrPhase3";
 import HrPhase4 from "@/pages/hr/HrPhase4";
 import HrPhase5 from "@/pages/hr/HrPhase5";
+import AttendanceCenter from "@/pages/hr/AttendanceCenter";
 import QuotationBuilder from "@/pages/QuotationBuilder";
 import ProjectDashboard from "@/pages/ProjectDashboard";
 import ContractHandovers from "@/pages/ops/ContractHandovers";
@@ -234,6 +235,7 @@ export default function App() {
             <Route path="/app/employees" element={<ProtectedShell><Employees /></ProtectedShell>} />
             <Route path="/app/workers" element={<ProtectedShell><Employees master="worker" /></ProtectedShell>} />
             <Route path="/app/attendance" element={<ProtectedShell><Attendance /></ProtectedShell>} />
+            <Route path="/app/attendance-center" element={<ProtectedShell><AttendanceCenter /></ProtectedShell>} />
             <Route path="/app/projects" element={<ProtectedShell><Projects /></ProtectedShell>} />
             <Route path="/app/ops/handovers" element={<ProtectedShell><ContractHandovers /></ProtectedShell>} />
             <Route path="/app/ops/service-types" element={<ProtectedShell><ServiceTypeMaster /></ProtectedShell>} />

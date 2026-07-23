@@ -27,7 +27,7 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 
 export default function AttendanceCenter() {
   const { user } = useAuth();
-  const isProjectRole = ["project_coordinator", "project_manager"].includes(user?.role);
+  const isProjectRole = ["project_coordinator", "project_manager", "supervisor", "site_engineer"].includes(user?.role);
   const [tab, setTab] = useState("daily");
   const [projects, setProjects] = useState([]);
   const [scope, setScope] = useState(isProjectRole ? "" : "HEAD-OFFICE");

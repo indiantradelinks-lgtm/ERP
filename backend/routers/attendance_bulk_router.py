@@ -118,6 +118,7 @@ async def day_sheet(date: str, master: str = "employee", project_code: str = "HE
                      designation: str | None = None, q: str | None = None,
                      only_project_people: bool = False,
                      user: dict = Depends(require_permission("attendance", "read"))):
+    await _guard_project_access(user, project_code)
     people = await _people(master)
     if designation:
         people = [p for p in people if (p.get("designation") or "") == designation]
