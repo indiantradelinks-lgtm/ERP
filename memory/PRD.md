@@ -4722,3 +4722,10 @@ User asks: 1) Onboarding must auto-fetch ALL employees from Employee Master and 
 - Export now honors filters: DataTableShell gains exportParams prop → downloadExport(resource, fmt, params); backend /api/export/employees.{xlsx|pdf} accepts optional master & project_code query params (also fixes pre-existing gap where worker-page export dumped all employees).
 - Self-tested: xlsx export (project→2 rows vs all→3), Playwright e2e (All=3 → PRJ-2025-01=2 with badges → +search Alpha=1). Test workers cleaned. NOTE: Playwright Radix Select clicks need scroll_into_view + settle waits — earlier "wrong option selected" was test flakiness, not a bug.
 **Status: COMPLETE & self-tested.**
+
+### Feature (Jul 24, 2026) — New ITL logo rollout (full rebrand) ✅
+User supplied a new 3-circle ITL logo (1916x644, ~2.97:1). Replaced ALL logo assets in place (same filenames → every consumer updated, old logo pixels fully removed):
+- `/app/backend/assets/itl-logo.jpg` (Excel A1 + PDF export band + quotation PDF header + document PDFs), `/app/backend/assets/itl-watermark.png` (page watermark), `/app/frontend/public/brand/itl-logo.jpg` (Brand.jsx → sidebar/login/landing/footer + email header URL), `logo192.png`/`logo512.png`/`favicon.ico` (PWA icons, centered padded squares on white).
+- Aspect-ratio fixes for new 2.97:1 shape: pdf_watermark.py (644/1916), exports.py Excel img 134x45 px + PDF band 33x11.1mm (colWidths 37/227), quotation_pdf.py 34x11.4mm (colWidths 38/72/75), document_pdf.py 24x8.1mm (colWidth 28), notification_service.py email img 107x36.
+- Verified: quotation PDF (QTN-2026-0086) + employees PDF export rendered to image — new logo in header AND watermark; login page screenshot shows new brand mark. Users may need a hard-refresh in already-open browsers (same filename = cached).
+**Status: COMPLETE & self-tested (PDF renders + screenshot).**

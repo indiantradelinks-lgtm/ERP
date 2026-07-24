@@ -21,9 +21,9 @@ def _draw_watermark(canvas, doc, *, width_mm: float = 140.0):
         page_w, page_h = canvas._pagesize
     except AttributeError:
         page_w, page_h = A4
-    # Preserve aspect (logo is ~2.18:1). Width is configurable.
+    # Preserve aspect (logo is ~2.97:1). Width is configurable.
     img_w = width_mm * mm
-    img_h = img_w * (265 / 577)
+    img_h = img_w * (644 / 1916)
     x = (page_w - img_w) / 2.0
     y = (page_h - img_h) / 2.0
     canvas.saveState()

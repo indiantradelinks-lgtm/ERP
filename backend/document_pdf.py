@@ -47,7 +47,7 @@ def _header(s):
     logo = None
     try:
         if os.path.exists(BRAND_LOGO_PATH):
-            logo = RLImage(BRAND_LOGO_PATH, width=14 * mm, height=14 * mm)
+            logo = RLImage(BRAND_LOGO_PATH, width=24 * mm, height=8.1 * mm)
     except Exception:
         logo = None
     brand = [
@@ -55,7 +55,7 @@ def _header(s):
         Paragraph(BRAND_SUB, s["meta"]),
     ]
     cells = [[logo or "", brand]] if logo else [["", brand]]
-    t = Table(cells, colWidths=[18 * mm, None])
+    t = Table(cells, colWidths=[28 * mm, None])
     t.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),

@@ -220,8 +220,8 @@ def to_excel(resource: str, rows: List[Dict[str, Any]], mask_pii: bool = False) 
     try:
         if os.path.exists(BRAND_LOGO_PATH):
             img = XLImage(BRAND_LOGO_PATH)
-            img.height = 60
-            img.width = 60
+            img.height = 45
+            img.width = 134
             ws.add_image(img, "A1")
             ws.row_dimensions[1].height = 22
             ws.row_dimensions[2].height = 22
@@ -279,7 +279,7 @@ def to_pdf(resource: str, rows: List[Dict[str, Any]], mask_pii: bool = False) ->
     logo_cell = ""
     try:
         if os.path.exists(BRAND_LOGO_PATH):
-            logo_cell = RLImage(BRAND_LOGO_PATH, width=20 * mm, height=20 * mm)
+            logo_cell = RLImage(BRAND_LOGO_PATH, width=33 * mm, height=11.1 * mm)
     except Exception:
         logo_cell = ""
     brand_block = [
@@ -292,7 +292,7 @@ def to_pdf(resource: str, rows: List[Dict[str, Any]], mask_pii: bool = False) ->
             "<font color='#b45309'>⚠ DPDP Act 2023 — Personal data is masked for the current viewer.</font>",
             meta_style,
         ))
-    brand_band = Table([[logo_cell, brand_block]], colWidths=[24 * mm, 240 * mm])
+    brand_band = Table([[logo_cell, brand_block]], colWidths=[37 * mm, 227 * mm])
     brand_band.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (0, 0), 0),

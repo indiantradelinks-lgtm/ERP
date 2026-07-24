@@ -56,7 +56,7 @@ def _shell(title: str, preheader: str, body_html: str, cta_label: str | None = N
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
           <tr>
             <td width="60" valign="middle" style="padding-right:12px;">
-              {f'<img src="{logo_url}" alt="INDIAN TRADE LINKS" width="48" height="48" style="display:block;border-radius:4px;background:#ffffff;" />' if logo_url else ''}
+              {f'<img src="{logo_url}" alt="INDIAN TRADE LINKS" width="107" height="36" style="display:block;border-radius:4px;background:#ffffff;padding:2px;" />' if logo_url else ''}
             </td>
             <td valign="middle">
               <div style="color:#0f172a;font-weight:900;font-size:16px;letter-spacing:-0.01em;line-height:1.2;">INDIAN TRADE LINKS</div>

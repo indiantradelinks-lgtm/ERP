@@ -64,7 +64,7 @@ def _header_table(quote: Dict, company: Dict, styles) -> Table:
     logo_cell = ""
     try:
         if os.path.exists(logo_path):
-            logo_cell = RLImage(logo_path, width=24 * mm, height=24 * mm)
+            logo_cell = RLImage(logo_path, width=34 * mm, height=11.4 * mm)
     except Exception:
         logo_cell = ""
 
@@ -91,7 +91,7 @@ def _header_table(quote: Dict, company: Dict, styles) -> Table:
             + (f"  |  Ref Enq: <b>{quote['enquiry_no']}</b>" if quote.get("enquiry_no") else ""),
             styles["Small"]),
     ]
-    t = Table([[logo_cell, company_block, meta_block]], colWidths=[28 * mm, 82 * mm, 75 * mm])
+    t = Table([[logo_cell, company_block, meta_block]], colWidths=[38 * mm, 72 * mm, 75 * mm])
     t.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
