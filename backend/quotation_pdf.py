@@ -55,6 +55,14 @@ def _fmt_inr(amount) -> str:
     return "Rs. " + f"{a:,.2f}"
 
 
+def _fmt_num(amount) -> str:
+    try:
+        a = float(amount or 0)
+    except (TypeError, ValueError):
+        a = 0.0
+    return f"{a:,.2f}"
+
+
 def _header_table(quote: Dict, company: Dict, styles) -> Table:
     from reportlab.platypus import Image as RLImage
     import os
@@ -138,8 +146,8 @@ def _client_meta_table(quote: Dict, styles) -> Table:
 def _items_table(section: Dict, styles, tax_mode: str) -> Table:
     items = section.get("items") or []
     rows = [
-        ["SN", "Description", "HSN/SAC", "Qty", "Unit", "Rate",
-         "Discount %", "Taxable", "GST %", "Total"]
+        ["SN", "Description", "HSN/SAC", "Qty", "Unit", "Rate (Rs.)",
+         "Disc %", "Taxable (Rs.)", "GST %", "Total (Rs.)"]
     ]
     for i, it in enumerate(items, start=1):
         desc = (it.get("description") or "") + (
@@ -152,39 +160,45 @@ def _items_table(section: Dict, styles, tax_mode: str) -> Table:
             it.get("hsn_sac") or "—",
             f"{float(it.get('quantity') or 0):,.2f}",
             it.get("unit") or "—",
-            _fmt_inr(it.get("rate")),
+            _fmt_num(it.get("rate")),
             f"{float(it.get('discount_pct') or 0):.1f}",
-            _fmt_inr(it.get("taxable")),
+            _fmt_num(it.get("taxable")),
             f"{float(it.get('gst_pct') or 0):.1f}",
-            _fmt_inr(it.get("total")),
+            _fmt_num(it.get("total")),
         ])
     # Subtotal row
-    rows.append(["", Paragraph("<b>Section Subtotal</b>", styles["BodyBold"]), "", "", "", "", "",
-                 _fmt_inr(section.get("subtotal_taxable")), "", _fmt_inr(section.get("subtotal_total"))])
+    rows.append(["", Paragraph("<b>Section Subtotal (Rs.)</b>", styles["BodyBold"]), "", "", "", "", "",
+                 _fmt_num(section.get("subtotal_taxable")), "", _fmt_num(section.get("subtotal_total"))])
     t = Table(
         rows,
-        colWidths=[8 * mm, 60 * mm, 16 * mm, 14 * mm, 12 * mm, 18 * mm, 14 * mm, 18 * mm, 12 * mm, 22 * mm],
+        colWidths=[7 * mm, 47 * mm, 13 * mm, 14 * mm, 10 * mm, 23 * mm, 10 * mm, 24 * mm, 10 * mm, 24 * mm],
         repeatRows=1,
     )
     t.setStyle(TableStyle([
+        # Header band
         ("BACKGROUND", (0, 0), (-1, 0), SLATE),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 8),
-        ("ALIGN", (3, 1), (-1, -1), "RIGHT"),
+        ("FONTSIZE", (0, 0), (-1, 0), 7.5),
+        # Column alignment — text left, numerics right (headers + values together)
+        ("ALIGN", (1, 0), (1, -1), "LEFT"),
         ("ALIGN", (0, 0), (0, -1), "CENTER"),
         ("ALIGN", (2, 0), (2, -1), "CENTER"),
         ("ALIGN", (4, 0), (4, -1), "CENTER"),
-        ("FONTSIZE", (0, 1), (-1, -1), 8.5),
+        ("ALIGN", (3, 0), (3, -1), "RIGHT"),
+        ("ALIGN", (5, 0), (9, -1), "RIGHT"),
+        # Body
+        ("FONTSIZE", (0, 1), (-1, -1), 8),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, SOFT]),
         ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#e0e7ef")),
         ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
         ("GRID", (0, 0), (-1, -1), 0.25, BORDER),
+        # Consistent spacing
         ("LEFTPADDING", (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
     ]))
     return t
 
@@ -294,6 +308,27 @@ def render_quotation_pdf(quote: Dict, company: Dict) -> bytes:
     story.append(summary)
 
     story.append(Spacer(1, 16))
+
+    # Notes — confidentiality & digital validity
+    notes_text = (
+        "This quotation is confidential and intended solely for the recipient. No part of this "
+        "document may be disclosed or shared with any third party without prior written consent of "
+        "Indian Trade Links. This quotation may be transmitted and accepted through electronic or "
+        "digital platforms, and electronically generated copies shall be considered valid without "
+        "physical signatures or company seals."
+    )
+    notes_tbl = Table([[Paragraph("<b>NOTES</b>", styles["Eyebrow"])],
+                       [Paragraph(notes_text, styles["Small"])]], colWidths=[185 * mm])
+    notes_tbl.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
+        ("BACKGROUND", (0, 0), (-1, -1), SOFT),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (0, 0), 6),
+        ("BOTTOMPADDING", (0, -1), (-1, -1), 6),
+        ("TOPPADDING", (0, 1), (-1, 1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 2),
+    ]))
     sig = Table([[
         Paragraph(
             f"For <b>{(company.get('name') or 'INDIAN TRADE LINKS').upper()}</b><br/><br/><br/>"
@@ -306,7 +341,7 @@ def render_quotation_pdf(quote: Dict, company: Dict) -> bytes:
     ]], colWidths=[92 * mm, 92 * mm])
     sig.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LINEABOVE", (0, 0), (-1, 0), 0.5, BORDER),
                              ("TOPPADDING", (0, 0), (-1, -1), 12)]))
-    story.append(sig)
+    story.append(KeepTogether([notes_tbl, Spacer(1, 10), sig]))
 
     doc.build(story)
     pdf_bytes = buf.getvalue()

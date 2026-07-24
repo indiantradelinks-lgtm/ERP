@@ -4736,3 +4736,11 @@ User supplied a new 3-circle ITL logo (1916x644, ~2.97:1). Replaced ALL logo ass
 3. Corporate-address footer on every PDF page: pdf_watermark._draw_footer draws centered "Corporate Address - Tower-1, Office No. 605-606, 6th Floor, Pearl Omaxe Building, Netaji Subhash Place, Pitampura, Delhi - 110034." with a thin rule at bottom via the same page callbacks; pdf_generator adds it in the fixed HTML footer.
 - Verified renders: PR-2026-0041 (WeasyPrint), QTN-2026-0086 (quotation), employees.pdf (2 pages — footer on both), document_pdf PO — all show faint watermark + address footer, no "Industrial Services Pvt. Ltd.". Login screenshot: subtitle gone.
 **Status: COMPLETE & self-tested (multi-generator PDF renders + screenshot).**
+
+### Feature (Jul 24, 2026) — Quotation PDF layout fixes + Notes section ✅
+User reported overlapping values in items table (Unit/Rate/Discount/Taxable/GST/Total colliding).
+- ROOT CAUSE: colWidths totalled 194mm vs 182mm usable page width → ReportLab squeezed columns and string cells overflowed into neighbours.
+- FIX (quotation_pdf.py): columns rebalanced to exactly 182mm [7,47,13,14,10,23,10,24,10,24]; numeric cells use _fmt_num (currency noted per-column header "Rate (Rs.)/Taxable (Rs.)/Total (Rs.)"); headers + values share alignment rules (text left, numerics right, SN/HSN/Unit centered); consistent 4-5pt padding; header font 7.5, body 8; subtotal row labelled "Section Subtotal (Rs.)".
+- NEW Notes box (soft bg, bordered) before signature with the confidentiality + digital-validity text supplied by user; KeepTogether(notes + signature) so they never split across pages.
+- Verified: real QTN-2026-0086 render (2 pages, watermark + address footer both pages) + synthetic stress test with 99,999,999.99 values and qty 99,999.99 — no overlap.
+**Status: COMPLETE & self-tested (rendered PDF inspections).**
