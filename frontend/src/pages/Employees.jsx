@@ -58,6 +58,14 @@ export default function Employees({ master = "employee" }) {
   const [histOpen, setHistOpen] = useState(false);
   const [histRows, setHistRows] = useState([]);
   const [histFor, setHistFor] = useState(null);
+  const [projects, setProjects] = useState([]);
+  const [projectFilter, setProjectFilter] = useState("");
+
+  useEffect(() => {
+    if (master !== "worker") return;
+    api.get("/projects").then((res) => setProjects(res.data || [])).catch(() => {});
+    setProjectFilter("");
+  }, [master]);
 
   const openHistory = async (row) => {
     setHistFor(row);
@@ -94,6 +102,12 @@ export default function Employees({ master = "employee" }) {
       return <StatusBadge text={labels[v] || v} tone={tone} />;
     }},
     { key: "role", label: "Role", render: (row) => (row.role || "").replaceAll("_", " ") },
+    ...(master === "worker" ? [{
+      key: "current_project_code", label: "Project",
+      render: (row) => row.current_project_code
+        ? <StatusBadge text={row.current_project_code} tone="primary" />
+        : <span className="text-muted-foreground">—</span>,
+    }] : []),
     { key: "departments", label: "Departments", render: renderDepts },
     { key: "reporting_manager", label: "Reports To" },
     { key: "phone", label: "Phone" },
@@ -128,6 +142,11 @@ export default function Employees({ master = "employee" }) {
     { key: "allow_multi_dept", label: "Multi-Department Allowed", type: "checkbox", checkboxLabel: "May belong to >1 department" },
     { key: "reporting_manager", label: "Reporting Manager" },
     { key: "branch", label: "Branch / Office" },
+    ...(master === "worker" ? [{
+      key: "current_project_code", label: "Current Project", type: "select",
+      options: projects.map((p) => ({ value: p.code, label: `${p.code} · ${p.name}` })),
+      help: "Project this worker is currently assigned to (from Projects Master)",
+    }] : []),
     { key: "joining_date", label: "Joining Date", type: "date" },
     { key: "salary", label: "Monthly Salary (₹)", type: "number", help: "For Permanent / Contractual. Daily wagers use Daily Rate below." },
 
@@ -333,7 +352,9 @@ export default function Employees({ master = "employee" }) {
         key={master}
         title={meta.title}
         description={meta.description}
-        data={(r.data || []).filter((row) => (row.master_category || "employee") === master)}
+        data={(r.data || [])
+          .filter((row) => (row.master_category || "employee") === master)
+          .filter((row) => !projectFilter || row.current_project_code === projectFilter)}
         columns={columns}
         fields={fields}
         onCreate={r.create}
@@ -342,6 +363,20 @@ export default function Employees({ master = "employee" }) {
         testidPrefix={meta.testidPrefix}
         createDefaults={{ master_category: master }}
         exportResource={r.exportResource}
+        exportParams={{ master, ...(projectFilter ? { project_code: projectFilter } : {}) }}
+        rightSlot={master === "worker" ? (
+          <Select value={projectFilter || "__all"} onValueChange={(v) => setProjectFilter(v === "__all" ? "" : v)}>
+            <SelectTrigger className="h-9 w-56 rounded-sm" data-testid="workers-project-filter">
+              <SelectValue placeholder="All Projects" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all">All Projects</SelectItem>
+              {projects.map((p) => (
+                <SelectItem key={p.id} value={p.code}>{p.code} · {p.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : undefined}
         canWrite={r.canWrite}
         canDelete={r.canDelete}
         attachmentsParentType="employees"

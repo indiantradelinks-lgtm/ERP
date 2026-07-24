@@ -4716,3 +4716,9 @@ User asks: 1) Onboarding must auto-fetch ALL employees from Employee Master and 
 - Frontend: HR Command Center (/app/hr/command-center) gets a "Pending Docs" tab (hr5-tab-pending-docs, deep-linkable via ?tab=pending-docs): 3 KPIs (Total/Fully Verified/Docs Pending), search + master select, table with red "Missing" and amber "Uploaded, Not Verified" badges, "Open Docs" button per row → /app/hr/employee-360?tab=docs&emp={id}. Employee360 now honours ?emp= (auto-selects that employee) in addition to ?tab=docs.
 - Self-tested: curl (42 total / 42 pending / card severity=high) + Playwright e2e (digest renders 42 rows; Open Docs lands on Arjun Reddy's Documents tab, active).
 **Status: COMPLETE & self-tested (curl + e2e screenshot flow).**
+
+### Feature (Jul 24, 2026) — Project Name filter on Worker / Labour Master ✅
+- `/app/workers` (Employees.jsx master="worker"): project filter Select (workers-project-filter) loading from Projects Master (/api/projects) with "All Projects" default; new "Project" column (current_project_code badge); new "Current Project" select field in the worker form so records can be assigned. Filter composes with client-side search + table footer counts.
+- Export now honors filters: DataTableShell gains exportParams prop → downloadExport(resource, fmt, params); backend /api/export/employees.{xlsx|pdf} accepts optional master & project_code query params (also fixes pre-existing gap where worker-page export dumped all employees).
+- Self-tested: xlsx export (project→2 rows vs all→3), Playwright e2e (All=3 → PRJ-2025-01=2 with badges → +search Alpha=1). Test workers cleaned. NOTE: Playwright Radix Select clicks need scroll_into_view + settle waits — earlier "wrong option selected" was test flakiness, not a bug.
+**Status: COMPLETE & self-tested.**

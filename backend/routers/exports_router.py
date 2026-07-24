@@ -45,7 +45,9 @@ def _should_mask_pii(role: str | None, resource_key: str) -> bool:
 
 
 @router.get("/export/{resource}.{fmt}")
-async def export_resource(resource: str, fmt: str, user: dict = Depends(get_current_user)):
+async def export_resource(resource: str, fmt: str,
+                          master: str | None = None, project_code: str | None = None,
+                          user: dict = Depends(get_current_user)):
     if resource not in _EXPORT_RESOURCE_MAP:
         raise HTTPException(status_code=404, detail="Unknown resource")
     perm_key = _EXPORT_RESOURCE_MAP[resource]
@@ -54,7 +56,17 @@ async def export_resource(resource: str, fmt: str, user: dict = Depends(get_curr
     if fmt not in ("xlsx", "pdf"):
         raise HTTPException(status_code=400, detail="Format must be xlsx or pdf")
 
-    rows = await db[perm_key].find({}, {"_id": 0}).sort("created_at", -1).to_list(5000)
+    q: dict = {}
+    if perm_key == "employees":
+        if master == "worker":
+            q["master_category"] = "worker"
+        elif master == "employee":
+            q["$or"] = [{"master_category": {"$in": [None, "", "employee"]}},
+                        {"master_category": {"$exists": False}}]
+        if project_code:
+            q["current_project_code"] = project_code
+
+    rows = await db[perm_key].find(q, {"_id": 0}).sort("created_at", -1).to_list(5000)
     mask = _should_mask_pii(user.get("role"), perm_key)
     fname = f"{perm_key}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.{fmt}"
     if fmt == "xlsx":

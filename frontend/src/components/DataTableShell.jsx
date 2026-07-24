@@ -157,6 +157,7 @@ export default function DataTableShell({
   searchKeys,
   rightSlot,
   exportResource,
+  exportParams,
   canWrite = false,
   canDelete = false,
   attachmentsParentType,
@@ -236,10 +237,10 @@ export default function DataTableShell({
           {extraActions}
           {exportResource && (
             <>
-              <Button variant="outline" className="h-9 rounded-sm" onClick={() => downloadExport(exportResource, "xlsx")} data-testid={`${testidPrefix}-export-xlsx`} title="Export Excel">
+              <Button variant="outline" className="h-9 rounded-sm" onClick={() => downloadExport(exportResource, "xlsx", exportParams)} data-testid={`${testidPrefix}-export-xlsx`} title="Export Excel">
                 <FileSpreadsheet className="h-4 w-4" />
               </Button>
-              <Button variant="outline" className="h-9 rounded-sm" onClick={() => downloadExport(exportResource, "pdf")} data-testid={`${testidPrefix}-export-pdf`} title="Export PDF">
+              <Button variant="outline" className="h-9 rounded-sm" onClick={() => downloadExport(exportResource, "pdf", exportParams)} data-testid={`${testidPrefix}-export-pdf`} title="Export PDF">
                 <FileText className="h-4 w-4" />
               </Button>
             </>

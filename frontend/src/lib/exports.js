@@ -2,9 +2,9 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 
 /** Trigger a browser download for /api/export/{resource}.{fmt}. */
-export async function downloadExport(resource, fmt) {
+export async function downloadExport(resource, fmt, params) {
   try {
-    const { data, headers } = await api.get(`/export/${resource}.${fmt}`, { responseType: "blob" });
+    const { data, headers } = await api.get(`/export/${resource}.${fmt}`, { responseType: "blob", params });
     const cd = headers["content-disposition"] || "";
     const match = /filename="?([^";]+)"?/.exec(cd);
     const filename = match?.[1] || `${resource}.${fmt}`;
