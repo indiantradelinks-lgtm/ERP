@@ -25,9 +25,11 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from pdf_watermark import attach_watermark
+
 BRAND_LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "itl-logo.jpg")
 BRAND_NAME = "INDIAN TRADE LINKS"
-BRAND_SUB = "Industrial Services Pvt. Ltd."
+BRAND_SUB = ""
 
 
 def _styles():
@@ -52,7 +54,6 @@ def _header(s):
         logo = None
     brand = [
         Paragraph(f"<b>{BRAND_NAME}</b>", s["h2"]),
-        Paragraph(BRAND_SUB, s["meta"]),
     ]
     cells = [[logo or "", brand]] if logo else [["", brand]]
     t = Table(cells, colWidths=[28 * mm, None])
@@ -117,6 +118,7 @@ def _build_pdf(elements: List[Any]) -> bytes:
     doc = SimpleDocTemplate(buf, pagesize=A4,
                             leftMargin=18 * mm, rightMargin=18 * mm,
                             topMargin=14 * mm, bottomMargin=14 * mm)
+    attach_watermark(doc, width_mm=120.0)
     doc.build(elements)
     return buf.getvalue()
 

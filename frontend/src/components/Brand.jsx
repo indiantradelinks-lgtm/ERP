@@ -23,7 +23,6 @@ export default function Brand({ compact = false, className = "" }) {
       {!compact && (
         <div className="leading-tight">
           <div className="font-display font-black text-[13px] tracking-tight uppercase">Indian Trade Links</div>
-          <div className="text-[9px] uppercase tracking-[0.18em] opacity-60 -mt-0.5">Industrial Services Pvt. Ltd.</div>
         </div>
       )}
     </div>

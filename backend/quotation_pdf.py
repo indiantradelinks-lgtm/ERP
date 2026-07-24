@@ -70,7 +70,6 @@ def _header_table(quote: Dict, company: Dict, styles) -> Table:
 
     company_block = [
         Paragraph(f"<b>{(company.get('name') or 'INDIAN TRADE LINKS').upper()}</b>", styles["Title2"]),
-        Paragraph("Industrial Services Pvt. Ltd.", styles["Small"]),
         Paragraph(company.get("address") or "—", styles["Small"]),
         Paragraph(
             f"GSTIN: <b>{company.get('gstin') or '—'}</b>  |  PAN: <b>{company.get('pan') or '—'}</b>",

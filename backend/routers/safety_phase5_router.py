@@ -692,6 +692,8 @@ def _stream_pdf(payload: Dict[str, Any]) -> StreamingResponse:
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), title=payload["label"])
+    from pdf_watermark import attach_watermark
+    attach_watermark(doc, width_mm=180.0)
     styles = getSampleStyleSheet()
     elems = [
         Paragraph(f"<b>{payload['label']}</b>", styles["Title"]),

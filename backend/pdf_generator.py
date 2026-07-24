@@ -33,8 +33,11 @@ except Exception:  # pragma: no cover
     _RL_OK = False
 
 
-BRAND = "INDIAN TRADE LINKS · Industrial Services Pvt. Ltd."
+BRAND = "INDIAN TRADE LINKS"
 FOOTER_NOTE = "System-generated · Not valid without approval signatures"
+CORPORATE_ADDRESS = ("Corporate Address - Tower-1, Office No. 605-606, 6th Floor, "
+                     "Pearl Omaxe Building, Netaji Subhash Place, Pitampura, Delhi - 110034.")
+WATERMARK_FILE = "file:///app/backend/assets/itl-watermark.png"
 
 CSS_BASE = """
 <style>
@@ -67,7 +70,11 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .tag.slate { background: #e2e8f0; color: #334155; }
 .footer { position: fixed; bottom: 6mm; left: 16mm; right: 16mm;
           font-size: 8pt; color: #64748b; border-top: 1px solid #e2e8f0;
-          padding-top: 4px; display: flex; justify-content: space-between; }
+          padding-top: 4px; }
+.footer .frow { display: flex; justify-content: space-between; }
+.footer .faddr { text-align: center; font-size: 7.5pt; margin-top: 2px; }
+.wm { position: fixed; top: 38%; left: 0; right: 0; text-align: center; z-index: -1; }
+.wm img { width: 130mm; }
 .signs { margin-top: 28px; display: flex; gap: 24px; }
 .signs .box { flex: 1; border-top: 1px solid #0f172a; padding-top: 4px; font-size: 9pt; color: #475569; }
 .note { font-size: 9pt; color: #64748b; margin-top: 6px; }
@@ -96,6 +103,7 @@ def _esc(s: Any) -> str:
 
 def _wrap(title: str, body_html: str) -> str:
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8">{CSS_BASE}</head><body>
+<div class="wm"><img src="{WATERMARK_FILE}" /></div>
 <div class="title-row">
   <div>
     <div class="brand">{_esc(BRAND)}</div>
@@ -104,7 +112,10 @@ def _wrap(title: str, body_html: str) -> str:
   <div class="meta">Generated: <b>{_now_str()}</b></div>
 </div>
 {body_html}
-<div class="footer"><div>{_esc(FOOTER_NOTE)}</div><div>{_esc(BRAND)}</div></div>
+<div class="footer">
+  <div class="frow"><div>{_esc(FOOTER_NOTE)}</div><div>{_esc(BRAND)}</div></div>
+  <div class="faddr">{_esc(CORPORATE_ADDRESS)}</div>
+</div>
 </body></html>"""
 
 

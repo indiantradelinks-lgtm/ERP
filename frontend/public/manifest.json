@@ -1,7 +1,7 @@
 {
   "name": "INDIAN TRADE LINKS — Industrial Services ERP",
   "short_name": "ITL ERP",
-  "description": "INDIAN TRADE LINKS Industrial Services Pvt. Ltd. — Single-window cloud ERP for scaffolding, painting, roof sheeting, rope access & shutdown operations. RBAC, multi-level approvals, dashboards.",
+  "description": "INDIAN TRADE LINKS — Single-window cloud ERP for scaffolding, painting, roof sheeting, rope access & shutdown operations. RBAC, multi-level approvals, dashboards.",
   "id": "/?source=pwa",
   "start_url": "/?source=pwa",
   "scope": "/",

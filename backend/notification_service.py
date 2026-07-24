@@ -60,7 +60,6 @@ def _shell(title: str, preheader: str, body_html: str, cta_label: str | None = N
             </td>
             <td valign="middle">
               <div style="color:#0f172a;font-weight:900;font-size:16px;letter-spacing:-0.01em;line-height:1.2;">INDIAN TRADE LINKS</div>
-              <div style="color:#64748b;font-size:10px;letter-spacing:0.18em;text-transform:uppercase;margin-top:2px;">Industrial Services Pvt. Ltd.</div>
             </td>
             <td align="right" valign="middle" style="color:#94a3b8;font-size:10px;letter-spacing:0.18em;text-transform:uppercase;">ERP Notification</td>
           </tr>
