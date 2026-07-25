@@ -4744,3 +4744,10 @@ User reported overlapping values in items table (Unit/Rate/Discount/Taxable/GST/
 - NEW Notes box (soft bg, bordered) before signature with the confidentiality + digital-validity text supplied by user; KeepTogether(notes + signature) so they never split across pages.
 - Verified: real QTN-2026-0086 render (2 pages, watermark + address footer both pages) + synthetic stress test with 99,999,999.99 values and qty 99,999.99 — no overlap.
 **Status: COMPLETE & self-tested (rendered PDF inspections).**
+
+### Bug fix (Jul 24, 2026) — Enquiry Follow-Up Tracker "list not loading" (iteration_144) ✅
+- Symptom: tracker KPIs showed 34+ open enquiries but list said "No enquiries match this view."
+- ROOT CAUSE: frontend-only. Default tab was "Today"; Today/Upcoming/Overdue filter by next_followup_date which no enquiry had set → all bucket tabs empty; only "All Open" had rows.
+- FIX (EnquiryFollowUpTracker.jsx): default view "all"; tabs reordered All Open first with live counts (All Open (N), Today (N), Overdue (N)); rows without a date show "No follow-up planned" badge; per-tab helpful empty messages (EMPTY_MSG map, testid empty-view-msg). Backend unchanged (add_followup already stamps enquiries.next_followup_date).
+- Verified by testing_agent iteration_144: 100% backend (4/4 pytest) + 100% frontend incl. E2E schedule flow (Follow-up → future date → enquiry appears in Upcoming). Route: /app/sales/enquiry-followup.
+**Status: FIXED & verified by testing_agent.**
