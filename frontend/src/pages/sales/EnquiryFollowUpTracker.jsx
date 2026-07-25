@@ -23,7 +23,16 @@ const BUCKET_BADGE = {
   overdue: { variant: "destructive", label: "Overdue" },
   today: { variant: "default", label: "Today" },
   upcoming: { variant: "secondary", label: "Upcoming" },
-  no_date: { variant: "outline", label: "No date" },
+  no_date: { variant: "outline", label: "No follow-up planned" },
+};
+
+const EMPTY_MSG = {
+  today: "No follow-ups are due today. Open the All Open tab and use the Follow-up button to schedule one.",
+  upcoming: "No upcoming follow-ups scheduled. Set a 'Next follow-up date' from the Follow-up button in All Open.",
+  overdue: "No overdue follow-ups — you're all caught up.",
+  new: "No new enquiries (last 7 days) awaiting a first follow-up.",
+  critical: "No open enquiries marked high/critical priority.",
+  all: "No open enquiries found.",
 };
 const PRIORITY_CLASS = {
   critical: "text-red-500 font-semibold",
@@ -39,7 +48,7 @@ const STATUS_BADGE = {
 };
 
 export default function EnquiryFollowUpTracker() {
-  const [view, setView] = useState("today");
+  const [view, setView] = useState("all");
   const [data, setData] = useState({ rows: [], count: 0 });
   const [kpis, setKpis] = useState(null);
   const [dlgOpen, setDlgOpen] = useState(false);
@@ -185,17 +194,17 @@ export default function EnquiryFollowUpTracker() {
 
       <Tabs value={view} onValueChange={setView}>
         <TabsList>
-          <TabsTrigger value="today" data-testid="tab-today">Today</TabsTrigger>
+          <TabsTrigger value="all" data-testid="tab-all">All Open{kpis ? ` (${kpis.open})` : ""}</TabsTrigger>
+          <TabsTrigger value="today" data-testid="tab-today">Today{kpis ? ` (${kpis.due_today})` : ""}</TabsTrigger>
           <TabsTrigger value="upcoming" data-testid="tab-upcoming">Upcoming</TabsTrigger>
-          <TabsTrigger value="overdue" data-testid="tab-overdue">Overdue</TabsTrigger>
+          <TabsTrigger value="overdue" data-testid="tab-overdue">Overdue{kpis ? ` (${kpis.overdue})` : ""}</TabsTrigger>
           <TabsTrigger value="new" data-testid="tab-new">New</TabsTrigger>
           <TabsTrigger value="critical" data-testid="tab-critical">Critical</TabsTrigger>
-          <TabsTrigger value="all" data-testid="tab-all">All Open</TabsTrigger>
         </TabsList>
         <TabsContent value={view} className="mt-3">
           <Card><CardContent className="p-3">
             {data.rows.length === 0
-              ? <div className="text-sm text-muted-foreground p-4 text-center">No enquiries match this view.</div>
+              ? <div className="text-sm text-muted-foreground p-4 text-center" data-testid="empty-view-msg">{EMPTY_MSG[view] || "No enquiries match this view."}</div>
               : <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
