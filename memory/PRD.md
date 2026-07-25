@@ -4751,3 +4751,10 @@ User reported overlapping values in items table (Unit/Rate/Discount/Taxable/GST/
 - FIX (EnquiryFollowUpTracker.jsx): default view "all"; tabs reordered All Open first with live counts (All Open (N), Today (N), Overdue (N)); rows without a date show "No follow-up planned" badge; per-tab helpful empty messages (EMPTY_MSG map, testid empty-view-msg). Backend unchanged (add_followup already stamps enquiries.next_followup_date).
 - Verified by testing_agent iteration_144: 100% backend (4/4 pytest) + 100% frontend incl. E2E schedule flow (Follow-up → future date → enquiry appears in Upcoming). Route: /app/sales/enquiry-followup.
 **Status: FIXED & verified by testing_agent.**
+
+### Bug fix (Jul 25, 2026) — Enquiry Tracker data inaccurate (iteration_145) ✅
+- Symptom: Enq# shown as UUID slices, Client all '-', values ₹0, no quotation numbers.
+- ROOT CAUSE: tracker used field names not in the real enquiries schema — real: customer / enquiry_no / expected_value / quotation_no; tracker expected client_name / enquiry_number / estimated_value. Real status vocab is open/under_review/submitted/negotiation/hold/lost/won (sales_router ENQUIRY_STATUSES), not the fancy set the tracker assumed.
+- FIX: backend `_norm_enquiry()` maps real → canonical keys for inbox + CSV/XLSX exports (incl. quotation_no, priority default medium, _bucket); dashboard fixed (pipeline sums expected_value → ₹5.57L, quotations_pending/submitted split by quotation_no presence, by_client groups customer, by_salesperson falls back to last_followup_by). Frontend: new "Quotation #" column, STATUS_BADGE with real vocab, mobile quick-actions now post VALID statuses (submitted/negotiation/won — previously silently 400'd).
+- Verified by testing_agent iteration_145: 100% backend (9/9 pytest) + 100% frontend (real ENQ/QTN/client rendering, follow-up save flow → Upcoming, exports, KPI consistency).
+**Status: FIXED & verified by testing_agent.**
