@@ -41,7 +41,8 @@ const PRIORITY_CLASS = {
   low: "text-muted-foreground",
 };
 const STATUS_BADGE = {
-  new: "outline", under_review: "outline", quotation_pending: "secondary",
+  open: "outline", new: "outline", under_review: "outline", submitted: "default",
+  negotiation: "secondary", hold: "outline", quotation_pending: "secondary",
   quotation_submitted: "default", client_approval_pending: "secondary",
   commercial_negotiation: "secondary", po_awaited: "secondary",
   won: "default", lost: "destructive", dropped: "destructive", on_hold: "outline",
@@ -106,9 +107,9 @@ export default function EnquiryFollowUpTracker() {
   const quickAction = async (enq, action) => {
     const presets = {
       fu_done:         { mode: "Call",  remarks: "Follow-up done · mobile quick action" },
-      quot_submitted:  { mode: "Email", remarks: "Quotation submitted · mobile quick action", status: "quotation_submitted" },
-      client_pending:  { mode: "Email", remarks: "Awaiting client response · mobile quick action", status: "client_approval_pending" },
-      po_received:     { mode: "Email", remarks: "PO received · mobile quick action", status: "po_awaited" },
+      quot_submitted:  { mode: "Email", remarks: "Quotation submitted · mobile quick action", status: "submitted" },
+      client_pending:  { mode: "Email", remarks: "Awaiting client response · mobile quick action", status: "negotiation" },
+      po_received:     { mode: "Email", remarks: "PO received · mobile quick action", status: "won" },
     }[action];
     if (!presets) return;
     try {
@@ -208,7 +209,7 @@ export default function EnquiryFollowUpTracker() {
               : <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
-                      <tr><th className="text-left py-2">Enq #</th><th className="text-left">Client</th><th className="text-left">Service</th><th className="text-right">Value</th><th className="text-left">Status</th><th className="text-left">Priority</th><th className="text-left">Next FU</th><th>Bucket</th><th></th></tr>
+                      <tr><th className="text-left py-2">Enq #</th><th className="text-left">Client</th><th className="text-left">Quotation #</th><th className="text-left">Service</th><th className="text-right">Value</th><th className="text-left">Status</th><th className="text-left">Priority</th><th className="text-left">Next FU</th><th>Bucket</th><th></th></tr>
                     </thead>
                     <tbody>
                       {data.rows.map((r) => {
@@ -217,6 +218,7 @@ export default function EnquiryFollowUpTracker() {
                           <tr key={r.id} className={`border-b border-border/50 hover:bg-muted/30 ${r._bucket === "overdue" ? "bg-red-500/5" : r._bucket === "today" ? "bg-amber-500/5" : ""}`} data-testid={`row-${r.id}`}>
                             <td className="py-2 font-mono text-xs">{r.enquiry_number || r.id.slice(0, 8)}</td>
                             <td>{r.client_name || "-"}</td>
+                            <td className="font-mono text-xs">{r.quotation_no || "—"}</td>
                             <td className="text-xs">{r.service_type || r.scope_summary || "-"}</td>
                             <td className="text-right">{fmt(r.estimated_value)}</td>
                             <td><Badge variant={STATUS_BADGE[r.status] || "outline"}>{(r.status || "").replaceAll("_", " ")}</Badge></td>

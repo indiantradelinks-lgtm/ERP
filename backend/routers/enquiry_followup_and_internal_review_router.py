@@ -231,6 +231,33 @@ async def add_reminder(enq_id: str, payload: ReminderIn,
     return rec
 
 
+def _norm_enquiry(r: Dict[str, Any], today: str) -> Dict[str, Any]:
+    """Map real enquiry schema onto the canonical keys the tracker uses."""
+    nd = r.get("next_followup_date")
+    bucket = "no_date" if not nd else ("overdue" if nd < today else ("today" if nd == today else "upcoming"))
+    service = r.get("service_type") or ", ".join(r.get("service_categories") or []) or r.get("ownership_department") or ""
+    return {
+        "id": r.get("id"),
+        "enquiry_number": r.get("enquiry_no") or r.get("enquiry_number") or (r.get("id") or "")[:8],
+        "client_name": r.get("customer") or r.get("client_name") or "",
+        "quotation_no": r.get("quotation_no") or "",
+        "service_type": service,
+        "scope_summary": r.get("scope_of_work") or r.get("scope") or "",
+        "estimated_value": r.get("expected_value") or r.get("estimated_value") or 0,
+        "status": r.get("status") or "open",
+        "priority": r.get("priority") or "medium",
+        "contact_person": r.get("contact_person") or "",
+        "next_followup_date": nd,
+        "next_action": r.get("next_action") or "",
+        "action_owner": r.get("action_owner") or "",
+        "last_followup_date": r.get("last_followup_date") or "",
+        "last_followup_mode": r.get("last_followup_mode") or "",
+        "last_followup_remarks": r.get("last_followup_remarks") or "",
+        "created_at": r.get("created_at") or "",
+        "_bucket": bucket,
+    }
+
+
 @router.get("/enquiry-followups/inbox")
 async def enquiry_followup_inbox(
         view: str = Query("all", regex="^(today|upcoming|overdue|new|critical|all)$"),
@@ -257,21 +284,10 @@ async def enquiry_followup_inbox(
 
     rows = await db.enquiries.find(q, {"_id": 0}).sort("next_followup_date", 1).to_list(1000)
 
-    # Classification helper for the "all" view
-    def classify(r):
-        nd = r.get("next_followup_date")
-        if not nd:
-            return "no_date"
-        if nd < today:
-            return "overdue"
-        if nd == today:
-            return "today"
-        return "upcoming"
-
     return {
         "view": view,
         "count": len(rows),
-        "rows": [{**r, "_bucket": classify(r)} for r in rows],
+        "rows": [_norm_enquiry(r, today) for r in rows],
     }
 
 
@@ -287,8 +303,9 @@ async def enquiry_followup_dashboard(
 
     total_open = await n(open_q)
     new_recent = await n({"created_at": {"$gte": cutoff_7d}})
-    quot_pending = await n({"status": "quotation_pending"})
-    quot_submitted = await n({"status": "quotation_submitted"})
+    quot_pending = await n({**open_q, "$or": [{"quotation_no": {"$in": [None, ""]}},
+                                              {"quotation_no": {"$exists": False}}]})
+    quot_submitted = await n({**open_q, "quotation_no": {"$nin": [None, ""]}})
     due_today = await n({**open_q, "next_followup_date": today})
     overdue = await n({**open_q, "next_followup_date": {"$lt": today, "$ne": None}})
     high_priority = await n({**open_q, "priority": {"$in": ["high", "critical", "High", "Critical"]}})
@@ -299,7 +316,7 @@ async def enquiry_followup_dashboard(
     pipeline_val = 0.0
     async for r in db.enquiries.aggregate([
         {"$match": open_q},
-        {"$group": {"_id": None, "v": {"$sum": "$estimated_value"}}},
+        {"$group": {"_id": None, "v": {"$sum": {"$ifNull": ["$expected_value", {"$ifNull": ["$estimated_value", 0]}]}}}},
     ]):
         pipeline_val = float(r.get("v") or 0)
 
@@ -307,7 +324,7 @@ async def enquiry_followup_dashboard(
     sales_breakdown = []
     async for r in db.enquiries.aggregate([
         {"$match": open_q},
-        {"$group": {"_id": "$assigned_to", "count": {"$sum": 1}}},
+        {"$group": {"_id": {"$ifNull": ["$assigned_to", "$last_followup_by"]}, "count": {"$sum": 1}}},
         {"$sort": {"count": -1}},
         {"$limit": 10},
     ]):
@@ -317,7 +334,7 @@ async def enquiry_followup_dashboard(
     client_breakdown = []
     async for r in db.enquiries.aggregate([
         {"$match": open_q},
-        {"$group": {"_id": "$client_name", "count": {"$sum": 1}}},
+        {"$group": {"_id": {"$ifNull": ["$customer", "$client_name"]}, "count": {"$sum": 1}}},
         {"$sort": {"count": -1}},
         {"$limit": 10},
     ]):
@@ -751,9 +768,10 @@ async def export_followups_csv(view: str = "all",
     elif view == "critical":
         q["priority"] = {"$in": ["high", "critical", "High", "Critical"]}
     rows = await db.enquiries.find(q, {"_id": 0}).sort("next_followup_date", 1).to_list(5000)
-    headers = ["enquiry_number", "client_name", "service_type", "estimated_value",
+    rows = [_norm_enquiry(r, today) for r in rows]
+    headers = ["enquiry_number", "client_name", "quotation_no", "service_type", "estimated_value",
                 "status", "priority", "next_followup_date", "last_followup_date",
-                "action_owner", "assigned_to", "source", "created_at"]
+                "last_followup_remarks", "action_owner", "created_at"]
     return _csv_response(rows, headers, f"enquiry-followups-{view}.csv")
 
 
@@ -772,9 +790,10 @@ async def export_followups_xlsx(view: str = "all",
     elif view == "critical":
         q["priority"] = {"$in": ["high", "critical", "High", "Critical"]}
     rows = await db.enquiries.find(q, {"_id": 0}).sort("next_followup_date", 1).to_list(5000)
-    headers = ["enquiry_number", "client_name", "service_type", "estimated_value",
+    rows = [_norm_enquiry(r, today) for r in rows]
+    headers = ["enquiry_number", "client_name", "quotation_no", "service_type", "estimated_value",
                 "status", "priority", "next_followup_date", "last_followup_date",
-                "action_owner", "assigned_to", "source", "created_at"]
+                "last_followup_remarks", "action_owner", "created_at"]
     return _xlsx_response(rows, headers, f"enquiry-followups-{view}.xlsx",
                            sheet_name=f"Followups {view}",
                            title=f"Enquiry Follow-Ups — {view.title()} View",

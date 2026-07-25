@@ -1,0 +1,23 @@
+{
+  "summary": "Iter 145: Verified fix for 'Data visible in Enquiry Follow-Up & Status Tracker is not correct'. Backend _norm_enquiry maps real schema (customer/enquiry_no/expected_value) to canonical keys; inbox rows now expose ENQ-2026-00xx, real client names, QTN-2026-00xx, status vocab + medium default. Dashboard pipeline_value=₹5,57,210 (non-zero), quotations_pending+submitted==open, by_client shows real names. CSV/XLSX exports contain normalized columns + ENQ-YYYY-NNNN rows. Closed enquiries excluded. Mobile quick-action: /api/enquiries/{id}/status accepts 'submitted' (200) and rejects legacy 'quotation_submitted' (400). Frontend: table renders all 56 open enquiries with Quotation # column, status badges (open/submitted), priority=medium, tab label 'All Open (56)' matches kpi-open=56. Follow-up dialog title shows 'Follow-Up · <client> · ENQ-2026-0030'; Save produced 'Follow-up recorded' toast; scheduled enquiry appears on Upcoming tab (3 rows, bucket badge 'Upcoming'). Today/Overdue tabs show helpful empty messages. All 9/9 pytest cases passing.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_enquiry_followup_tracker.py",
+    "/app/test_reports/pytest/iter145_followup.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "_norm_enquiry() correctly fallback-chains customer→client_name and enquiry_no→enquiry_number→id[:8]; id[:8] fallback is only hit if enquiry_no is missing (in preview DB all rows have ENQ-... so fallback is unused).",
+    "dashboard by_salesperson uses $ifNull($assigned_to, $last_followup_by) — good fallback but if both are null it groups as null bucket; consider labelling '(unassigned)' at aggregation stage for consistency (already handled in Python post-processing).",
+    "EnquiryFollowUpTracker.jsx now includes Quotation # column and STATUS_BADGE with the real vocabulary (open/under_review/submitted/negotiation/hold/lost/won) — good alignment with sales_router ENQUIRY_STATUSES."
+  ],
+  "updated_files": ["/app/backend/tests/test_enquiry_followup_tracker.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin, cookie auth)",
+  "seed_data_creation": "Added 1 follow-up entry (next_followup_date=2026-03-10) via UI on ENQ-2026-0030 and 1 backend follow-up via pytest; changed status of one open enquiry to 'submitted' as part of transition test — all acceptable per review notes.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Route /app/sales/enquiry-followup. Login inputs: nth(0)=email, nth(1)=password. Table columns are ENQ #, CLIENT, QUOTATION #, SERVICE, VALUE, STATUS, PRIORITY, NEXT FU, BUCKET. Follow-up dialog title format: 'Follow-Up · <client> · <ENQ>'. Toast after save: 'Follow-up recorded'. Preview DB: 56 open enquiries, pipeline ₹5,57,210, 3 rows now on Upcoming tab.",
+  "rca of the issue": "Original bug (report): tracker showed UUID fragments in Enq#, '-' in Client column, ₹0 values, no quotation numbers. Root cause: backend/frontend used field names (client_name, enquiry_number, estimated_value) that don't exist in the real enquiries schema (which uses customer, enquiry_no, expected_value) and never exposed quotation_no. Fix applied by main agent: _norm_enquiry() field-mapper on backend, Quotation # column + real STATUS_BADGE vocab on frontend, mobile quick-actions changed from invalid statuses (quotation_submitted etc) to valid ones (submitted/negotiation/won). Verified end-to-end at both API and UI levels."
+}
