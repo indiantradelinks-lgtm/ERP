@@ -63,6 +63,7 @@ export const MENU_ITEMS = [
   { department: "dashboard", label: "Main Dashboard",        to: "/app",                            icon: LayoutDashboard, testid: "nav-dashboard", end: true },
   { department: "dashboard", label: "Management Dashboard",  to: "/app",                            icon: TrendingUp,      testid: "nav-mgmt-dashboard" },
   { department: "dashboard", label: "Department Dashboard",  to: "/app/modules",                    icon: LayoutGrid,      testid: "nav-dept-dashboard" },
+  { department: "dashboard", label: "Reports Center",        to: "/app/reports-center",             icon: FileSpreadsheet, testid: "nav-reports-center" },
   { department: "dashboard", label: "Alerts & Notifications", to: "/app/accounts/alerts",            icon: Bell,            testid: "nav-alerts", perm: "accounting" },
   { department: "dashboard", label: "Pending Approvals",     to: "/app/approvals",                  icon: CheckSquare,     testid: "nav-approvals", perm: "approvals" },
   { department: "dashboard", label: "Approvals Dashboard",   to: "/app/approvals/dashboard",        icon: CheckSquare,     testid: "nav-approvals-dashboard", perm: "approvals" },

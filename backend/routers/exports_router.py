@@ -48,6 +48,8 @@ def _should_mask_pii(role: str | None, resource_key: str) -> bool:
 @router.get("/export/{resource}.{fmt}")
 async def export_resource(resource: str, fmt: str,
                           master: str | None = None, project_code: str | None = None,
+                          status: str | None = None,
+                          from_date: str | None = None, to_date: str | None = None,
                           user: dict = Depends(get_current_user)):
     if resource not in _EXPORT_RESOURCE_MAP:
         raise HTTPException(status_code=404, detail="Unknown resource")
@@ -66,6 +68,20 @@ async def export_resource(resource: str, fmt: str,
                         {"master_category": {"$exists": False}}]
         if project_code:
             q["current_project_code"] = project_code
+
+    if status:
+        q["status"] = status
+    if from_date or to_date:
+        rng: dict = {}
+        if from_date:
+            rng["$gte"] = from_date
+        if to_date:
+            from datetime import datetime as _dt, timedelta as _td
+            try:
+                rng["$lt"] = (_dt.strptime(to_date, "%Y-%m-%d") + _td(days=1)).strftime("%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="to_date must be YYYY-MM-DD")
+        q["created_at"] = rng
 
     rows = await db[perm_key].find(q, {"_id": 0}).sort("created_at", -1).to_list(5000)
     mask = _should_mask_pii(user.get("role"), perm_key)

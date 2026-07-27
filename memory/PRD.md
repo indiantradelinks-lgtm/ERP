@@ -4770,3 +4770,10 @@ User reported overlapping values in items table (Unit/Rate/Discount/Taxable/GST/
 - PTWs: buttons existed but backend 404'd — added "ptws" to _EXPORT_RESOURCE_MAP + COLUMNS["ptws"] (PTW#, work type, location, validity, status). Verified UI download.
 - Resource Planning (/app/ops/resources): NEW scoped endpoint `GET /proj-phase2/resources/{project_id}/export/{xlsx|pdf}?type=` in projects_ops_phase2r2_router — normalizes mixed resource types into description/qty/rate (+project code/name, total_cost via _resource_total). COLUMNS + PDF_COLUMNS["project_resources"] (fitted widths). Frontend: Excel/PDF buttons beside tabs (rp-export-xlsx/pdf), export honours active tab type. Verified UI download (resource-plan-manpower.pdf) + PDF render inspected.
 **Status: COMPLETE & self-tested (curl 200s + PDF render + live UI downloads on both pages).**
+
+### Feature (Jul 27, 2026) — Reports Center page ✅
+- NEW `/app/reports-center` (pages/ReportsCenter.jsx), sidebar Dashboard → "Reports Center" (nav-reports-center). 21 report cards grouped module-wise (Sales, Projects & Ops, HR, Store, Procurement, Accounts, Safety, Logistics & Masters), each with branded Excel + PDF buttons.
+- Filters: global From/To date range (rc-from-date/rc-to-date, applies to created_at on generic reports); per-report status selects where vocabulary known (enquiries, handovers, attendance, approvals, ptws); Resource Plan card has project + type selects; Follow-Ups card has view select (all/today/upcoming/overdue, Excel only).
+- Backend: generic /export/{resource}.{fmt} now accepts optional status, from_date, to_date (inclusive day range via $lt next-day; bad date → 400). Custom endpoints reused: /ops/handovers/export, /proj-phase2/resources/{pid}/export, /enquiry-followups/export. RBAC enforced server-side per resource (403 → friendly toast).
+- Self-tested: curl (status+date filter 200 w/ 54 rows, bad date 400, future range empty) + Playwright UI (21 cards render, 3 live downloads: enquiries.xlsx w/ status=open, handovers.pdf, followups.xlsx).
+**Status: COMPLETE & self-tested (curl + live UI downloads + screenshot).**
