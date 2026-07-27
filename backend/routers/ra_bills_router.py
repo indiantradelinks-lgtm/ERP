@@ -81,6 +81,7 @@ class RABillIn(BaseModel):
     advance_recovery: float = 0
     previous_bill_value: float = 0    # cumulative gross value billed earlier on the PO
     notes: Optional[str] = None
+    quotation_no: Optional[str] = None  # offer this bill is formatted from
     submit: bool = False
     # Debit / Credit note linkage
     against_ra_bill_id: Optional[str] = None
@@ -181,6 +182,76 @@ async def ra_bills_dashboard(user: dict = Depends(require_permission("ra_bills",
             "tds_deducted": round(t.get("tds_deducted") or 0, 2),
             "net_due": round(t.get("net_due") or 0, 2),
         }
+    }
+
+
+@router.get("/ra-bills/project-context/{project_code}")
+async def ra_bill_project_context(project_code: str,
+                                  user: dict = Depends(require_permission("ra_bills", "read"))):
+    """Auto-fill context for a New RA Bill: client, site, customer PO and the
+    line-item format of the offer (quotation) / received order for the project."""
+    project = await db.projects.find_one({"code": project_code}, {"_id": 0})
+    handover = await db.project_handovers.find_one(
+        {"project_code": project_code}, {"_id": 0}, sort=[("created_at", -1)])
+
+    client_name = (handover or {}).get("client_name") or (project or {}).get("client") or ""
+    client_id = (handover or {}).get("client_id") or ""
+    if not client_id and client_name:
+        c = await db.clients.find_one({"name": client_name}, {"_id": 0, "id": 1})
+        client_id = (c or {}).get("id") or ""
+    site_name = (handover or {}).get("site_location") or (project or {}).get("site") or ""
+
+    # Customer PO: work order on the handover, else latest order for this client
+    po_number = (handover or {}).get("work_order_number") or ""
+    po_id = ""
+    order = None
+    if po_number:
+        order = await db.orders.find_one({"order_no": po_number}, {"_id": 0})
+    if not order and client_name:
+        order = await db.orders.find_one({"customer": client_name}, {"_id": 0}, sort=[("created_at", -1)])
+    if order:
+        po_number = po_number or order.get("order_no") or ""
+        po_id = order.get("id") or ""
+
+    # Offer format: quotation linked on the handover, else latest sectioned quote for the client
+    quotation_no = (handover or {}).get("quotation_no") or ""
+    quote = None
+    if quotation_no:
+        quote = await db.quotations.find_one({"quote_number": quotation_no}, {"_id": 0})
+    if not quote and client_name:
+        quote = await db.quotations.find_one(
+            {"client": client_name, "sections.0": {"$exists": True}}, {"_id": 0},
+            sort=[("created_at", -1)])
+        quotation_no = (quote or {}).get("quote_number") or quotation_no
+
+    items: List[Dict[str, Any]] = []
+    gst_pct = None
+    if quote:
+        for sec in quote.get("sections") or []:
+            for it in sec.get("items") or []:
+                items.append({
+                    "description": it.get("description") or "",
+                    "quantity": it.get("quantity") or 1,
+                    "unit": it.get("unit") or "",
+                    "rate": it.get("rate") or 0,
+                })
+                if gst_pct is None and it.get("gst_pct") is not None:
+                    gst_pct = it.get("gst_pct")
+        if not items and quote.get("items"):
+            items = [{"description": i.get("description") or "", "quantity": i.get("quantity") or 1,
+                      "unit": i.get("unit") or "", "rate": i.get("rate") or 0}
+                     for i in quote["items"]]
+
+    return {
+        "project_code": project_code,
+        "project_name": (project or {}).get("name") or "",
+        "client_id": client_id, "client_name": client_name,
+        "site_name": site_name,
+        "po_number": po_number, "po_id": po_id,
+        "quotation_no": quotation_no,
+        "gst_pct": gst_pct,
+        "retention_pct": (order or {}).get("retention_pct"),
+        "items": items,
     }
 
 

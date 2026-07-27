@@ -4777,3 +4777,9 @@ User reported overlapping values in items table (Unit/Rate/Discount/Taxable/GST/
 - Backend: generic /export/{resource}.{fmt} now accepts optional status, from_date, to_date (inclusive day range via $lt next-day; bad date → 400). Custom endpoints reused: /ops/handovers/export, /proj-phase2/resources/{pid}/export, /enquiry-followups/export. RBAC enforced server-side per resource (403 → friendly toast).
 - Self-tested: curl (status+date filter 200 w/ 54 rows, bad date 400, future range empty) + Playwright UI (21 cards render, 3 live downloads: enquiries.xlsx w/ status=open, handovers.pdf, followups.xlsx).
 **Status: COMPLETE & self-tested (curl + live UI downloads + screenshot).**
+
+### Feature (Jul 27, 2026) — RA Bill auto-fill from project + Customer PO rename + offer-format billing ✅
+- NEW backend `GET /ra-bills/project-context/{project_code}` (ra_bills_router): resolves handover → client (name+id via clients lookup), site, Customer PO (handover.work_order_number, fallback latest order for the client incl. retention_pct), linked offer (handover.quotation_no → quotations.quote_number, fallback latest sectioned quote for client) and flattens quotation sections[].items[] into RA line items (description/qty/unit/rate) + gst_pct. RABillIn now stores quotation_no.
+- Frontend (RaBills.jsx): selecting Project in New RA Bill auto-fills everything and loads the offer's line items ("format from offer QTN-xxxx" badge on the Line Items header + toast); manual edits still possible. "PO Number" renamed to "Customer PO Number" (form + view dialog also shows Offer/Quotation #).
+- Self-tested: curl context endpoint (2 projects: with & without sectioned offer) + Playwright e2e (PRJ-2026-0022 → client + 3 offer items + totals ₹1,78,180 auto-computed, badge + rename verified on screenshot).
+**Status: COMPLETE & self-tested (curl + e2e screenshot flow).**

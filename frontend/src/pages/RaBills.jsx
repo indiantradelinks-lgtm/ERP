@@ -29,6 +29,7 @@ const blankBill = (defaults = {}) => ({
   retention_pct: defaults.retention_pct ?? 0,
   tds_pct: defaults.tds_pct ?? 0,
   other_deductions: [], advance_recovery: 0, previous_bill_value: 0,
+  quotation_no: "",
   notes: "", submit: false,
 });
 
@@ -176,7 +177,36 @@ export default function RaBills() {
 }
 
 function FormDialog({ form, setForm, onClose, onSave }) {
+  const [autoFilling, setAutoFilling] = useState(false);
   const setItem = (i, patch) => setForm({ ...form, items: form.items.map((x, ix) => ix === i ? { ...x, ...patch } : x) });
+
+  const onProjectPicked = async (code) => {
+    if (!code) { setForm({ ...form, project_code: "" }); return; }
+    setAutoFilling(true);
+    try {
+      const { data } = await api.get(`/ra-bills/project-context/${encodeURIComponent(code)}`);
+      const hasItems = (data.items || []).length > 0;
+      setForm((f) => ({
+        ...f,
+        project_code: code,
+        client_id: data.client_id || f.client_id,
+        client_name: data.client_name || f.client_name,
+        site_name: data.site_name || f.site_name,
+        po_number: data.po_number || f.po_number,
+        po_id: data.po_id || f.po_id,
+        quotation_no: data.quotation_no || "",
+        gst_pct: data.gst_pct ?? f.gst_pct,
+        retention_pct: data.retention_pct ?? f.retention_pct,
+        items: hasItems ? data.items : f.items,
+      }));
+      if (hasItems) toast.success(`Auto-filled from offer ${data.quotation_no || ""} — ${data.items.length} line item(s) loaded in offer format`);
+      else if (data.client_name) toast.success("Project details auto-filled (no linked offer found — add line items manually)");
+    } catch (e) {
+      setForm((f) => ({ ...f, project_code: code }));
+      toast.error("Could not auto-fill project details");
+    } finally { setAutoFilling(false); }
+  };
+
   const subtotal = form.items.reduce((a, i) => a + (Number(i.quantity) || 0) * (Number(i.rate) || 0), 0);
   const gst = subtotal * (Number(form.gst_pct) || 0) / 100;
   const gross = subtotal + gst;
@@ -197,8 +227,8 @@ function FormDialog({ form, setForm, onClose, onSave }) {
             <ClientSelect label="Client name" value={form.client_name}
               onChange={(v, row) => setForm({ ...form, client_name: v, client_id: row?.id || "" })} testid="ra-form-client" />
             <ProjectSelect label="Project code" value={form.project_code}
-              onChange={(v) => setForm({ ...form, project_code: v })} testid="ra-form-project" />
-            <POSelect label="PO number" value={form.po_number} projectCode={form.project_code}
+              onChange={onProjectPicked} testid="ra-form-project" hint={autoFilling ? "Auto-filling…" : "Selecting a project auto-fills client, site, customer PO & offer line items"} />
+            <POSelect label="Customer PO number" value={form.po_number} projectCode={form.project_code}
               onChange={(v, row) => setForm({ ...form, po_number: v, po_id: row?.id || "" })} testid="ra-form-po" />
             <SiteSelect label="Site name" value={form.site_name} clientId={form.client_id} valueKey="name"
               onChange={(v) => setForm({ ...form, site_name: v })} testid="ra-form-site" />
@@ -212,7 +242,10 @@ function FormDialog({ form, setForm, onClose, onSave }) {
 
           <div className="border border-border rounded-sm">
             <div className="flex items-center justify-between p-2.5 border-b border-border">
-              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Line items</div>
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">
+                Line items
+                {form.quotation_no && <span className="ml-2 normal-case tracking-normal font-normal text-muted-foreground" data-testid="ra-offer-format-badge">· format from offer {form.quotation_no}</span>}
+              </div>
               <Button variant="outline" size="sm" className="h-7 rounded-sm" onClick={() => setForm({ ...form, items: [...form.items, { description: "", quantity: 1, unit: "m²", rate: 0 }] })} data-testid="ra-form-add-line"><Plus className="h-3 w-3 mr-1" /> Add</Button>
             </div>
             <Table>
@@ -354,7 +387,8 @@ function ViewDialog({ bill, onClose }) {
             <KV label="Type" v={bill.bill_type} />
             <KV label="Client" v={bill.client_name} />
             <KV label="Project" v={bill.project_code} />
-            <KV label="PO #" v={bill.po_number} />
+            <KV label="Customer PO #" v={bill.po_number} />
+            <KV label="Offer / Quotation #" v={bill.quotation_no} />
             <KV label="Issue Date" v={bill.issue_date} />
             <KV label="Due Date" v={bill.due_date} />
             <KV label="Invoice #" v={bill.invoice_no} />
