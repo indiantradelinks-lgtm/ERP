@@ -72,7 +72,8 @@ export default function RaBills() {
           site_name: ctx.site_name || "", po_number: ctx.po_number || "", po_id: ctx.po_id || "",
           quotation_no: ctx.quotation_no || "",
           gst_pct: ctx.gst_pct ?? 18, retention_pct: ctx.retention_pct ?? 5,
-          items: (ctx.items || []).length ? ctx.items : blankBill().items,
+          items: (req.items || []).length ? req.items.map((i) => ({ description: i.description, quantity: i.quantity, unit: i.unit, rate: i.rate }))
+            : ((ctx.items || []).length ? ctx.items : blankBill().items),
           notes: `Against Bill Request ${req.request_no}${req.remarks ? " — " + req.remarks : ""}`,
         });
         setFromRequestId(rid);
@@ -268,6 +269,11 @@ function FormDialog({ form, setForm, onClose, onSave }) {
         <div className="space-y-3 py-2">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <SelectField label="Bill type" value={form.bill_type} options={["running", "final", "supplementary", "debit_note", "credit_note"]} onChange={(v) => setForm({ ...form, bill_type: v })} testid="ra-form-type" />
+            <div>
+              <Label className="text-[10px] uppercase tracking-wider">Invoice # (blank = auto next number)</Label>
+              <Input value={form.bill_number || ""} onChange={(e) => setForm({ ...form, bill_number: e.target.value })}
+                placeholder="Auto (e.g. RA-2026-0014)" className="h-9 rounded-sm mt-1 font-mono-data" data-testid="ra-form-billnumber" />
+            </div>
             <Field label="Bill date" type="date" value={form.bill_date} onChange={(v) => setForm({ ...form, bill_date: v })} testid="ra-form-date" />
             <ClientSelect label="Client name" value={form.client_name}
               onChange={(v, row) => setForm({ ...form, client_name: v, client_id: row?.id || "" })} testid="ra-form-client" />

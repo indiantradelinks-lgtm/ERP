@@ -84,6 +84,7 @@ class RABillIn(BaseModel):
     previous_bill_value: float = 0    # cumulative gross value billed earlier on the PO
     notes: Optional[str] = None
     quotation_no: Optional[str] = None  # offer this bill is formatted from
+    bill_number: Optional[str] = None   # manual invoice number; auto next-sequence when blank
     submit: bool = False
     # Debit / Credit note linkage
     against_ra_bill_id: Optional[str] = None
@@ -191,11 +192,13 @@ async def ra_bills_dashboard(user: dict = Depends(require_permission("ra_bills",
 # Bill Generation Requests (Ops raise → multi-level approval → Accounts generate)
 # ──────────────────────────────────────────────────────────────────────────────
 class BillRequestIn(BaseModel):
+    id: Optional[str] = None  # client may pre-generate to link attachments before submit
     project_code: str
     bill_type: str = "running"
     period_from: Optional[str] = None
     period_to: Optional[str] = None
     expected_amount: float = 0
+    items: List[Dict[str, Any]] = []
     remarks: Optional[str] = None
 
 
@@ -219,15 +222,29 @@ async def create_bill_request(payload: BillRequestIn, request: Request,
     handover = await db.project_handovers.find_one(
         {"project_code": payload.project_code}, {"_id": 0}, sort=[("created_at", -1)])
     req_no = await next_sequence("BR")
+    rid = payload.id or new_id()
+    if await db.bill_requests.find_one({"id": rid}, {"_id": 0, "id": 1}):
+        raise HTTPException(400, "Duplicate request id")
+    items = []
+    for it in payload.items:
+        qty = float(it.get("quantity") or 0)
+        rate = float(it.get("rate") or 0)
+        items.append({"description": it.get("description") or "", "quantity": qty,
+                      "unit": it.get("unit") or "", "rate": rate,
+                      "amount": round(qty * rate, 2)})
+    expected = round(sum(i["amount"] for i in items), 2) if items else payload.expected_amount
+    attachments = await db.files.count_documents({"parent_type": "bill_requests", "parent_id": rid, "is_deleted": False})
     doc = {
-        "id": new_id(),
+        "id": rid,
         "request_no": req_no,
         "project_code": payload.project_code,
         "project_name": project.get("name") or "",
         "client_name": (handover or {}).get("client_name") or project.get("client") or "",
         "bill_type": payload.bill_type,
         "period_from": payload.period_from, "period_to": payload.period_to,
-        "expected_amount": payload.expected_amount,
+        "expected_amount": expected,
+        "items": items,
+        "attachment_count": attachments,
         "remarks": payload.remarks or "",
         "status": "pending_approval",
         "requested_by": user.get("name") or user.get("email"),
@@ -238,10 +255,10 @@ async def create_bill_request(payload: BillRequestIn, request: Request,
     chain = await build_chain("bill_request")
     approval = {
         "id": new_id(),
-        "title": f"Bill Request {req_no} — {doc['project_code']} · {doc['client_name']} ({payload.bill_type.upper()}, ₹{payload.expected_amount:,.0f})",
+        "title": f"Bill Request {req_no} — {doc['project_code']} · {doc['client_name']} ({payload.bill_type.upper()}, ₹{expected:,.0f}, {len(items)} line item(s), {attachments} document(s))",
         "type": "bill_request",
         "reference": doc["id"],
-        "amount": payload.expected_amount,
+        "amount": expected,
         "requested_by": doc["requested_by"],
         "chain": chain, "current_step": 0, "history": [],
         "status": "pending", "created_at": now_iso(),
@@ -481,10 +498,17 @@ async def create_ra_bill(payload: RABillIn, request: Request,
         raise HTTPException(status_code=400, detail="At least one line item is required")
     base = payload.model_dump()
     base.pop("submit", None)
+    manual_no = (base.pop("bill_number", None) or "").strip()
+    if manual_no:
+        if await db.ra_bills.find_one({"bill_number": manual_no}, {"_id": 0, "id": 1}):
+            raise HTTPException(status_code=400, detail=f"Invoice number '{manual_no}' already exists")
+        bill_number = manual_no
+    else:
+        bill_number = await next_sequence(_prefix(payload.bill_type))
     base.update(_compute_totals(base))
     doc = {
         "id": new_id(),
-        "bill_number": await next_sequence(_prefix(payload.bill_type)),
+        "bill_number": bill_number,
         **base,
         "status": "submitted" if payload.submit else "draft",
         "created_by": user["id"], "created_by_name": user.get("name") or user.get("email"),

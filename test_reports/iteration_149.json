@@ -1,0 +1,37 @@
+{
+  "summary": "iteration_149 RETEST of Bill Request enhancements — ALL scenarios PASS. Blank()-crash fix verified, offer prefill + editable items + attachments + submit + 4x approve + Generate Bill → RA prefilled from REQUEST items + auto-invoice + manual invoice + duplicate 400 + regression on legacy rows + cleanup all confirmed end-to-end via UI and backend.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_scenarios_verified": [
+    "LOGIN admin@erp.com/Admin@123 → cookie session ok (POST /api/auth/login 200)",
+    "FIX VERIFICATION: /app/ops/bill-requests → br-new clicked WITHOUT selecting a project → dialog opens, empty-state hint 'Select a project to load the offer's line items, or add manually.' visible, no pageerror, no .error nodes. blank() fix (items:[] + pre-generated id) confirmed working.",
+    "UI FLOW: br-form-project (native SELECT) → select_option 'PRJ-2026-0022' → 3 line items auto-loaded (br-item-desc-0..2) with toast, br-form-total = ₹1,51,000. Edited br-item-qty-0=99 → total recomputed live (₹50,750 after removing large qty… total changed correctly per edit). br-add-item added 4th row, manual item filled (TEST manual item, qty 2, rate 500).",
+    "ATTACHMENTS: hidden file input inside br-uploader → set_input_files('/tmp/br_test/support_doc.txt') → file listed in dialog. br-form-submit → toast: 'Bill request BR-2026-0005 submitted for approval with 4 line item(s) & 1 document(s)'.",
+    "BACKEND VERIFY: GET /api/bill-requests → BR-2026-0005 status=pending_approval, items=4, attachment_count=1, expected_amount=51750.0, sum(items.amount)=51750.0 (matches exactly).",
+    "APPROVAL: 4x POST /api/approvals/{id}/action {action:'approve'} → all 200 → BR-2026-0005 status transitioned to approved.",
+    "E2E GENERATE BILL: br-generate-{id} clicked → navigated to /app/ra-bills?fromRequest=… → ra-form-dialog auto-opened, pre-filled with the REQUEST's items (4 items: Cuplock erection & dismantling, Material rental for 30 days, Extra Item, TEST manual item — confirming req.items path in RaBills.jsx line 75). ra-form-billnumber initial value = '' (blank).",
+    "AUTO INVOICE #: ra-form-save with blank bill_number → toast 'RA-2026-0020 saved' + 'Bill request marked as generated'. Back on bill-requests: br-billno-{id} = 'RA-2026-0020', status badge 'Bill Generated'. KPI 'Bills Generated' incremented to 3.",
+    "ATTACHMENT DIALOG: br-atts-{id} clicked → RowAttachments dialog opened → support_doc.txt listed ✓.",
+    "MANUAL INVOICE (UI): ra-add → select PRJ-2026-0022 auto-fill → typed 'INV/UI/TEST/9' → save → toast 'INV/UI/TEST/9 saved' (exact custom number preserved).",
+    "DUPLICATE INVOICE (API): POST /api/ra-bills with same bill_number='INV/UI/TEST/9' → 400 with detail 'Invoice number INV/UI/TEST/9 already exists' ✓.",
+    "REGRESSION: /app/ops/bill-requests renders 4 rows including 3 legacy rows (BR-2026-0001/0002/0003 with items field empty / attachment_count=None) — no r.items.length crash, no pageerror.",
+    "CLEANUP: DELETE /api/ra-bills/INV/UI/TEST/9 = 200, DELETE /api/ra-bills/RA-2026-0020 = 200."
+  ],
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "BillRequests.jsx blank() correctly generates a fresh id per open (line 30-34) so FileUploader parent_id is stable within a dialog session and gets a new value each time — good.",
+    "BillRequests.jsx onProjectPicked (line 60) does NOT clear attFiles when the user switches project mid-form; if the user picks proj A, uploads, then switches to proj B, the uploaded doc(s) remain attached to the same form.id and get submitted with the final project. Not a bug for the current tests but worth documenting.",
+    "RaBills.jsx from-request effect (line 54-85) intentionally uses [] deps (empty) with eslint-disable — this means changing the URL query manually (?fromRequest=…) after mount won't re-trigger. Acceptable for the current single-shot flow but flag if future UX changes require live URL reactions.",
+    "GET /api/bill-requests returns attachment_count=None for legacy rows without the field; UI treats it as 0 correctly via (r.attachment_count || 0). Consider normalising missing/null → 0 in the backend response for consistency.",
+    "BR-2026-0003 in the listing has expected_amount=888888 but items=[] — legacy data; the new create flow always sets expected_amount = sum(items.amount) so this is safe going forward."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin, httpOnly cookie)",
+  "seed_data_creation": "Created BR-2026-0005 (PRJ-2026-0022, 4 items @₹51,750, 1 attachment support_doc.txt). Approved 4x. Generated RA-2026-0020 from it (deleted in cleanup). Also created and deleted INV/UI/TEST/9. NOTE: BR-2026-0005 now references bill_number=RA-2026-0020 which was deleted in cleanup — same orphan-reference pattern flagged in iteration_147; main agent may leave as-is.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All Bill Request → RA Bill enhancements (line items from offer, editable items, supporting attachments, blank invoice→auto number, manual invoice+duplicate 400) are fully working end-to-end. To retest again, create a fresh BR via POST /api/bill-requests, upload doc via FileUploader (parent_type=bill_requests parent_id=form.id), approve 4x, then generate. BR-2026-0003 remains pending_approval and can be used for further approval tests.",
+  "rca of the issue": "N/A — retest confirms iteration_148's blank() TypeError crash has been fixed (items:[] + id pre-populated). Every requested scenario passed."
+}

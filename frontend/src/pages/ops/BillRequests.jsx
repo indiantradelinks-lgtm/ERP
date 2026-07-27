@@ -12,6 +12,8 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProjectSelect } from "@/components/MasterSelect";
+import FileUploader from "@/components/FileUploader";
+import RowAttachments from "@/components/RowAttachments";
 
 const GENERATE_ROLES = new Set(["super_admin", "director", "accounts_executive", "billing_executive"]);
 const REQUEST_ROLES = new Set(["super_admin", "director", "general_manager", "dept_head", "project_manager", "project_coordinator"]);
@@ -25,7 +27,11 @@ const STATUS_BADGE = {
 
 const inr = (v) => `₹ ${Number(v || 0).toLocaleString("en-IN")}`;
 
-const blank = () => ({ project_code: "", bill_type: "running", period_from: "", period_to: "", expected_amount: 0, remarks: "" });
+const blank = () => ({
+  id: (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`),
+  project_code: "", bill_type: "running", period_from: "", period_to: "",
+  expected_amount: 0, items: [], remarks: "",
+});
 
 export default function BillRequests() {
   const { user } = useAuth();
@@ -37,6 +43,11 @@ export default function BillRequests() {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState(blank());
   const [ctx, setCtx] = useState(null);
+  const [attFiles, setAttFiles] = useState([]);
+  const [attachFor, setAttachFor] = useState(null);
+
+  const setItem = (i, patch) => setForm((f) => ({ ...f, items: f.items.map((x, ix) => ix === i ? { ...x, ...patch } : x) }));
+  const totalAmount = form.items.reduce((a, i) => a + (Number(i.quantity) || 0) * (Number(i.rate) || 0), 0);
 
   const load = async () => {
     try {
@@ -47,21 +58,32 @@ export default function BillRequests() {
   useEffect(() => { load(); }, [statusFilter]); // eslint-disable-line
 
   const onProjectPicked = async (code) => {
-    setForm({ ...form, project_code: code });
+    setForm((f) => ({ ...f, project_code: code }));
     setCtx(null);
     if (!code) return;
     try {
       const { data } = await api.get(`/ra-bills/project-context/${encodeURIComponent(code)}`);
       setCtx(data);
+      const items = (data.items || []).map((i) => ({
+        description: i.description, quantity: i.quantity, unit: i.unit, rate: i.rate,
+        offer_qty: i.offer_qty, billed_qty: i.billed_qty,
+      }));
+      setForm((f) => ({ ...f, project_code: code, items }));
+      if (items.length) toast.success(`${items.length} line item(s) loaded from offer ${data.quotation_no || ""} — adjust quantities as per the customer work order`);
     } catch { /* context is a convenience only */ }
   };
 
   const create = async () => {
     if (!form.project_code) { toast.error("Select a project"); return; }
+    if (!form.items.length) { toast.error("Add at least one line item (as per the customer work order)"); return; }
     try {
-      const r = await api.post("/bill-requests", { ...form, expected_amount: Number(form.expected_amount) || 0 });
-      toast.success(`Bill request ${r.data.request_no} submitted for approval (PM → Dept Head → GM → Director)`);
-      setCreating(false); setForm(blank()); setCtx(null); load();
+      const r = await api.post("/bill-requests", {
+        ...form,
+        items: form.items.map((i) => ({ description: i.description, quantity: Number(i.quantity) || 0, unit: i.unit, rate: Number(i.rate) || 0 })),
+        expected_amount: totalAmount,
+      });
+      toast.success(`Bill request ${r.data.request_no} submitted for approval with ${form.items.length} line item(s) & ${attFiles.length} document(s)`);
+      setCreating(false); setForm(blank()); setCtx(null); setAttFiles([]); load();
     } catch (e) { toast.error(e?.response?.data?.detail || "Create failed"); }
   };
 
@@ -138,7 +160,14 @@ export default function BillRequests() {
                 </TableCell>
                 <TableCell><Badge variant="outline" className="rounded-sm uppercase text-[10px]">{r.bill_type}</Badge></TableCell>
                 <TableCell className="text-xs">{r.period_from || "—"} → {r.period_to || "—"}</TableCell>
-                <TableCell className="text-right font-mono-data tabular text-xs">{inr(r.expected_amount)}</TableCell>
+                <TableCell className="text-right font-mono-data tabular text-xs">{inr(r.expected_amount)}
+                  <div className="text-[10px] text-muted-foreground font-sans">
+                    {(r.items || []).length > 0 && `${r.items.length} item(s)`}
+                    {(r.attachment_count || 0) > 0 && (
+                      <button className="ml-1 underline" onClick={() => setAttachFor(r)} data-testid={`br-atts-${r.id}`}>{r.attachment_count} doc(s)</button>
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-1 flex-wrap" data-testid={`br-chain-${r.id}`}>
                     {(r.chain || []).map((s, i) => (
@@ -200,8 +229,8 @@ export default function BillRequests() {
               </select>
             </div>
             <div>
-              <Label className="text-[10px] uppercase tracking-wider">Expected Amount (₹)</Label>
-              <Input type="number" value={form.expected_amount} onChange={(e) => setForm({ ...form, expected_amount: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="br-form-amount" />
+              <Label className="text-[10px] uppercase tracking-wider">Request Total (auto from items)</Label>
+              <div className="h-9 mt-1 flex items-center px-2 border border-border rounded-sm bg-secondary font-mono-data tabular text-sm font-bold" data-testid="br-form-total">{inr(totalAmount)}</div>
             </div>
             <div>
               <Label className="text-[10px] uppercase tracking-wider">Period From</Label>
@@ -210,6 +239,39 @@ export default function BillRequests() {
             <div>
               <Label className="text-[10px] uppercase tracking-wider">Period To</Label>
               <Input type="date" value={form.period_to} onChange={(e) => setForm({ ...form, period_to: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="br-form-to" />
+            </div>
+            <div className="col-span-2 border border-border rounded-sm">
+              <div className="flex items-center justify-between p-2 border-b border-border">
+                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Line Items (as per enquiry / customer work order)</div>
+                <Button size="sm" variant="outline" className="h-7 rounded-sm"
+                  onClick={() => setForm({ ...form, items: [...form.items, { description: "", quantity: 1, unit: "", rate: 0 }] })}
+                  data-testid="br-add-item"><Plus className="h-3 w-3 mr-1" /> Add Item</Button>
+              </div>
+              <div className="max-h-56 overflow-y-auto">
+                {form.items.length === 0 && (
+                  <div className="text-xs text-muted-foreground p-3 text-center">Select a project to load the offer's line items, or add manually.</div>
+                )}
+                {form.items.map((it, i) => (
+                  <div key={`bri-${i}`} className="grid grid-cols-12 gap-1.5 px-2 py-1.5 border-b border-border/50 items-center">
+                    <Input value={it.description} onChange={(e) => setItem(i, { description: e.target.value })} placeholder="Description" className="h-8 rounded-sm col-span-5 text-xs" data-testid={`br-item-desc-${i}`} />
+                    <Input type="number" value={it.quantity} onChange={(e) => setItem(i, { quantity: e.target.value })} placeholder="Qty" className="h-8 rounded-sm col-span-2 text-xs tabular" data-testid={`br-item-qty-${i}`} />
+                    <Input value={it.unit} onChange={(e) => setItem(i, { unit: e.target.value })} placeholder="Unit" className="h-8 rounded-sm col-span-1 text-xs" />
+                    <Input type="number" value={it.rate} onChange={(e) => setItem(i, { rate: e.target.value })} placeholder="Rate" className="h-8 rounded-sm col-span-2 text-xs tabular" data-testid={`br-item-rate-${i}`} />
+                    <div className="col-span-1 text-[11px] font-mono-data tabular text-right">{inr((Number(it.quantity) || 0) * (Number(it.rate) || 0))}</div>
+                    <Button size="sm" variant="ghost" className="h-7 col-span-1" onClick={() => setForm({ ...form, items: form.items.filter((_, ix) => ix !== i) })}><XCircle className="h-3.5 w-3.5" /></Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="col-span-2">
+              <Label className="text-[10px] uppercase tracking-wider">Supporting Billing Documents (measurement sheets, client sign-offs…)</Label>
+              <div className="mt-1">
+                <FileUploader folder="documents" parent_type="bill_requests" parent_id={form.id}
+                  category="billing_support" compact
+                  files={attFiles} onUploaded={(f) => setAttFiles((p) => [...p, f])}
+                  onDeleted={(fid) => setAttFiles((p) => p.filter((x) => x.id !== fid))}
+                  testidPrefix="br-uploader" />
+              </div>
             </div>
             <div className="col-span-2">
               <Label className="text-[10px] uppercase tracking-wider">Remarks / Work Done Summary</Label>
@@ -222,6 +284,9 @@ export default function BillRequests() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <RowAttachments open={!!attachFor} onOpenChange={() => setAttachFor(null)}
+        parentType="bill_requests" parentId={attachFor?.id} recordTitle={`Documents — ${attachFor?.request_no || ""}`} />
     </div>
   );
 }
