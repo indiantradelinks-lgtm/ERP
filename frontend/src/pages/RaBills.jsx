@@ -57,6 +57,11 @@ export default function RaBills() {
     (async () => {
       try {
         const { data: req } = await api.get(`/bill-requests/${rid}`);
+        if (req.status !== "approved") {
+          toast.error(`Request ${req.request_no} is ${req.status.replace(/_/g, " ")} — only approved requests can generate a bill`);
+          setSearchParams({}, { replace: true });
+          return;
+        }
         let ctx = {};
         try { ctx = (await api.get(`/ra-bills/project-context/${encodeURIComponent(req.project_code)}`)).data; } catch { /* optional */ }
         setForm({
