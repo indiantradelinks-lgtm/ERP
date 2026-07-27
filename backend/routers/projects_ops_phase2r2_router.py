@@ -427,6 +427,39 @@ async def list_resources(project_id: str,
     return rows
 
 
+@router.get("/resources/{project_id}/export/{fmt}")
+async def export_project_resources(project_id: str, fmt: str,
+                                   type: Optional[str] = None,
+                                   user: dict = Depends(require_permission("projects", "read"))):
+    """Branded Excel / PDF report of the project's resource plan (optionally one type)."""
+    if fmt not in ("xlsx", "pdf"):
+        raise HTTPException(400, "Format must be xlsx or pdf")
+    from fastapi.responses import Response
+    from exports import to_excel, to_pdf
+    proj = await _resolve_project(project_id)
+    q: Dict[str, Any] = {"project_id": project_id}
+    if type:
+        q["resource_type"] = type
+    rows = await db.project_resources.find(q, {"_id": 0}).sort("created_at", -1).to_list(5000)
+    for r in rows:
+        r["total_cost"] = _resource_total(r)
+        r["description"] = (r.get("designation_name") or r.get("item_name") or r.get("tool_name")
+                            or r.get("vendor_name") or r.get("scope") or "")
+        r["qty"] = r.get("count_required") or r.get("quantity") or r.get("sub_qty") or r.get("days") or ""
+        r["rate"] = r.get("daily_rate") or r.get("unit_rate") or r.get("sub_unit_rate") or r.get("value") or ""
+        r["project_code"] = proj.get("code") or ""
+        r["project_name"] = proj.get("name") or ""
+    if fmt == "xlsx":
+        data = to_excel("project_resources", rows)
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        data = to_pdf("project_resources", rows)
+        media = "application/pdf"
+    fname = f"resource-plan-{proj.get('code') or project_id}{('-' + type) if type else ''}.{fmt}"
+    return Response(content=data, media_type=media,
+                    headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
 @router.get("/resources/{project_id}/summary")
 async def resources_summary(project_id: str,
                             user: dict = Depends(require_permission("projects", "read"))):

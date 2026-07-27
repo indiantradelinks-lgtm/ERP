@@ -185,6 +185,28 @@ COLUMNS: Dict[str, List[Dict[str, str]]] = {
         {"key": "reference", "label": "Ref"}, {"key": "amount", "label": "Amount"},
         {"key": "requested_by", "label": "Requested By"}, {"key": "status", "label": "Status"},
     ],
+    "ptws": [
+        {"key": "ptw_no", "label": "PTW #"},
+        {"key": "work_type", "label": "Work Type"},
+        {"key": "location", "label": "Location"},
+        {"key": "valid_from", "label": "Valid From"},
+        {"key": "valid_to", "label": "Valid To"},
+        {"key": "status", "label": "Status"},
+        {"key": "created_by", "label": "Created By"},
+        {"key": "created_at", "label": "Created"},
+    ],
+    "project_resources": [
+        {"key": "project_code", "label": "Project Code"},
+        {"key": "project_name", "label": "Project"},
+        {"key": "resource_type", "label": "Type"},
+        {"key": "description", "label": "Resource / Description"},
+        {"key": "qty", "label": "Qty"},
+        {"key": "uom", "label": "UOM"},
+        {"key": "rate", "label": "Rate"},
+        {"key": "total_cost", "label": "Total Cost"},
+        {"key": "required_by_date", "label": "Required By"},
+        {"key": "remarks", "label": "Remarks"},
+    ],
     "project_handovers": [
         {"key": "handover_no", "label": "Handover #"},
         {"key": "project_code", "label": "Project Code"},
@@ -283,6 +305,17 @@ def to_excel(resource: str, rows: List[Dict[str, Any]], mask_pii: bool = False) 
 # Narrower column subsets for PDF (landscape A4 fits ~10 columns).
 # Optional "w" = column width in mm; used when every column declares one.
 PDF_COLUMNS: Dict[str, List[Dict[str, Any]]] = {
+    "project_resources": [
+        {"key": "project_code", "label": "Proj Code", "w": 26},
+        {"key": "resource_type", "label": "Type", "w": 24},
+        {"key": "description", "label": "Resource / Description", "w": 62},
+        {"key": "qty", "label": "Qty", "w": 18},
+        {"key": "uom", "label": "UOM", "w": 16},
+        {"key": "rate", "label": "Rate", "w": 22},
+        {"key": "total_cost", "label": "Total", "w": 26},
+        {"key": "required_by_date", "label": "Required By", "w": 24},
+        {"key": "remarks", "label": "Remarks", "w": 45},
+    ],
     "project_handovers": [
         {"key": "handover_no", "label": "Handover #", "w": 28},
         {"key": "project_code", "label": "Proj Code", "w": 24},

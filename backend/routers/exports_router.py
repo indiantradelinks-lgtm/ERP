@@ -21,6 +21,7 @@ _EXPORT_RESOURCE_MAP = {
     # Iter 76 — candidates added so HR can export shortlists too (PII-aware)
     "candidates": "candidates",
     "enquiries": "enquiries",
+    "ptws": "ptws",
 }
 
 # DPDP Act 2023 — roles allowed to see un-masked PII per resource.

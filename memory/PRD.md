@@ -4764,3 +4764,9 @@ User reported overlapping values in items table (Unit/Rate/Discount/Taxable/GST/
 - Frontend (ContractHandovers.jsx): Excel + PDF buttons (ops-export-xlsx / ops-export-pdf) beside New/Backfill; blob download respects current status filter; per-format "Exporting…" state.
 - Self-tested: curl xlsx/pdf/status-filter all 200 with correct headers+data; PDF page render inspected (10 columns fit, no clipping); Playwright UI click downloaded contract-handovers.xlsx.
 **Status: COMPLETE & self-tested (curl + PDF render + UI download).**
+
+### Feature (Jul 27, 2026) — One-click Excel/PDF reports on Projects Master, Resource Planning, PTWs ✅
+- Projects Master: already wired via DataTableShell exportResource="projects" — verified working (200 xlsx/pdf).
+- PTWs: buttons existed but backend 404'd — added "ptws" to _EXPORT_RESOURCE_MAP + COLUMNS["ptws"] (PTW#, work type, location, validity, status). Verified UI download.
+- Resource Planning (/app/ops/resources): NEW scoped endpoint `GET /proj-phase2/resources/{project_id}/export/{xlsx|pdf}?type=` in projects_ops_phase2r2_router — normalizes mixed resource types into description/qty/rate (+project code/name, total_cost via _resource_total). COLUMNS + PDF_COLUMNS["project_resources"] (fitted widths). Frontend: Excel/PDF buttons beside tabs (rp-export-xlsx/pdf), export honours active tab type. Verified UI download (resource-plan-manpower.pdf) + PDF render inspected.
+**Status: COMPLETE & self-tested (curl 200s + PDF render + live UI downloads on both pages).**

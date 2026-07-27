@@ -19,7 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Users, Package, Wrench, Briefcase, Plus, Pencil, Trash2, RefreshCcw, Send } from "lucide-react";
+import { Users, Package, Wrench, Briefcase, Plus, Pencil, Trash2, RefreshCcw, Send, FileSpreadsheet, FileText } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import ApprovalDocsGate, { validateApprovalDocs, emptyApprovalDocs } from "@/components/ApprovalDocsGate";
 import { BulkUploadDialog, QuickQtyDialog } from "./ResourcePlanBulkDialogs";
@@ -53,6 +53,23 @@ export default function ProjectResources() {
   const [projects, setProjects]   = useState([]);
   const [projectId, setProjectId] = useState("");
   const [active, setActive]       = useState("manpower");
+  const [exporting, setExporting] = useState("");
+
+  const downloadReport = async (fmt) => {
+    setExporting(fmt);
+    try {
+      const { data } = await api.get(`/proj-phase2/resources/${projectId}/export/${fmt}`, {
+        responseType: "blob", params: { type: active },
+      });
+      const url = URL.createObjectURL(data);
+      const a = document.createElement("a");
+      a.href = url; a.download = `resource-plan-${active}.${fmt}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`${fmt === "xlsx" ? "Excel" : "PDF"} report downloaded`);
+    } catch (e) { toast.error("Export failed"); }
+    finally { setExporting(""); }
+  };
   const [rows, setRows]           = useState([]);
   const [summary, setSummary]     = useState({});
   const [wbsNodes, setWbsNodes]   = useState([]);
@@ -210,6 +227,16 @@ export default function ProjectResources() {
             <TabsTrigger value="tools" data-testid="rp-tab-tools"><Wrench className="h-3.5 w-3.5 mr-1" />Tools</TabsTrigger>
             <TabsTrigger value="subcontract" data-testid="rp-tab-subcontract"><Briefcase className="h-3.5 w-3.5 mr-1" />Sub-Contract</TabsTrigger>
           </TabsList>
+          {projectId && (
+            <div className="flex gap-2 mr-2">
+              <Button size="sm" variant="outline" onClick={() => downloadReport("xlsx")} disabled={exporting === "xlsx"} data-testid="rp-export-xlsx" title="Excel report of this tab's resources">
+                <FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> {exporting === "xlsx" ? "Exporting…" : "Excel"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => downloadReport("pdf")} disabled={exporting === "pdf"} data-testid="rp-export-pdf" title="PDF report of this tab's resources">
+                <FileText className="h-3.5 w-3.5 mr-1" /> {exporting === "pdf" ? "Exporting…" : "PDF"}
+              </Button>
+            </div>
+          )}
           {canEdit && projectId && (
             <div className="flex gap-2">
               {convertible && selected.length > 0 && (
