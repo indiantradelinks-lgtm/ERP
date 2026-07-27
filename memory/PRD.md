@@ -4783,3 +4783,10 @@ User reported overlapping values in items table (Unit/Rate/Discount/Taxable/GST/
 - Frontend (RaBills.jsx): selecting Project in New RA Bill auto-fills everything and loads the offer's line items ("format from offer QTN-xxxx" badge on the Line Items header + toast); manual edits still possible. "PO Number" renamed to "Customer PO Number" (form + view dialog also shows Offer/Quotation #).
 - Self-tested: curl context endpoint (2 projects: with & without sectioned offer) + Playwright e2e (PRJ-2026-0022 → client + 3 offer items + totals ₹1,78,180 auto-computed, badge + rename verified on screenshot).
 **Status: COMPLETE & self-tested (curl + e2e screenshot flow).**
+
+### Feature (Jul 27, 2026) — Cumulative billing tracker on RA Bills ✅
+- Backend: /ra-bills/project-context now aggregates billed-till-date qty per line (all non-cancelled bills on the project excl. credit notes, keyed by normalized description); offer items return offer_qty + billed_qty and PREFILL quantity = remaining balance.
+- Frontend (RaBills.jsx FormDialog): each offer-loaded row shows "Offer X · Billed Y · Bal Z" under Qty; entering qty beyond balance turns the row/input red with "OVER!" and a detailed over-billing warning banner (ra-overbill-warning) appears — non-blocking (can still save deliberately).
+- BUG DURING BUILD: first search_replace for the `overBilled` const silently didn't persist → "overBilled is not defined" crash; re-applied and verified. LESSON: grep-verify variable definitions after batch edits.
+- Self-tested: curl (created 200-qty bill → context shows billed 200/bal 300) + Playwright e2e (tracker text, prefill 300, over-bill flag at 400 + banner). Test bill deleted.
+**Status: COMPLETE & self-tested (curl + e2e screenshot flow).**

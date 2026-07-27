@@ -213,6 +213,8 @@ function FormDialog({ form, setForm, onClose, onSave }) {
   const ret = subtotal * (Number(form.retention_pct) || 0) / 100;
   const tds = subtotal * (Number(form.tds_pct) || 0) / 100;
   const net = gross - ret - tds - (Number(form.advance_recovery) || 0);
+  const overBilled = form.items.filter((it) => it.offer_qty != null &&
+    (Number(it.billed_qty) || 0) + (Number(it.quantity) || 0) > Number(it.offer_qty) + 1e-9);
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-5xl rounded-sm max-h-[88vh] overflow-y-auto" data-testid="ra-form-dialog">
@@ -258,19 +260,39 @@ function FormDialog({ form, setForm, onClose, onSave }) {
                 <TableHead></TableHead>
               </TableRow></TableHeader>
               <TableBody>
-                {form.items.map((it, i) => (
-                  <TableRow key={`it-${i}`}>
+                {form.items.map((it, i) => {
+                  const over = it.offer_qty != null &&
+                    (Number(it.billed_qty) || 0) + (Number(it.quantity) || 0) > Number(it.offer_qty) + 1e-9;
+                  const balance = it.offer_qty != null ? Math.max(Number(it.offer_qty) - (Number(it.billed_qty) || 0), 0) : null;
+                  return (
+                  <TableRow key={`it-${i}`} className={over ? "bg-destructive/5" : ""}>
                     <TableCell><Input value={it.description} onChange={(e) => setItem(i, { description: e.target.value })} className="h-8 rounded-sm" data-testid={`ra-form-desc-${i}`} /></TableCell>
-                    <TableCell><Input type="number" value={it.quantity} onChange={(e) => setItem(i, { quantity: e.target.value })} className="h-8 rounded-sm w-20 tabular" data-testid={`ra-form-qty-${i}`} /></TableCell>
+                    <TableCell>
+                      <Input type="number" value={it.quantity} onChange={(e) => setItem(i, { quantity: e.target.value })}
+                        className={`h-8 rounded-sm w-20 tabular ${over ? "border-destructive text-destructive" : ""}`} data-testid={`ra-form-qty-${i}`} />
+                      {it.offer_qty != null && (
+                        <div className={`text-[10px] mt-0.5 whitespace-nowrap ${over ? "text-destructive font-bold" : "text-muted-foreground"}`} data-testid={`ra-cum-${i}`}>
+                          Offer {it.offer_qty} · Billed {it.billed_qty || 0} · Bal {balance}
+                          {over && " · OVER!"}
+                        </div>
+                      )}
+                    </TableCell>
                     <TableCell><Input value={it.unit} onChange={(e) => setItem(i, { unit: e.target.value })} className="h-8 rounded-sm w-20" /></TableCell>
                     <TableCell><Input type="number" value={it.rate} onChange={(e) => setItem(i, { rate: e.target.value })} className="h-8 rounded-sm w-24 tabular" data-testid={`ra-form-rate-${i}`} /></TableCell>
                     <TableCell className="font-mono-data tabular text-xs font-bold">{inr((Number(it.quantity) || 0) * (Number(it.rate) || 0))}</TableCell>
                     <TableCell><Button variant="outline" size="sm" className="h-7 rounded-sm" onClick={() => setForm({ ...form, items: form.items.filter((_, ix) => ix !== i) })}><X className="h-3 w-3" /></Button></TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
+
+          {overBilled.length > 0 && (
+            <div className="bg-destructive/10 border border-destructive/40 rounded-sm p-2.5 text-xs text-destructive" data-testid="ra-overbill-warning">
+              <strong>Over-billing flagged:</strong> {overBilled.map((it) => `"${it.description}" (offer ${it.offer_qty}, billed ${it.billed_qty || 0}, this bill ${it.quantity})`).join(" · ")}. You can still save, but please verify with the customer PO / offer.
+            </div>
+          )}
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Field label="GST %" type="number" value={form.gst_pct} onChange={(v) => setForm({ ...form, gst_pct: v })} testid="ra-form-gst" />

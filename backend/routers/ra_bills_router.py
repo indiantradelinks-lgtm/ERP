@@ -227,13 +227,27 @@ async def ra_bill_project_context(project_code: str,
     items: List[Dict[str, Any]] = []
     gst_pct = None
     if quote:
+        # Cumulative already-billed qty per line (all non-cancelled bills on this project,
+        # credit notes excluded) keyed by normalized description
+        billed: Dict[str, float] = {}
+        async for b in db.ra_bills.find(
+                {"project_code": project_code, "status": {"$ne": "cancelled"},
+                 "bill_type": {"$ne": "credit_note"}}, {"_id": 0, "items": 1}):
+            for it in b.get("items") or []:
+                k = (it.get("description") or "").strip().lower()
+                billed[k] = billed.get(k, 0) + float(it.get("quantity") or 0)
+
         for sec in quote.get("sections") or []:
             for it in sec.get("items") or []:
+                offer_qty = float(it.get("quantity") or 0)
+                billed_qty = billed.get((it.get("description") or "").strip().lower(), 0)
                 items.append({
                     "description": it.get("description") or "",
-                    "quantity": it.get("quantity") or 1,
+                    "quantity": max(round(offer_qty - billed_qty, 3), 0),
                     "unit": it.get("unit") or "",
                     "rate": it.get("rate") or 0,
+                    "offer_qty": offer_qty,
+                    "billed_qty": round(billed_qty, 3),
                 })
                 if gst_pct is None and it.get("gst_pct") is not None:
                     gst_pct = it.get("gst_pct")
