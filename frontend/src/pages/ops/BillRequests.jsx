@@ -206,64 +206,100 @@ export default function BillRequests() {
       </div>
 
       <Dialog open={creating} onOpenChange={setCreating}>
-        <DialogContent className="max-w-xl rounded-sm">
+        <DialogContent className="max-w-5xl rounded-sm max-h-[88vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> New Bill Generation Request</DialogTitle>
             <DialogDescription>Goes for approval: Project Manager → Dept Head → GM → Director (Super Admin can change this in Approval Matrix).</DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-3 py-1">
-            <div className="col-span-2">
-              <ProjectSelect label="Project" value={form.project_code} onChange={onProjectPicked} testid="br-form-project" />
-              {ctx && (ctx.client_name || ctx.quotation_no) && (
-                <div className="text-[11px] text-muted-foreground mt-1" data-testid="br-form-ctx">
-                  Client: <b>{ctx.client_name || "—"}</b>{ctx.quotation_no ? <> · Offer: <b>{ctx.quotation_no}</b></> : null}{ctx.po_number ? <> · Customer PO: <b>{ctx.po_number}</b></> : null}
+          <div className="space-y-3 py-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div>
+                <Label className="text-[10px] uppercase tracking-wider">Bill Type</Label>
+                <select value={form.bill_type} onChange={(e) => setForm({ ...form, bill_type: e.target.value })}
+                  className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="br-form-type">
+                  <option value="running">RA (Running) Bill</option>
+                  <option value="final">Final Bill</option>
+                </select>
+              </div>
+              <div>
+                <ProjectSelect label="Project Code" value={form.project_code} onChange={onProjectPicked} testid="br-form-project"
+                  hint="Selecting a project auto-fills client, offer & line items" />
+              </div>
+              <div>
+                <Label className="text-[10px] uppercase tracking-wider">Period From</Label>
+                <Input type="date" value={form.period_from} onChange={(e) => setForm({ ...form, period_from: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="br-form-from" />
+              </div>
+              <div>
+                <Label className="text-[10px] uppercase tracking-wider">Period To</Label>
+                <Input type="date" value={form.period_to} onChange={(e) => setForm({ ...form, period_to: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="br-form-to" />
+              </div>
+            </div>
+            {ctx && (ctx.client_name || ctx.quotation_no) && (
+              <div className="text-[11px] text-muted-foreground -mt-1" data-testid="br-form-ctx">
+                Client: <b>{ctx.client_name || "—"}</b>{ctx.quotation_no ? <> · Offer: <b>{ctx.quotation_no}</b></> : null}{ctx.po_number ? <> · Customer PO: <b>{ctx.po_number}</b></> : null}
+              </div>
+            )}
+
+            <div className="border border-border rounded-sm">
+              <div className="flex items-center justify-between p-2.5 border-b border-border">
+                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">
+                  Line Items
+                  {ctx?.quotation_no && <span className="ml-2 normal-case tracking-normal font-normal text-muted-foreground">· format from offer {ctx.quotation_no}</span>}
                 </div>
-              )}
-            </div>
-            <div>
-              <Label className="text-[10px] uppercase tracking-wider">Bill Type</Label>
-              <select value={form.bill_type} onChange={(e) => setForm({ ...form, bill_type: e.target.value })}
-                className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="br-form-type">
-                <option value="running">RA (Running) Bill</option>
-                <option value="final">Final Bill</option>
-              </select>
-            </div>
-            <div>
-              <Label className="text-[10px] uppercase tracking-wider">Request Total (auto from items)</Label>
-              <div className="h-9 mt-1 flex items-center px-2 border border-border rounded-sm bg-secondary font-mono-data tabular text-sm font-bold" data-testid="br-form-total">{inr(totalAmount)}</div>
-            </div>
-            <div>
-              <Label className="text-[10px] uppercase tracking-wider">Period From</Label>
-              <Input type="date" value={form.period_from} onChange={(e) => setForm({ ...form, period_from: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="br-form-from" />
-            </div>
-            <div>
-              <Label className="text-[10px] uppercase tracking-wider">Period To</Label>
-              <Input type="date" value={form.period_to} onChange={(e) => setForm({ ...form, period_to: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="br-form-to" />
-            </div>
-            <div className="col-span-2 border border-border rounded-sm">
-              <div className="flex items-center justify-between p-2 border-b border-border">
-                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Line Items (as per enquiry / customer work order)</div>
                 <Button size="sm" variant="outline" className="h-7 rounded-sm"
-                  onClick={() => setForm({ ...form, items: [...form.items, { description: "", quantity: 1, unit: "", rate: 0 }] })}
-                  data-testid="br-add-item"><Plus className="h-3 w-3 mr-1" /> Add Item</Button>
+                  onClick={() => setForm({ ...form, items: [...form.items, { description: "", quantity: 1, unit: "m²", rate: 0 }] })}
+                  data-testid="br-add-item"><Plus className="h-3 w-3 mr-1" /> Add</Button>
               </div>
-              <div className="max-h-56 overflow-y-auto">
-                {form.items.length === 0 && (
-                  <div className="text-xs text-muted-foreground p-3 text-center">Select a project to load the offer's line items, or add manually.</div>
-                )}
-                {form.items.map((it, i) => (
-                  <div key={`bri-${i}`} className="grid grid-cols-12 gap-1.5 px-2 py-1.5 border-b border-border/50 items-center">
-                    <Input value={it.description} onChange={(e) => setItem(i, { description: e.target.value })} placeholder="Description" className="h-8 rounded-sm col-span-5 text-xs" data-testid={`br-item-desc-${i}`} />
-                    <Input type="number" value={it.quantity} onChange={(e) => setItem(i, { quantity: e.target.value })} placeholder="Qty" className="h-8 rounded-sm col-span-2 text-xs tabular" data-testid={`br-item-qty-${i}`} />
-                    <Input value={it.unit} onChange={(e) => setItem(i, { unit: e.target.value })} placeholder="Unit" className="h-8 rounded-sm col-span-1 text-xs" />
-                    <Input type="number" value={it.rate} onChange={(e) => setItem(i, { rate: e.target.value })} placeholder="Rate" className="h-8 rounded-sm col-span-2 text-xs tabular" data-testid={`br-item-rate-${i}`} />
-                    <div className="col-span-1 text-[11px] font-mono-data tabular text-right">{inr((Number(it.quantity) || 0) * (Number(it.rate) || 0))}</div>
-                    <Button size="sm" variant="ghost" className="h-7 col-span-1" onClick={() => setForm({ ...form, items: form.items.filter((_, ix) => ix !== i) })}><XCircle className="h-3.5 w-3.5" /></Button>
-                  </div>
-                ))}
+              <Table>
+                <TableHeader><TableRow className="bg-muted/30 hover:bg-muted/30">
+                  <TableHead className="text-[10px] uppercase tracking-wider">Description</TableHead>
+                  <TableHead className="text-[10px] uppercase tracking-wider">Qty</TableHead>
+                  <TableHead className="text-[10px] uppercase tracking-wider">Unit</TableHead>
+                  <TableHead className="text-[10px] uppercase tracking-wider">Rate</TableHead>
+                  <TableHead className="text-[10px] uppercase tracking-wider">Amount</TableHead>
+                  <TableHead></TableHead>
+                </TableRow></TableHeader>
+                <TableBody>
+                  {form.items.length === 0 && (
+                    <TableRow><TableCell colSpan={6} className="text-xs text-muted-foreground text-center py-6">
+                      Select a project to load the offer's line items, or click Add to enter manually.
+                    </TableCell></TableRow>
+                  )}
+                  {form.items.map((it, i) => (
+                    <TableRow key={`bri-${i}`}>
+                      <TableCell><Input value={it.description} onChange={(e) => setItem(i, { description: e.target.value })} className="h-8 rounded-sm" data-testid={`br-item-desc-${i}`} /></TableCell>
+                      <TableCell>
+                        <Input type="number" value={it.quantity} onChange={(e) => setItem(i, { quantity: e.target.value })} className="h-8 rounded-sm w-20 tabular" data-testid={`br-item-qty-${i}`} />
+                        {it.offer_qty != null && (
+                          <div className="text-[10px] mt-0.5 whitespace-nowrap text-muted-foreground">Offer {it.offer_qty} · Billed {it.billed_qty || 0}</div>
+                        )}
+                      </TableCell>
+                      <TableCell><Input value={it.unit} onChange={(e) => setItem(i, { unit: e.target.value })} className="h-8 rounded-sm w-20" /></TableCell>
+                      <TableCell><Input type="number" value={it.rate} onChange={(e) => setItem(i, { rate: e.target.value })} className="h-8 rounded-sm w-24 tabular" data-testid={`br-item-rate-${i}`} /></TableCell>
+                      <TableCell className="font-mono-data tabular text-xs font-bold">{inr((Number(it.quantity) || 0) * (Number(it.rate) || 0))}</TableCell>
+                      <TableCell><Button variant="outline" size="sm" className="h-7 rounded-sm" onClick={() => setForm({ ...form, items: form.items.filter((_, ix) => ix !== i) })}><XCircle className="h-3 w-3" /></Button></TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 bg-muted/30 border border-border rounded-sm p-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Items</div>
+                <div className="font-mono-data tabular text-sm font-bold">{form.items.length}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Documents</div>
+                <div className="font-mono-data tabular text-sm font-bold">{attFiles.length}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Request Total</div>
+                <div className="font-mono-data tabular text-sm font-bold text-emerald-700" data-testid="br-form-total">{inr(totalAmount)}</div>
               </div>
             </div>
-            <div className="col-span-2">
+
+            <div>
               <Label className="text-[10px] uppercase tracking-wider">Supporting Billing Documents (measurement sheets, client sign-offs…)</Label>
               <div className="mt-1">
                 <FileUploader folder="documents" parent_type="bill_requests" parent_id={form.id}
@@ -273,7 +309,7 @@ export default function BillRequests() {
                   testidPrefix="br-uploader" />
               </div>
             </div>
-            <div className="col-span-2">
+            <div>
               <Label className="text-[10px] uppercase tracking-wider">Remarks / Work Done Summary</Label>
               <Textarea value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} className="rounded-sm mt-1 min-h-[70px]" data-testid="br-form-remarks" />
             </div>
