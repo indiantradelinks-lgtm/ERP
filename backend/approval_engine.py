@@ -119,6 +119,12 @@ APPROVAL_CHAINS: Dict[str, List[Dict[str, str]]] = {
         {"role": "general_manager", "label": "Finance Head"},
         {"role": "director", "label": "Director"},
     ],
+    "bill_request": [
+        {"role": "project_manager", "label": "Project Manager"},
+        {"role": "dept_head", "label": "Department Head"},
+        {"role": "general_manager", "label": "General Manager"},
+        {"role": "director", "label": "Director"},
+    ],
 }
 
 

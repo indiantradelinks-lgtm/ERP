@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Plus, Search, FileText, CheckCircle2, XCircle, Send, Trash2, Eye, RefreshCw, X, Receipt, Banknote, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +48,35 @@ export default function RaBills() {
   const [fromMeasOpen, setFromMeasOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(null);
   const [emailFor, setEmailFor] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [fromRequestId, setFromRequestId] = useState(null);
+
+  useEffect(() => {
+    const rid = searchParams.get("fromRequest");
+    if (!rid) return;
+    (async () => {
+      try {
+        const { data: req } = await api.get(`/bill-requests/${rid}`);
+        let ctx = {};
+        try { ctx = (await api.get(`/ra-bills/project-context/${encodeURIComponent(req.project_code)}`)).data; } catch { /* optional */ }
+        setForm({
+          ...blankBill(),
+          bill_type: req.bill_type || "running",
+          project_code: req.project_code || "",
+          client_id: ctx.client_id || "", client_name: ctx.client_name || req.client_name || "",
+          site_name: ctx.site_name || "", po_number: ctx.po_number || "", po_id: ctx.po_id || "",
+          quotation_no: ctx.quotation_no || "",
+          gst_pct: ctx.gst_pct ?? 18, retention_pct: ctx.retention_pct ?? 5,
+          items: (ctx.items || []).length ? ctx.items : blankBill().items,
+          notes: `Against Bill Request ${req.request_no}${req.remarks ? " — " + req.remarks : ""}`,
+        });
+        setFromRequestId(rid);
+        setOpen(true);
+        toast.success(`Pre-filled from approved request ${req.request_no} — review & save to generate the bill`);
+      } catch { toast.error("Could not load the bill request"); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const load = async () => {
     try {
@@ -67,6 +97,14 @@ export default function RaBills() {
     try {
       const { data } = await api.post("/ra-bills", { ...form, items: form.items.map((i) => ({ ...i, quantity: Number(i.quantity) || 0, rate: Number(i.rate) || 0 })) });
       toast.success(`${data.bill_number} saved`);
+      if (fromRequestId) {
+        try {
+          await api.post(`/bill-requests/${fromRequestId}/mark-generated`, { bill_id: data.id });
+          toast.success("Bill request marked as generated");
+        } catch { toast.error("Bill saved, but could not update the bill request status"); }
+        setFromRequestId(null);
+        setSearchParams({}, { replace: true });
+      }
       setOpen(false); setForm(blankBill()); load();
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };

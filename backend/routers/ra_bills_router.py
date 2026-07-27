@@ -30,6 +30,8 @@ from pydantic import BaseModel, Field
 from core import db, require_permission, now_iso, new_id
 from audit import audit
 from sequences import next_sequence, stamp_dept_doc
+from approval_engine import build_chain, insert_approval
+from scope import apply_project_scope
 
 router = APIRouter(tags=["ra-bills"])
 
@@ -183,6 +185,133 @@ async def ra_bills_dashboard(user: dict = Depends(require_permission("ra_bills",
             "net_due": round(t.get("net_due") or 0, 2),
         }
     }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Bill Generation Requests (Ops raise → multi-level approval → Accounts generate)
+# ──────────────────────────────────────────────────────────────────────────────
+class BillRequestIn(BaseModel):
+    project_code: str
+    bill_type: str = "running"
+    period_from: Optional[str] = None
+    period_to: Optional[str] = None
+    expected_amount: float = 0
+    remarks: Optional[str] = None
+
+
+def _request_status(req: Dict[str, Any], approval: Optional[Dict[str, Any]]) -> str:
+    if req.get("status") == "bill_generated":
+        return "bill_generated"
+    if not approval:
+        return req.get("status") or "pending_approval"
+    return {"pending": "pending_approval", "approved": "approved",
+            "rejected": "rejected"}.get(approval.get("status"), "pending_approval")
+
+
+@router.post("/bill-requests")
+async def create_bill_request(payload: BillRequestIn, request: Request,
+                              user: dict = Depends(require_permission("projects", "write"))):
+    if payload.bill_type not in ("running", "final"):
+        raise HTTPException(400, "bill_type must be running or final")
+    project = await db.projects.find_one({"code": payload.project_code}, {"_id": 0})
+    if not project:
+        raise HTTPException(404, "Project not found")
+    handover = await db.project_handovers.find_one(
+        {"project_code": payload.project_code}, {"_id": 0}, sort=[("created_at", -1)])
+    req_no = await next_sequence("BR")
+    doc = {
+        "id": new_id(),
+        "request_no": req_no,
+        "project_code": payload.project_code,
+        "project_name": project.get("name") or "",
+        "client_name": (handover or {}).get("client_name") or project.get("client") or "",
+        "bill_type": payload.bill_type,
+        "period_from": payload.period_from, "period_to": payload.period_to,
+        "expected_amount": payload.expected_amount,
+        "remarks": payload.remarks or "",
+        "status": "pending_approval",
+        "requested_by": user.get("name") or user.get("email"),
+        "requested_by_role": user.get("role"),
+        "bill_id": None, "bill_number": None,
+        "created_at": now_iso(),
+    }
+    chain = await build_chain("bill_request")
+    approval = {
+        "id": new_id(),
+        "title": f"Bill Request {req_no} — {doc['project_code']} · {doc['client_name']} ({payload.bill_type.upper()}, ₹{payload.expected_amount:,.0f})",
+        "type": "bill_request",
+        "reference": doc["id"],
+        "amount": payload.expected_amount,
+        "requested_by": doc["requested_by"],
+        "chain": chain, "current_step": 0, "history": [],
+        "status": "pending", "created_at": now_iso(),
+    }
+    await insert_approval(approval, skip_gate=True)
+    doc["approval_id"] = approval["id"]
+    await db.bill_requests.insert_one(doc)
+    doc.pop("_id", None)
+    await audit(user=user, action="bill_request_create", resource="bill_requests",
+                record_id=doc["id"], after={"request_no": req_no}, ip=_ip(request))
+    return doc
+
+
+@router.get("/bill-requests")
+async def list_bill_requests(status: Optional[str] = None,
+                             user: dict = Depends(require_permission("projects", "read"))):
+    q: Dict[str, Any] = {}
+    q = await apply_project_scope(user, q, id_field="project_id", code_field="project_code")
+    rows = await db.bill_requests.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    ids = [r["approval_id"] for r in rows if r.get("approval_id")]
+    approvals = {a["id"]: a async for a in db.approvals.find(
+        {"id": {"$in": ids}}, {"_id": 0, "id": 1, "status": 1, "chain": 1, "current_step": 1})}
+    out = []
+    for r in rows:
+        a = approvals.get(r.get("approval_id"))
+        st = _request_status(r, a)
+        if status and st != status:
+            continue
+        out.append({**r, "status": st,
+                    "chain": (a or {}).get("chain") or [],
+                    "current_step": (a or {}).get("current_step", 0)})
+    return out
+
+
+@router.get("/bill-requests/{rid}")
+async def get_bill_request(rid: str,
+                           user: dict = Depends(require_permission("projects", "read"))):
+    r = await db.bill_requests.find_one({"id": rid}, {"_id": 0})
+    if not r:
+        raise HTTPException(404, "Bill request not found")
+    a = await db.approvals.find_one({"id": r.get("approval_id")}, {"_id": 0, "status": 1, "chain": 1, "current_step": 1})
+    return {**r, "status": _request_status(r, a), "chain": (a or {}).get("chain") or [],
+            "current_step": (a or {}).get("current_step", 0)}
+
+
+class MarkGeneratedIn(BaseModel):
+    bill_id: str
+
+
+@router.post("/bill-requests/{rid}/mark-generated")
+async def mark_bill_generated(rid: str, payload: MarkGeneratedIn, request: Request,
+                              user: dict = Depends(require_permission("ra_bills", "write"))):
+    r = await db.bill_requests.find_one({"id": rid}, {"_id": 0})
+    if not r:
+        raise HTTPException(404, "Bill request not found")
+    a = await db.approvals.find_one({"id": r.get("approval_id")}, {"_id": 0, "status": 1})
+    if _request_status(r, a) != "approved":
+        raise HTTPException(400, "Bill request must be fully approved before generating the bill")
+    bill = await db.ra_bills.find_one({"id": payload.bill_id}, {"_id": 0, "bill_number": 1})
+    if not bill:
+        raise HTTPException(404, "Bill not found")
+    await db.bill_requests.update_one({"id": rid}, {"$set": {
+        "status": "bill_generated", "bill_id": payload.bill_id,
+        "bill_number": bill.get("bill_number"),
+        "generated_by": user.get("name") or user.get("email"),
+        "generated_at": now_iso(),
+    }})
+    await audit(user=user, action="bill_request_generated", resource="bill_requests",
+                record_id=rid, after={"bill_id": payload.bill_id}, ip=_ip(request))
+    return {"ok": True, "bill_number": bill.get("bill_number")}
 
 
 @router.get("/ra-bills/project-context/{project_code}")

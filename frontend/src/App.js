@@ -150,6 +150,7 @@ import HrPhase4 from "@/pages/hr/HrPhase4";
 import HrPhase5 from "@/pages/hr/HrPhase5";
 import AttendanceCenter from "@/pages/hr/AttendanceCenter";
 import ReportsCenter from "@/pages/ReportsCenter";
+import BillRequests from "@/pages/ops/BillRequests";
 import QuotationBuilder from "@/pages/QuotationBuilder";
 import ProjectDashboard from "@/pages/ProjectDashboard";
 import ContractHandovers from "@/pages/ops/ContractHandovers";
@@ -434,6 +435,7 @@ export default function App() {
             <Route path="/app/vendor-portal" element={<ProtectedShell><VendorPortal /></ProtectedShell>} />
             <Route path="/app/modules" element={<ProtectedShell><DepartmentLauncher /></ProtectedShell>} />
             <Route path="/app/reports-center" element={<ProtectedShell><ReportsCenter /></ProtectedShell>} />
+            <Route path="/app/ops/bill-requests" element={<ProtectedShell><BillRequests /></ProtectedShell>} />
             <Route path="/app/modules/:dept" element={<ProtectedShell><DepartmentWorkspace /></ProtectedShell>} />
             <Route path="/app/admin" element={<ProtectedShell><AdminConsole /></ProtectedShell>} />
             <Route path="/app/admin/departments" element={<ProtectedShell><Departments /></ProtectedShell>} />
