@@ -4758,3 +4758,9 @@ User reported overlapping values in items table (Unit/Rate/Discount/Taxable/GST/
 - FIX: backend `_norm_enquiry()` maps real → canonical keys for inbox + CSV/XLSX exports (incl. quotation_no, priority default medium, _bucket); dashboard fixed (pipeline sums expected_value → ₹5.57L, quotations_pending/submitted split by quotation_no presence, by_client groups customer, by_salesperson falls back to last_followup_by). Frontend: new "Quotation #" column, STATUS_BADGE with real vocab, mobile quick-actions now post VALID statuses (submitted/negotiation/won — previously silently 400'd).
 - Verified by testing_agent iteration_145: 100% backend (9/9 pytest) + 100% frontend (real ENQ/QTN/client rendering, follow-up save flow → Upcoming, exports, KPI consistency).
 **Status: FIXED & verified by testing_agent.**
+
+### Feature (Jul 27, 2026) — Contract Handovers report download (Excel + PDF) ✅
+- Backend: NEW `GET /ops/handovers/export/{xlsx|pdf}?status=` in projects_ops_router (registered BEFORE /ops/handovers/{hid} to avoid route capture). Reuses _scope_filter + _hydrate_project_client_from_sales, renders via shared exports.to_excel/to_pdf (branded logo band, watermark, corporate footer). Added "project_handovers" columns to exports.COLUMNS (16 cols for Excel) and a new PDF_COLUMNS override mechanism (10 fitted columns w/ explicit mm widths — generic to_pdf now honours per-resource PDF subsets + colWidths).
+- Frontend (ContractHandovers.jsx): Excel + PDF buttons (ops-export-xlsx / ops-export-pdf) beside New/Backfill; blob download respects current status filter; per-format "Exporting…" state.
+- Self-tested: curl xlsx/pdf/status-filter all 200 with correct headers+data; PDF page render inspected (10 columns fit, no clipping); Playwright UI click downloaded contract-handovers.xlsx.
+**Status: COMPLETE & self-tested (curl + PDF render + UI download).**

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Send, Users, Search, FileText, Clock, Briefcase, X, Eye, Sparkles, RefreshCcw, Paperclip } from "lucide-react";
+import { Plus, Send, Users, Search, FileText, FileSpreadsheet, Clock, Briefcase, X, Eye, Sparkles, RefreshCcw, Paperclip } from "lucide-react";
 import FileUploader from "@/components/FileUploader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,6 +51,24 @@ export default function ContractHandovers() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [editing, setEditing] = useState(null);  // {open, mode:'create'|'edit'|'view', data}
   const [allocFor, setAllocFor] = useState(null); // handover row
+  const [exporting, setExporting] = useState("");
+
+  const downloadReport = async (fmt) => {
+    setExporting(fmt);
+    try {
+      const { data } = await api.get(`/ops/handovers/export/${fmt}`, {
+        responseType: "blob",
+        params: filterStatus !== "all" ? { status: filterStatus } : {},
+      });
+      const url = URL.createObjectURL(data);
+      const a = document.createElement("a");
+      a.href = url; a.download = `contract-handovers.${fmt}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`${fmt === "xlsx" ? "Excel" : "PDF"} report downloaded`);
+    } catch (e) { toast.error("Export failed"); }
+    finally { setExporting(""); }
+  };
 
   const load = async () => {
     try {
@@ -133,6 +151,12 @@ export default function ContractHandovers() {
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
             <Input placeholder="Search no. / project / client" value={q} onChange={(e) => setQ(e.target.value)} className="pl-8 w-72" data-testid="ops-search" />
           </div>
+          <Button variant="outline" onClick={() => downloadReport("xlsx")} disabled={exporting === "xlsx"} data-testid="ops-export-xlsx" title="Download Excel report (respects status filter)">
+            <FileSpreadsheet className="h-4 w-4 mr-1" /> {exporting === "xlsx" ? "Exporting…" : "Excel"}
+          </Button>
+          <Button variant="outline" onClick={() => downloadReport("pdf")} disabled={exporting === "pdf"} data-testid="ops-export-pdf" title="Download PDF report (respects status filter)">
+            <FileText className="h-4 w-4 mr-1" /> {exporting === "pdf" ? "Exporting…" : "PDF"}
+          </Button>
           {canCreate && (
             <Button onClick={() => setEditing({ open: true, mode: "create", data: emptyForm() })} data-testid="ops-new-btn">
               <Plus className="h-4 w-4 mr-1" /> New Contract Handover

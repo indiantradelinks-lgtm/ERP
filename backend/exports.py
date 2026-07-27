@@ -185,6 +185,24 @@ COLUMNS: Dict[str, List[Dict[str, str]]] = {
         {"key": "reference", "label": "Ref"}, {"key": "amount", "label": "Amount"},
         {"key": "requested_by", "label": "Requested By"}, {"key": "status", "label": "Status"},
     ],
+    "project_handovers": [
+        {"key": "handover_no", "label": "Handover #"},
+        {"key": "project_code", "label": "Project Code"},
+        {"key": "project_name", "label": "Project"},
+        {"key": "client_name", "label": "Client"},
+        {"key": "quotation_no", "label": "Quotation #"},
+        {"key": "work_order_number", "label": "Work Order #"},
+        {"key": "site_location", "label": "Site"},
+        {"key": "contract_value", "label": "Contract Value"},
+        {"key": "contract_start_date", "label": "Start"},
+        {"key": "contract_end_date", "label": "End"},
+        {"key": "scope_of_work", "label": "Scope of Work"},
+        {"key": "project_manager_label", "label": "Project Manager"},
+        {"key": "project_coordinator_label", "label": "Coordinator"},
+        {"key": "priority", "label": "Priority"},
+        {"key": "status", "label": "Status"},
+        {"key": "created_at", "label": "Created"},
+    ],
     "enquiries": [
         {"key": "enquiry_no", "label": "Enquiry #"},
         {"key": "enquiry_date", "label": "Date"},
@@ -262,10 +280,28 @@ def to_excel(resource: str, rows: List[Dict[str, Any]], mask_pii: bool = False) 
     return buf.getvalue()
 
 
+# Narrower column subsets for PDF (landscape A4 fits ~10 columns).
+# Optional "w" = column width in mm; used when every column declares one.
+PDF_COLUMNS: Dict[str, List[Dict[str, Any]]] = {
+    "project_handovers": [
+        {"key": "handover_no", "label": "Handover #", "w": 28},
+        {"key": "project_code", "label": "Proj Code", "w": 24},
+        {"key": "project_name", "label": "Project", "w": 40},
+        {"key": "client_name", "label": "Client", "w": 35},
+        {"key": "quotation_no", "label": "Quotation #", "w": 26},
+        {"key": "contract_value", "label": "Value", "w": 24},
+        {"key": "contract_start_date", "label": "Start", "w": 18},
+        {"key": "contract_end_date", "label": "End", "w": 18},
+        {"key": "project_manager_label", "label": "PM", "w": 30},
+        {"key": "status", "label": "Status", "w": 22},
+    ],
+}
+
+
 def to_pdf(resource: str, rows: List[Dict[str, Any]], mask_pii: bool = False) -> bytes:
     if mask_pii:
         rows = [_redact_row(resource, r) for r in rows]
-    cols = COLUMNS.get(resource, [{"key": k, "label": k} for k in (rows[0].keys() if rows else [])])
+    cols = PDF_COLUMNS.get(resource) or COLUMNS.get(resource, [{"key": k, "label": k} for k in (rows[0].keys() if rows else [])])
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=15 * mm, rightMargin=15 * mm, topMargin=12 * mm, bottomMargin=12 * mm)
     attach_watermark(doc, width_mm=180.0)  # landscape A4 → wider watermark
@@ -306,7 +342,8 @@ def to_pdf(resource: str, rows: List[Dict[str, Any]], mask_pii: bool = False) ->
     for r in rows:
         table_data.append([_fmt(r.get(c["key"])) for c in cols])
 
-    t = Table(table_data, repeatRows=1)
+    col_widths = [c["w"] * mm for c in cols] if all("w" in c for c in cols) else None
+    t = Table(table_data, repeatRows=1, colWidths=col_widths)
     t.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2563eb")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#ffffff")),

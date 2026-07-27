@@ -382,6 +382,30 @@ async def _hydrate_project_client_from_sales(rows: List[Dict[str, Any]]) -> List
 
 
 # ─────────────────────────── ENDPOINTS ───────────────────────────
+@router.get("/ops/handovers/export/{fmt}")
+async def export_handovers(fmt: str, status: Optional[str] = None,
+                           user: dict = Depends(require_permission("project_handovers", "read"))):
+    """Branded Excel / PDF report of contract handovers (same scoping as the list)."""
+    if fmt not in ("xlsx", "pdf"):
+        raise HTTPException(400, "Format must be xlsx or pdf")
+    from fastapi.responses import Response
+    from exports import to_excel, to_pdf
+    q: Dict[str, Any] = _scope_filter(user)
+    if status and status != "all":
+        q["status"] = status
+    rows = await db.project_handovers.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    rows = await _hydrate_project_client_from_sales(rows)
+    if fmt == "xlsx":
+        data = to_excel("project_handovers", rows)
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        data = to_pdf("project_handovers", rows)
+        media = "application/pdf"
+    fname = f"contract-handovers.{fmt}"
+    return Response(content=data, media_type=media,
+                    headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
 @router.get("/ops/handovers")
 async def list_handovers(status: Optional[str] = None,
                           user: dict = Depends(require_permission("project_handovers", "read"))):
