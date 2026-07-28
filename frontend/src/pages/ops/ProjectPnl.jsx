@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, Fragment } from "react";
 import { RefreshCw, TrendingUp, FileSpreadsheet, FileText, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -100,7 +100,7 @@ export default function ProjectPnl() {
                   </TableCell>
                 </TableRow>
                 {open === r.project_code && (
-                  <TableRow key={`${r.project_code}-detail`} className="bg-muted/20 hover:bg-muted/20">
+                  <TableRow className="bg-muted/20 hover:bg-muted/20">
                     <TableCell></TableCell>
                     <TableCell colSpan={7}>
                       <div className="py-2" data-testid={`pnl-detail-${r.project_code}`}>
@@ -120,10 +120,15 @@ export default function ProjectPnl() {
                     </TableCell>
                   </TableRow>
                 )}
-              </>
+              </Fragment>
             ))}
           </TableBody>
         </Table>
+      </div>
+    </div>
+  );
+}
+ </Table>
       </div>
     </div>
   );

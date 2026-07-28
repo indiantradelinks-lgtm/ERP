@@ -4828,3 +4828,13 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - WO Value auto-computed from items (manual entry when no items); backend WorkOrderIn now persists items[]
 - Files: /app/frontend/src/pages/ops/WorkOrders.jsx, /app/backend/routers/projects_ops_workorders_router.py
 - Self-tested: screenshot (8 items loaded from offer QTN-2026-0086 for ONGC project) + curl POST/DELETE with items persisted
+
+## 2026-06-28 — Daily Project Expense Booking + Project P&L + Cost Center Sync — DONE (Iter 151, 24/25 pass)
+- NEW /app/ops/expenses (Daily Expense Booking): 11 expense types (fuel, ppe_safety, scaffolding_material, manpower, accommodation, travelling, tools, local_purchase, vehicle, office_admin, misc) booked to project Cost Centers with bill attachments
+- Approval chain: PM Verify → Dept Head → Accounts (+ GM → Director when amount > proj_settings.daily_expense_large_threshold, default ₹10,000) → approved_for_payment → mark-paid (Accounts/Director). JE posted best-effort on final approval (debit expense ledger, credit petty cash/reimbursement/vendor payable)
+- Cost Centers: _cc_actuals in procurement_master_router now adds approved daily expenses to 'Actual'; menu link 'Cost Centers (Budget)' visible to PMs (perm projects)
+- NEW /app/ops/pnl (Project P&L): Sales=RA bill subtotals, receipts separate; Expenses=GRN+daily expenses+site expenses by category; gross profit + margin; totals; branded Excel/PDF exports
+- RBAC: project_expenses (write: mgmt+PM+PC+site+accounts), project_pnl (read: mgmt+PM+accounts)
+- Backend: /app/backend/routers/project_expenses_router.py; Frontend: ProjectExpenses.jsx, ProjectPnl.jsx
+- Post-test fix: React key warning in ProjectPnl (Fragment key)
+- Test rows kept: PEX-2026-0001/-0002 (TEST- prefixed, paid) on PRJ-2025-01
