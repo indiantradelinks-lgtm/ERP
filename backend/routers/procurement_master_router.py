@@ -327,6 +327,12 @@ async def _cc_actuals(project_id: str, category_code: str) -> Dict[str, float]:
         for it in (g.get("items") or []):
             if (it.get("category_code") or it.get("category")) == category_code:
                 actual += float(it.get("amount") or it.get("total") or 0)
+    # Daily project expenses (approved/paid) booked against this cost center category
+    pe_rows = await db.project_expenses.find(
+        {"project_id": project_id, "category_code": category_code,
+         "status": {"$in": ["approved_for_payment", "paid"]}},
+        {"_id": 0, "amount": 1}).to_list(3000)
+    actual += sum(float(pe.get("amount") or 0) for pe in pe_rows)
     return {"committed": round(committed, 2), "actual": round(actual, 2)}
 
 

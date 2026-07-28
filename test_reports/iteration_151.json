@@ -1,0 +1,33 @@
+{
+  "summary": "Iter 151 — Daily Project Expense Booking + Project P&L. Backend: 24/25 pytest passed (1 skipped: no cross-project CC available). Frontend: expenses page loads with 5 KPIs, book-expense dialog with pex-form-* fields, chain badges (5-step for large amount>10k, 3-step for small), Approve flow advances through all 5 steps to 'Approved — For Payment', Mark Paid dialog + confirm sets Paid status. Project P&L page loads with 4 KPI totals, 3 project rows, row expansion shows expense breakdown. Sidebar under Projects & Operations shows all three nav testids (nav-ops-expenses, nav-ops-cost-centers, nav-ops-pnl). Cost center 'actual' rollup includes approved daily expenses. RBAC verified (sales 403 on write + on project-pnl read). Exports xlsx/pdf all non-empty.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "ProjectPnl", "issues": ["React warning: 'Each child in a list should have a unique key prop... in ProjectPnl' — add key= to mapped children (likely inside expanded expense breakdown or totals row)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter151_project_expenses.py",
+    "/app/test_reports/pytest/iter151.xml"
+  ],
+  "action_items": [
+    "Optional: fix missing React key prop warning in /app/frontend/src/pages/ops/ProjectPnl.jsx (non-blocking)."
+  ],
+  "critical_code_review_comments": [
+    "project_expenses_router.py line ~368: export_pnl calls `await project_pnl(None, user)` — passing a coroutine-generating function directly. Works today because project_pnl is an async fn callable with plain args; if FastAPI decorator ever wraps it, this direct call may break. Consider extracting a shared internal helper.",
+    "_can_act allows only step_role OR super_admin; role hierarchy (director/gm approving lower steps) is not permitted. Acceptable per RBAC spec but note if UX needs it.",
+    "P&L single-project endpoint returns 404 if project not found but the multi-project list filters out projects with zero billed AND zero expense — inconsistent visibility (a project with only receipts/no bills would be hidden). Acceptable but worth noting."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter151_project_expenses.py (new)"
+  ],
+  "success_rate": {"backend": "96% (24/25 passed, 1 skipped)", "frontend": "100%"},
+  "test_credentials": "admin@erp.com/Admin@123; sales@erp.com/Sales@123",
+  "seed_data_creation": "Created 2 test project_expenses linked to PRJ-2025-01: PEX-2026-0001 (Fuel 5000, PAID, TEST-PAY-001) and PEX-2026-0002 (Manpower 50000, approved+paid via UI, TEST-PAY-UI). Pending test rows were deleted at end of pytest run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Cost center actual for the SCAFFOLD CC on PRJ-2025-01 now reflects the approved 5000 daily expense. PRJ-2025-01 shows in P&L with ₹5,000 total expense (fuel — labeled 'Fuel / Diesel'). Two approved/paid TEST- expenses remain in DB as permanent test rows (per instructions). ProjectPnl.jsx has a React key warning to address.",
+  "rca of the issue": "No blocking issues found."
+}

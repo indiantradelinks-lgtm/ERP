@@ -172,6 +172,7 @@ class ProjectSettingsIn(BaseModel):
     project_code_prefix: str = "PRJ"
     notification_emails: List[str] = []
     auto_alert_overdue_bills_days: int = 7
+    daily_expense_large_threshold: float = 10000
     notes: Optional[str] = ""
 
 

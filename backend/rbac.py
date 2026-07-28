@@ -458,6 +458,21 @@ PERMISSIONS_BASE = {
                   "project_manager", "dept_head", "accounts_executive"},
         "delete": {"super_admin", "hr_executive"},
     },
+    # Daily Project Expense Booking (cost-center linked)
+    "project_expenses": {
+        "read": {"*"},
+        "write": {"super_admin", "director", "general_manager", "dept_head",
+                  "project_manager", "project_coordinator", "site_supervisor",
+                  "accounts_executive", "billing_executive"},
+        "delete": {"super_admin", "project_manager"},
+    },
+    # Project Profit & Loss statement
+    "project_pnl": {
+        "read": {"super_admin", "director", "general_manager", "dept_head",
+                 "project_manager", "accounts_executive"},
+        "write": {"super_admin"},
+        "delete": {"super_admin"},
+    },
     # Group Medical (GMC) Policy management
     "hr_gmc": {
         "read": {"super_admin", "director", "general_manager", "hr_executive",
