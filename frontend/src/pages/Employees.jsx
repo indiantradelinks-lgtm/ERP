@@ -361,6 +361,7 @@ export default function Employees({ master = "employee" }) {
         onUpdate={r.update}
         onDelete={r.remove}
         testidPrefix={meta.testidPrefix}
+        attachmentsParentType="employees"
         createDefaults={{ master_category: master }}
         exportResource={r.exportResource}
         exportParams={{ master, ...(projectFilter ? { project_code: projectFilter } : {}) }}

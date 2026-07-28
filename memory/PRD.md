@@ -4838,3 +4838,11 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - Backend: /app/backend/routers/project_expenses_router.py; Frontend: ProjectExpenses.jsx, ProjectPnl.jsx
 - Post-test fix: React key warning in ProjectPnl (Fragment key)
 - Test rows kept: PEX-2026-0001/-0002 (TEST- prefixed, paid) on PRJ-2025-01
+
+## 2026-06-28 — P1: Attachments extended to remaining modules — DONE
+- GRN (/app/grn): paperclip per row → RowAttachments (parent_type 'grn') for delivery challans/invoices/test certs
+- Employee Master (/app/employees, workers too): DataTableShell attachmentsParentType='employees' — docs per employee
+- Item Master (/app/inventory): attachmentsParentType='inventory_items' — datasheets/test certificates per item
+- Vendors & Safety already had FileUploader (no change needed)
+- Also fixed: ProjectPnl.jsx compile break (leftover duplicate closing block + fragment mismatch introduced during key-fix)
+- Verified via screenshots: GRN dialog opens, 43 employee attach buttons, item master paperclips visible, P&L page renders (₹11L sales, ₹55k expenses, GP ₹10.45L)

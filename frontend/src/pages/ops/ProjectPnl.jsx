@@ -81,8 +81,8 @@ export default function ProjectPnl() {
               </TableCell></TableRow>
             )}
             {(data?.projects || []).map((r) => (
-              <>
-                <TableRow key={r.project_code} className="cursor-pointer" onClick={() => setOpen(open === r.project_code ? null : r.project_code)} data-testid={`pnl-row-${r.project_code}`}>
+              <Fragment key={r.project_code}>
+                <TableRow className="cursor-pointer" onClick={() => setOpen(open === r.project_code ? null : r.project_code)} data-testid={`pnl-row-${r.project_code}`}>
                   <TableCell>{open === r.project_code ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</TableCell>
                   <TableCell>
                     <div className="font-mono-data text-xs font-bold">{r.project_code}</div>
@@ -124,11 +124,6 @@ export default function ProjectPnl() {
             ))}
           </TableBody>
         </Table>
-      </div>
-    </div>
-  );
-}
- </Table>
       </div>
     </div>
   );

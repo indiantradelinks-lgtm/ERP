@@ -206,6 +206,7 @@ export default function Inventory() {
         exportResource={r.exportResource}
         canWrite={r.canWrite}
         canDelete={r.canDelete}
+        attachmentsParentType="inventory_items"
       />
       <Dialog open={!!qrItem} onOpenChange={(o) => !o && setQrItem(null)}>
         <DialogContent className="max-w-sm rounded-sm" data-testid="inventory-qr-dialog">

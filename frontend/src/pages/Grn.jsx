@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Search, PackageCheck, Trash2, AlertTriangle, Network, FileDown } from "lucide-react";
+import { Plus, Search, PackageCheck, Trash2, AlertTriangle, Network, FileDown, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/DataTableShell";
 import LineageTrail from "@/components/LineageTrail";
+import RowAttachments from "@/components/RowAttachments";
 import { api } from "@/lib/api";
 import { downloadPdf } from "@/lib/exports";
 import { toast } from "sonner";
@@ -19,6 +20,7 @@ export default function Grn() {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [lineageFor, setLineageFor] = useState(null);
+  const [attachFor, setAttachFor] = useState(null);
 
   const load = async () => {
     try {
@@ -100,6 +102,9 @@ export default function Grn() {
                       <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setLineageFor(r)} data-testid={`grn-lineage-${r.id}`} title="View end-to-end procurement lineage">
                         <Network className="h-3 w-3 mr-1" /> Lineage
                       </Button>
+                      <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setAttachFor(r)} data-testid={`grn-attach-${r.id}`} title="Delivery challan / invoice / test certificate attachments">
+                        <Paperclip className="h-3 w-3" />
+                      </Button>
                       <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => downloadPdf(`/procurement/grns/${r.id}/pdf`, `${r.grn_number || r.id}.pdf`)} data-testid={`grn-pdf-${r.id}`} title="Download GRN PDF">
                         <FileDown className="h-3 w-3 mr-1" /> PDF
                       </Button>
@@ -116,6 +121,9 @@ export default function Grn() {
       </div>
 
       {open && <GrnDialog pos={pos} onClose={() => setOpen(false)} onSaved={() => { setOpen(false); load(); }} />}
+
+      <RowAttachments open={!!attachFor} onOpenChange={() => setAttachFor(null)}
+        parentType="grn" parentId={attachFor?.id} recordTitle={attachFor?.grn_number} testidPrefix="grn-attach" />
 
       <Dialog open={!!lineageFor} onOpenChange={(o) => !o && setLineageFor(null)}>
         <DialogContent className="max-w-5xl rounded-sm">
