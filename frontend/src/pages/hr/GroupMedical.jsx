@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, HeartPulse, ShieldPlus, UserMinus, RotateCcw, FileSpreadsheet, FileText, Pencil, Trash2, Search, Users, X } from "lucide-react";
+import { Plus, RefreshCw, HeartPulse, ShieldPlus, UserMinus, RotateCcw, FileSpreadsheet, FileText, Pencil, Trash2, Search, Users, X, Send, Upload, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +15,7 @@ import { ProjectSelect } from "@/components/MasterSelect";
 
 const WRITE_ROLES = new Set(["super_admin", "hr_executive", "general_manager", "director"]);
 const inr = (v) => `₹ ${Number(v || 0).toLocaleString("en-IN")}`;
-const blankPolicy = () => ({ policy_number: "", insurer: "", tpa: "", policy_start: "", policy_end: "", sum_insured_default: 0, premium_total: 0, notes: "", status: "active" });
+const blankPolicy = () => ({ policy_number: "", insurer: "", insurer_email: "", tpa: "", policy_start: "", policy_end: "", sum_insured_default: 0, premium_total: 0, notes: "", status: "active" });
 
 export default function GroupMedical() {
   const { user } = useAuth();
@@ -31,6 +31,8 @@ export default function GroupMedical() {
   const [removeFor, setRemoveFor] = useState(null);
   const [removeReason, setRemoveReason] = useState("");
   const [depsFor, setDepsFor] = useState(null);
+  const [emailingInsurer, setEmailingInsurer] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   const loadPolicies = async () => {
     try {
@@ -85,6 +87,42 @@ export default function GroupMedical() {
     catch (e) { toast.error(e?.response?.data?.detail || "Restore failed"); }
   };
 
+  const emailInsurer = async () => {
+    setEmailingInsurer(true);
+    try {
+      const r = await api.post(`/gmc/policies/${policyId}/email-insurer`);
+      toast.success(`Update emailed to ${r.data.sent_to} — ${r.data.additions} addition(s), ${r.data.deletions} deletion(s), member list attached`);
+      loadPolicies();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Email failed"); }
+    finally { setEmailingInsurer(false); }
+  };
+
+  const downloadTemplate = async () => {
+    try {
+      const { data } = await api.get("/gmc/upload-template.xlsx", { responseType: "blob" });
+      const url = URL.createObjectURL(data);
+      const a = document.createElement("a");
+      a.href = url; a.download = "gmc_upload_template.xlsx"; a.click(); URL.revokeObjectURL(url);
+    } catch { toast.error("Template download failed"); }
+  };
+
+  const bulkUpload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !policyId) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await api.post(`/gmc/bulk-upload?policy_id=${policyId}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      const { added, updated, errors } = r.data;
+      toast.success(`Bulk upload: ${added} added, ${updated} updated${errors.length ? `, ${errors.length} error(s)` : ""}`);
+      errors.slice(0, 5).forEach((er) => toast.error(er));
+      loadMembers(); loadPolicies();
+    } catch (er) { toast.error(er?.response?.data?.detail || "Upload failed"); }
+    finally { setUploading(false); }
+  };
+
   const download = async (fmt) => {
     try {
       const params = { policy_id: policyId || undefined };
@@ -113,10 +151,24 @@ export default function GroupMedical() {
             Members are pulled from the Employee Master; exited employees (FNF finalised) are removed automatically.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Button variant="outline" className="h-9 rounded-sm" onClick={() => { loadPolicies(); loadMembers(); }} data-testid="gmc-reload"><RefreshCw className="h-4 w-4" /></Button>
+          <Button variant="outline" className="h-9 rounded-sm" onClick={downloadTemplate} data-testid="gmc-template"><Download className="h-4 w-4 mr-1.5" /> Template</Button>
+          {canWrite && policyId && (
+            <label className="inline-flex">
+              <input type="file" accept=".xlsx" className="hidden" onChange={bulkUpload} data-testid="gmc-upload-input" />
+              <Button variant="outline" className="h-9 rounded-sm" disabled={uploading} asChild>
+                <span className="cursor-pointer"><Upload className="h-4 w-4 mr-1.5" /> {uploading ? "Uploading…" : "Bulk Upload"}</span>
+              </Button>
+            </label>
+          )}
           <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("xlsx")} data-testid="gmc-export-xlsx"><FileSpreadsheet className="h-4 w-4 mr-1.5" /> Excel</Button>
           <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("pdf")} data-testid="gmc-export-pdf"><FileText className="h-4 w-4 mr-1.5" /> PDF</Button>
+          {canWrite && policyId && (
+            <Button variant="outline" className="h-9 rounded-sm border-primary/50 text-primary" onClick={emailInsurer} disabled={emailingInsurer} data-testid="gmc-email-insurer">
+              <Send className="h-4 w-4 mr-1.5" /> {emailingInsurer ? "Sending…" : "Email Insurer Update"}
+            </Button>
+          )}
           {canWrite && (
             <Button className="h-9 rounded-sm" onClick={() => setPolicyDlg(blankPolicy())} data-testid="gmc-new-policy">
               <Plus className="h-4 w-4 mr-1.5" /> New Policy
@@ -155,12 +207,13 @@ export default function GroupMedical() {
       </div>
 
       {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
           {[["Covered Employees", summary.active], ["Project-wise", summary.project], ["Head Office", summary.head_office],
-            ["Dependents", summary.dependents], ["Total Sum Insured", inr(summary.sum_insured_total)], ["Removed / Exited", summary.removed]].map(([label, v]) => (
-            <div key={label} className="bg-card border border-border rounded-sm p-3" data-testid={`gmc-kpi-${label.toLowerCase().replace(/[^a-z]+/g, "-")}`}>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-              <div className="text-xl font-black tabular">{v}</div>
+            ["Dependents", summary.dependents], ["Kids Over 20", summary.kids_over_20, summary.kids_over_20 > 0],
+            ["Total Sum Insured", inr(summary.sum_insured_total)], ["Removed / Exited", summary.removed]].map(([label, v, warn]) => (
+            <div key={label} className={`bg-card border rounded-sm p-3 ${warn ? "border-amber-400 bg-amber-50" : "border-border"}`} data-testid={`gmc-kpi-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
+              <div className={`text-[10px] uppercase tracking-wider ${warn ? "text-amber-700 font-bold" : "text-muted-foreground"}`}>{label}</div>
+              <div className={`text-xl font-black tabular ${warn ? "text-amber-800" : ""}`}>{v}</div>
             </div>
           ))}
         </div>
@@ -226,8 +279,14 @@ export default function GroupMedical() {
                 <TableCell>
                   <Badge variant="outline" className="rounded-sm text-[10px] uppercase">{m.coverage_scope === "head_office" ? "Head Office" : "Project"}</Badge>
                   {(m.dependent_details || []).length > 0 ? (
-                    <div className="text-[10px] text-muted-foreground mt-0.5 max-w-[200px]">
-                      {m.dependent_details.map((d) => `${d.name} (${d.relation})`).join(", ")}
+                    <div className="text-[10px] text-muted-foreground mt-0.5 max-w-[220px]">
+                      {m.dependent_details.map((d, di) => (
+                        <span key={di}>
+                          {di > 0 && ", "}
+                          {d.name} ({d.relation}{d.age != null ? `, ${d.age}y` : ""})
+                          {d.over_20 && <Badge className="ml-1 rounded-sm bg-amber-100 text-amber-900 border-amber-300 text-[9px] px-1 py-0" data-testid={`gmc-over20-${m.id}-${di}`}>OVER 20</Badge>}
+                        </span>
+                      ))}
                     </div>
                   ) : (m.dependents || 0) > 0 ? (
                     <div className="text-[10px] text-muted-foreground mt-0.5">+{m.dependents} dependent(s)</div>
@@ -282,6 +341,10 @@ export default function GroupMedical() {
               <div>
                 <Label className="text-[10px] uppercase tracking-wider">Insurer *</Label>
                 <Input value={policyDlg.insurer} onChange={(e) => setPolicyDlg({ ...policyDlg, insurer: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="gmc-policy-insurer" />
+              </div>
+              <div>
+                <Label className="text-[10px] uppercase tracking-wider">Insurer Email (for update mails)</Label>
+                <Input type="email" value={policyDlg.insurer_email || ""} onChange={(e) => setPolicyDlg({ ...policyDlg, insurer_email: e.target.value })} placeholder="endorsements@insurer.com" className="h-9 rounded-sm mt-1" data-testid="gmc-policy-insurer-email" />
               </div>
               <div>
                 <Label className="text-[10px] uppercase tracking-wider">TPA</Label>
@@ -353,6 +416,16 @@ export default function GroupMedical() {
   );
 }
 
+function depAge(dob) {
+  if (!dob) return null;
+  const b = new Date(dob);
+  if (isNaN(b)) return null;
+  const t = new Date();
+  let a = t.getFullYear() - b.getFullYear();
+  if (t.getMonth() < b.getMonth() || (t.getMonth() === b.getMonth() && t.getDate() < b.getDate())) a -= 1;
+  return a;
+}
+
 function DependentsDialog({ member, onClose, onSaved }) {
   const [deps, setDeps] = useState((member.dependent_details || []).map((d) => ({ ...d })));
   const [busy, setBusy] = useState(false);
@@ -415,7 +488,12 @@ function DependentsDialog({ member, onClose, onSaved }) {
                       <option value="daughter">Daughter</option>
                     </select>
                   </TableCell>
-                  <TableCell><Input type="date" value={d.dob || ""} onChange={(e) => setDep(i, { dob: e.target.value })} className="h-8 rounded-sm w-36" data-testid={`gmc-dep-dob-${i}`} /></TableCell>
+                  <TableCell>
+                    <Input type="date" value={d.dob || ""} onChange={(e) => setDep(i, { dob: e.target.value })} className="h-8 rounded-sm w-36" data-testid={`gmc-dep-dob-${i}`} />
+                    {(d.relation === "son" || d.relation === "daughter") && depAge(d.dob) != null && depAge(d.dob) > 20 && (
+                      <Badge className="mt-1 rounded-sm bg-amber-100 text-amber-900 border-amber-300 text-[9px]" data-testid={`gmc-dep-over20-${i}`}>OVER 20 — verify eligibility</Badge>
+                    )}
+                  </TableCell>
                   <TableCell><Button variant="outline" size="sm" className="h-7 rounded-sm" onClick={() => setDeps(deps.filter((_, ix) => ix !== i))} data-testid={`gmc-dep-del-${i}`}><X className="h-3 w-3" /></Button></TableCell>
                 </TableRow>
               ))}

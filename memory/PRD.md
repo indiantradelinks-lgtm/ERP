@@ -4814,3 +4814,10 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - Frontend: 'Family' button per member → Family Cover dialog (+ Spouse / + Child rows, DOB); family names shown in member row & KPI dependents count
 - Exports include 'Spouse / Kids Covered' column
 - Self-tested via curl (validations + export) and screenshot (dialog with saved spouse/son)
+
+## 2026-06-28 — GMC Additions (over-20 flag, weekly HR review, bulk upload) — DONE
+- Kids over 20 auto-flag: backend annotates dependent age/over_20 (KID_AGE_FLAG=20); amber 'OVER 20' badges in member rows + Family dialog; 'Kids Over 20' KPI in /gmc/summary; flagged in exports
+- Weekly HR review: scheduler job gmc_weekly_review (Mon 09:15) → run_gmc_weekly_review() emails HR execs + super_admins a digest (adds/removals last 7d, over-20 kids) + in-app notifications; manual trigger POST /api/gmc/run-weekly-review
+- Insurer update email: policy has insurer_email + last_insurer_update_at; POST /api/gmc/policies/{pid}/email-insurer sends endorsement email (additions/deletions since last update) with full member Excel attached. Uses M365 shared outbox when configured, falls back to Resend (with attachment). NOTE: preview env has no M365 shared password and Resend is SANDBOXED (only sends to indiantrademis@gmail.com) — production works when M365_SMTP_SHARED_PASSWORD is set
+- Bulk upload/download: GET /api/gmc/upload-template.xlsx (emp_code, coverage_scope, project_code, sum_insured, premium, spouse_name, spouse_dob, kids 'Name|son|DOB; ...'); POST /api/gmc/bulk-upload?policy_id= adds/updates members with per-row error reporting; UI Template + Bulk Upload buttons
+- Self-tested via curl (flags, summary, template, upload add/update/errors, insurer email w/ attachment, weekly trigger) + screenshot verified

@@ -135,6 +135,17 @@ async def _action_item_overdue_job():
         logger.exception(f"Action item overdue job failed: {e}")
 
 
+async def _gmc_weekly_job():
+    """Weekly GMC review digest to HR (additions/removals + insurer email prompt)."""
+    try:
+        from routers.gmc_router import run_gmc_weekly_review
+        result = await run_gmc_weekly_review()
+        _last_results["gmc_weekly_review"] = {"at": datetime.utcnow().isoformat(), **result}
+        logger.info(f"[gmc_weekly_review] {result}")
+    except Exception as e:
+        logger.exception(f"GMC weekly review job failed: {e}")
+
+
 def start_scheduler() -> None:
     global _scheduler
     if _scheduler is not None:
@@ -145,6 +156,8 @@ def start_scheduler() -> None:
     _scheduler.add_job(_expiry_job, CronTrigger(hour=9, minute=0), id="expiry_scan", replace_existing=True)
     # Weekly invoice reminders — Mondays @ 09:00 UTC
     _scheduler.add_job(_invoice_job, CronTrigger(day_of_week="mon", hour=9, minute=0), id="invoice_reminders", replace_existing=True)
+
+    _scheduler.add_job(_gmc_weekly_job, CronTrigger(day_of_week="mon", hour=9, minute=15), id="gmc_weekly_review", replace_existing=True)
     # Daily manpower shortage scan @ 07:30 UTC (1.5h before standup)
     _scheduler.add_job(_shortage_job, CronTrigger(hour=7, minute=30), id="shortage_scan", replace_existing=True)
     # Email outbox retry — every 10 minutes
