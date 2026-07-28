@@ -16,6 +16,7 @@ import RowAttachments from "@/components/RowAttachments";
 
 const inr = (v) => `₹ ${Number(v || 0).toLocaleString("en-IN")}`;
 const PAY_ROLES = new Set(["super_admin", "director", "accounts_executive", "billing_executive"]);
+const RAISE_ROLES = new Set(["project_coordinator", "project_manager", "super_admin"]);
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const blank = () => ({ id: newId(), project_code: "", project_id: "", cost_center_id: "", expense_type: "",
   expense_date: new Date().toISOString().slice(0, 10), amount: "", description: "", bill_no: "",
@@ -42,6 +43,7 @@ export default function ProjectExpenses() {
   const [attachFor, setAttachFor] = useState(null);
   const [payFor, setPayFor] = useState(null);
   const [payRef, setPayRef] = useState("");
+  const [proofFiles, setProofFiles] = useState([]);
 
   const load = async () => {
     try {
@@ -94,9 +96,10 @@ export default function ProjectExpenses() {
   };
 
   const markPaid = async () => {
+    if (proofFiles.length === 0) { toast.error("Attach the payment proof (UTR screenshot / voucher) first"); return; }
     try {
       await api.post(`/project-expenses/${payFor.id}/mark-paid`, { payment_ref: payRef });
-      toast.success(`${payFor.expense_no} marked paid`); setPayFor(null); setPayRef(""); load();
+      toast.success(`${payFor.expense_no} marked paid with proof`); setPayFor(null); setPayRef(""); setProofFiles([]); load();
     } catch (e) { toast.error(e?.response?.data?.detail || "Failed"); }
   };
 
@@ -127,18 +130,20 @@ export default function ProjectExpenses() {
           </div>
           <h1 className="font-display font-black text-3xl tracking-tight">Daily Expense Booking</h1>
           <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
-            Project team books all daily expenses (fuel, PPE, scaffolding material, manpower, accommodation, travelling…)
-            against the project's Cost Centers. Flow: PM Verify → Dept Head → Accounts{" "}
-            <b>→ GM → Director when above {inr(threshold)}</b> → Payment.
+            Expense requests are raised by the <b>Project Coordinator / Project Manager</b>, approved by the
+            <b> Project Head</b>{" "}<b>(→ GM → Director above {inr(threshold)})</b>, then Accounts is notified
+            for payment review — Accounts approves, pays and updates status with payment proof.
           </p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" className="h-9 rounded-sm" onClick={load} data-testid="pex-reload"><RefreshCw className="h-4 w-4" /></Button>
           <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("xlsx")} data-testid="pex-export-xlsx"><FileSpreadsheet className="h-4 w-4 mr-1.5" /> Excel</Button>
           <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("pdf")} data-testid="pex-export-pdf"><FileText className="h-4 w-4 mr-1.5" /> PDF</Button>
-          <Button className="h-9 rounded-sm" onClick={() => { setForm(blank()); setCcList([]); setAttFiles([]); setCreating(true); }} data-testid="pex-new">
-            <Plus className="h-4 w-4 mr-1.5" /> Book Expense
-          </Button>
+          {RAISE_ROLES.has(user?.role) && (
+            <Button className="h-9 rounded-sm" onClick={() => { setForm(blank()); setCcList([]); setAttFiles([]); setCreating(true); }} data-testid="pex-new">
+              <Plus className="h-4 w-4 mr-1.5" /> Raise Expense Request
+            </Button>
+          )}
         </div>
       </div>
 
@@ -182,7 +187,7 @@ export default function ProjectExpenses() {
           <TableBody>
             {rows.length === 0 && (
               <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
-                No expenses booked yet. Use Book Expense to record today's site costs.
+                No expenses booked yet. Project Coordinator / PM can raise an expense request for today's site costs.
               </TableCell></TableRow>
             )}
             {rows.map((r) => (
@@ -248,7 +253,7 @@ export default function ProjectExpenses() {
       <Dialog open={creating} onOpenChange={setCreating}>
         <DialogContent className="max-w-3xl rounded-sm max-h-[88vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="font-display">Book Daily Expense</DialogTitle>
+            <DialogTitle className="font-display">Raise Expense Request</DialogTitle>
             <DialogDescription>
               Booked to the project's cost center. Above {inr(threshold)} the approval chain extends to GM → Director.
             </DialogDescription>
@@ -319,24 +324,38 @@ export default function ProjectExpenses() {
           </div>
           <DialogFooter>
             <Button variant="outline" className="rounded-sm" onClick={() => setCreating(false)}>Cancel</Button>
-            <Button className="rounded-sm" onClick={create} data-testid="pex-form-submit">Book Expense</Button>
+            <Button className="rounded-sm" onClick={create} data-testid="pex-form-submit">Raise Request</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!payFor} onOpenChange={(o) => !o && setPayFor(null)}>
-        <DialogContent className="max-w-md rounded-sm">
+      <Dialog open={!!payFor} onOpenChange={(o) => { if (!o) { setPayFor(null); setProofFiles([]); } }}>
+        <DialogContent className="max-w-lg rounded-sm">
           <DialogHeader>
             <DialogTitle className="font-display">Mark Paid — {payFor?.expense_no}</DialogTitle>
-            <DialogDescription>{payFor?.expense_type_label} · {inr(payFor?.amount)} · {payFor?.paid_to || "—"}</DialogDescription>
+            <DialogDescription>{payFor?.expense_type_label} · {inr(payFor?.amount)} · {payFor?.paid_to || "—"}. Payment proof is mandatory.</DialogDescription>
           </DialogHeader>
-          <div>
-            <Label className="text-[10px] uppercase tracking-wider">Payment Reference (UTR / voucher #)</Label>
-            <Input value={payRef} onChange={(e) => setPayRef(e.target.value)} className="h-9 rounded-sm mt-1 font-mono-data" data-testid="pex-pay-ref" />
+          <div className="space-y-3">
+            <div>
+              <Label className="text-[10px] uppercase tracking-wider">Payment Reference (UTR / voucher #)</Label>
+              <Input value={payRef} onChange={(e) => setPayRef(e.target.value)} className="h-9 rounded-sm mt-1 font-mono-data" data-testid="pex-pay-ref" />
+            </div>
+            <div>
+              <Label className="text-[10px] uppercase tracking-wider">Payment Proof (UTR screenshot / bank advice / voucher) *</Label>
+              <div className="mt-1">
+                {payFor && (
+                  <FileUploader folder="documents" parent_type="project_expenses" parent_id={payFor.id}
+                    category="payment_proof" compact
+                    files={proofFiles} onUploaded={(f) => setProofFiles((p) => [...p, f])}
+                    onDeleted={(fid) => setProofFiles((p) => p.filter((x) => x.id !== fid))}
+                    testidPrefix="pex-proof" />
+                )}
+              </div>
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" className="rounded-sm" onClick={() => setPayFor(null)}>Cancel</Button>
-            <Button className="rounded-sm" onClick={markPaid} data-testid="pex-pay-confirm">Confirm Payment</Button>
+            <Button variant="outline" className="rounded-sm" onClick={() => { setPayFor(null); setProofFiles([]); }}>Cancel</Button>
+            <Button className="rounded-sm" onClick={markPaid} disabled={proofFiles.length === 0} data-testid="pex-pay-confirm">Confirm Payment</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

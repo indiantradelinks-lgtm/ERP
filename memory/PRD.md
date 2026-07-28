@@ -4846,3 +4846,12 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - Vendors & Safety already had FileUploader (no change needed)
 - Also fixed: ProjectPnl.jsx compile break (leftover duplicate closing block + fragment mismatch introduced during key-fix)
 - Verified via screenshots: GRN dialog opens, 43 employee attach buttons, item master paperclips visible, P&L page renders (₹11L sales, ₹55k expenses, GP ₹10.45L)
+
+## 2026-06-28 — Daily Expense Booking workflow rectified (per user spec) — DONE
+- Raise: ONLY project_coordinator / project_manager (+super_admin). 403 otherwise; UI hides button
+- Chain: Project Head (dept_head) → [GM → Director if amount > threshold] → Accounts Review (last step always)
+- On reaching Accounts step: in-app 'Request For Payment' notification to accounts_executive/billing_executive users (fallback super_admin)
+- Accounts approves (final) → approved_for_payment + JE; Mark Paid now REQUIRES payment proof attachment (category 'payment_proof' on parent project_expenses) — 400 without proof; stores payment_proof_count, payment_ref, paid_by/at
+- UI: 'Raise Expense Request' button gating, updated flow description, Mark Paid dialog with mandatory proof uploader
+- New test account: accounts@erp.com / Accounts@123 (accounts_executive)
+- E2E curl tested: PM raise (small: 2-step, large 45k: 4-step), PM self-approve blocked, dept_head/GM/Director approvals, notification created, paid-with-proof, reject cleanup. UI verified via screenshots

@@ -42,8 +42,10 @@ EXPENSE_TYPES: Dict[str, Dict[str, str]] = {
     "misc":                 {"label": "Miscellaneous", "account": "5900"},
 }
 
-BASE_CHAIN = [("project_manager", "PM Verify"), ("dept_head", "Dept Head"), ("accounts_executive", "Accounts")]
+RAISE_ROLES = {"project_coordinator", "project_manager", "super_admin"}
+BASE_CHAIN = [("dept_head", "Project Head")]
 LARGE_CHAIN_EXTRA = [("general_manager", "GM"), ("director", "Director")]
+ACCOUNTS_STEP = ("accounts_executive", "Accounts Review")
 PAY_ROLES = {"super_admin", "director", "accounts_executive", "billing_executive"}
 
 
@@ -136,6 +138,8 @@ async def expense_summary(project_code: Optional[str] = None,
 @router.post("/project-expenses")
 async def create_expense(p: ExpenseIn, request: Request,
                          user: dict = Depends(require_permission("project_expenses", "write"))):
+    if user.get("role") not in RAISE_ROLES:
+        raise HTTPException(403, "Expense requests can only be raised by the Project Coordinator or Project Manager")
     if p.expense_type not in EXPENSE_TYPES:
         raise HTTPException(400, f"expense_type must be one of {sorted(EXPENSE_TYPES)}")
     if p.amount <= 0:
@@ -153,7 +157,7 @@ async def create_expense(p: ExpenseIn, request: Request,
         if not cc or cc.get("project_id") != project["id"]:
             raise HTTPException(400, "Cost center does not belong to the selected project")
     threshold = await _large_threshold()
-    steps = BASE_CHAIN + (LARGE_CHAIN_EXTRA if p.amount > threshold else [])
+    steps = BASE_CHAIN + (LARGE_CHAIN_EXTRA if p.amount > threshold else []) + [ACCOUNTS_STEP]
     chain = [{"role": r, "label": l, "status": "pending", "by": None, "at": None, "remarks": None} for r, l in steps]
     doc = {
         "id": p.id or new_id(),
@@ -199,6 +203,9 @@ async def approve_expense(eid: str, p: ActionIn, request: Request,
     patch: Dict[str, Any] = {"chain": row["chain"]}
     if idx + 1 < len(row["chain"]):
         patch["current_step"] = idx + 1
+        # When the next step is Accounts Review, notify Accounts: Request For Payment
+        if row["chain"][idx + 1]["role"] == "accounts_executive":
+            await _notify_accounts(row)
     else:
         patch["status"] = "approved_for_payment"
         patch["approved_at"] = now_iso()
@@ -207,6 +214,24 @@ async def approve_expense(eid: str, p: ActionIn, request: Request,
     await audit(user=user, action="pex_approve", resource="project_expenses", record_id=eid,
                 after={"step": step["label"]}, ip=_ip(request))
     return await db.project_expenses.find_one({"id": eid}, {"_id": 0})
+
+
+async def _notify_accounts(row: dict) -> None:
+    """In-app 'Request For Payment' notification to Accounts users."""
+    try:
+        acct_users = await db.users.find({"role": {"$in": ["accounts_executive", "billing_executive"]}},
+                                         {"_id": 0, "id": 1}).to_list(100)
+        if not acct_users:
+            acct_users = await db.users.find({"role": "super_admin"}, {"_id": 0, "id": 1}).to_list(10)
+        for u in acct_users:
+            await db.notifications.insert_one({
+                "id": new_id(), "user_id": u["id"], "kind": "expense_payment_request",
+                "title": f"Request For Payment — {row['expense_no']}",
+                "message": f"{row['expense_type_label']} · {row['project_code']} · ₹{float(row['amount']):,.0f} "
+                           f"approved by project authorities. Please review and process payment.",
+                "link": "/app/ops/expenses", "read": False, "at": now_iso()})
+    except Exception:
+        pass
 
 
 async def _post_expense_je(row: dict, user: dict) -> Optional[str]:
@@ -261,9 +286,13 @@ async def mark_paid(eid: str, p: PaidIn, request: Request,
         raise HTTPException(404, "Not found")
     if row["status"] != "approved_for_payment":
         raise HTTPException(400, "Expense must be fully approved before payment")
+    proof_count = await db.files.count_documents({"parent_type": "project_expenses", "parent_id": eid,
+                                                  "category": "payment_proof"})
+    if proof_count == 0:
+        raise HTTPException(400, "Attach the payment proof (UTR screenshot / voucher) before marking paid")
     await db.project_expenses.update_one({"id": eid}, {"$set": {
         "status": "paid", "payment_ref": p.payment_ref, "paid_at": now_iso(),
-        "paid_by": user.get("name") or user.get("email")}})
+        "paid_by": user.get("name") or user.get("email"), "payment_proof_count": proof_count}})
     await audit(user=user, action="pex_paid", resource="project_expenses", record_id=eid,
                 after={"payment_ref": p.payment_ref}, ip=_ip(request))
     return await db.project_expenses.find_one({"id": eid}, {"_id": 0})
