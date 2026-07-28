@@ -38,6 +38,9 @@ class WorkOrderIn(BaseModel):
     status: str = Field("draft", description="draft|received|active|completed|cancelled|hold")
     remarks: Optional[str] = ""
     attachments: List[str] = []
+    # Structured line items in the same format as the submitted offer /
+    # received customer order: [{description, quantity, unit, rate}]
+    items: List[Dict[str, Any]] = []
     # ── Sales-linked fields (Iter 96) ──
     quotation_id: Optional[str] = None
     quotation_no: Optional[str] = None

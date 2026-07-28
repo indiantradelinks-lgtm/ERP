@@ -17,7 +17,8 @@ import { useAuth } from "@/contexts/AuthContext";
 const STATUSES = ["draft", "received", "active", "completed", "cancelled", "hold"];
 const EMPTY = { wo_no: "", project_id: "", wo_date: "", valid_from: "", valid_until: "",
                 scope: "", value: 0, currency: "INR", status: "draft", remarks: "",
-                quotation_no: "", approved_quotation: null, boq: "",
+                quotation_no: "", approved_quotation: null, boq: "", items: [],
+                client_name: "", site_name: "",
                 payment_terms: "", retention_clause: "", retention_percentage: 0,
                 tds_applicability: "", gst_applicability: "",
                 project_start_condition: "", billing_milestone: "",
@@ -78,6 +79,30 @@ export default function WorkOrders() {
 
   const projectById = useMemo(() => Object.fromEntries(projects.map((p) => [p.id, p])), [projects]);
 
+  const setItem = (i, patch) => setForm((f) => ({ ...f, items: f.items.map((x, ix) => ix === i ? { ...x, ...patch } : x) }));
+  const itemsTotal = (form.items || []).reduce((a, i) => a + (Number(i.quantity) || 0) * (Number(i.rate) || 0), 0);
+
+  const onProjectPicked = async (projectId) => {
+    const p = projectById[projectId];
+    setForm((f) => ({ ...f, project_id: projectId, client_name: p?.client || f.client_name, site_name: p?.site || f.site_name }));
+    if (!p?.code) return;
+    try {
+      const { data } = await api.get(`/ra-bills/project-context/${encodeURIComponent(p.code)}`);
+      const items = (data.items || []).map((i) => ({ description: i.description, quantity: i.quantity, unit: i.unit, rate: i.rate }));
+      setForm((f) => ({
+        ...f, project_id: projectId,
+        client_name: data.client_name || f.client_name,
+        site_name: data.site_name || f.site_name,
+        quotation_no: f.quotation_no || data.quotation_no || "",
+        wo_no: f.wo_no || data.po_number || "",
+        items: f.items?.length ? f.items : items,
+        value: f.items?.length ? f.value : (items.reduce((a, i) => a + (Number(i.quantity) || 0) * (Number(i.rate) || 0), 0) || f.value),
+      }));
+      if (items.length) toast.success(`${items.length} line item(s) loaded in the offer/order format${data.quotation_no ? ` (offer ${data.quotation_no})` : ""}`);
+    } catch { /* context is a convenience only */ }
+  };
+
+
   const filtered = useMemo(() => rows.filter((r) =>
     (!projectFilter || r.project_id === projectFilter) &&
     (!statusFilter || r.status === statusFilter)
@@ -86,7 +111,8 @@ export default function WorkOrders() {
   const save = async () => {
     if (!form.wo_no?.trim()) { toast.error("WO Number is required"); return; }
     try {
-      const payload = { ...form, value: Number(form.value) || 0 };
+      const items = (form.items || []).map((i) => ({ description: i.description, quantity: Number(i.quantity) || 0, unit: i.unit || "", rate: Number(i.rate) || 0 }));
+      const payload = { ...form, items, value: items.length ? itemsTotal : (Number(form.value) || 0) };
       if (editing?.id) {
         await api.put(`/work-orders/${editing.id}`, payload);
         toast.success("Work Order updated");
@@ -227,9 +253,10 @@ export default function WorkOrders() {
       </Card>
 
       <Dialog open={editing !== null} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-5xl rounded-sm max-h-[88vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editing?.id ? "Edit" : "New"} Work Order</DialogTitle>
+            <DialogTitle className="font-display">{editing?.id ? "Edit" : "New"} Work Order</DialogTitle>
+            <DialogDescription className="sr-only">Customer PO / LOI details with line items.</DialogDescription>
           </DialogHeader>
           {form.source_handover_no && (
             <div
@@ -245,73 +272,126 @@ export default function WorkOrders() {
               </div>
             </div>
           )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <F label="Customer WO / PO / LOI # *"><Input value={form.wo_no} onChange={(e) => setForm({ ...form, wo_no: e.target.value })} data-testid="wo-form-no" /></F>
-            <F label="Project">
-              <select value={form.project_id || ""} onChange={(e) => setForm({ ...form, project_id: e.target.value })}
-                       className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm" data-testid="wo-form-project">
-                <option value="">— select —</option>
-                {projects.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
-              </select>
-            </F>
-            <F label="WO Date"><Input type="date" value={form.wo_date || ""} onChange={(e) => setForm({ ...form, wo_date: e.target.value })} /></F>
-            <F label="Valid From"><Input type="date" value={form.valid_from || ""} onChange={(e) => setForm({ ...form, valid_from: e.target.value })} /></F>
-            <F label="Valid Until"><Input type="date" value={form.valid_until || ""} onChange={(e) => setForm({ ...form, valid_until: e.target.value })} /></F>
-            <F label="Status">
-              <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
-                       className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm">
-                {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </F>
-            <F label="Value (INR)"><Input type="number" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} /></F>
-            <F label="Currency"><Input value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })} /></F>
-            <F label="Scope" full><Textarea rows={3} value={form.scope || ""} onChange={(e) => setForm({ ...form, scope: e.target.value })} /></F>
-
-            <div className="md:col-span-2 pt-2">
-              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary border-b border-border pb-1.5">Sales Linkage</div>
+          <div className="space-y-3 py-1">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <F label="Customer WO / PO / LOI # *"><Input value={form.wo_no} onChange={(e) => setForm({ ...form, wo_no: e.target.value })} className="h-9 rounded-sm font-mono-data" data-testid="wo-form-no" /></F>
+              <F label="Project">
+                <select value={form.project_id || ""} onChange={(e) => onProjectPicked(e.target.value)}
+                         className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm" data-testid="wo-form-project">
+                  <option value="">— select —</option>
+                  {projects.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
+                </select>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Selecting a project auto-fills client, site, offer & line items</p>
+              </F>
+              <F label="WO Date"><Input type="date" value={form.wo_date || ""} onChange={(e) => setForm({ ...form, wo_date: e.target.value })} className="h-9 rounded-sm" /></F>
+              <F label="Status">
+                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
+                         className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm">
+                  {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </F>
+              <F label="Client"><Input value={form.client_name || ""} onChange={(e) => setForm({ ...form, client_name: e.target.value })} className="h-9 rounded-sm" data-testid="wo-form-client" /></F>
+              <F label="Site"><Input value={form.site_name || ""} onChange={(e) => setForm({ ...form, site_name: e.target.value })} className="h-9 rounded-sm" /></F>
+              <F label="Valid From"><Input type="date" value={form.valid_from || ""} onChange={(e) => setForm({ ...form, valid_from: e.target.value })} className="h-9 rounded-sm" /></F>
+              <F label="Valid Until"><Input type="date" value={form.valid_until || ""} onChange={(e) => setForm({ ...form, valid_until: e.target.value })} className="h-9 rounded-sm" /></F>
             </div>
-            <F label="Sales Quotation #"><Input value={form.quotation_no || ""} onChange={(e) => setForm({ ...form, quotation_no: e.target.value })} data-testid="wo-form-quote-no" /></F>
-            <F label="Quotation Approved?">
-              <select value={form.approved_quotation === true ? "yes" : form.approved_quotation === false ? "no" : ""}
-                       onChange={(e) => setForm({ ...form, approved_quotation: e.target.value === "yes" ? true : e.target.value === "no" ? false : null })}
-                       className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm">
-                <option value="">— select —</option><option value="yes">Yes</option><option value="no">No</option>
-              </select>
-            </F>
-            <F label="BOQ (Bill of Quantities)" full>
-              <Textarea rows={3} value={form.boq || ""} onChange={(e) => setForm({ ...form, boq: e.target.value })}
-                         placeholder="Free-form BOQ description / link to attached file" />
-            </F>
 
-            <div className="md:col-span-2 pt-2">
-              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary border-b border-border pb-1.5">Commercial</div>
+            <div className="border border-border rounded-sm">
+              <div className="flex items-center justify-between p-2.5 border-b border-border">
+                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">
+                  Line Items (as per offer / order received)
+                  {form.quotation_no && <span className="ml-2 normal-case tracking-normal font-normal text-muted-foreground">· format from offer {form.quotation_no}</span>}
+                </div>
+                <Button variant="outline" size="sm" className="h-7 rounded-sm"
+                  onClick={() => setForm({ ...form, items: [...(form.items || []), { description: "", quantity: 1, unit: "m²", rate: 0 }] })}
+                  data-testid="wo-add-item"><Plus className="h-3 w-3 mr-1" /> Add</Button>
+              </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 text-left text-[10px] uppercase tracking-wider text-muted-foreground border-b">
+                    <th className="px-3 py-2">Description</th>
+                    <th className="px-3 py-2 w-24">Qty</th>
+                    <th className="px-3 py-2 w-24">Unit</th>
+                    <th className="px-3 py-2 w-28">Rate</th>
+                    <th className="px-3 py-2 w-28">Amount</th>
+                    <th className="px-2 py-2 w-10"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(form.items || []).length === 0 && (
+                    <tr><td colSpan={6} className="text-center py-6 text-xs text-muted-foreground">
+                      Select a project to load the offer's line items, or click Add to enter the order's items manually.
+                    </td></tr>
+                  )}
+                  {(form.items || []).map((it, i) => (
+                    <tr key={`woi-${i}`} className="border-b border-border/50">
+                      <td className="px-2 py-1.5"><Input value={it.description} onChange={(e) => setItem(i, { description: e.target.value })} className="h-8 rounded-sm" data-testid={`wo-item-desc-${i}`} /></td>
+                      <td className="px-2 py-1.5"><Input type="number" value={it.quantity} onChange={(e) => setItem(i, { quantity: e.target.value })} className="h-8 rounded-sm w-20 tabular" data-testid={`wo-item-qty-${i}`} /></td>
+                      <td className="px-2 py-1.5"><Input value={it.unit} onChange={(e) => setItem(i, { unit: e.target.value })} className="h-8 rounded-sm w-20" /></td>
+                      <td className="px-2 py-1.5"><Input type="number" value={it.rate} onChange={(e) => setItem(i, { rate: e.target.value })} className="h-8 rounded-sm w-24 tabular" data-testid={`wo-item-rate-${i}`} /></td>
+                      <td className="px-2 py-1.5 font-mono text-xs font-bold whitespace-nowrap">₹ {((Number(it.quantity) || 0) * (Number(it.rate) || 0)).toLocaleString("en-IN")}</td>
+                      <td className="px-2 py-1.5"><Button variant="outline" size="sm" className="h-7 rounded-sm" onClick={() => setForm({ ...form, items: form.items.filter((_, ix) => ix !== i) })}><Trash2 className="h-3 w-3" /></Button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <F label="Payment Terms"><Input value={form.payment_terms || ""} onChange={(e) => setForm({ ...form, payment_terms: e.target.value })} placeholder="30 days from RA bill" /></F>
-            <F label="Retention Clause"><Input value={form.retention_clause || ""} onChange={(e) => setForm({ ...form, retention_clause: e.target.value })} placeholder="5% retained, released on closure" /></F>
-            <F label="Retention %"><Input type="number" value={form.retention_percentage || 0} onChange={(e) => setForm({ ...form, retention_percentage: Number(e.target.value) || 0 })} /></F>
-            <F label="TDS Applicability">
-              <select value={form.tds_applicability || ""} onChange={(e) => setForm({ ...form, tds_applicability: e.target.value })}
-                       className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm">
-                <option value="">—</option><option value="applicable">Applicable</option><option value="not_applicable">Not Applicable</option>
-              </select>
-            </F>
-            <F label="GST Applicability">
-              <select value={form.gst_applicability || ""} onChange={(e) => setForm({ ...form, gst_applicability: e.target.value })}
-                       className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm">
-                <option value="">—</option><option value="applicable">Applicable</option><option value="not_applicable">Not Applicable</option><option value="exempt">Exempt</option>
-              </select>
-            </F>
-            <F label="Contractual Completion Date"><Input type="date" value={form.contractual_completion_date || ""} onChange={(e) => setForm({ ...form, contractual_completion_date: e.target.value })} /></F>
 
-            <div className="md:col-span-2 pt-2">
-              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary border-b border-border pb-1.5">Execution</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-muted/30 border border-border rounded-sm p-3">
+              <F label="WO Value (INR)">
+                {(form.items || []).length > 0
+                  ? <div className="h-9 flex items-center px-2 border border-border rounded-sm bg-secondary font-mono text-sm font-bold" data-testid="wo-form-value-auto">₹ {itemsTotal.toLocaleString("en-IN")} <span className="ml-1 text-[10px] font-normal text-muted-foreground">(auto from items)</span></div>
+                  : <Input type="number" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} className="h-9 rounded-sm tabular" data-testid="wo-form-value" />}
+              </F>
+              <F label="Currency"><Input value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })} className="h-9 rounded-sm" /></F>
+              <F label="Sales Quotation #"><Input value={form.quotation_no || ""} onChange={(e) => setForm({ ...form, quotation_no: e.target.value })} className="h-9 rounded-sm font-mono-data" data-testid="wo-form-quote-no" /></F>
+              <F label="Quotation Approved?">
+                <select value={form.approved_quotation === true ? "yes" : form.approved_quotation === false ? "no" : ""}
+                         onChange={(e) => setForm({ ...form, approved_quotation: e.target.value === "yes" ? true : e.target.value === "no" ? false : null })}
+                         className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm">
+                  <option value="">— select —</option><option value="yes">Yes</option><option value="no">No</option>
+                </select>
+              </F>
             </div>
-            <F label="Project Start Condition" full><Textarea rows={2} value={form.project_start_condition || ""} onChange={(e) => setForm({ ...form, project_start_condition: e.target.value })} placeholder="e.g. after mobilization advance receipt + safety induction" /></F>
-            <F label="Billing Milestone" full><Textarea rows={2} value={form.billing_milestone || ""} onChange={(e) => setForm({ ...form, billing_milestone: e.target.value })} placeholder="Milestone 1: Erection complete · 30%. Milestone 2: Final handover · 70%." /></F>
-            <F label="Remarks" full><Textarea rows={2} value={form.remarks || ""} onChange={(e) => setForm({ ...form, remarks: e.target.value })} /></F>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <F label="Scope"><Textarea rows={2} value={form.scope || ""} onChange={(e) => setForm({ ...form, scope: e.target.value })} className="rounded-sm" /></F>
+              <F label="BOQ Notes (optional)"><Textarea rows={2} value={form.boq || ""} onChange={(e) => setForm({ ...form, boq: e.target.value })} className="rounded-sm" placeholder="Free-form BOQ notes / link to attached file" /></F>
+            </div>
+
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary border-b border-border pb-1.5 mb-3">Commercial</div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <F label="Payment Terms"><Input value={form.payment_terms || ""} onChange={(e) => setForm({ ...form, payment_terms: e.target.value })} className="h-9 rounded-sm" placeholder="30 days from RA bill" /></F>
+                <F label="Retention Clause"><Input value={form.retention_clause || ""} onChange={(e) => setForm({ ...form, retention_clause: e.target.value })} className="h-9 rounded-sm" placeholder="5% retained, released on closure" /></F>
+                <F label="Retention %"><Input type="number" value={form.retention_percentage || 0} onChange={(e) => setForm({ ...form, retention_percentage: Number(e.target.value) || 0 })} className="h-9 rounded-sm tabular" /></F>
+                <F label="TDS Applicability">
+                  <select value={form.tds_applicability || ""} onChange={(e) => setForm({ ...form, tds_applicability: e.target.value })}
+                           className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm">
+                    <option value="">—</option><option value="applicable">Applicable</option><option value="not_applicable">Not Applicable</option>
+                  </select>
+                </F>
+                <F label="GST Applicability">
+                  <select value={form.gst_applicability || ""} onChange={(e) => setForm({ ...form, gst_applicability: e.target.value })}
+                           className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm">
+                    <option value="">—</option><option value="applicable">Applicable</option><option value="not_applicable">Not Applicable</option><option value="exempt">Exempt</option>
+                  </select>
+                </F>
+                <F label="Contractual Completion Date"><Input type="date" value={form.contractual_completion_date || ""} onChange={(e) => setForm({ ...form, contractual_completion_date: e.target.value })} className="h-9 rounded-sm" /></F>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary border-b border-border pb-1.5 mb-3">Execution</div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <F label="Project Start Condition"><Textarea rows={2} value={form.project_start_condition || ""} onChange={(e) => setForm({ ...form, project_start_condition: e.target.value })} className="rounded-sm" placeholder="e.g. after mobilization advance receipt + safety induction" /></F>
+                <F label="Billing Milestone"><Textarea rows={2} value={form.billing_milestone || ""} onChange={(e) => setForm({ ...form, billing_milestone: e.target.value })} className="rounded-sm" placeholder="Milestone 1: Erection complete · 30%. Milestone 2: Final handover · 70%." /></F>
+                <F label="Remarks"><Textarea rows={2} value={form.remarks || ""} onChange={(e) => setForm({ ...form, remarks: e.target.value })} className="rounded-sm" /></F>
+              </div>
+            </div>
 
             {editing?.revision_history?.length > 0 && (
-              <div className="md:col-span-2 pt-2">
+              <div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-700 border-b border-amber-200 pb-1.5">Value Revision History ({editing.revision_history.length})</div>
                 <ul className="mt-2 space-y-1 text-xs">
                   {editing.revision_history.map((h, i) => (
@@ -328,8 +408,8 @@ export default function WorkOrders() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
-            <Button onClick={save} data-testid="wo-form-save">Save</Button>
+            <Button variant="outline" className="rounded-sm" onClick={() => setEditing(null)}>Cancel</Button>
+            <Button className="rounded-sm" onClick={save} data-testid="wo-form-save">Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

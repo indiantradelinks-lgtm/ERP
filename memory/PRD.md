@@ -4821,3 +4821,10 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - Insurer update email: policy has insurer_email + last_insurer_update_at; POST /api/gmc/policies/{pid}/email-insurer sends endorsement email (additions/deletions since last update) with full member Excel attached. Uses M365 shared outbox when configured, falls back to Resend (with attachment). NOTE: preview env has no M365 shared password and Resend is SANDBOXED (only sends to indiantrademis@gmail.com) — production works when M365_SMTP_SHARED_PASSWORD is set
 - Bulk upload/download: GET /api/gmc/upload-template.xlsx (emp_code, coverage_scope, project_code, sum_insured, premium, spouse_name, spouse_dob, kids 'Name|son|DOB; ...'); POST /api/gmc/bulk-upload?policy_id= adds/updates members with per-row error reporting; UI Template + Bulk Upload buttons
 - Self-tested via curl (flags, summary, template, upload add/update/errors, insurer email w/ attachment, weekly trigger) + screenshot verified
+
+## 2026-06-28 — Work Order Mapping UI Rectified + Offer/Order Line Items — DONE
+- Dialog rebuilt like the RA Bill form: max-w-5xl, scrollable (max-h-88vh), 4-col grid (WO#/Project/Date/Status, Client/Site/Validity), grouped Commercial & Execution sections
+- Structured Line Items table (Description/Qty/Unit/Rate/Amount) auto-filled from /api/ra-bills/project-context/{code} when a project is picked — same format as the submitted offer & received order; also auto-fills WO# (customer PO), client, site, quotation #
+- WO Value auto-computed from items (manual entry when no items); backend WorkOrderIn now persists items[]
+- Files: /app/frontend/src/pages/ops/WorkOrders.jsx, /app/backend/routers/projects_ops_workorders_router.py
+- Self-tested: screenshot (8 items loaded from offer QTN-2026-0086 for ONGC project) + curl POST/DELETE with items persisted
