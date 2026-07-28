@@ -458,6 +458,13 @@ PERMISSIONS_BASE = {
                   "project_manager", "dept_head", "accounts_executive"},
         "delete": {"super_admin", "hr_executive"},
     },
+    # Group Medical (GMC) Policy management
+    "hr_gmc": {
+        "read": {"super_admin", "director", "general_manager", "hr_executive",
+                 "dept_head", "accounts_executive"},
+        "write": {"super_admin", "hr_executive", "general_manager", "director"},
+        "delete": {"super_admin", "hr_executive"},
+    },
     # Iteration 49 — Real Payroll Module (Monthly run + EMI auto-deduction)
     "hr_payroll": {
         "read": {"super_admin", "director", "general_manager", "hr_executive",

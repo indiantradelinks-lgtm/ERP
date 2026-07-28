@@ -341,6 +341,19 @@ async def finalise_exit(eid: str, request: Request,
                   "exit_date": row["last_working_day"],
                   "exit_id": row["id"]}})
 
+    # Auto-remove from all Group Medical (GMC) policies
+    try:
+        gmc_res = await db.gmc_members.update_many(
+            {"employee_id": row["employee_id"], "status": "active"},
+            {"$set": {"status": "removed", "removed_at": now_iso(),
+                      "removed_by": "System (Exit / FNF finalised)",
+                      "removal_reason": f"Employee exited — FNF finalised, LWD {row['last_working_day']}"}})
+        if gmc_res.modified_count:
+            logger.info("GMC: auto-removed %s membership(s) for exited employee %s",
+                        gmc_res.modified_count, row["employee_id"])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("GMC auto-removal on exit failed: %s", exc)
+
     # Best-effort relieving letter if a relieving template exists
     letter_id = None
     tpl = await db.letter_templates.find_one(

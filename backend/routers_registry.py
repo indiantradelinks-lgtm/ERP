@@ -44,6 +44,7 @@ from routers.hr_phase2_router import router as hr_phase2_router
 from routers.hr_phase3_router import router as hr_phase3_router
 from routers.hr_phase4_router import router as hr_phase4_router
 from routers.hr_phase5_router import router as hr_phase5_router
+from routers.gmc_router import router as gmc_router
 from routers.admin_projects_dedupe import router as admin_projects_dedupe_router
 from routers.employees_bulk_router import router as employees_bulk_router
 from routers.inventory_bulk_router import router as inventory_bulk_router
@@ -167,6 +168,7 @@ ROUTERS_IN_ORDER: List[Tuple[str, APIRouter]] = [
     ("hr_phase3", hr_phase3_router),
     ("hr_phase4", hr_phase4_router),
     ("hr_phase5", hr_phase5_router),
+    ("gmc", gmc_router),
     ("import", import_router),
     ("inventory_bulk", inventory_bulk_router),
     ("resource_plan_bulk", resource_plan_bulk_router),

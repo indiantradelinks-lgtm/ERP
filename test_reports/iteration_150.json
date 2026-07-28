@@ -1,0 +1,37 @@
+{
+  "summary": "GMC (Group Medical Policy) feature — Iter 150. Ran comprehensive backend pytest suite (16 tests, all passed) covering policy CRUD + duplicate rejection, eligible-employees filter, bulk-add scope logic (auto/project/head_office), member filters, /gmc/summary math, remove/restore (incl. 400 for exited employee restore), Excel + PDF exports, RBAC (sales_executive → 403), and the CRITICAL FnF integration — full exit workflow (create exit → approve all 8 clearance items → compute-fnf → finalise) auto-removes GMC membership with removal_reason mentioning 'exited'. Frontend Playwright E2E on /app/hr/group-medical login-to-flow: page loads, all data-testids present (KPIs, policy cards, filters, buttons), created a new policy via UI, opened Add Members dialog, added a member via checkbox+confirm, verified member row appears, ran remove-with-reason + restore flow, all working. Menu entry (nav-gmc) is present under HR > Compliance.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "GroupMedical.jsx policy card",
+        "issue": "Nested <button> inside <button> — outer policy card is <button data-testid='gmc-policy-{id}'> and inside it renders Edit/Delete <Button> components (also <button>). React logs 'In HTML, <button> cannot be a descendant of <button>' hydration warning at line 129/142. Interactive but invalid HTML; can cause click event bubbling issues and hydration mismatches. Fix: change outer element to <div role='button' tabIndex={0}> or move Edit/Delete outside the card button.",
+        "selector": "[data-testid^='gmc-policy-'] > div > button (gmc-edit-policy)",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter150_gmc.py",
+    "/app/test_reports/pytest/iter150_gmc.xml"
+  ],
+  "action_items": [
+    "Fix nested <button> in GroupMedical.jsx policy cards (line 129 outer button + line 142 inner Edit button). Recommended: convert outer element to div with role='button' + keyboard handler."
+  ],
+  "critical_code_review_comments": [
+    "gmc_router.py PUT /gmc/policies/{pid} accepts full PolicyIn body — a policy_number collision with another existing policy is NOT explicitly checked on update (only on create). If user changes policy_number to one that already exists on another doc, it would silently succeed. Add uniqueness check.",
+    "gmc_router.py bulk-add validates coverage_scope only against {'project','head_office'}; unknown values silently fall through to 'auto'. Consider explicit 400.",
+    "Frontend GroupMedical.jsx nested button HTML violation (see ui_bugs)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter150_gmc.py (new)"
+  ],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "100% (all flows exercised)"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin), sales@erp.com / Sales@123 (RBAC 403 verified)",
+  "seed_data_creation": "Test employees created with emp_code prefix 'TESTGMC-...'. UI created one policy 'UITEST/<timestamp>' during Playwright test — safe to delete via UI/DB if desired. TESTGMC/ prefixed policies clean themselves up in pytest teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend tests in /app/backend/tests/test_iter150_gmc.py can be re-run any time — self-contained (creates its own policy + employees, cleans up). Employee POST goes via crud_router /api/employees with validate_employee_compliance — only pass 'permanent' employment_type or valid IDs. FnF flow requires all 8 clearance items approved; super_admin can approve all roles' items."
+}

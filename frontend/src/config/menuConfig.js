@@ -35,7 +35,7 @@ import {
   CalendarDays, ScrollText, Mail, Cloud, Inbox, ShieldPlus, Plug, Package,
   Warehouse, DollarSign, FileSignature, History, Settings as SettingsIcon, Network,
   CalendarRange, Ruler, AlertTriangle, PlusSquare, Layers, Lock, Landmark, LineChart,
-  Bell, TrendingUp, Calculator, FileBarChart, Stethoscope, Fuel, Route, FilePlus2,
+  Bell, TrendingUp, Calculator, FileBarChart, Stethoscope, HeartPulse, Fuel, Route, FilePlus2,
   Database, Siren, FileSpreadsheet, Hotel, LogOut, KeyRound,
 } from "lucide-react";
 
@@ -143,6 +143,7 @@ export const MENU_ITEMS = [
   { department: "hr", parentLabel: "Documents", label: "Employee Documents",      to: "/app/hr/letters",            icon: ScrollText,      testid: "nav-emp-docs", perm: "hr_letters" },
   { department: "hr", parentLabel: "Documents", label: "Document Verification",   to: "/app/hr/employee-360?tab=docs", icon: ClipboardCheck,  testid: "nav-doc-verify", perm: "hr_onboarding" },
   { department: "hr", parentLabel: "Compliance", label: "Medical Fitness Register", to: "/app/hr/letters",          icon: Stethoscope,     testid: "nav-medical", perm: "hr_letters" },
+  { department: "hr", parentLabel: "Compliance", label: "Group Medical Policy",    to: "/app/hr/group-medical",     icon: HeartPulse,      testid: "nav-gmc", perm: "hr_gmc" },
   { department: "hr", parentLabel: "Compliance", label: "Police Verification",    to: "/app/hr/letters",            icon: ShieldCheck,     testid: "nav-police-verify", perm: "hr_letters" },
   { department: "hr", parentLabel: "Compliance", label: "Training & Certification", to: "/app/safety-trainings",    icon: GraduationCap,   testid: "nav-training", perm: "safety_trainings" },
   { department: "hr", parentLabel: "Attendance", label: "Attendance Center",      to: "/app/attendance-center",     icon: CalendarDays,    testid: "nav-attendance-center", perm: "attendance" },
