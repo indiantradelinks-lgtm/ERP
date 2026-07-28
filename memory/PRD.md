@@ -4800,3 +4800,11 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 
 ## 2026-06-27 — Bill Request dialog reformat
 - Reformatted New Bill Generation Request dialog in /app/frontend/src/pages/ops/BillRequests.jsx to match the New RA Bill dialog layout: max-w-5xl, 4-col header grid (Bill Type, Project Code, Period From/To), proper Line Items table with Description/Qty/Unit/Rate/Amount headers, totals summary bar (Items/Documents/Request Total). Verified via screenshot.
+
+## 2026-06-28 — Group Medical Policy (GMC) Module — DONE
+- NEW module: /app/hr/group-medical (menu: HR → Compliance → Group Medical Policy, perm hr_gmc)
+- Backend: /app/backend/routers/gmc_router.py — policies CRUD (unique policy no.), members (bulk-add from Employee Master, filters: project/designation/head-office/status/search), summary KPIs, remove-with-reason/restore, branded Excel+PDF export (/api/gmc/export.xlsx|pdf)
+- RBAC: hr_gmc in rbac.py (read: HR+mgmt+accounts; write: HR/GM/Director/SA)
+- FnF sync: routers/hr/exit_fnf.py finalise_exit() auto-removes exited employee from all GMC policies with reason
+- Frontend: /app/frontend/src/pages/hr/GroupMedical.jsx
+- Tested: iteration_150.json — 16/16 backend, all frontend flows pass. Post-test fixes applied: nested-button HTML violation, policy_number uniqueness on update. Test data cleaned (demo policy GMC/2026/001 with 3 members retained).

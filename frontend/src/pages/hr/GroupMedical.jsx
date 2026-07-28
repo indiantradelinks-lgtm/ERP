@@ -126,8 +126,9 @@ export default function GroupMedical() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {policies.map((p) => (
-          <button key={p.id} onClick={() => setPolicyId(p.id)}
-            className={`bg-card border rounded-sm p-3 text-left transition-colors hover:border-primary/50 ${policyId === p.id ? "border-primary" : "border-border"}`}
+          <div key={p.id} role="button" tabIndex={0} onClick={() => setPolicyId(p.id)}
+            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setPolicyId(p.id)}
+            className={`bg-card border rounded-sm p-3 text-left cursor-pointer transition-colors hover:border-primary/50 ${policyId === p.id ? "border-primary" : "border-border"}`}
             data-testid={`gmc-policy-${p.id}`}>
             <div className="flex items-center justify-between">
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{p.insurer}{p.tpa ? ` · TPA: ${p.tpa}` : ""}</div>
@@ -143,7 +144,7 @@ export default function GroupMedical() {
                 <Button size="sm" variant="outline" className="h-6 rounded-sm text-[11px] text-destructive" onClick={(e) => { e.stopPropagation(); deletePolicy(p.id); }}><Trash2 className="h-3 w-3 mr-1" /> Delete</Button>
               </div>
             )}
-          </button>
+          </div>
         ))}
         {policies.length === 0 && (
           <div className="col-span-3 bg-card border border-dashed border-border rounded-sm p-6 text-center text-sm text-muted-foreground">

@@ -88,6 +88,8 @@ async def update_policy(pid: str, p: PolicyIn, request: Request,
     row = await db.gmc_policies.find_one({"id": pid}, {"_id": 0})
     if not row:
         raise HTTPException(404, "Not found")
+    if await db.gmc_policies.find_one({"policy_number": p.policy_number, "id": {"$ne": pid}}, {"_id": 0, "id": 1}):
+        raise HTTPException(400, "Policy number already exists on another policy")
     await db.gmc_policies.update_one({"id": pid}, {"$set": {**p.model_dump(), "updated_at": now_iso()}})
     await audit(user=user, action="update", resource="gmc_policies", record_id=pid, before=row, after=p.model_dump(), ip=_ip(request))
     return await db.gmc_policies.find_one({"id": pid}, {"_id": 0})
