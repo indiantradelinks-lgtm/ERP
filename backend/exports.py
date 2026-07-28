@@ -195,6 +195,7 @@ COLUMNS: Dict[str, List[Dict[str, str]]] = {
         {"key": "sum_insured", "label": "Sum Insured"},
         {"key": "premium", "label": "Premium"},
         {"key": "dependents", "label": "Dependents"},
+        {"key": "dependent_names", "label": "Spouse / Kids Covered"},
         {"key": "status", "label": "Status"},
         {"key": "added_at", "label": "Added On"},
         {"key": "removed_at", "label": "Removed On"},

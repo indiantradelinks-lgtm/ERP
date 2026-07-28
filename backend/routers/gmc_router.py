@@ -57,6 +57,18 @@ class MemberPatch(BaseModel):
     designation: Optional[str] = None
 
 
+class DependentIn(BaseModel):
+    name: str
+    relation: str                    # spouse | son | daughter
+    dob: Optional[str] = None
+    gender: Optional[str] = None
+    sum_insured: Optional[float] = None
+
+
+class DependentsIn(BaseModel):
+    dependents: list[DependentIn] = []
+
+
 class RemoveIn(BaseModel):
     reason: Optional[str] = None
 
@@ -190,7 +202,7 @@ async def bulk_add_members(p: BulkAddIn, request: Request,
             "coverage_scope": scope, "project_code": proj if scope == "project" else "",
             "sum_insured": p.sum_insured if p.sum_insured is not None else float(policy.get("sum_insured_default") or 0),
             "premium": p.premium if p.premium is not None else 0,
-            "dependents": p.dependents, "status": "active",
+            "dependents": p.dependents, "dependent_details": [], "status": "active",
             "added_at": now_iso(), "added_by": user.get("name") or user.get("email"),
             "removed_at": None, "removed_by": None, "removal_reason": None,
         }
@@ -212,6 +224,33 @@ async def update_member(mid: str, p: MemberPatch, request: Request,
         patch["project_code"] = ""
     await db.gmc_members.update_one({"id": mid}, {"$set": {**patch, "updated_at": now_iso()}})
     await audit(user=user, action="update", resource="gmc_members", record_id=mid, before=row, after=patch, ip=_ip(request))
+    return await db.gmc_members.find_one({"id": mid}, {"_id": 0})
+
+
+@router.put("/gmc/members/{mid}/dependents")
+async def set_dependents(mid: str, p: DependentsIn, request: Request,
+                         user: dict = Depends(require_permission("hr_gmc", "write"))):
+    row = await db.gmc_members.find_one({"id": mid}, {"_id": 0})
+    if not row:
+        raise HTTPException(404, "Not found")
+    if row.get("status") == "removed":
+        raise HTTPException(400, "Member is removed — restore first")
+    allowed = {"spouse", "son", "daughter"}
+    deps = []
+    for d in p.dependents:
+        rel = (d.relation or "").lower().strip()
+        if rel not in allowed:
+            raise HTTPException(400, f"Relation must be one of {sorted(allowed)}")
+        if not d.name.strip():
+            raise HTTPException(400, "Dependent name is required")
+        deps.append({"name": d.name.strip(), "relation": rel, "dob": d.dob or "",
+                     "gender": d.gender or "", "sum_insured": float(d.sum_insured or 0)})
+    if sum(1 for d in deps if d["relation"] == "spouse") > 1:
+        raise HTTPException(400, "Only one spouse can be added")
+    await db.gmc_members.update_one({"id": mid}, {"$set": {
+        "dependent_details": deps, "dependents": len(deps), "updated_at": now_iso()}})
+    await audit(user=user, action="gmc_dependents", resource="gmc_members", record_id=mid,
+                before={"dependents": row.get("dependent_details") or []}, after={"dependents": deps}, ip=_ip(request))
     return await db.gmc_members.find_one({"id": mid}, {"_id": 0})
 
 
@@ -256,6 +295,9 @@ async def export_members(fmt: str, policy_id: Optional[str] = None, scope: Optio
         raise HTTPException(400, "Format must be xlsx or pdf")
     query = _member_query(policy_id, scope, project_code, designation, status, None)
     rows = await db.gmc_members.find(query, {"_id": 0}).sort("name", 1).to_list(5000)
+    for r in rows:
+        r["dependent_names"] = "; ".join(
+            f"{d.get('name')} ({d.get('relation')})" for d in (r.get("dependent_details") or []))
     fname = f"group_medical_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.{fmt}"
     if fmt == "xlsx":
         data = to_excel("gmc_members", rows)

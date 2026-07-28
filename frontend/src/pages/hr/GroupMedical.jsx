@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, HeartPulse, ShieldPlus, UserMinus, RotateCcw, FileSpreadsheet, FileText, Pencil, Trash2, Search } from "lucide-react";
+import { Plus, RefreshCw, HeartPulse, ShieldPlus, UserMinus, RotateCcw, FileSpreadsheet, FileText, Pencil, Trash2, Search, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +30,7 @@ export default function GroupMedical() {
   const [addDlg, setAddDlg] = useState(false);
   const [removeFor, setRemoveFor] = useState(null);
   const [removeReason, setRemoveReason] = useState("");
+  const [depsFor, setDepsFor] = useState(null);
 
   const loadPolicies = async () => {
     try {
@@ -224,7 +225,13 @@ export default function GroupMedical() {
                 <TableCell className="text-xs">{m.designation || "—"}</TableCell>
                 <TableCell>
                   <Badge variant="outline" className="rounded-sm text-[10px] uppercase">{m.coverage_scope === "head_office" ? "Head Office" : "Project"}</Badge>
-                  {(m.dependents || 0) > 0 && <div className="text-[10px] text-muted-foreground mt-0.5">+{m.dependents} dependent(s)</div>}
+                  {(m.dependent_details || []).length > 0 ? (
+                    <div className="text-[10px] text-muted-foreground mt-0.5 max-w-[200px]">
+                      {m.dependent_details.map((d) => `${d.name} (${d.relation})`).join(", ")}
+                    </div>
+                  ) : (m.dependents || 0) > 0 ? (
+                    <div className="text-[10px] text-muted-foreground mt-0.5">+{m.dependents} dependent(s)</div>
+                  ) : null}
                 </TableCell>
                 <TableCell className="text-xs font-mono-data">{m.project_code || "—"}</TableCell>
                 <TableCell className="text-right font-mono-data tabular text-xs">{inr(m.sum_insured)}</TableCell>
@@ -239,9 +246,14 @@ export default function GroupMedical() {
                 </TableCell>
                 <TableCell className="text-right">
                   {canWrite && m.status === "active" && (
-                    <Button size="sm" variant="outline" className="h-7 rounded-sm text-destructive" onClick={() => setRemoveFor(m)} data-testid={`gmc-remove-${m.id}`}>
-                      <UserMinus className="h-3 w-3 mr-1" /> Remove
-                    </Button>
+                    <div className="flex gap-1.5 justify-end">
+                      <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={() => setDepsFor(m)} data-testid={`gmc-deps-${m.id}`}>
+                        <Users className="h-3 w-3 mr-1" /> Family
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 rounded-sm text-destructive" onClick={() => setRemoveFor(m)} data-testid={`gmc-remove-${m.id}`}>
+                        <UserMinus className="h-3 w-3 mr-1" /> Remove
+                      </Button>
+                    </div>
                   )}
                   {canWrite && m.status === "removed" && (
                     <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={() => restoreMember(m)} data-testid={`gmc-restore-${m.id}`}>
@@ -316,6 +328,11 @@ export default function GroupMedical() {
         <AddMembersDialog policy={policy} onClose={() => setAddDlg(false)} onAdded={() => { setAddDlg(false); loadMembers(); loadPolicies(); }} />
       )}
 
+      {depsFor && (
+        <DependentsDialog member={depsFor} onClose={() => setDepsFor(null)}
+          onSaved={() => { setDepsFor(null); loadMembers(); }} />
+      )}
+
       <Dialog open={!!removeFor} onOpenChange={(o) => !o && setRemoveFor(null)}>
         <DialogContent className="max-w-md rounded-sm">
           <DialogHeader>
@@ -333,6 +350,84 @@ export default function GroupMedical() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function DependentsDialog({ member, onClose, onSaved }) {
+  const [deps, setDeps] = useState((member.dependent_details || []).map((d) => ({ ...d })));
+  const [busy, setBusy] = useState(false);
+  const hasSpouse = deps.some((d) => d.relation === "spouse");
+  const setDep = (i, patch) => setDeps((l) => l.map((d, ix) => ix === i ? { ...d, ...patch } : d));
+
+  const save = async () => {
+    if (deps.some((d) => !d.name?.trim())) { toast.error("Every dependent needs a name"); return; }
+    setBusy(true);
+    try {
+      await api.put(`/gmc/members/${member.id}/dependents`, { dependents: deps });
+      toast.success(`Family cover updated for ${member.name} — ${deps.length} dependent(s)`);
+      onSaved();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Save failed"); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl rounded-sm max-h-[88vh] overflow-y-auto" data-testid="gmc-deps-dialog">
+        <DialogHeader>
+          <DialogTitle className="font-display flex items-center gap-2"><Users className="h-4 w-4 text-primary" /> Family Cover — {member.name}</DialogTitle>
+          <DialogDescription>Add spouse and kids if the employee is married and willing to cover the family under GMC. One spouse max; children as son/daughter.</DialogDescription>
+        </DialogHeader>
+        <div className="border border-border rounded-sm">
+          <div className="flex items-center justify-between p-2.5 border-b border-border">
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Dependents ({deps.length})</div>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" className="h-7 rounded-sm" disabled={hasSpouse}
+                onClick={() => setDeps([...deps, { name: "", relation: "spouse", dob: "", gender: "" }])} data-testid="gmc-dep-add-spouse">
+                <Plus className="h-3 w-3 mr-1" /> Spouse
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 rounded-sm"
+                onClick={() => setDeps([...deps, { name: "", relation: "son", dob: "", gender: "" }])} data-testid="gmc-dep-add-child">
+                <Plus className="h-3 w-3 mr-1" /> Child
+              </Button>
+            </div>
+          </div>
+          <Table>
+            <TableHeader><TableRow className="bg-muted/30 hover:bg-muted/30">
+              <TableHead className="text-[10px] uppercase tracking-wider">Name</TableHead>
+              <TableHead className="text-[10px] uppercase tracking-wider">Relation</TableHead>
+              <TableHead className="text-[10px] uppercase tracking-wider">Date of Birth</TableHead>
+              <TableHead></TableHead>
+            </TableRow></TableHeader>
+            <TableBody>
+              {deps.length === 0 && (
+                <TableRow><TableCell colSpan={4} className="text-center py-6 text-xs text-muted-foreground">
+                  No family members added. Use + Spouse or + Child above.
+                </TableCell></TableRow>
+              )}
+              {deps.map((d, i) => (
+                <TableRow key={`dep-${i}`}>
+                  <TableCell><Input value={d.name} onChange={(e) => setDep(i, { name: e.target.value })} placeholder={d.relation === "spouse" ? "Wife / husband name" : "Child name"} className="h-8 rounded-sm" data-testid={`gmc-dep-name-${i}`} /></TableCell>
+                  <TableCell>
+                    <select value={d.relation} onChange={(e) => setDep(i, { relation: e.target.value })}
+                      className="h-8 rounded-sm border border-input bg-background px-2 text-xs" data-testid={`gmc-dep-rel-${i}`}>
+                      <option value="spouse" disabled={hasSpouse && d.relation !== "spouse"}>Spouse</option>
+                      <option value="son">Son</option>
+                      <option value="daughter">Daughter</option>
+                    </select>
+                  </TableCell>
+                  <TableCell><Input type="date" value={d.dob || ""} onChange={(e) => setDep(i, { dob: e.target.value })} className="h-8 rounded-sm w-36" data-testid={`gmc-dep-dob-${i}`} /></TableCell>
+                  <TableCell><Button variant="outline" size="sm" className="h-7 rounded-sm" onClick={() => setDeps(deps.filter((_, ix) => ix !== i))} data-testid={`gmc-dep-del-${i}`}><X className="h-3 w-3" /></Button></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" className="rounded-sm" onClick={onClose}>Cancel</Button>
+          <Button className="rounded-sm" onClick={save} disabled={busy} data-testid="gmc-deps-save">Save Family Cover</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

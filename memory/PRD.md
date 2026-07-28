@@ -4808,3 +4808,9 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - FnF sync: routers/hr/exit_fnf.py finalise_exit() auto-removes exited employee from all GMC policies with reason
 - Frontend: /app/frontend/src/pages/hr/GroupMedical.jsx
 - Tested: iteration_150.json — 16/16 backend, all frontend flows pass. Post-test fixes applied: nested-button HTML violation, policy_number uniqueness on update. Test data cleaned (demo policy GMC/2026/001 with 3 members retained).
+
+## 2026-06-28 — GMC Family Cover (Spouse & Kids) — DONE
+- PUT /api/gmc/members/{mid}/dependents — structured dependent_details [{name, relation spouse|son|daughter, dob, gender}], validations: one spouse max, name required, valid relation; dependents count auto-synced
+- Frontend: 'Family' button per member → Family Cover dialog (+ Spouse / + Child rows, DOB); family names shown in member row & KPI dependents count
+- Exports include 'Spouse / Kids Covered' column
+- Self-tested via curl (validations + export) and screenshot (dialog with saved spouse/son)
