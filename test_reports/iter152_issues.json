@@ -1,0 +1,38 @@
+{
+  "issues": [
+    {
+      "stage": "stage1_qpdf",
+      "endpoint": "/quotations/*/pdf",
+      "detail": "no working PDF endpoint found"
+    },
+    {
+      "stage": "stage3_context_items",
+      "endpoint": "/ra-bills/project-context/E2E-TEST-178532-P1",
+      "detail": "offer items did not flow into project context (empty items[])"
+    },
+    {
+      "stage": "stage4_rfp_notif",
+      "endpoint": "/notifications",
+      "detail": "no 'Request For Payment' (expense_payment_request) notification for accounts"
+    },
+    {
+      "stage": "stage6_pnl_income",
+      "endpoint": "/project-pnl",
+      "detail": "income_billed 120000.0 != RA bill subtotal 60000.0"
+    }
+  ],
+  "artifacts_summary": {
+    "client_id": "1520c643-672a-4ec5-946a-32fbbfe89bee",
+    "site_id": "e8dc2097-f4f6-4612-b5d4-d8b158ef5a98",
+    "enquiry_no": "ENQ-2026-0110",
+    "quote_no": "QTN-2026-0087",
+    "project_code": "E2E-TEST-178532-P1",
+    "wo_no": "E2E-TEST-1785320564-WO1",
+    "ra_bill_number": "RA-2026-0023",
+    "expenses": [
+      "PEX-2026-0014",
+      "PEX-2026-0015",
+      "PEX-2026-0016"
+    ]
+  }
+}

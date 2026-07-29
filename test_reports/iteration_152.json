@@ -1,0 +1,48 @@
+{
+  "summary": "Iter 152 — FULL Project Lifecycle E2E from Sales/Offer → Handover → Project → WO → Cost Centers → 3 Expenses (small+large chains) → Payment proof + Mark Paid → Bill Request → RA Bill → P&L → Closure. Backend pytest: 29/29 PASSED (test_iter152_full_lifecycle.py). Discovered 3 real issues + minor path mismatch in the review request. Full chain works end-to-end: enquiry auto-creates draft quote → super_admin edits items → send-for-approval (2-step chain) → transition to WON → auto-handover created → project created (manual) → WO created → 16 CC auto-provisioned → PM raised 3 expenses (fuel 2k, PPE 4k, scaffolding 30k) → 2-step / 4-step approval chains executed → JE posted (je_id populated) → payment proof uploaded → mark-paid succeeded → CC 'actual' rollup shows 36000 correctly → bill-request created + 4-step chain approved → RA bill generated with net_payable=66600 (subtotal 60k, 18% GST, 5% retention, 2% TDS) → mark-generated linked → P&L computed (income_billed, gross_profit 84k, margin 70%) → closure workbench APIs work (checklist 18 items, 20 reports, profitability, complete → status=closed).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/ra-bills/project-context/{project_code}", "issue": "Returns empty items[] when project is created manually via /api/projects (with quotation_id/quotation_no set). The lookup ONLY finds items via project_handovers.project_code, so when a user creates a project directly (not via the auto-handover from WON quote), the offer line-items DO NOT flow into WO auto-fill or RA-bill auto-fill. This breaks the 'offer items → work order → bill request → RA bill' linkage stated as the acceptance criterion. Fix: fall back to quotation lookup via project.quotation_id / project.quotation_no when no handover is found.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "GET /api/quotations/{id}/pdf (and /export.pdf, /download)", "issue": "No working PDF-download endpoint exists. All 3 candidate paths return 404. Users cannot download quotation PDF from backend."},
+      {"endpoint": "GET /api/notifications/mine (as accounts_executive)", "issue": "Returns 0 rows even though _notify_accounts inserted a 'expense_payment_request' notification when the expense reached Accounts Review. Possible causes: user_id mismatch between the inserted notification and current user, or the endpoint filters by extra criteria (e.g., kind). Accounts users cannot see the RFP alerts."},
+      {"endpoint": "GET /api/notifications", "issue": "Returns 404 for accounts_executive (route exists in procurement_extras_router but likely permission-gated). Frontend calling /notifications directly would fail. Backend should either allow all authenticated users or route the frontend to /notifications/mine."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Sales → Ops linkage", "issue": "Auto-handover created from WON quote does not link to a user-created Project (they carry different project_code). Result: /ra-bills/project-context returns empty items unless project was created THROUGH the handover flow.", "affected_selectors": []}
+    ],
+    "design_issues": [],
+    "page_link_notes": "Review request listed some incorrect UI paths. Actual routes verified in /app/frontend/src/App.js: Enquiries → /app/enquiries (not /app/sales/enquiries); Quotations → /app/quotations; Contract Handovers → /app/ops/handovers (not /contract-handovers); Project Closure Center → /app/ops/closure-center (not /project-closure); Project P&L → /app/ops/pnl (not /project-pnl); Cost Centers → /app/admin/cost-centers (not /procurement/cost-centers). All pages load when correct path is used (verified Projects/WO/Expenses/BillRequests/RA-Bills after admin login)."
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter152_full_lifecycle.py",
+    "/app/test_reports/pytest/iter152.xml",
+    "/app/test_reports/iter152_issues.json"
+  ],
+  "action_items": [
+    "HIGH: Fix /api/ra-bills/project-context/{project_code} to fall back to quotation lookup via project.quotation_id / project.quotation_no when no handover row exists — so offer items flow into WO/RA-bill for manually-created projects.",
+    "MEDIUM: Add a working /api/quotations/{id}/pdf endpoint (or document the current export route) so quotation PDF download works from the UI.",
+    "MEDIUM: Fix /api/notifications/mine so Accounts users see the 'Request For Payment' notifications inserted by _notify_accounts. Verify the user_id used in the insert matches the auth user_id; consider adding a role-based fanout endpoint.",
+    "LOW: Consider auto-creating a Project alongside the auto-handover when the quote is WON (or linking the manually-created project back to the handover by matching client + quotation_no) so the Sales→Ops handoff is not manual.",
+    "LOW: Cost-center categories are inventory-based (CONSUM/SCAFFOLD/PPE/...) — no direct 'FUEL' category exists, so fuel expenses default to Consumables. Consider adding a FUEL master category or better mapping between expense_type and cost-center category."
+  ],
+  "critical_code_review_comments": [
+    "ra_bills_router.ra_bill_project_context lines 340-403: hard dependency on project_handovers row is fragile. Should also fall back to project.quotation_id/quotation_no when handover missing.",
+    "project_expenses_router._notify_accounts (line 219-234) inserts notifications by user_id. If /notifications/mine filters by user_id + a `kind` whitelist that excludes expense_payment_request, accounts won't see it. Verify end-to-end.",
+    "sales_router auto-handover created on WON quote does not create a Project row (only handover). This is by design but leaves a manual gap that broke offer-item flow in this test."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter152_full_lifecycle.py (new — full E2E lifecycle regression)"
+  ],
+  "success_rate": {"backend": "100% (29/29 pytest passed)", "frontend": "not fully exercised — path mismatch in original request; correct paths verified to load"},
+  "test_credentials": "admin@erp.com/Admin@123, test_pm@erp.com/PM@12345, depthead.ops@erp.com/DeptHead@123, gm@erp.com/GM@12345, director@erp.com/Director@123, accounts@erp.com/Accounts@123",
+  "seed_data_creation": "Created (permanent test data, prefix 'E2E-TEST-*'): 2 clients (CUST-0025, CUST-0026), 2 sites, 2 enquiries (ENQ-2026-0110), 2 auto-quotations (QTN-2026-0087) with sections/items, 2 auto-handovers (from won quote), 2 projects (E2E-TEST-178532-P1 — now status=closed), 2 WOs (E2E-TEST-*-WO1), 32 cost-centers, 6 expenses (PEX-2026-0011..0016), 1 payment proof upload, 2 bill-requests (BR-2026-0006..0007), 2 RA bills (RA-2026-0022, RA-2026-0023). All items are prefixed 'E2E-TEST-' or otherwise clearly identifiable and left in DB for regression reference.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend E2E lifecycle test at /app/backend/tests/test_iter152_full_lifecycle.py is fully self-contained (creates fresh client/site/enquiry/etc every run). It uses super_admin to advance approval chains where role-specific approvers exist (dept_head/gm/director/accounts also invoked but admin bypass covers gaps). To re-run: `export REACT_APP_BACKEND_URL=<url>; pytest backend/tests/test_iter152_full_lifecycle.py -v -s`. After main agent fixes item #1 (project-context fallback), re-run and check that test_08 no longer emits the 'offer items did not flow' issue.",
+  "rca of the issue": "PRIMARY BUG (project-context items empty): /api/ra-bills/project-context/{project_code} builds items ONLY from db.project_handovers → db.quotations. Reproduction: (1) POST /api/enquiries → auto-quote created; (2) PUT /api/quotations/{id} with sections+items; (3) POST /quotations/{id}/send-for-approval + approve; (4) POST /quotations/{id}/status → 'submitted' → 'won' (auto-handover created via _auto_create_handover_from_quote); (5) POST /api/projects (manually, with quotation_no set on the project) — this creates a project with a NEW project_code, unrelated to the auto-handover's project_code; (6) GET /api/ra-bills/project-context/{new_project_code} → handover lookup fails → items=[]. Mitigation: in the project-context handler, if no handover, look up quotation by project.quotation_id or project.quotation_no; also emit a warning if the project has no handover linkage."
+}
