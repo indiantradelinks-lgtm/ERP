@@ -1,0 +1,26 @@
+{
+  "summary": "Iter 153 retest — verified all three fixes/confirmations from iter152. New pytest file /app/backend/tests/test_iter153_retest.py: 5/5 PASSED. iter152 regression suite: 29/29 PASSED. (1) FIX VERIFIED — GET /api/ra-bills/project-context/{project_code} fallback chain works: existing E2E-TEST-178532-P1 now returns 3 offer items (Scaffolding Erection/Dismantling/Material Rental) via project.quotation_no=QTN-2026-0087; a NEW project (code=RETEST-NOQ-QTN87, client='RETEST CLIENT NO QUOTES', sales_quotation_ref=QTN-2026-0087) also returns the same 3 offer items via the sales_quotation_ref fallback. (2) NON-ISSUE CONFIRMED — GET /api/quotation-builder/{quotation_id}/pdf returns 200 application/pdf, 269732 bytes for QTN-2026-0087. (3) NON-ISSUE CONFIRMED — accounts@erp.com GET /api/notifications/mine returns 9 items, all matching 'PEX-*' Request For Payment pattern. (4) REGRESSION — GET /api/ra-bills/project-context/PRJ-2026-0035 still returns 8 items (quotation_no=QTN-2026-0086) for ONGC work-order flow.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter153_retest.py",
+    "/app/backend/tests/test_iter152_full_lifecycle.py",
+    "/app/test_reports/pytest/iter153.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ra_bills_router.ra_bill_project_context now has the fallback chain (lines 362-382): handover.quotation_no → project.quotation_id → project.quotation_no → project.sales_quotation_ref → latest sectioned quote for client. Verified working for manual projects.",
+    "Note: POST /api/projects does NOT auto-generate a 'code' field — the caller must supply a code, otherwise ra-bills/project-context/{code} cannot be resolved. Consider auto-generating a code if not provided (low priority, not blocking).",
+    "Notification match uses PEX-* substring across title/message/body — 9/9 accounts notifications match; endpoint is healthy."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter153_retest.py (new — 5 retest cases covering iter152 fixes)"
+  ],
+  "success_rate": {"backend": "100% (5/5 new + 29/29 regression = 34/34)", "frontend": "not tested (backend-only per request)"},
+  "test_credentials": "admin@erp.com/Admin@123, accounts@erp.com/Accounts@123 — both verified working",
+  "seed_data_creation": "Test creates and DELETES a temp project (code=RETEST-NOQ-QTN87) each run — no residue. Uses existing E2E-TEST-* and PRJ-2026-0035 seeds.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "iter152 HIGH bug (project-context empty items for manual projects) is fixed. Fallback chain is: handover.quotation_no → project.quotation_id → project.quotation_no → project.sales_quotation_ref → latest sectioned quote by client. Note the Projects POST endpoint does not auto-populate 'code' — test callers must supply one. Quotation PDF endpoint lives at /api/quotation-builder/{id}/pdf (NOT /api/quotations/{id}/pdf). Accounts notifications endpoint is /api/notifications/mine and works fine (returns 9 PEX RFPs).",
+  "rca of the issue": "Fix confirmed working. Fallback lookup order verified via two independent paths (project.quotation_no on existing seed E2E-TEST-178532-P1, and project.sales_quotation_ref on fresh RETEST-NOQ-QTN87 project). Both yielded the same 3-item offer set."
+}

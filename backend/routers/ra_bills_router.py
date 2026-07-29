@@ -359,11 +359,22 @@ async def ra_bill_project_context(project_code: str,
         po_number = po_number or order.get("order_no") or ""
         po_id = order.get("id") or ""
 
-    # Offer format: quotation linked on the handover, else latest sectioned quote for the client
+    # Offer format: quotation linked on the handover, else from the project
+    # itself (manually-created projects), else latest sectioned quote for client
     quotation_no = (handover or {}).get("quotation_no") or ""
     quote = None
     if quotation_no:
         quote = await db.quotations.find_one({"quote_number": quotation_no}, {"_id": 0})
+    if not quote and project:
+        if project.get("quotation_id"):
+            quote = await db.quotations.find_one({"id": project["quotation_id"]}, {"_id": 0})
+        for qn in (project.get("quotation_no"), project.get("sales_quotation_ref")):
+            if quote:
+                break
+            if qn:
+                quote = await db.quotations.find_one({"quote_number": qn}, {"_id": 0})
+        if quote:
+            quotation_no = quote.get("quote_number") or quotation_no
     if not quote and client_name:
         quote = await db.quotations.find_one(
             {"client": client_name, "sections.0": {"$exists": True}}, {"_id": 0},
