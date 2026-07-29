@@ -4855,3 +4855,10 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - UI: 'Raise Expense Request' button gating, updated flow description, Mark Paid dialog with mandatory proof uploader
 - New test account: accounts@erp.com / Accounts@123 (accounts_executive)
 - E2E curl tested: PM raise (small: 2-step, large 45k: 4-step), PM self-approve blocked, dept_head/GM/Director approvals, notification created, paid-with-proof, reject cleanup. UI verified via screenshots
+
+## 2026-06-28 — FULL Project Lifecycle E2E (Offer → Closure) tested + fixes — DONE (Iter 152: 29/29, Iter 153 retest: 34/34)
+- Full chain verified working: Enquiry → auto Quotation (QTN) → items → approval → WON → auto Contract Handover → Project → Work Order (offer items auto-fill) → 16 Cost Centers auto-provisioned → 3 daily expenses (small 2-step & large 4-step chains, JE posted) → payment proof + Mark Paid → CC actual rollup (₹36k) → Bill Request (4-step approval) → RA Bill (subtotal 60k, GST 18%, retention 5%, TDS 2%, net 66,600) → P&L (GP ₹84k, 70% margin) → Project Closure (18 checklist items, status=closed)
+- FIXED (HIGH): /api/ra-bills/project-context/{code} now falls back to project.quotation_id → project.quotation_no → project.sales_quotation_ref → latest client quote when no handover exists — offer items now flow to WO/Bill Request/RA Bill for manually-created projects
+- CONFIRMED NON-ISSUES: quotation PDF at /api/quotation-builder/{id}/pdf (works, 269KB); /api/notifications/mine returns Request-For-Payment items for accounts
+- E2E seed data left in DB (prefix E2E-TEST-*) incl. closed project E2E-TEST-178532-P1 for user reference
+- Regression suites: /app/backend/tests/test_iter152_full_lifecycle.py + test_iter153_retest.py
