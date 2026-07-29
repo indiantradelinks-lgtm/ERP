@@ -4862,3 +4862,9 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - CONFIRMED NON-ISSUES: quotation PDF at /api/quotation-builder/{id}/pdf (works, 269KB); /api/notifications/mine returns Request-For-Payment items for accounts
 - E2E seed data left in DB (prefix E2E-TEST-*) incl. closed project E2E-TEST-178532-P1 for user reference
 - Regression suites: /app/backend/tests/test_iter152_full_lifecycle.py + test_iter153_retest.py
+
+## 2026-06-29 — Auto-create Project on WON quotation — DONE
+- When a quotation is marked WON, _auto_create_handover_from_quote (sales_router.py) now: reuses project from order-conversion/quote linkage, ELSE auto-creates a Project (code PRJ-seq, client, site, budget=quote total, quotation_id/quotation_no/sales_quotation_ref, created_via='auto_won_quote') + auto-provisions all 16 cost centers + links the handover (project_code/project_id)
+- Idempotent both ways: enquiry→order convert reuses project by enquiry_id; handover creation reuses project by order/quote linkage
+- Replaced outdated 'projects only from order path' comment/design
+- Self-tested via curl: QTN-2026-0089 → won → PRJ-2026-0036 auto-created, 16 CCs, project-context returns offer items (sample data kept for user demo)

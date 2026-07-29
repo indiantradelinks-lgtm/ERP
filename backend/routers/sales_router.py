@@ -746,10 +746,8 @@ async def _auto_create_handover_from_quote(quote: dict, user: dict) -> Optional[
     )
     contract_value = float(quote.get("total") or quote.get("amount") or (enquiry or {}).get("expected_value") or 0)
 
-    # Iter (bug fix) — Project creation MUST ONLY originate from the Enquiry-to-Order
-    # path (/api/enquiries/{id}/convert). The contract handover should only LINK to
-    # the project that the order already created. If the enquiry was never converted
-    # to an order, no Project gets created here; the handover still records lineage.
+    # Project linkage — reuse any project created via the Enquiry-to-Order path
+    # or already linked to this quote; otherwise auto-create one (Iter 153).
     project_doc = None
     if quote.get("enquiry_id"):
         # 1. Prefer the project created via order conversion
@@ -762,6 +760,58 @@ async def _auto_create_handover_from_quote(quote: dict, user: dict) -> Optional[
         # 2. Or an existing project already linked to this quote (idempotent)
         if not project_doc:
             project_doc = await db.projects.find_one({"quotation_id": quote["id"]}, {"_id": 0})
+    # 3. Iter 153 — No project anywhere yet: auto-create one so the Sales → Ops
+    # handoff needs no manual step. Carries full offer linkage (quotation_no /
+    # sales_quotation_ref) so line items flow into WO / Bill Request / RA Bill.
+    # The enquiry→order conversion path stays idempotent: it reuses any project
+    # with this enquiry_id instead of creating a duplicate.
+    if not project_doc:
+        proj_no = await next_sequence("PRJ")
+        detail = (scope_of_work or "")[:60] or site_location or quote.get("quote_number") or proj_no
+        project_doc = {
+            "id": new_id(),
+            "code": proj_no,
+            "name": f"{client_name} — {detail}"[:140],
+            "client": client_name,
+            "client_code": (client_master or {}).get("code"),
+            "type": quote.get("service_type") or (enquiry or {}).get("service_type"),
+            "site": site_location,
+            "site_id": quote.get("site_id") or (enquiry or {}).get("site_id"),
+            "budget": contract_value,
+            "status": "planned",
+            "progress": 0,
+            "manager": None,
+            "quotation_id": quote["id"],
+            "quotation_no": quote.get("quote_number"),
+            "sales_quotation_ref": quote.get("quote_number"),
+            "enquiry_id": quote.get("enquiry_id"),
+            "created_at": now,
+            "created_by": user["id"],
+            "created_via": "auto_won_quote",
+        }
+        await db.projects.insert_one(project_doc)
+        project_doc.pop("_id", None)
+        try:
+            await audit(user=user, action="auto_create_from_won_quote", resource="projects",
+                        record_id=project_doc["id"], after=project_doc, ip="system")
+        except Exception:
+            pass
+        # Auto-provision cost centers for the new project (best-effort)
+        try:
+            cats = await db.inv_categories.find({"active": True}, {"_id": 0}).to_list(500)
+            for cat in cats:
+                await db.cost_centers.insert_one({
+                    "id": new_id(), "project_id": project_doc["id"], "project_code": proj_no,
+                    "project_name": project_doc["name"], "category_id": cat["id"],
+                    "category_code": cat.get("code"), "category_name": cat.get("name"),
+                    "code": f"CC-{proj_no}-{cat.get('code')}",
+                    "name": f"{project_doc['name']} · {cat.get('name')}",
+                    "budget": 0.0, "committed": 0.0, "actual": 0.0, "active": True,
+                    "created_at": now, "created_by": "system (won quote)",
+                    "created_via": "auto_provision",
+                })
+        except Exception:
+            pass
 
     handover = {
         "id": new_id(),
