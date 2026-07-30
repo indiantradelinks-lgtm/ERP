@@ -4868,3 +4868,13 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - Idempotent both ways: enquiry→order convert reuses project by enquiry_id; handover creation reuses project by order/quote linkage
 - Replaced outdated 'projects only from order path' comment/design
 - Self-tested via curl: QTN-2026-0089 → won → PRJ-2026-0036 auto-created, 16 CCs, project-context returns offer items (sample data kept for user demo)
+
+## 2026-06-30 — Project Request Center (unified 9-type workflow) — DONE (Iter 154: 24/24, Iter 155 retest: 27/27, 100% FE)
+- NEW /app/ops/requests: one page for 9 request types (material, ppe, it_material, accommodation, fuel, insurance, vehicle_manpower, vehicle_material, one_time_vehicle)
+- Raise (PC/PM only) → Project Head approval (+GM→Director when est_value>threshold) → routed to owning dept (stores/logistics/admin) with in-app notification
+- Auto stock-check for stockable types (material/ppe/it) against db.inventory; shortfall → one-click Purchase Request into Procurement (source='project_request'); requires with_dept status
+- Fulfil: stores/logistics mark fulfilled; PAYMENT types auto-book a Daily Expense (approved_for_payment, cost-center linked) + notify Accounts for payment-with-proof
+- Reports: KPIs, filters, branded Excel/PDF; status chips (pending→with_dept→pr_raised→fulfilled→closed)
+- Backend: /app/backend/routers/project_requests_router.py; Frontend: /app/frontend/src/pages/ops/ProjectRequests.jsx; rbac 'project_requests'
+- Fixes applied: Check Stock 422 (payload normalise), raise-pr requires with_dept, close status guard, exception logging
+- Cleaned duplicate E2E-TEST project seed rows
