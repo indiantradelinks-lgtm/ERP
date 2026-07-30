@@ -1,0 +1,32 @@
+{
+  "summary": "Iter 156: Scaffolding Inventory & Delivery Challan Center — comprehensive backend + frontend testing. 23/23 pytest cases passed on /api/scaffolding/* covering the full flow (item create with auto SCF-#### code, locations, opening-stock, stock-matrix with in_transit, transfer create + same/insufficient-stock 400 guards + PM 403 approve gating, admin approve, over-qty challan 400, multi-challan partial→dispatched, PDF, receive partial→completed, exports xlsx/pdf, migrate-main-store). UI verified: /app/scaffolding loads, all 4 tabs (scaf-tab-stock/transfers/challans/items), 6 KPIs, sidebar nav-scaffolding, item creation toast, opening/adjust stock dialog, new-transfer dialog with all sub testids (scaf-transfer-from/to, scaf-line-item-0/qty-0, scaf-add-line, scaf-transfer-submit), challans list with PDF buttons. Regression pages /store-transactions, /ops/requests, /inventory-intel all return 200.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Scaffolding — New Transfer Request dialog", "issues": ["'Need By' field uses browser-default mm/dd/yyyy date picker instead of shadcn Calendar component (inconsistent with rest of ERP).", "From/To Location and Item selects are native <select> — hydration warning in console ('<span> cannot be a child of <option>'), likely coming from a nested rendering in the item option label; consider switching to shadcn Select or trimming children."]},
+      {"screen": "Scaffolding header", "issues": ["When a toast appears in the top-right ('Item SCF-#### created'), it overlaps the top-right notification badge briefly — minor z-index/overlay observation."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter156_scaffolding.py", "/app/test_reports/pytest/iter156.xml"],
+  "action_items": [
+    "Consider replacing native <select> in transfer dialog with shadcn Select to eliminate hydration warning about <span> child of <option>.",
+    "Replace native date input with shadcn Calendar/Popover for consistency.",
+    "Existing pre-seeded duplicate 'TEST Site Store A' stores from prior iterations noted (per main agent context) — not a bug, but consider a cleanup pass."
+  ],
+  "critical_code_review_comments": [
+    "scaffolding_router.py is 459 lines, single-file router — approaching size limit but still manageable; splitting into items/transfers/challans sub-modules would improve maintainability if grown further.",
+    "Stock deduction and challan write are not inside a transaction — concurrent challans on same transfer could race; consider using MongoDB transactions or an optimistic lock on transfer.lines[].dispatched.",
+    "migrate-main-store role check happens AFTER require_permission — if a store_incharge (write access but not in APPROVE_ROLES) hits it, they get 403 correctly, but log/audit trail could benefit from an explicit 'attempted' entry.",
+    "receive_challan silently ignores if transfer doc missing (tr is None) — should probably 500/warn since it indicates data corruption.",
+    "PDF generator uses raw HTML string interpolation via _esc — verified _esc handles it. No SQL/NoSQL injection surfaces spotted."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter156_scaffolding.py"],
+  "success_rate": {"backend": "100% (23/23)", "frontend": "100% for tested testids"},
+  "test_credentials": "admin@erp.com/Admin@123 (approve), test_pm@erp.com/PM@12345 (write only, 403 on approve). Both verified.",
+  "seed_data_creation": "Backend tests created TEST_Iter156 Coupler (SCF-####), 1 transfer (MTN-####), 2 challans (DC-####) — all received/completed. UI test created TEST_UI Iter156 Board (SCF-0004). Existing E2E artifacts from main-agent curl left untouched.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All scaffolding endpoints healthy. Test file /app/backend/tests/test_iter156_scaffolding.py can be reused as regression. UI testids match the spec. Only minor design suggestions (native date/select). Backend PDF returns %PDF header correctly."
+}

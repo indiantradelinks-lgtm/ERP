@@ -181,6 +181,7 @@ export const MENU_ITEMS = [
 
   // ═══════════════ 5. STORE & INVENTORY ═══════════════
   { department: "store", label: "Inventory Dashboard",      to: "/app/inventory-intel",            icon: BarChart3,    testid: "nav-inv-dashboard", perm: "inventory" },
+  { department: "store", label: "Scaffolding & Challans",   to: "/app/scaffolding",                icon: Layers,       testid: "nav-scaffolding", perm: "scaffolding" },
   { department: "store", label: "Store & Inventory",        to: "/app/store-inventory",            icon: Warehouse,    testid: "nav-store", perm: "inventory" },
   { department: "store", label: "Item Master",              to: "/app/store-inventory",            icon: Package,      testid: "nav-item-master", perm: "inventory" },
   { department: "store", label: "Item Category Master",     to: "/app/admin/categories",           icon: Tag,          testid: "nav-item-cat", superAdminOnly: true },
