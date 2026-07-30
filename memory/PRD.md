@@ -4888,3 +4888,10 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - **Frontend** `/app/scaffolding` (`pages/store/Scaffolding.jsx` + `ScaffoldingMovements.jsx`): 4 tabs — Stock Matrix (with Opening/Adjust dialog), Transfers (create + approve/reject + Challan dialog with remaining-qty prefill), Delivery Challans (PDF + Receive), Item Catalog (search + create). KPI strip, Migrate button, exports. Sidebar `nav-scaffolding` under Store & Inventory.
 - **Tests**: 23/23 backend pytest (`tests/test_iter156_scaffolding.py`) + frontend Playwright 100% (iteration_156.json). Curl E2E: 100 opening → transfer 60 → challans 40+20 → received → 40/60 split verified.
 - Deferred polish (from review): shadcn Select/Calendar in transfer dialog; Mongo transaction around concurrent challan dispatch.
+
+### Iteration 157 (Jun 2026) — "My Pending Approvals" Unified Inbox ✅
+- **Backend** `/app/backend/routers/my_inbox_router.py` — `GET /api/my-inbox` returns `{total, counts, items[]}` aggregating everything awaiting the CURRENT user's action across 7 sources (parallel via asyncio.gather):
+  central approvals (chain-step role match), project requests, daily expenses (chain step), expense payments due (PAY_ROLES), scaffolding transfers (SCAF approve roles), DPRs submitted (PC roles), RA bills submitted (RA approve roles). Actionable items carry `approve_path`/`reject_path`; each item has a deep `link`.
+- **Frontend** `/app/my-approvals` (`pages/MyApprovalsCenter.jsx`): clickable KPI tiles per source (filter toggle), unified table (source badge, ref, amount, waiting-at step, age), inline Approve/Reject where supported, Open deep-link. Sidebar `nav-my-approvals` under Dashboard.
+- **Topbar bell** (`MyApprovalsInbox.jsx`) rewritten to the unified feed: badge = total across all sources, dropdown shows source label + ref, footer → action center.
+- **Tests**: 6/6 backend pytest (`tests/test_iter157_my_inbox.py` — shape, counts consistency, PM/Sales role filtering, approve E2E, 401) + frontend Playwright 100% across 3 roles (iteration_157.json).
