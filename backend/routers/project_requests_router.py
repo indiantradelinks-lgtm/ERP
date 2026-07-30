@@ -20,6 +20,7 @@ Process:
 from __future__ import annotations
 
 import io
+import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -32,6 +33,7 @@ from sequences import next_sequence
 from exports import to_excel, to_pdf
 
 router = APIRouter(tags=["project-requests"])
+logger = logging.getLogger("erp")
 
 # type -> (label, owning department, is_stockable, is_payment, expense_type)
 REQUEST_TYPES: Dict[str, Dict[str, Any]] = {
@@ -267,8 +269,8 @@ async def _notify_dept(row: dict) -> None:
                 "title": f"New {row['request_type_label']} request — {row['request_no']}",
                 "message": f"{row['project_code']} · est ₹{float(row['est_value']):,.0f}. Please review and fulfil.",
                 "link": "/app/ops/requests", "read": False, "at": now_iso()})
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("project-request dept notify failed: %s", exc)
 
 
 @router.post("/project-requests/{rid}/reject")
@@ -301,8 +303,8 @@ async def raise_pr(rid: str, request: Request,
         raise HTTPException(404, "Not found")
     if not row.get("is_stockable"):
         raise HTTPException(400, "Only material / PPE / IT requests can raise a PR")
-    if row["status"] not in ("with_dept", "pending_approval"):
-        raise HTTPException(400, f"Cannot raise PR in status {row['status']}")
+    if row["status"] != "with_dept":
+        raise HTTPException(400, f"Cannot raise PR in status {row['status']} — Project Head must approve first")
     short = [l for l in (row.get("stock_lines") or []) if l.get("shortfall", 0) > 0]
     if not short:
         raise HTTPException(400, "No shortfall — stock is available for all items")
@@ -396,7 +398,8 @@ async def _book_expense(row: dict, user: dict) -> Optional[str]:
                 "message": f"{exp['expense_type_label']} · {exp['project_code']} · ₹{exp['amount']:,.0f} from request {row['request_no']}.",
                 "link": "/app/ops/expenses", "read": False, "at": now_iso()})
         return exp["id"]
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("project-request expense booking failed: %s", exc)
         return None
 
 
@@ -405,6 +408,8 @@ async def close_request(rid: str, user: dict = Depends(require_permission("proje
     row = await db.project_requests.find_one({"id": rid}, {"_id": 0, "status": 1})
     if not row:
         raise HTTPException(404, "Not found")
+    if row["status"] not in ("fulfilled", "with_dept", "pr_raised"):
+        raise HTTPException(400, f"Cannot close a request in status {row['status']}")
     await db.project_requests.update_one({"id": rid}, {"$set": {"status": "closed", "closed_at": now_iso()}})
     return await db.project_requests.find_one({"id": rid}, {"_id": 0})
 

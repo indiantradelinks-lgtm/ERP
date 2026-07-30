@@ -1,0 +1,34 @@
+{
+  "summary": "Iter 155 retest — Check Stock 422 fix VERIFIED + new backend guard tightenings VERIFIED + full regression PASS. Backend: 24/24 test_iter154_project_requests.py still pass. NEW 3/3 test_iter155_guards.py pass: (a) raise-pr on status='pending_approval' → 400, (b) close on 'pending_approval' → 400, (c) close on 'rejected' → 400. Frontend: /app/ops/requests → Raise Request dialog → material type → item 'Pen and Paper' qty 2 → Check Stock: HTTP 200, req-stock-result banner 'All items available in Store — will route to Stores for issue.', success toast 'All items in stock — will route to Stores', line shows 'In stock (75)'. Adding 'FakeItem XYZ' qty 5 → Check Stock again: HTTP 200, warning toast 'Some items short — you can raise a Purchase Request after approval', banner turns amber, second row shows 'Short 5'. No 'Stock check failed' toast anywhere. Fix in ProjectRequests.jsx runStockCheck (lines 75-86) now sends only {request_type, items:[{...,quantity:Number,rate:Number}]} — no empty-string monthly_rate/months/amount = no Pydantic 422.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "ProjectRequests page (and elsewhere)", "issues": ["React console warning 'Encountered two children with the same key: E2E-TEST-178532-P1' repeated ~10× per load. Non-fatal but indicates a duplicate project key in some select/list (project master has 3 rows with the same code E2E-TEST-178532-P1). Consider deduping by code or using row id as key."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter154_project_requests.py",
+    "/app/backend/tests/test_iter155_guards.py",
+    "/app/test_reports/pytest/iter155.xml",
+    "/app/test_reports/pytest/iter155_guards.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: dedupe project options / use unique keys to silence the noisy React duplicate-key warning (same E2E-TEST-178532-P1 code seeded 3×)."
+  ],
+  "critical_code_review_comments": [
+    "runStockCheck fix is minimal and correct — only sends {request_type, items[]} avoiding Pydantic float_parsing on ''. Consider also adding a Pydantic pre-validator on RequestIn to coerce '' → None for Optional[float] as a defensive back-end guard for future clients.",
+    "raise_pr now correctly restricted to status=='with_dept' (Project Head approved). close_request now correctly restricted to ('fulfilled','with_dept','pr_raised'). Both guards return 400 with clear detail messages.",
+    "STOCKABLE set still duplicated client-side (line 19 of ProjectRequests.jsx) — kept in sync manually with backend REQUEST_TYPES; consider deriving from GET /project-requests/types meta.",
+    "_notify_dept and _book_expense still swallow exceptions with bare except; add logger.warning to make failures visible."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter155_guards.py (new — 3 tests, all pass)"],
+  "success_rate": {"backend": "100% (27/27 across iter154 + iter155 guards)", "frontend": "100% for Check Stock fix — both in-stock and shortfall paths verified with no 422 and correct toast/banner/indicator"},
+  "test_credentials": "admin@erp.com/Admin@123, test_pm@erp.com/PM@12345, depthead.ops@erp.com/DeptHead@123, gm@erp.com/GM@12345, director@erp.com/Director@123, accounts@erp.com/Accounts@123 — all verified",
+  "seed_data_creation": "Iter154 tests created a stable set of project requests on PRJ-2025-01 (1 closed material w/ real PR-raised & fulfilled, 1 fuel fulfilled → project_expense approved_for_payment, 1 vehicle_manpower in with_dept state, plus 1 no-shortfall material auto-cleaned). Iter155 guard tests only create pending/rejected temp requests and immediately DELETE them. No dangling test data from this iteration.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter 155 CLEAN: Check Stock 422 fixed and verified end-to-end, and the two new business-rule tightenings (raise-pr requires with_dept; close blocks pending_approval/rejected) are verified with 3 new pytest cases. Full backend regression 27/27 green. If any change is made to /api/project-requests router or ProjectRequests.jsx, re-run both pytest files.",
+  "rca of the issue": "Root cause was in /app/frontend/src/pages/ops/ProjectRequests.jsx runStockCheck() which POSTed the whole form (including monthly_rate:'', months:'', amount:'') to /api/project-requests/stock-check. The Pydantic RequestIn model expects Optional[float] and does NOT coerce empty string to None in v2, returning HTTP 422 float_parsing. FIX: runStockCheck now sends only {request_type, items:[{...,quantity:Number,rate:Number}]} — no numeric fields at all — which satisfies the schema. Two additional backend guards were added: raise_pr requires status=='with_dept' (previously accepted 'pending_approval'), and close_request now checks status in ('fulfilled','with_dept','pr_raised')."
+}

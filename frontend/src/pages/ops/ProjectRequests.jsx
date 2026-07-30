@@ -74,7 +74,11 @@ export default function ProjectRequests() {
 
   const runStockCheck = async () => {
     try {
-      const r = await api.post("/project-requests/stock-check", { ...form, items: form.items });
+      const payload = {
+        request_type: form.request_type,
+        items: form.items.map((i) => ({ ...i, quantity: Number(i.quantity) || 0, rate: Number(i.rate) || 0 })),
+      };
+      const r = await api.post("/project-requests/stock-check", payload);
       setStock(r.data);
       if (r.data.all_in_stock) toast.success("All items in stock — will route to Stores");
       else if (r.data.any_short) toast.warning("Some items short — you can raise a Purchase Request after approval");
