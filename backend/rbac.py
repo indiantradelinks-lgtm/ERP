@@ -466,6 +466,15 @@ PERMISSIONS_BASE = {
                   "accounts_executive", "billing_executive"},
         "delete": {"super_admin", "project_manager"},
     },
+    # Scaffolding Stock & Challan Center (location-wise inventory + movements)
+    "scaffolding": {
+        "read": {"*"},
+        "write": {"super_admin", "director", "general_manager", "dept_head",
+                  "project_manager", "project_coordinator", "site_supervisor",
+                  "store_manager", "storekeeper", "inventory_manager",
+                  "logistics_executive", "logistics_manager", "procurement_executive"},
+        "delete": {"super_admin"},
+    },
     # Project Request Center (material/PPE/vehicle/accommodation/fuel/insurance/IT)
     "project_requests": {
         "read": {"*"},
