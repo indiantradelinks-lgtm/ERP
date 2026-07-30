@@ -6,17 +6,17 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/compon
 import { api } from "@/lib/api";
 
 export default function MyApprovalsInbox() {
-  const [items, setItems] = useState([]);
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
 
   const load = useCallback(async () => {
     try {
-      const { data } = await api.get("/approvals/inbox/mine");
-      setItems(Array.isArray(data) ? data : []);
+      const { data: d } = await api.get("/my-inbox");
+      setData(d);
     } catch {
-      setItems([]);
+      setData(null);
     } finally { setLoading(false); }
   }, []);
 
@@ -26,7 +26,8 @@ export default function MyApprovalsInbox() {
     return () => clearInterval(t);
   }, [load]);
 
-  const count = items.length;
+  const count = data?.total || 0;
+  const items = (data?.items || []).slice(0, 12);
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -36,7 +37,7 @@ export default function MyApprovalsInbox() {
           size="icon"
           className="relative h-9 w-9 rounded-sm border border-border hover:border-primary/60"
           data-testid="my-approvals-btn"
-          title={`${count} approval${count === 1 ? "" : "s"} waiting on you`}
+          title={`${count} item${count === 1 ? "" : "s"} waiting on you`}
         >
           <Bell className="h-4 w-4" />
           {count > 0 && (
@@ -49,8 +50,8 @@ export default function MyApprovalsInbox() {
       <DropdownMenuContent align="end" className="w-96 rounded-sm p-0" data-testid="my-approvals-menu">
         <div className="px-4 py-3 border-b border-border flex items-center justify-between">
           <div>
-            <div className="font-display font-bold text-sm">My Approvals</div>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Waiting on your action</div>
+            <div className="font-display font-bold text-sm">My Pending Approvals</div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Requests · Expenses · Transfers · DPRs · Bills</div>
           </div>
           <span className="inline-flex items-center justify-center px-2 py-0.5 text-[10px] font-bold border border-primary/40 bg-primary/10 text-primary rounded-sm">{count}</span>
         </div>
@@ -61,39 +62,36 @@ export default function MyApprovalsInbox() {
             <div className="p-8 text-center">
               <Inbox className="h-8 w-8 mx-auto text-muted-foreground/40" />
               <div className="mt-3 text-sm font-semibold">Inbox zero</div>
-              <div className="text-xs text-muted-foreground mt-1">No approvals waiting on you right now.</div>
+              <div className="text-xs text-muted-foreground mt-1">Nothing is waiting on your action right now.</div>
             </div>
           ) : (
             <ul className="divide-y divide-border">
-              {items.map((a) => {
-                const step = a._my_step || (a.chain || [])[a.current_step] || {};
-                return (
-                  <li
-                    key={a.id}
-                    className="px-4 py-3 hover:bg-muted/40 cursor-pointer flex items-center gap-3"
-                    onClick={() => { setOpen(false); navigate(`/app/approvals?id=${a.id}`); }}
-                    data-testid={`my-approval-${a.id}`}
-                  >
-                    <div className="h-8 w-8 grid place-items-center bg-primary/10 text-primary border border-primary/30 rounded-sm shrink-0">
-                      <CheckCircle2 className="h-4 w-4" />
+              {items.map((a) => (
+                <li
+                  key={`${a.source}-${a.id}`}
+                  className="px-4 py-3 hover:bg-muted/40 cursor-pointer flex items-center gap-3"
+                  onClick={() => { setOpen(false); navigate(a.link || "/app/my-approvals"); }}
+                  data-testid={`my-approval-${a.id}`}
+                >
+                  <div className="h-8 w-8 grid place-items-center bg-primary/10 text-primary border border-primary/30 rounded-sm shrink-0">
+                    <CheckCircle2 className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold truncate">{a.title}</div>
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground truncate">
+                      {a.source_label}{a.ref ? ` · ${a.ref}` : ""}
+                      {a.amount ? ` · ₹ ${Number(a.amount).toLocaleString("en-IN")}` : ""}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold truncate">{a.title}</div>
-                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                        Step {(a.current_step ?? 0) + 1}/{(a.chain || []).length} · {step.label || "—"}
-                        {a.amount ? ` · ₹ ${Number(a.amount).toLocaleString("en-IN")}` : ""}
-                      </div>
-                    </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                  </li>
-                );
-              })}
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                </li>
+              ))}
             </ul>
           )}
         </div>
         <div className="px-4 py-2 border-t border-border">
-          <Button variant="ghost" size="sm" className="w-full rounded-sm text-xs" onClick={() => { setOpen(false); navigate("/app/approvals"); }} data-testid="my-approvals-open-all">
-            Open all approvals →
+          <Button variant="ghost" size="sm" className="w-full rounded-sm text-xs" onClick={() => { setOpen(false); navigate("/app/my-approvals"); }} data-testid="my-approvals-open-all">
+            Open action center →
           </Button>
         </div>
       </DropdownMenuContent>

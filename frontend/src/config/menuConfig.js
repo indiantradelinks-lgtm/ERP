@@ -61,6 +61,7 @@ export const DEPARTMENT_MAP = Object.fromEntries(DEPARTMENTS.map((d) => [d.key, 
 export const MENU_ITEMS = [
   // ═══════════════ 1. DASHBOARD ═══════════════
   { department: "dashboard", label: "Main Dashboard",        to: "/app",                            icon: LayoutDashboard, testid: "nav-dashboard", end: true },
+  { department: "dashboard", label: "My Pending Approvals",  to: "/app/my-approvals",               icon: Inbox,           testid: "nav-my-approvals" },
   { department: "dashboard", label: "Management Dashboard",  to: "/app",                            icon: TrendingUp,      testid: "nav-mgmt-dashboard" },
   { department: "dashboard", label: "Department Dashboard",  to: "/app/modules",                    icon: LayoutGrid,      testid: "nav-dept-dashboard" },
   { department: "dashboard", label: "Reports Center",        to: "/app/reports-center",             icon: FileSpreadsheet, testid: "nav-reports-center" },
