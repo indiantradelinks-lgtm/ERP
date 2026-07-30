@@ -4878,3 +4878,13 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - Backend: /app/backend/routers/project_requests_router.py; Frontend: /app/frontend/src/pages/ops/ProjectRequests.jsx; rbac 'project_requests'
 - Fixes applied: Check Stock 422 (payload normalise), raise-pr requires with_dept, close status guard, exception logging
 - Cleaned duplicate E2E-TEST project seed rows
+
+### Iteration 156 (Jun 2026) — Scaffolding Inventory & Delivery Challan Center ✅
+- **Backend** `/app/backend/routers/scaffolding_router.py` (`/api/scaffolding/*`, rbac key `scaffolding`):
+  - Location-wise stock (`db.scaf_stock`): locations = stores (`inv_stores`) + active projects. Item catalog create (auto `SCF-####`), opening/adjust stock, stock-matrix (item × location grid + in_transit from dispatched challans), summary KPIs, Excel/PDF exports.
+  - One-time `POST /migrate-main-store` seeds catalog global qty into Main Store (role-gated).
+  - **Transfers** (`db.scaf_transfers`, `MTN-YYYY-####`): from→to with multi-item lines, stock guard, status pending_approval → approved/rejected (approve roles: super_admin/store_manager/inventory_manager/dept_head/GM/director; others 403) → partially_dispatched/dispatched → partially_received/completed.
+  - **Delivery Challans** (`db.scaf_challans`, `DC-YYYY-####`): one or many per approved transfer (each = one vehicle trip: vehicle/driver/transporter/e-way). Dispatch deducts source stock (in-transit); receive credits destination + updates transfer line received. Printable A4 challan PDF with signature blocks.
+- **Frontend** `/app/scaffolding` (`pages/store/Scaffolding.jsx` + `ScaffoldingMovements.jsx`): 4 tabs — Stock Matrix (with Opening/Adjust dialog), Transfers (create + approve/reject + Challan dialog with remaining-qty prefill), Delivery Challans (PDF + Receive), Item Catalog (search + create). KPI strip, Migrate button, exports. Sidebar `nav-scaffolding` under Store & Inventory.
+- **Tests**: 23/23 backend pytest (`tests/test_iter156_scaffolding.py`) + frontend Playwright 100% (iteration_156.json). Curl E2E: 100 opening → transfer 60 → challans 40+20 → received → 40/60 split verified.
+- Deferred polish (from review): shadcn Select/Calendar in transfer dialog; Mongo transaction around concurrent challan dispatch.
