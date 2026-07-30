@@ -27,7 +27,7 @@
  */
 import {
   LayoutDashboard, Users, Truck, Briefcase, HardHat, ShieldAlert, Boxes,
-  ShoppingCart, FileText, Wallet, ClipboardList, Wrench, Car, FolderArchive, MapPin,
+  ShoppingCart, FileText, Wallet, ClipboardList, Wrench, Car, FolderArchive, MapPin, PackageSearch,
   CheckSquare, BarChart3, User2, Construction, ShieldCheck, Building2, ListChecks,
   Workflow, FileSearch, Activity, ScanLine, ClipboardCheck, GraduationCap,
   MessageSquare, Hammer, UserPlus, MapPinned, BedDouble, Clock, Store, LayoutGrid,
@@ -96,6 +96,7 @@ export const MENU_ITEMS = [
   { department: "ops", label: "Service Type Master",        to: "/app/ops/service-types",          icon: Wrench,          testid: "nav-ops-service-types", perm: "projects" },
   { department: "ops", label: "Contract Handovers",         to: "/app/ops/handovers",              icon: Briefcase,       testid: "nav-ops-handovers", perm: "project_handovers" },
   { department: "ops", label: "Work Order Mapping",         to: "/app/ops/work-orders",            icon: FileSignature,   testid: "nav-ops-wo", perm: "projects" },
+  { department: "ops", label: "Project Request Center",     to: "/app/ops/requests",               icon: PackageSearch,   testid: "nav-ops-requests", perm: "project_requests" },
   { department: "ops", label: "Daily Expense Booking",      to: "/app/ops/expenses",               icon: Wallet,          testid: "nav-ops-expenses", perm: "project_expenses" },
   { department: "ops", label: "Cost Centers (Budget)",      to: "/app/admin/cost-centers",         icon: Wallet,          testid: "nav-ops-cost-centers", perm: "projects" },
   { department: "ops", label: "Project P&L",                to: "/app/ops/pnl",                    icon: TrendingUp,      testid: "nav-ops-pnl", perm: "project_pnl" },

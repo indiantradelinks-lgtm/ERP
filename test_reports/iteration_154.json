@@ -1,0 +1,61 @@
+{
+  "summary": "Iter 154 — Project Request Center (unified 9-type workflow). Backend: 24/24 pytest passed (/app/backend/tests/test_iter154_project_requests.py). All required flows validated end-to-end: 9 types with dept/stockable/payment flags; stock-check with Pen and Paper in-stock + unknown-item shortfall (any_short/all_in_stock correct); PM creates material (1-step chain, dept=stores), vehicle_manpower 8000x6=48000 large-value (3-step chain dept_head→GM→Director, dept=logistics), fuel 5000 (dept=admin, 1-step); sales role → 403; wrong-role approve → 403; Project Head approves small material → with_dept and stores notification created (fallback super_admin); large-value vehicle needs 3 approvals; reject sets status=rejected; raise-pr converts shortfall to purchase_requisitions (source='project_request') and sets pr_raised/pr_number; raise-pr on no-shortfall → 400; raise-pr on non-stockable → 400; fulfil on material/stores flips to fulfilled; fulfil on fuel (payment) auto-creates project_expenses row with source='project_request', status='approved_for_payment', AND accounts@erp.com receives 'Request For Payment' notification; wrong-dept role fulfil → 403; close after fulfilled → closed; DELETE on non-pending/rejected → 400; filters (project_code, request_type, status, dept) and summary counters work; xlsx and pdf exports return >100 bytes with correct content-type. Frontend: /app/ops/requests loads for admin; KPIs, table (5 existing rows visible), filters, Raise Request button all render with the specified data-testids; nav-ops-requests link present in Projects & Operations menu; Raise dialog opens; type-switching correctly toggles items block (stockable) vs vehicle fields vs amount fields; monthly_rate 8000 * months 6 → estimated value ₹48,000 in UI; detail dialog opens on row click and shows chain, stock status ('In stock (75)') and item table.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ProjectRequests.runStockCheck (POST /api/project-requests/stock-check)",
+        "issue": "Stock Check button triggers 422 pydantic float_parsing on empty-string monthly_rate/months (and amount) because runStockCheck() posts the raw form as-is (fields default to ''), while create() normalises to Number|null. Reproduced: 422 detail says 'Input should be a valid number, unable to parse string as a number' for body.monthly_rate and body.months. User sees toast 'Stock check failed' and req-stock-result never appears.",
+        "selector": "[data-testid=\"req-stock-check\"]",
+        "priority": "HIGH"
+      },
+      {
+        "component": "ProjectRequests / global (many)",
+        "issue": "React console warning 'Encountered two children with the same key' printed repeatedly on this page (~30 occurrences during load). Non-fatal but indicates duplicate keys — likely in a shared component (menu/nav or table). Investigate.",
+        "selector": "n/a",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Raise Request → Check Stock",
+        "issue": "Blank monthly_rate/months/amount posted as empty strings → backend 422; user cannot preview stock unless they've picked a request_type that never populates those fields. Fix: coerce '' → null in runStockCheck payload (same normalisation as create()).",
+        "affected_selectors": ["[data-testid=\"req-stock-check\"]", "[data-testid=\"req-stock-result\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter154_project_requests.py",
+    "/app/test_reports/pytest/iter154.xml"
+  ],
+  "action_items": [
+    "FIX (frontend, HIGH): In /app/frontend/src/pages/ops/ProjectRequests.jsx runStockCheck(), normalise the payload the same way create() does — coerce empty strings for monthly_rate, months, amount to null (or omit them). Otherwise backend Pydantic RequestIn rejects with 422 on Check Stock for any request_type whose form initialised these as ''. Example: const payload = { ...form, amount: form.amount?Number(form.amount):null, monthly_rate: form.monthly_rate?Number(form.monthly_rate):null, months: form.months?Number(form.months):null, items: form.items };",
+    "OPTIONAL (backend): Loosen RequestIn to accept '' as None for Optional[float] fields via a validator so the API is forgiving to any client. Alternative to (1)."
+  ],
+  "critical_code_review_comments": [
+    "project_requests_router.close_request has no status guard — allows closing a request in any status (even pending_approval/rejected). Consider restricting to status in ('fulfilled','with_dept','pr_raised').",
+    "project_requests_router.py raise_pr allows status 'pending_approval' as well as 'with_dept' — the docstring/spec says PR is raised after Project Head approves. Allowing it pre-approval could leak un-approved shortfalls into procurement. Suggest restricting to 'with_dept' only.",
+    "_notify_dept and _book_expense both silently swallow all exceptions (bare except Exception: pass). Wrap with logging so failures are visible in supervisor logs, not silently missed.",
+    "Frontend: STOCKABLE set is duplicated on client (line 19) — kept in sync manually with backend REQUEST_TYPES. Consider deriving from GET /project-requests/types response (meta.stockable) to prevent drift.",
+    "Detail dialog approve/reject visibility guard has an operator-precedence bug: (user?.role === (detail.chain||[])[current_step]?.role || user?.role === 'super_admin') — the outer '&&' with '(A || B)' works only because the surrounding parentheses are present. It reads correctly but is fragile; add data-testid-based unit test.",
+    "Router path GET /project-requests/export.{fmt} uses a path param — works but bypasses OpenAPI enum; consider ?format=xlsx query.",
+    "No test for user without project_requests permission — implicit via require_permission but not covered explicitly for read on a non-listed role."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter154_project_requests.py (new — 24 tests, all pass)"
+  ],
+  "success_rate": {
+    "backend": "100% (24/24)",
+    "frontend": "85% — UI loads, dialog opens, all data-testids present, estimated-value math and type-switching work, table rows and detail dialog render correctly. ONE HIGH bug: Check Stock button fails with 422 due to empty-string payload fields."
+  },
+  "test_credentials": "admin@erp.com/Admin@123, test_pm@erp.com/PM@12345, depthead.ops@erp.com/DeptHead@123, gm@erp.com/GM@12345, director@erp.com/Director@123, accounts@erp.com/Accounts@123, sales@erp.com/Sales@123 — all verified working",
+  "seed_data_creation": "Test run created ~7 project requests on the first project in DB (PRJ-2025-01 preferred). Notable persistent records left after run: 1 material request → PR-raised → fulfilled → CLOSED (with a real PR in db.purchase_requisitions and no expense); 1 fuel request → fulfilled/closed with a real project_expense (source='project_request', status='approved_for_payment') and accounts notification; 1 vehicle_manpower large-value request left in 'with_dept' state after 3-step approval (unfulfilled — can be cleaned by admin fulfil+close). Rejected/no-shortfall test requests were cleaned up. Check the exact expense_no + pr_number via GET /api/project-expenses?source=project_request and GET /api/procurement/prs?source=project_request.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Only ONE frontend bug — the Check Stock (req-stock-check) button fails with 422 because runStockCheck sends '' for monthly_rate/months/amount. Fix in ProjectRequests.jsx (~line 75-82) by normalising the payload the same way create() does. After fix, retest: (1) In dialog select material type, add item 'Pen and Paper' qty 2, click Check Stock → req-stock-result should appear with 'In stock' badge on line 0 and success toast. (2) Repeat with 'FakeItem' qty 5 → 'Short 5' badge and warning toast. Everything else is green. Backend suite regression: python -m pytest /app/backend/tests/test_iter154_project_requests.py -v.",
+  "rca of the issue": "Frontend runStockCheck() line 77 posts `{ ...form, items: form.items }` where form is initialised via blank() containing monthly_rate:'', months:'', amount:''. The backend endpoint uses the same RequestIn Pydantic model (Optional[float]) which does NOT coerce empty string to None (Pydantic v2 behaviour). Result: HTTP 422 with float_parsing errors for those fields. The create() handler already normalises these to Number|null before POST, but runStockCheck() was not updated to do the same. Two possible fixes: (A) normalise on the client (preferred, one-liner) or (B) add a Pydantic pre-validator on RequestIn that converts '' → None for Optional[float] fields (also useful for future clients)."
+}

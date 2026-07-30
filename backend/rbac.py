@@ -466,6 +466,16 @@ PERMISSIONS_BASE = {
                   "accounts_executive", "billing_executive"},
         "delete": {"super_admin", "project_manager"},
     },
+    # Project Request Center (material/PPE/vehicle/accommodation/fuel/insurance/IT)
+    "project_requests": {
+        "read": {"*"},
+        "write": {"super_admin", "director", "general_manager", "dept_head",
+                  "project_manager", "project_coordinator", "site_supervisor",
+                  "accounts_executive", "hr_executive", "admin_executive",
+                  "store_manager", "storekeeper", "inventory_manager",
+                  "procurement_executive", "logistics_executive", "logistics_manager"},
+        "delete": {"super_admin", "project_manager"},
+    },
     # Project Profit & Loss statement
     "project_pnl": {
         "read": {"super_admin", "director", "general_manager", "dept_head",
