@@ -567,6 +567,12 @@ async def import_csv(request: Request, file: UploadFile = File(...),
         if not name and not code:
             continue
         try:
+            oq = row.get("opening_quantity")
+            loc = None
+            if oq:
+                loc = find_loc(row.get("location"))
+                if not loc:
+                    raise ValueError(f"unknown location '{row.get('location')}'")
             item = await db.inventory.find_one({"code": code}, {"_id": 0}) if code else None
             if not item and name:
                 item = await db.inventory.find_one({"name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}}, {"_id": 0})
@@ -605,11 +611,7 @@ async def import_csv(request: Request, file: UploadFile = File(...),
                         "created_at": now_iso(), "created_by": user.get("id")}
                 await db.inventory.insert_one(dict(item))
                 created += 1
-            oq = row.get("opening_quantity")
             if oq:
-                loc = find_loc(row.get("location"))
-                if not loc:
-                    raise ValueError(f"unknown location '{row.get('location')}'")
                 srow = await db.scaf_stock.find_one({"item_id": item["id"], "location_id": loc["id"]}, {"_id": 0})
                 delta = float(oq) - float((srow or {}).get("quantity") or 0)
                 await _adjust(item, loc, delta)
