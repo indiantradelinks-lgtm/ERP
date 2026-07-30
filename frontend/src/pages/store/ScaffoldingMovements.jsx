@@ -27,12 +27,19 @@ const StatusBadge = ({ map, value }) => (
 );
 const blankLine = () => ({ item_id: "", quantity: "" });
 
-export function TransfersTab({ bump, locations, items, canWrite, canApprove, onChanged }) {
+export function TransfersTab({ bump, locations, items, canWrite, canApprove, onChanged, stockMap = {}, prefill, onPrefillConsumed }) {
   const [rows, setRows] = useState([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ from_location_id: "", to_location_id: "", need_by: "", remarks: "", lines: [blankLine()] });
   const [challanFor, setChallanFor] = useState(null);
+
+  useEffect(() => {
+    if (!prefill?.lines?.length) return;
+    setForm({ from_location_id: "", to_location_id: "", need_by: "", remarks: "", lines: prefill.lines.map((l) => ({ ...l })) });
+    setCreating(true);
+    onPrefillConsumed?.();
+  }, [prefill]); // eslint-disable-line
 
   const load = () => {
     const params = statusFilter ? { status: statusFilter } : {};
@@ -45,10 +52,10 @@ export function TransfersTab({ bump, locations, items, canWrite, canApprove, onC
   const create = async () => {
     const lines = form.lines.filter((l) => l.item_id && Number(l.quantity) > 0).map((l) => ({ item_id: l.item_id, quantity: Number(l.quantity) }));
     if (!form.from_location_id || !form.to_location_id) { toast.error("Pick From and To locations"); return; }
-    if (!lines.length) { toast.error("Add at least one item line"); return; }
+    if (!lines.length) { toast.error("Enter a quantity for at least one item (lines with 0 are ignored)"); return; }
     try {
       const r = await api.post("/scaffolding/transfers", { ...form, lines });
-      toast.success(`Transfer ${r.data.transfer_no} raised — pending Store Manager approval`);
+      toast.success(`Transfer ${r.data.transfer_no} raised — pending Store Manager approval (${lines.length} item line(s))`);
       setCreating(false); setForm({ from_location_id: "", to_location_id: "", need_by: "", remarks: "", lines: [blankLine()] }); onChanged();
     } catch (e) { toast.error(e?.response?.data?.detail || "Failed"); }
   };
@@ -171,21 +178,30 @@ export function TransfersTab({ bump, locations, items, canWrite, canApprove, onC
                 </Button>
               </div>
               <div className="p-2 space-y-1.5">
-                {form.lines.map((l, i) => (
-                  <div key={i} className="grid grid-cols-12 gap-1.5 items-center">
-                    <select value={l.item_id} onChange={(e) => setLine(i, { item_id: e.target.value })}
-                      className="h-8 rounded-sm border border-input bg-background px-2 text-xs col-span-7" data-testid={`scaf-line-item-${i}`}>
-                      <option value="">— select item —</option>
-                      {items.map((it) => <option key={it.id} value={it.id}>{it.name}{it.size ? ` (${it.size})` : ""} · {it.code}</option>)}
-                    </select>
-                    <Input type="number" value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} placeholder="Qty"
-                      className="h-8 rounded-sm col-span-3 text-xs tabular" data-testid={`scaf-line-qty-${i}`} />
-                    <Button size="sm" variant="ghost" className="h-8 col-span-2 text-destructive"
-                      onClick={() => setForm({ ...form, lines: form.lines.filter((_, ix) => ix !== i) })} disabled={form.lines.length === 1}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                ))}
+                {form.lines.map((l, i) => {
+                  const avl = form.from_location_id && l.item_id ? Number(stockMap[l.item_id]?.[form.from_location_id] || 0) : null;
+                  return (
+                    <div key={i} className="grid grid-cols-12 gap-1.5 items-center">
+                      <select value={l.item_id} onChange={(e) => setLine(i, { item_id: e.target.value })}
+                        className="h-8 rounded-sm border border-input bg-background px-2 text-xs col-span-5" data-testid={`scaf-line-item-${i}`}>
+                        <option value="">— select item —</option>
+                        {items.map((it) => <option key={it.id} value={it.id}>{it.name}{it.size ? ` (${it.size})` : ""} · {it.code}</option>)}
+                      </select>
+                      <div className="col-span-2 text-[10px] text-right" data-testid={`scaf-line-avl-${i}`}>
+                        {avl === null ? <span className="text-muted-foreground">avl —</span>
+                          : avl > 0 ? <span className="text-emerald-700 font-bold">avl {avl}</span>
+                          : <span className="text-rose-700 font-bold">avl 0</span>}
+                      </div>
+                      <Input type="number" value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} placeholder="Qty (0 = skip)"
+                        className="h-8 rounded-sm col-span-3 text-xs tabular" data-testid={`scaf-line-qty-${i}`} />
+                      <Button size="sm" variant="ghost" className="h-8 col-span-2 text-destructive"
+                        onClick={() => setForm({ ...form, lines: form.lines.filter((_, ix) => ix !== i) })} disabled={form.lines.length === 1}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  );
+                })}
+                <div className="text-[10px] text-muted-foreground pt-1">Lines with quantity 0 or blank are ignored on submit. "avl" = available at the selected From location.</div>
               </div>
             </div>
           </div>

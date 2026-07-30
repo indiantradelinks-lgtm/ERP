@@ -11,11 +11,13 @@ against one approved transfer.
 """
 from __future__ import annotations
 
+import csv
 import io
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
@@ -80,6 +82,7 @@ class ItemIn(BaseModel):
     unit: str = "Nos"
     rate: float = 0
     min_stock: float = 0
+    unit_weight_kg: float = 0
 
 
 @router.post("/scaffolding/items")
@@ -90,7 +93,8 @@ async def create_item(p: ItemIn, request: Request,
         raise HTTPException(409, f"Item code {code} already exists")
     doc = {"id": new_id(), "code": code, "name": p.name.strip(), "size": p.size, "spec": p.spec,
            "unit": p.unit, "uom": p.unit, "quantity": 0, "category": "scaffolding",
-           "rate": p.rate, "min_stock": p.min_stock, "created_at": now_iso(), "created_by": user.get("id")}
+           "rate": p.rate, "min_stock": p.min_stock, "unit_weight_kg": p.unit_weight_kg,
+           "created_at": now_iso(), "created_by": user.get("id")}
     await db.inventory.insert_one(doc); doc.pop("_id", None)
     await audit(user=user, action="create", resource="scaffolding_items", record_id=doc["id"], after=doc, ip=_ip(request))
     return doc
@@ -105,6 +109,72 @@ async def list_items(q: Optional[str] = None,
     return await db.inventory.find(query, {"_id": 0}).sort("name", 1).to_list(2000)
 
 
+class ItemUpdate(BaseModel):
+    name: Optional[str] = None
+    code: Optional[str] = None
+    size: Optional[str] = None
+    spec: Optional[str] = None
+    unit: Optional[str] = None
+    rate: Optional[float] = None
+    min_stock: Optional[float] = None
+    unit_weight_kg: Optional[float] = None
+
+
+@router.put("/scaffolding/items/{item_id}")
+async def update_item(item_id: str, p: ItemUpdate, request: Request,
+                      user: dict = Depends(require_permission("scaffolding", "write"))):
+    item = await db.inventory.find_one({"id": item_id}, {"_id": 0})
+    if not item:
+        raise HTTPException(404, "Item not found")
+    patch: Dict[str, Any] = {k: v for k, v in p.model_dump().items() if v is not None}
+    if "code" in patch:
+        patch["code"] = patch["code"].strip().upper()
+        dup = await db.inventory.find_one({"code": patch["code"], "id": {"$ne": item_id}}, {"_id": 0, "id": 1})
+        if dup:
+            raise HTTPException(409, f"Item code {patch['code']} already exists")
+    if "name" in patch:
+        patch["name"] = patch["name"].strip()
+    if "unit" in patch:
+        patch["uom"] = patch["unit"]
+    if not patch:
+        return item
+    patch["updated_at"] = now_iso()
+    await db.inventory.update_one({"id": item_id}, {"$set": patch})
+    # keep denormalised scaf_stock rows in sync
+    stock_patch = {k: patch[k] for k in ("name", "code", "unit", "size", "spec") if k in patch}
+    if stock_patch:
+        mapped = {}
+        if "name" in stock_patch: mapped["item_name"] = stock_patch["name"]
+        if "code" in stock_patch: mapped["item_code"] = stock_patch["code"]
+        if "unit" in stock_patch: mapped["unit"] = stock_patch["unit"]
+        if "size" in stock_patch: mapped["size"] = stock_patch["size"]
+        if "spec" in stock_patch: mapped["spec"] = stock_patch["spec"]
+        await db.scaf_stock.update_many({"item_id": item_id}, {"$set": mapped})
+    await audit(user=user, action="update", resource="scaffolding_items", record_id=item_id,
+                before=item, after=patch, ip=_ip(request))
+    return await db.inventory.find_one({"id": item_id}, {"_id": 0})
+
+
+@router.delete("/scaffolding/items/{item_id}")
+async def delete_item(item_id: str, request: Request,
+                      user: dict = Depends(require_permission("scaffolding", "write"))):
+    item = await db.inventory.find_one({"id": item_id}, {"_id": 0})
+    if not item:
+        raise HTTPException(404, "Item not found")
+    stock = await db.scaf_stock.find_one({"item_id": item_id, "quantity": {"$gt": 0}}, {"_id": 0, "id": 1})
+    if stock:
+        raise HTTPException(400, "Cannot delete — item has stock at one or more locations")
+    open_tr = await db.scaf_transfers.find_one(
+        {"lines.item_id": item_id, "status": {"$in": ["pending_approval", "approved", "partially_dispatched", "dispatched", "partially_received"]}},
+        {"_id": 0, "transfer_no": 1})
+    if open_tr:
+        raise HTTPException(400, f"Cannot delete — item is on open transfer {open_tr['transfer_no']}")
+    await db.inventory.delete_one({"id": item_id})
+    await db.scaf_stock.delete_many({"item_id": item_id})
+    await audit(user=user, action="delete", resource="scaffolding_items", record_id=item_id, before=item, ip=_ip(request))
+    return {"deleted": True}
+
+
 @router.get("/scaffolding/stock")
 async def stock(location_id: Optional[str] = None, q: Optional[str] = None,
                 user: dict = Depends(require_permission("scaffolding", "read"))):
@@ -117,16 +187,26 @@ async def stock(location_id: Optional[str] = None, q: Optional[str] = None,
 
 
 @router.get("/scaffolding/stock-matrix")
-async def stock_matrix(user: dict = Depends(require_permission("scaffolding", "read"))):
+async def stock_matrix(location_id: Optional[str] = None, q: Optional[str] = None,
+                       user: dict = Depends(require_permission("scaffolding", "read"))):
     rows = await db.scaf_stock.find({}, {"_id": 0}).to_list(10000)
     locs = await _locations()
+    weights = {i["id"]: float(i.get("unit_weight_kg") or 0)
+               async for i in db.inventory.find({}, {"_id": 0, "id": 1, "unit_weight_kg": 1})}
     used_ids = {r["location_id"] for r in rows}
     cols = [l for l in locs if l["id"] in used_ids]
+    if location_id:
+        rows = [r for r in rows if r["location_id"] == location_id]
+        cols = [c for c in cols if c["id"] == location_id]
+    if q:
+        rx = re.compile(re.escape(q), re.I)
+        rows = [r for r in rows if rx.search(r.get("item_name") or "") or rx.search(r.get("item_code") or "")]
     items: Dict[str, Dict[str, Any]] = {}
     for r in rows:
         it = items.setdefault(r["item_id"], {"item_id": r["item_id"], "item_code": r.get("item_code"),
                                              "item_name": r["item_name"], "unit": r.get("unit"),
                                              "size": r.get("size"), "spec": r.get("spec"),
+                                             "unit_weight_kg": weights.get(r["item_id"], 0),
                                              "by_location": {}, "total": 0})
         it["by_location"][r["location_id"]] = r["quantity"]
         it["total"] = round(it["total"] + float(r["quantity"] or 0), 3)
@@ -135,9 +215,16 @@ async def stock_matrix(user: dict = Depends(require_permission("scaffolding", "r
         {"$group": {"_id": "$lines.item_id", "qty": {"$sum": "$lines.quantity"}}}]).to_list(1000)
     transit_map = {t["_id"]: t["qty"] for t in in_transit}
     out = sorted(items.values(), key=lambda x: x["item_name"] or "")
+    total_weight = 0.0
     for it in out:
         it["in_transit"] = transit_map.get(it["item_id"], 0)
-    return {"locations": cols, "items": out}
+        it["total_weight_kg"] = round(it["total"] * it["unit_weight_kg"], 2)
+        it["total_tonnage"] = round(it["total_weight_kg"] / 1000, 3)
+        total_weight += it["total_weight_kg"]
+    return {"locations": cols, "items": out,
+            "grand_total_qty": round(sum(i["total"] for i in out), 3),
+            "grand_total_weight_kg": round(total_weight, 2),
+            "grand_total_tonnage": round(total_weight / 1000, 3)}
 
 
 class OpeningIn(BaseModel):
@@ -439,8 +526,105 @@ async def scaf_summary(user: dict = Depends(require_permission("scaffolding", "r
     }
 
 
+TEMPLATE_HEADERS = ["code", "name", "size", "spec", "unit", "rate", "min_stock",
+                    "unit_weight_kg", "location", "opening_quantity"]
+
+
+@router.get("/scaffolding/import-template")
+async def import_template(user: dict = Depends(require_permission("scaffolding", "read"))):
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(TEMPLATE_HEADERS)
+    w.writerow(["SCF-0101", "Vertical Standard 3m", "3.0m", "48.3mm OD", "Nos", "450", "50", "17.1", "Main Store", "100"])
+    w.writerow(["SCF-0102", "Ledger 2m", "2.0m", "", "Nos", "300", "50", "9.8", "", ""])
+    return Response(content=buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="scaffolding_import_template.csv"'})
+
+
+@router.post("/scaffolding/import.csv")
+async def import_csv(request: Request, file: UploadFile = File(...),
+                     user: dict = Depends(require_permission("scaffolding", "write"))):
+    """Bulk create/update items (incl. unit weights) with optional opening stock per location."""
+    raw = (await file.read()).decode("utf-8-sig", errors="replace")
+    reader = csv.DictReader(io.StringIO(raw))
+    headers = [(h or "").strip().lower() for h in (reader.fieldnames or [])]
+    if "name" not in headers and "code" not in headers:
+        raise HTTPException(400, f"CSV must contain at least a 'name' or 'code' column. Expected: {', '.join(TEMPLATE_HEADERS)}")
+    locs = await _locations()
+
+    def find_loc(v: str):
+        v = (v or "").strip().lower()
+        if not v:
+            return None
+        return next((l for l in locs if (l.get("code") or "").lower() == v
+                     or l["name"].lower() == v or v in l["name"].lower()), None)
+
+    created = updated = stocked = 0
+    errors: List[dict] = []
+    for i, r in enumerate(reader, start=2):
+        row = {(k or "").strip().lower(): (v or "").strip() for k, v in r.items()}
+        name, code = row.get("name") or "", (row.get("code") or "").upper()
+        if not name and not code:
+            continue
+        try:
+            item = await db.inventory.find_one({"code": code}, {"_id": 0}) if code else None
+            if not item and name:
+                item = await db.inventory.find_one({"name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}}, {"_id": 0})
+            patch: Dict[str, Any] = {}
+            for f, cast in (("size", str), ("spec", str), ("unit", str),
+                            ("rate", float), ("min_stock", float), ("unit_weight_kg", float)):
+                v = row.get(f)
+                if v:
+                    patch[f] = cast(v)
+            if "unit" in patch:
+                patch["uom"] = patch["unit"]
+            if item:
+                if name:
+                    patch["name"] = name
+                if patch:
+                    patch["updated_at"] = now_iso()
+                    await db.inventory.update_one({"id": item["id"]}, {"$set": patch})
+                    sync = {}
+                    if "name" in patch: sync["item_name"] = patch["name"]
+                    if "unit" in patch: sync["unit"] = patch["unit"]
+                    if "size" in patch: sync["size"] = patch["size"]
+                    if sync:
+                        await db.scaf_stock.update_many({"item_id": item["id"]}, {"$set": sync})
+                    item = {**item, **patch}
+                updated += 1
+            else:
+                if not name:
+                    raise ValueError("name required for a new item")
+                new_code = code or f"SCF-{(await next_sequence('SCF'))[-4:]}"
+                item = {"id": new_id(), "code": new_code, "name": name, "quantity": 0,
+                        "category": "scaffolding", "unit": patch.get("unit") or "Nos",
+                        "uom": patch.get("unit") or "Nos", "size": patch.get("size"),
+                        "spec": patch.get("spec"), "rate": patch.get("rate") or 0,
+                        "min_stock": patch.get("min_stock") or 0,
+                        "unit_weight_kg": patch.get("unit_weight_kg") or 0,
+                        "created_at": now_iso(), "created_by": user.get("id")}
+                await db.inventory.insert_one(dict(item))
+                created += 1
+            oq = row.get("opening_quantity")
+            if oq:
+                loc = find_loc(row.get("location"))
+                if not loc:
+                    raise ValueError(f"unknown location '{row.get('location')}'")
+                srow = await db.scaf_stock.find_one({"item_id": item["id"], "location_id": loc["id"]}, {"_id": 0})
+                delta = float(oq) - float((srow or {}).get("quantity") or 0)
+                await _adjust(item, loc, delta)
+                stocked += 1
+        except Exception as e:
+            errors.append({"row": i, "error": str(e)})
+    await audit(user=user, action="bulk_import", resource="scaffolding_items", record_id="csv",
+                after={"created": created, "updated": updated, "opening_stock_set": stocked, "errors": len(errors)},
+                ip=_ip(request))
+    return {"created": created, "updated": updated, "opening_stock_set": stocked, "errors": errors}
+
+
 @router.get("/scaffolding/export.{fmt}")
-async def export_stock(fmt: str, kind: str = "stock",
+async def export_stock(fmt: str, kind: str = "stock", location_id: Optional[str] = None,
+                       q: Optional[str] = None, item_ids: Optional[str] = None,
                        user: dict = Depends(require_permission("scaffolding", "read"))):
     if fmt not in ("xlsx", "pdf"):
         raise HTTPException(400, "Format must be xlsx or pdf")
@@ -450,7 +634,21 @@ async def export_stock(fmt: str, kind: str = "stock",
             r["items_summary"] = "; ".join(f"{l['item_name']} x{l['quantity']}" for l in r.get("lines") or [])
         res = "scaf_challans"
     else:
-        rows = await db.scaf_stock.find({}, {"_id": 0}).sort([("location_name", 1), ("item_name", 1)]).to_list(10000)
+        query: Dict[str, Any] = {}
+        if location_id:
+            query["location_id"] = location_id
+        if item_ids:
+            query["item_id"] = {"$in": [x for x in item_ids.split(",") if x]}
+        if q:
+            query["$or"] = [{"item_name": {"$regex": q, "$options": "i"}}, {"item_code": {"$regex": q, "$options": "i"}}]
+        rows = await db.scaf_stock.find(query, {"_id": 0}).sort([("location_name", 1), ("item_name", 1)]).to_list(10000)
+        weights = {i["id"]: float(i.get("unit_weight_kg") or 0)
+                   async for i in db.inventory.find({}, {"_id": 0, "id": 1, "unit_weight_kg": 1})}
+        for r in rows:
+            w = weights.get(r["item_id"], 0)
+            r["unit_weight_kg"] = w
+            r["weight_kg"] = round(float(r.get("quantity") or 0) * w, 2)
+            r["tonnage_mt"] = round(r["weight_kg"] / 1000, 3)
         res = "scaf_stock"
     data = to_excel(res, rows) if fmt == "xlsx" else to_pdf(res, rows)
     media = ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if fmt == "xlsx" else "application/pdf")
