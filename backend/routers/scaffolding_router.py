@@ -547,7 +547,7 @@ async def location_statement(location_id: str,
         return items.setdefault(l["item_id"], {
             "item_id": l["item_id"], "item_code": l.get("item_code"), "item_name": l["item_name"],
             "unit": l.get("unit"), "unit_weight_kg": float(l.get("unit_weight_kg") or 0),
-            "in_qty": 0, "out_qty": 0, "in_challans": 0, "out_challans": 0, "current_stock": 0})
+            "in_qty": 0, "out_qty": 0, "_in_ch": set(), "_out_ch": set(), "current_stock": 0})
 
     async for ch in db.scaf_challans.find(
             {"$or": [{"from_location_id": location_id}, {"to_location_id": location_id}]}, {"_id": 0}):
@@ -557,10 +557,10 @@ async def location_statement(location_id: str,
             b = bucket(l)
             if is_out:
                 b["out_qty"] = round(b["out_qty"] + float(l["quantity"]), 3)
-                b["out_challans"] += 1
+                b["_out_ch"].add(ch["id"])
             if is_in:
                 b["in_qty"] = round(b["in_qty"] + float(l["quantity"]), 3)
-                b["in_challans"] += 1
+                b["_in_ch"].add(ch["id"])
     async for s in db.scaf_stock.find({"location_id": location_id}, {"_id": 0}):
         b = bucket({"item_id": s["item_id"], "item_code": s.get("item_code"), "item_name": s["item_name"],
                     "unit": s.get("unit"), "unit_weight_kg": 0})
@@ -569,6 +569,8 @@ async def location_statement(location_id: str,
                async for i in db.inventory.find({"id": {"$in": list(items.keys())}}, {"_id": 0, "id": 1, "unit_weight_kg": 1})}
     out = sorted(items.values(), key=lambda x: x["item_name"] or "")
     for b in out:
+        b["in_challans"] = len(b.pop("_in_ch"))
+        b["out_challans"] = len(b.pop("_out_ch"))
         b["unit_weight_kg"] = weights.get(b["item_id"], b["unit_weight_kg"])
         b["stock_weight_kg"] = round(b["current_stock"] * b["unit_weight_kg"], 2)
     return {"location": loc, "items": out,
