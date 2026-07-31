@@ -697,6 +697,62 @@ async def scaf_summary(user: dict = Depends(require_permission("scaffolding", "r
 TEMPLATE_HEADERS = ["code", "name", "size", "spec", "unit", "rate", "min_stock",
                     "unit_weight_kg", "location", "opening_quantity"]
 
+# Industry-standard scaffolding component weights (kg) + indicative purchase rates (INR)
+STANDARD_CATALOG = [
+    # (code, name, size, spec, weight_kg, rate)
+    ("SCF-STD-001", "Cuplock Vertical / Standard", "3.0 m", "48.3mm OD, with cups", 17.1, 1540),
+    ("SCF-STD-002", "Cuplock Vertical / Standard", "2.5 m", "48.3mm OD, with cups", 14.4, 1300),
+    ("SCF-STD-003", "Cuplock Vertical / Standard", "2.0 m", "48.3mm OD, with cups", 11.6, 1040),
+    ("SCF-STD-004", "Cuplock Vertical / Standard", "1.5 m", "48.3mm OD, with cups", 8.9, 800),
+    ("SCF-STD-005", "Cuplock Vertical / Standard", "1.0 m", "48.3mm OD, with cups", 6.1, 550),
+    ("SCF-STD-011", "Cuplock Ledger / Horizontal", "2.5 m", "48.3mm OD, blade ends", 12.1, 1090),
+    ("SCF-STD-012", "Cuplock Ledger / Horizontal", "2.0 m", "48.3mm OD, blade ends", 9.8, 880),
+    ("SCF-STD-013", "Cuplock Ledger / Horizontal", "1.8 m", "48.3mm OD, blade ends", 8.9, 800),
+    ("SCF-STD-014", "Cuplock Ledger / Horizontal", "1.5 m", "48.3mm OD, blade ends", 7.6, 680),
+    ("SCF-STD-015", "Cuplock Ledger / Horizontal", "1.2 m", "48.3mm OD, blade ends", 6.2, 560),
+    ("SCF-STD-016", "Cuplock Ledger / Horizontal", "1.0 m", "48.3mm OD, blade ends", 5.3, 480),
+    ("SCF-STD-017", "Cuplock Ledger / Horizontal", "0.9 m", "48.3mm OD, blade ends", 4.8, 430),
+    ("SCF-STD-018", "Cuplock Ledger / Horizontal", "0.6 m", "48.3mm OD, blade ends", 3.5, 320),
+    ("SCF-STD-021", "MS Scaffolding Pipe / Tube", "6.0 m", "48.3mm OD x 3.2mm", 21.4, 1930),
+    ("SCF-STD-022", "MS Scaffolding Pipe / Tube", "5.0 m", "48.3mm OD x 3.2mm", 17.8, 1600),
+    ("SCF-STD-023", "MS Scaffolding Pipe / Tube", "4.0 m", "48.3mm OD x 3.2mm", 14.3, 1290),
+    ("SCF-STD-024", "MS Scaffolding Pipe / Tube", "3.0 m", "48.3mm OD x 3.2mm", 10.7, 960),
+    ("SCF-STD-025", "MS Scaffolding Pipe / Tube", "2.0 m", "48.3mm OD x 3.2mm", 7.1, 640),
+    ("SCF-STD-026", "MS Scaffolding Pipe / Tube", "1.5 m", "48.3mm OD x 3.2mm", 5.4, 490),
+    ("SCF-STD-031", "Fixed Coupler (Right Angle)", "48.3 x 48.3 mm", "Drop forged", 1.1, 95),
+    ("SCF-STD-032", "Swivel Coupler", "48.3 x 48.3 mm", "Drop forged", 1.35, 110),
+    ("SCF-STD-033", "Putlog / Single Coupler", "48.3 mm", "Pressed steel", 0.85, 75),
+    ("SCF-STD-034", "Sleeve Coupler", "48.3 mm", "External joint", 1.4, 120),
+    ("SCF-STD-035", "Joint Pin / Spigot", "48.3 mm", "Internal joint", 0.9, 60),
+    ("SCF-STD-036", "Board Retaining Coupler", "48.3 mm", "", 1.0, 85),
+    ("SCF-STD-037", "Beam / Girder Coupler", "48.3 mm", "Pair use", 2.4, 240),
+    ("SCF-STD-041", "Base Plate", "150 x 150 x 5 mm", "With spigot", 1.5, 140),
+    ("SCF-STD-042", "Adjustable Base Jack", "600 mm", "38mm threaded", 5.5, 500),
+    ("SCF-STD-043", "Adjustable U-Head Jack", "600 mm", "38mm threaded", 6.2, 560),
+    ("SCF-STD-044", "Stirrup / Fork Head", "", "", 3.8, 340),
+    ("SCF-STD-051", "Steel Plank / Metal Board", "3.0 m x 320 x 50 mm", "Perforated", 15.8, 1420),
+    ("SCF-STD-052", "Steel Plank / Metal Board", "2.5 m x 320 x 50 mm", "Perforated", 13.4, 1210),
+    ("SCF-STD-053", "Steel Plank / Metal Board", "2.0 m x 320 x 50 mm", "Perforated", 10.8, 970),
+    ("SCF-STD-054", "Steel Plank / Metal Board", "1.5 m x 320 x 50 mm", "Perforated", 8.4, 760),
+    ("SCF-STD-061", "Toe Board", "3.0 m", "MS", 6.5, 590),
+    ("SCF-STD-062", "Scaffold Ladder", "6.0 m", "MS", 18.5, 1670),
+    ("SCF-STD-063", "Ladder Beam", "6.0 m", "48.3mm chords", 34.0, 3060),
+    ("SCF-STD-064", "Intermediate Transom", "1.3 m", "Cuplock", 7.2, 650),
+    ("SCF-STD-065", "Castor Wheel with Brake", "6 inch", "For mobile towers", 4.5, 520),
+]
+
+
+@router.get("/scaffolding/standard-catalog.csv")
+async def standard_catalog_csv(user: dict = Depends(require_permission("scaffolding", "read"))):
+    """Ready-to-import CSV of standard scaffolding components with industry weights + indicative rates."""
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(TEMPLATE_HEADERS)
+    for code, name, size, spec, wt, rate in STANDARD_CATALOG:
+        w.writerow([code, name, size, spec, "Nos", rate, 0, wt, "", ""])
+    return Response(content=buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="standard_scaffolding_catalog.csv"'})
+
 
 @router.get("/scaffolding/import-template")
 async def import_template(user: dict = Depends(require_permission("scaffolding", "read"))):
@@ -742,7 +798,7 @@ async def import_csv(request: Request, file: UploadFile = File(...),
                 if not loc:
                     raise ValueError(f"unknown location '{row.get('location')}'")
             item = await db.inventory.find_one({"code": code}, {"_id": 0}) if code else None
-            if not item and name:
+            if not item and not code and name:
                 item = await db.inventory.find_one({"name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}}, {"_id": 0})
             patch: Dict[str, Any] = {}
             for f, cast in (("size", str), ("spec", str), ("unit", str),

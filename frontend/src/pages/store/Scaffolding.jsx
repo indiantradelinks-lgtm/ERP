@@ -465,6 +465,14 @@ function BulkImportDialog({ open, onClose, onChanged }) {
     } catch { toast.error("Template download failed"); }
   };
 
+  const downloadStandard = async () => {
+    try {
+      const { data } = await api.get("/scaffolding/standard-catalog.csv", { responseType: "blob" });
+      const url = URL.createObjectURL(data); const a = document.createElement("a");
+      a.href = url; a.download = "standard_scaffolding_catalog.csv"; a.click(); URL.revokeObjectURL(url);
+    } catch { toast.error("Catalog download failed"); }
+  };
+
   const upload = async () => {
     const f = fileRef.current?.files?.[0];
     if (!f) { toast.error("Choose a CSV file"); return; }
@@ -493,6 +501,13 @@ function BulkImportDialog({ open, onClose, onChanged }) {
           <Button variant="outline" className="rounded-sm w-full" onClick={downloadTemplate} data-testid="scaf-template-btn">
             <Download className="h-4 w-4 mr-1.5" /> Download CSV Template
           </Button>
+          <Button variant="outline" className="rounded-sm w-full" onClick={downloadStandard} data-testid="scaf-standard-catalog-btn">
+            <Download className="h-4 w-4 mr-1.5" /> Standard Scaffolding Catalog (weights &amp; rates pre-filled)
+          </Button>
+          <p className="text-[11px] text-muted-foreground -mt-1">
+            40 standard cuplock &amp; tube-fitting components with industry unit weights (kg) and indicative rates —
+            edit rates/codes to match your purchase records, then import.
+          </p>
           <div>
             <Label className="text-[10px] uppercase tracking-wider">CSV File</Label>
             <Input ref={fileRef} type="file" accept=".csv" className="h-9 rounded-sm mt-1" data-testid="scaf-import-file" />
