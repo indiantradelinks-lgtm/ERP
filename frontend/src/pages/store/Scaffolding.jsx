@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { TransfersTab, ChallansTab } from "./ScaffoldingMovements";
+import ScaffoldingLedger from "./ScaffoldingLedger";
 
 export const SCAF_APPROVE_ROLES = new Set(["super_admin", "store_manager", "inventory_manager", "dept_head", "general_manager", "director"]);
 const fmtW = (kg) => Number(kg || 0).toLocaleString("en-IN", { maximumFractionDigits: 1 });
@@ -112,6 +113,7 @@ export default function Scaffolding() {
           <TabsTrigger value="stock" className="rounded-sm" data-testid="scaf-tab-stock">Stock Matrix</TabsTrigger>
           <TabsTrigger value="transfers" className="rounded-sm" data-testid="scaf-tab-transfers">Transfers</TabsTrigger>
           <TabsTrigger value="challans" className="rounded-sm" data-testid="scaf-tab-challans">Delivery Challans</TabsTrigger>
+          <TabsTrigger value="ledger" className="rounded-sm" data-testid="scaf-tab-ledger">In/Out Ledger</TabsTrigger>
           <TabsTrigger value="items" className="rounded-sm" data-testid="scaf-tab-items">Item Catalog</TabsTrigger>
         </TabsList>
         <TabsContent value="stock" className="mt-4">
@@ -123,7 +125,10 @@ export default function Scaffolding() {
             onChanged={reload} stockMap={stockMap} prefill={transferPrefill} onPrefillConsumed={() => setTransferPrefill(null)} />
         </TabsContent>
         <TabsContent value="challans" className="mt-4">
-          <ChallansTab bump={bump} canWrite={canWrite} onChanged={reload} />
+          <ChallansTab bump={bump} canWrite={canWrite} onChanged={reload} locations={locations} />
+        </TabsContent>
+        <TabsContent value="ledger" className="mt-4">
+          <ScaffoldingLedger bump={bump} locations={locations} items={items} />
         </TabsContent>
         <TabsContent value="items" className="mt-4">
           <ItemsTab items={items} canWrite={canWrite} isSuperAdmin={user?.role === "super_admin"} onChanged={reload} />

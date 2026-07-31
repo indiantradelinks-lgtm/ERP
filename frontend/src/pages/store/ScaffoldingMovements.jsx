@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Plus, Truck, CheckCircle2, XCircle, FileText, PackageCheck, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -212,44 +213,93 @@ export function TransfersTab({ bump, locations, items, canWrite, canApprove, onC
         </DialogContent>
       </Dialog>
 
-      <ChallanCreateDialog transfer={challanFor} onClose={() => setChallanFor(null)} onChanged={onChanged} />
+      <ChallanCreateDialog transfer={challanFor} items={items} onClose={() => setChallanFor(null)} onChanged={onChanged} />
     </div>
   );
 }
 
-function ChallanCreateDialog({ transfer, onClose, onChanged }) {
-  const [form, setForm] = useState({ vehicle_no: "", driver_name: "", driver_phone: "", transporter: "", eway_bill_no: "", remarks: "" });
+function ChallanCreateDialog({ transfer, items = [], onClose, onChanged }) {
+  const [form, setForm] = useState({ vehicle_no: "", driver_name: "", driver_phone: "", transporter: "", eway_bill_no: "", remarks: "",
+    customer_wo_no: "", purpose: "returnable_service", origin_address: "", origin_gstin: "", destination_address: "", destination_gstin: "" });
   const [qty, setQty] = useState({});
+  const [rates, setRates] = useState({});
+
+  const itemMap = {};
+  items.forEach((i) => { itemMap[i.id] = i; });
 
   useEffect(() => {
     if (!transfer) return;
-    const q = {};
-    (transfer.lines || []).forEach((l) => { q[l.item_id] = Math.max(0, Number(l.quantity) - Number(l.dispatched || 0)); });
-    setQty(q);
-    setForm({ vehicle_no: "", driver_name: "", driver_phone: "", transporter: "", eway_bill_no: "", remarks: "" });
-  }, [transfer]);
+    const q = {}; const r = {};
+    (transfer.lines || []).forEach((l) => {
+      q[l.item_id] = Math.max(0, Number(l.quantity) - Number(l.dispatched || 0));
+      r[l.item_id] = itemMap[l.item_id]?.rate ?? "";
+    });
+    setQty(q); setRates(r);
+    setForm({ vehicle_no: "", driver_name: "", driver_phone: "", transporter: "", eway_bill_no: "", remarks: "",
+      customer_wo_no: "", purpose: "returnable_service", origin_address: "", origin_gstin: "", destination_address: "", destination_gstin: "" });
+    Promise.all([
+      api.get(`/scaffolding/location-details/${transfer.from_location_id}`),
+      api.get(`/scaffolding/location-details/${transfer.to_location_id}`),
+    ]).then(([o, d]) => setForm((f) => ({ ...f,
+      origin_address: o.data.address || "", origin_gstin: o.data.gstin || "",
+      destination_address: d.data.address || "", destination_gstin: d.data.gstin || "" }))).catch(() => {});
+  }, [transfer]); // eslint-disable-line
+
+  const totals = (transfer?.lines || []).reduce((acc, l) => {
+    const q = Number(qty[l.item_id]) || 0;
+    if (q <= 0) return acc;
+    const w = Number(itemMap[l.item_id]?.unit_weight_kg || 0);
+    const r = Number(rates[l.item_id]) || 0;
+    return { qty: acc.qty + q, wkg: acc.wkg + q * w, val: acc.val + q * r };
+  }, { qty: 0, wkg: 0, val: 0 });
 
   const create = async () => {
     if (!form.vehicle_no.trim()) { toast.error("Vehicle number required"); return; }
-    const lines = Object.entries(qty).filter(([, v]) => Number(v) > 0).map(([item_id, quantity]) => ({ item_id, quantity: Number(quantity) }));
+    const lines = Object.entries(qty).filter(([, v]) => Number(v) > 0)
+      .map(([item_id, quantity]) => ({ item_id, quantity: Number(quantity),
+        unit_rate: rates[item_id] === "" || rates[item_id] === undefined ? null : Number(rates[item_id]) }));
     if (!lines.length) { toast.error("Enter quantity for at least one item"); return; }
     try {
       const r = await api.post(`/scaffolding/transfers/${transfer.id}/challans`, { ...form, lines });
-      toast.success(`Challan ${r.data.challan_no} dispatched — stock deducted from ${transfer.from_location}`);
+      toast.success(`Challan ${r.data.challan_no} dispatched — ${r.data.total_qty} pcs · ${r.data.total_weight_kg} kg`);
       onClose(); onChanged();
     } catch (e) { toast.error(e?.response?.data?.detail || "Failed"); }
   };
 
   return (
     <Dialog open={!!transfer} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-xl rounded-sm max-h-[88vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl rounded-sm max-h-[88vh] overflow-y-auto">
         {transfer && (
           <>
             <DialogHeader>
               <DialogTitle className="font-display">Delivery Challan — {transfer.transfer_no}</DialogTitle>
-              <DialogDescription>{transfer.from_location} → {transfer.to_location}. Each challan = one vehicle trip; dispatch deducts source stock.</DialogDescription>
+              <DialogDescription>{transfer.from_location} → {transfer.to_location}. Each challan = one vehicle trip; dispatch deducts source stock. 3 copies printable.</DialogDescription>
             </DialogHeader>
             <div className="grid grid-cols-2 gap-3">
+              <div className="border border-border rounded-sm p-2 space-y-1.5">
+                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Consignor (Origin)</div>
+                <Textarea value={form.origin_address} onChange={(e) => setForm({ ...form, origin_address: e.target.value })}
+                  placeholder="Origin full address" className="rounded-sm min-h-[48px] text-xs" data-testid="scaf-challan-origin-addr" />
+                <Input value={form.origin_gstin} onChange={(e) => setForm({ ...form, origin_gstin: e.target.value })}
+                  placeholder="Origin GSTIN" className="h-8 rounded-sm text-xs" data-testid="scaf-challan-origin-gstin" />
+              </div>
+              <div className="border border-border rounded-sm p-2 space-y-1.5">
+                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Consignee (Destination)</div>
+                <Textarea value={form.destination_address} onChange={(e) => setForm({ ...form, destination_address: e.target.value })}
+                  placeholder="Destination full address" className="rounded-sm min-h-[48px] text-xs" data-testid="scaf-challan-dest-addr" />
+                <Input value={form.destination_gstin} onChange={(e) => setForm({ ...form, destination_gstin: e.target.value })}
+                  placeholder="Destination GSTIN" className="h-8 rounded-sm text-xs" data-testid="scaf-challan-dest-gstin" />
+              </div>
+              <div>
+                <Label className="text-[10px] uppercase tracking-wider">Purpose *</Label>
+                <select value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })}
+                  className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="scaf-challan-purpose">
+                  <option value="returnable_service">Not for Sale — to render services, on returnable basis</option>
+                  <option value="sale">For Sale</option>
+                </select>
+              </div>
+              <div><Label className="text-[10px] uppercase tracking-wider">Customer Work Order No</Label>
+                <Input value={form.customer_wo_no} onChange={(e) => setForm({ ...form, customer_wo_no: e.target.value })} placeholder="WO/2026/…" className="h-9 rounded-sm mt-1" data-testid="scaf-challan-wo" /></div>
               <div><Label className="text-[10px] uppercase tracking-wider">Vehicle No *</Label>
                 <Input value={form.vehicle_no} onChange={(e) => setForm({ ...form, vehicle_no: e.target.value })} placeholder="MH-04-AB-1234" className="h-9 rounded-sm mt-1" data-testid="scaf-challan-vehicle" /></div>
               <div><Label className="text-[10px] uppercase tracking-wider">Transporter</Label>
@@ -259,24 +309,43 @@ function ChallanCreateDialog({ transfer, onClose, onChanged }) {
               <div><Label className="text-[10px] uppercase tracking-wider">Driver Phone</Label>
                 <Input value={form.driver_phone} onChange={(e) => setForm({ ...form, driver_phone: e.target.value })} className="h-9 rounded-sm mt-1" /></div>
               <div><Label className="text-[10px] uppercase tracking-wider">E-Way Bill No</Label>
-                <Input value={form.eway_bill_no} onChange={(e) => setForm({ ...form, eway_bill_no: e.target.value })} className="h-9 rounded-sm mt-1" /></div>
+                <Input value={form.eway_bill_no} onChange={(e) => setForm({ ...form, eway_bill_no: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="scaf-challan-eway" /></div>
               <div><Label className="text-[10px] uppercase tracking-wider">Remarks</Label>
                 <Input value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} className="h-9 rounded-sm mt-1" /></div>
               <div className="col-span-2 border border-border rounded-sm">
                 <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary p-2 border-b border-border">Load on this vehicle</div>
                 <div className="p-2 space-y-1.5">
+                  <div className="grid grid-cols-12 gap-1.5 text-[9px] uppercase tracking-wider text-muted-foreground">
+                    <div className="col-span-5">Item</div><div className="col-span-2 text-right">Qty</div>
+                    <div className="col-span-2 text-right">Unit Price ₹</div><div className="col-span-3 text-right">Wt (kg) / Value</div>
+                  </div>
                   {(transfer.lines || []).map((l) => {
                     const remaining = Math.max(0, Number(l.quantity) - Number(l.dispatched || 0));
+                    const q = Number(qty[l.item_id]) || 0;
+                    const w = Number(itemMap[l.item_id]?.unit_weight_kg || 0);
+                    const r = Number(rates[l.item_id]) || 0;
                     return (
                       <div key={l.item_id} className="grid grid-cols-12 gap-1.5 items-center">
-                        <div className="col-span-7 text-xs">{l.item_name} <span className="text-muted-foreground">(remaining {remaining} {l.unit})</span></div>
+                        <div className="col-span-5 text-xs">{l.item_name} <span className="text-muted-foreground">(rem {remaining} {l.unit}{w ? ` · ${w} kg/u` : ""})</span></div>
                         <Input type="number" value={qty[l.item_id] ?? ""} max={remaining} min={0}
                           onChange={(e) => setQty({ ...qty, [l.item_id]: e.target.value })}
-                          className="h-8 rounded-sm col-span-5 text-xs tabular" disabled={remaining <= 0}
+                          className="h-8 rounded-sm col-span-2 text-xs tabular" disabled={remaining <= 0}
                           data-testid={`scaf-challan-qty-${l.item_id}`} />
+                        <Input type="number" value={rates[l.item_id] ?? ""} min={0}
+                          onChange={(e) => setRates({ ...rates, [l.item_id]: e.target.value })}
+                          className="h-8 rounded-sm col-span-2 text-xs tabular" placeholder="Rate"
+                          data-testid={`scaf-challan-rate-${l.item_id}`} />
+                        <div className="col-span-3 text-right text-[11px] font-mono-data tabular">
+                          {q > 0 ? `${(q * w).toFixed(1)} kg · ₹${(q * r).toLocaleString("en-IN")}` : "—"}
+                        </div>
                       </div>
                     );
                   })}
+                  <div className="flex justify-end gap-4 text-xs font-bold border-t border-border pt-1.5" data-testid="scaf-challan-totals">
+                    <span>Total Qty: <span className="font-mono-data tabular">{totals.qty}</span></span>
+                    <span>Total Wt: <span className="font-mono-data tabular">{totals.wkg.toFixed(1)} kg ({(totals.wkg / 1000).toFixed(3)} MT)</span></span>
+                    <span>Total Value: <span className="font-mono-data tabular">₹ {totals.val.toLocaleString("en-IN")}</span></span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -291,16 +360,19 @@ function ChallanCreateDialog({ transfer, onClose, onChanged }) {
   );
 }
 
-export function ChallansTab({ bump, canWrite, onChanged }) {
+export function ChallansTab({ bump, canWrite, onChanged, locations = [] }) {
   const [rows, setRows] = useState([]);
   const [statusFilter, setStatusFilter] = useState("");
+  const [locFilter, setLocFilter] = useState("");
   const [receiving, setReceiving] = useState(null);
   const [receiverName, setReceiverName] = useState("");
 
   useEffect(() => {
-    const params = statusFilter ? { status: statusFilter } : {};
+    const params = {};
+    if (statusFilter) params.status = statusFilter;
+    if (locFilter) params.location_id = locFilter;
     api.get("/scaffolding/challans", { params }).then((r) => setRows(r.data || [])).catch(() => {});
-  }, [bump, statusFilter]);
+  }, [bump, statusFilter, locFilter]);
 
   const openPdf = async (c) => {
     try {
@@ -321,12 +393,18 @@ export function ChallansTab({ bump, canWrite, onChanged }) {
 
   return (
     <div className="bg-card border border-border rounded-sm">
-      <div className="flex items-center justify-between p-3 border-b border-border">
+      <div className="flex items-center gap-2 p-3 border-b border-border flex-wrap">
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
           className="h-8 rounded-sm border border-input bg-background px-2 text-xs" data-testid="scaf-challan-filter">
           <option value="">All statuses</option>
           <option value="dispatched">In Transit</option>
           <option value="received">Received</option>
+        </select>
+        <select value={locFilter} onChange={(e) => setLocFilter(e.target.value)}
+          className="h-8 rounded-sm border border-input bg-background px-2 text-xs" data-testid="scaf-challan-loc-filter">
+          <option value="">All projects / locations</option>
+          {locations.filter((l) => l.type === "project").map((l) => <option key={l.id} value={l.id}>🏗 {l.name}</option>)}
+          {locations.filter((l) => l.type === "store").map((l) => <option key={l.id} value={l.id}>🏬 {l.name}</option>)}
         </select>
       </div>
       <Table>
@@ -346,6 +424,7 @@ export function ChallansTab({ bump, canWrite, onChanged }) {
             <TableRow key={c.id} data-testid={`scaf-challan-row-${c.id}`}>
               <TableCell>
                 <div className="font-mono-data text-xs font-bold">{c.challan_no}</div>
+                {c.in_challan_no && <div className="text-[10px] font-mono-data text-emerald-700">IN: {c.in_challan_no}</div>}
                 <div className="text-[10px] text-muted-foreground">{(c.dispatched_at || "").slice(0, 10)} · vs {c.transfer_no}</div>
               </TableCell>
               <TableCell className="text-xs">
@@ -358,6 +437,11 @@ export function ChallansTab({ bump, canWrite, onChanged }) {
               </TableCell>
               <TableCell className="text-[11px]">
                 {(c.lines || []).map((l) => <div key={l.item_id} className="whitespace-nowrap">{l.item_name} <span className="font-mono-data tabular">×{l.quantity}</span></div>)}
+                {(c.total_weight_kg || c.total_value) ? (
+                  <div className="text-[10px] text-muted-foreground font-mono-data mt-0.5">
+                    {c.total_qty} pcs{c.total_weight_kg ? ` · ${c.total_weight_kg} kg` : ""}{c.total_value ? ` · ₹${Number(c.total_value).toLocaleString("en-IN")}` : ""}
+                  </div>
+                ) : null}
               </TableCell>
               <TableCell>
                 <StatusBadge map={C_STATUS} value={c.status} />

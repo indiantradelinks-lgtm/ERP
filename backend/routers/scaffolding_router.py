@@ -73,6 +73,31 @@ async def _loc(location_id: str) -> Optional[Dict[str, Any]]:
     return next((l for l in await _locations() if l["id"] == location_id), None)
 
 
+async def _company() -> Dict[str, Any]:
+    return await db.settings.find_one({"_id": "company"}) or await db.settings.find_one({"id": "company"}) or {}
+
+
+async def _location_details(location_id: str) -> Dict[str, Any]:
+    comp = await _company()
+    base = {"company": comp.get("name") or "INDIAN TRADE LINKS", "gstin": comp.get("gstin") or "",
+            "address": ", ".join(x for x in [comp.get("address"), comp.get("city"), comp.get("state"), comp.get("pincode")] if x)}
+    store = await db.inv_stores.find_one({"id": location_id}, {"_id": 0})
+    if store:
+        return {**base, "id": location_id, "name": store["name"], "type": "store",
+                "address": store.get("address") or base["address"]}
+    proj = await db.projects.find_one({"id": location_id}, {"_id": 0})
+    if proj:
+        return {**base, "id": location_id, "name": f"{proj.get('code')} · {proj.get('name')}", "type": "project",
+                "address": proj.get("site") or base["address"], "client": proj.get("client")}
+    return {**base, "id": location_id, "name": "", "type": "unknown"}
+
+
+@router.get("/scaffolding/location-details/{location_id}")
+async def location_details(location_id: str,
+                           user: dict = Depends(require_permission("scaffolding", "read"))):
+    return await _location_details(location_id)
+
+
 # ─── Items & stock ───────────────────────────────────────────────────────
 class ItemIn(BaseModel):
     name: str
@@ -369,13 +394,25 @@ async def reject_transfer(tid: str, p: ActionIn, request: Request,
 
 
 # ─── Challans (one or many per approved transfer) ────────────────────────
+class CLine(BaseModel):
+    item_id: str
+    quantity: float
+    unit_rate: Optional[float] = None
+
+
 class ChallanIn(BaseModel):
     vehicle_no: str
     driver_name: Optional[str] = None
     driver_phone: Optional[str] = None
     transporter: Optional[str] = None
     eway_bill_no: Optional[str] = None
-    lines: List[TLine]
+    customer_wo_no: Optional[str] = None
+    purpose: str = "returnable_service"   # returnable_service | sale
+    origin_address: Optional[str] = None
+    origin_gstin: Optional[str] = None
+    destination_address: Optional[str] = None
+    destination_gstin: Optional[str] = None
+    lines: List[CLine]
     remarks: Optional[str] = None
 
 
@@ -404,20 +441,36 @@ async def create_challan(tid: str, p: ChallanIn, request: Request,
         srow = await db.scaf_stock.find_one({"item_id": l.item_id, "location_id": src["id"]}, {"_id": 0, "quantity": 1})
         if l.quantity > float((srow or {}).get("quantity") or 0):
             raise HTTPException(400, f"Insufficient stock of {tl['item_name']} at {src['name']}")
+        unit_wt = float(item.get("unit_weight_kg") or 0)
+        unit_rate = float(l.unit_rate if l.unit_rate is not None else (item.get("rate") or 0))
         ch_lines.append({"item_id": l.item_id, "item_code": item.get("code"), "item_name": item["name"],
-                         "unit": item.get("unit") or item.get("uom") or "Nos", "quantity": l.quantity})
+                         "unit": item.get("unit") or item.get("uom") or "Nos", "quantity": l.quantity,
+                         "unit_weight_kg": unit_wt, "line_weight_kg": round(l.quantity * unit_wt, 2),
+                         "unit_rate": unit_rate, "line_value": round(l.quantity * unit_rate, 2)})
     # deduct source stock
     for l in ch_lines:
         item = await db.inventory.find_one({"id": l["item_id"]}, {"_id": 0})
         await _adjust(item, src, -l["quantity"])
         tmap[l["item_id"]]["dispatched"] = round(float(tmap[l["item_id"]].get("dispatched") or 0) + l["quantity"], 3)
+    origin = await _location_details(tr["from_location_id"])
+    dest = await _location_details(tr["to_location_id"])
     ch = {"id": new_id(), "challan_no": await next_sequence("DC"),
           "transfer_id": tid, "transfer_no": tr["transfer_no"],
           "from_location_id": tr["from_location_id"], "from_location": tr["from_location"],
           "to_location_id": tr["to_location_id"], "to_location": tr["to_location"],
+          "origin_address": p.origin_address or origin.get("address"),
+          "origin_gstin": p.origin_gstin or origin.get("gstin"),
+          "destination_address": p.destination_address or dest.get("address"),
+          "destination_gstin": p.destination_gstin or dest.get("gstin"),
+          "customer_wo_no": p.customer_wo_no,
+          "purpose": p.purpose if p.purpose in ("sale", "returnable_service") else "returnable_service",
           "vehicle_no": p.vehicle_no, "driver_name": p.driver_name, "driver_phone": p.driver_phone,
           "transporter": p.transporter, "eway_bill_no": p.eway_bill_no,
           "lines": ch_lines, "remarks": p.remarks, "status": "dispatched",
+          "total_qty": round(sum(l["quantity"] for l in ch_lines), 3),
+          "total_weight_kg": round(sum(l["line_weight_kg"] for l in ch_lines), 2),
+          "total_value": round(sum(l["line_value"] for l in ch_lines), 2),
+          "in_challan_no": None,
           "dispatched_at": now_iso(), "dispatched_by": user.get("name") or user.get("email"),
           "received_at": None, "received_by": None, "receiver_name": None,
           "created_at": now_iso()}
@@ -463,8 +516,9 @@ async def receive_challan(cid: str, p: ReceiveIn, request: Request,
     for l in ch["lines"]:
         item = await db.inventory.find_one({"id": l["item_id"]}, {"_id": 0})
         await _adjust(item, dst, float(l["quantity"]))
+    in_no = await next_sequence("IC")
     await db.scaf_challans.update_one({"id": cid}, {"$set": {
-        "status": "received", "received_at": now_iso(),
+        "status": "received", "received_at": now_iso(), "in_challan_no": in_no,
         "received_by": user.get("name") or user.get("email"),
         "receiver_name": p.receiver_name, "received_remarks": p.remarks}})
     tr = await db.scaf_transfers.find_one({"id": ch["transfer_id"]}, {"_id": 0})
@@ -480,34 +534,146 @@ async def receive_challan(cid: str, p: ReceiveIn, request: Request,
     return await db.scaf_challans.find_one({"id": cid}, {"_id": 0})
 
 
+@router.get("/scaffolding/location-statement")
+async def location_statement(location_id: str,
+                             user: dict = Depends(require_permission("scaffolding", "read"))):
+    """Per-item material summary at a location, derived from challans (In/Out) + live stock."""
+    loc = await _loc(location_id)
+    if not loc:
+        raise HTTPException(400, "Invalid location")
+    items: Dict[str, Dict[str, Any]] = {}
+
+    def bucket(l: dict) -> Dict[str, Any]:
+        return items.setdefault(l["item_id"], {
+            "item_id": l["item_id"], "item_code": l.get("item_code"), "item_name": l["item_name"],
+            "unit": l.get("unit"), "unit_weight_kg": float(l.get("unit_weight_kg") or 0),
+            "in_qty": 0, "out_qty": 0, "in_challans": 0, "out_challans": 0, "current_stock": 0})
+
+    async for ch in db.scaf_challans.find(
+            {"$or": [{"from_location_id": location_id}, {"to_location_id": location_id}]}, {"_id": 0}):
+        is_out = ch["from_location_id"] == location_id
+        is_in = ch["to_location_id"] == location_id and ch["status"] == "received"
+        for l in ch["lines"]:
+            b = bucket(l)
+            if is_out:
+                b["out_qty"] = round(b["out_qty"] + float(l["quantity"]), 3)
+                b["out_challans"] += 1
+            if is_in:
+                b["in_qty"] = round(b["in_qty"] + float(l["quantity"]), 3)
+                b["in_challans"] += 1
+    async for s in db.scaf_stock.find({"location_id": location_id}, {"_id": 0}):
+        b = bucket({"item_id": s["item_id"], "item_code": s.get("item_code"), "item_name": s["item_name"],
+                    "unit": s.get("unit"), "unit_weight_kg": 0})
+        b["current_stock"] = float(s.get("quantity") or 0)
+    weights = {i["id"]: float(i.get("unit_weight_kg") or 0)
+               async for i in db.inventory.find({"id": {"$in": list(items.keys())}}, {"_id": 0, "id": 1, "unit_weight_kg": 1})}
+    out = sorted(items.values(), key=lambda x: x["item_name"] or "")
+    for b in out:
+        b["unit_weight_kg"] = weights.get(b["item_id"], b["unit_weight_kg"])
+        b["stock_weight_kg"] = round(b["current_stock"] * b["unit_weight_kg"], 2)
+    return {"location": loc, "items": out,
+            "totals": {"in_qty": round(sum(b["in_qty"] for b in out), 3),
+                       "out_qty": round(sum(b["out_qty"] for b in out), 3),
+                       "current_stock": round(sum(b["current_stock"] for b in out), 3),
+                       "stock_weight_kg": round(sum(b["stock_weight_kg"] for b in out), 2)}}
+
+
+@router.get("/scaffolding/item-ledger")
+async def item_ledger(item_id: str, location_id: Optional[str] = None,
+                      user: dict = Depends(require_permission("scaffolding", "read"))):
+    """Challan-wise In / Out movement history for one item (component)."""
+    item = await db.inventory.find_one({"id": item_id}, {"_id": 0})
+    if not item:
+        raise HTTPException(404, "Item not found")
+    q: Dict[str, Any] = {"lines.item_id": item_id}
+    if location_id:
+        q["$or"] = [{"from_location_id": location_id}, {"to_location_id": location_id}]
+    rows = []
+    async for ch in db.scaf_challans.find(q, {"_id": 0}).sort("dispatched_at", -1):
+        line = next((l for l in ch["lines"] if l["item_id"] == item_id), None)
+        if not line:
+            continue
+        direction = None
+        if location_id:
+            direction = "out" if ch["from_location_id"] == location_id else ("in" if ch["status"] == "received" else "in_transit")
+        rows.append({
+            "date": (ch.get("dispatched_at") or "")[:10], "challan_no": ch["challan_no"],
+            "in_challan_no": ch.get("in_challan_no"), "transfer_no": ch.get("transfer_no"),
+            "from_location": ch["from_location"], "to_location": ch["to_location"],
+            "quantity": line["quantity"], "unit": line.get("unit"), "status": ch["status"],
+            "direction": direction, "vehicle_no": ch.get("vehicle_no"),
+            "received_at": (ch.get("received_at") or "")[:10] or None})
+    total_moved = round(sum(float(r["quantity"]) for r in rows), 3)
+    return {"item": {"id": item["id"], "code": item.get("code"), "name": item["name"],
+                     "unit": item.get("unit") or item.get("uom")},
+            "rows": rows, "total_moved": total_moved}
+
+
 @router.get("/scaffolding/challans/{cid}/pdf")
 async def challan_pdf(cid: str, user: dict = Depends(require_permission("scaffolding", "read"))):
     ch = await db.scaf_challans.find_one({"id": cid}, {"_id": 0})
     if not ch:
         raise HTTPException(404, "Not found")
+    comp = await _company()
+    purpose_txt = ("FOR SALE" if ch.get("purpose") == "sale"
+                   else "NOT FOR SALE — Issued to render services, on returnable basis")
+    inr = lambda v: f"₹ {float(v or 0):,.2f}"
     rows = "".join(
         f"<tr><td>{i+1}</td><td>{_esc(l['item_name'])}</td><td>{_esc(l.get('item_code'))}</td>"
-        f"<td style='text-align:right'>{l['quantity']}</td><td>{_esc(l.get('unit'))}</td></tr>"
+        f"<td style='text-align:right'>{l['quantity']}</td><td>{_esc(l.get('unit'))}</td>"
+        f"<td style='text-align:right'>{l.get('unit_weight_kg') or '—'}</td>"
+        f"<td style='text-align:right'>{l.get('line_weight_kg') or '—'}</td>"
+        f"<td style='text-align:right'>{inr(l.get('unit_rate'))}</td>"
+        f"<td style='text-align:right'>{inr(l.get('line_value'))}</td></tr>"
         for i, l in enumerate(ch["lines"]))
-    body = f"""
+    totals_row = (f"<tr style='font-weight:bold;background:#f1f5f9'><td colspan='3'>TOTAL</td>"
+                  f"<td style='text-align:right'>{ch.get('total_qty') or sum(l['quantity'] for l in ch['lines'])}</td><td></td><td></td>"
+                  f"<td style='text-align:right'>{ch.get('total_weight_kg') or '—'} kg</td><td></td>"
+                  f"<td style='text-align:right'>{inr(ch.get('total_value'))}</td></tr>")
+
+    def copy_html(label: str, last: bool) -> str:
+        return f"""
+    <div style="{'page-break-after:always;' if not last else ''}">
     <table class="kv"><tr>
-      <td><b>Challan No:</b> {_esc(ch['challan_no'])}</td><td><b>Date:</b> {_esc((ch.get('dispatched_at') or '')[:10])}</td>
-      <td><b>Against Transfer:</b> {_esc(ch['transfer_no'])}</td></tr><tr>
-      <td><b>From:</b> {_esc(ch['from_location'])}</td><td colspan="2"><b>To:</b> {_esc(ch['to_location'])}</td></tr><tr>
-      <td><b>Vehicle:</b> {_esc(ch.get('vehicle_no'))}</td><td><b>Driver:</b> {_esc(ch.get('driver_name'))} {_esc(ch.get('driver_phone') or '')}</td>
-      <td><b>Transporter:</b> {_esc(ch.get('transporter') or '—')} {('· E-Way: ' + _esc(ch['eway_bill_no'])) if ch.get('eway_bill_no') else ''}</td>
+      <td colspan="2" style="text-align:center;font-weight:bold;background:#f1f5f9">
+        DELIVERY CHALLAN — {_esc(ch['challan_no'])} &nbsp;·&nbsp; <span style="color:#1d4ed8">{label}</span></td></tr><tr>
+      <td style="width:50%;vertical-align:top"><b>CONSIGNOR (Origin)</b><br/>
+        {_esc(comp.get('name') or 'INDIAN TRADE LINKS')} — {_esc(ch['from_location'])}<br/>
+        {_esc(ch.get('origin_address') or '—')}<br/>
+        <b>GSTIN:</b> {_esc(ch.get('origin_gstin') or '—')}</td>
+      <td style="width:50%;vertical-align:top"><b>CONSIGNEE (Destination)</b><br/>
+        {_esc(comp.get('name') or 'INDIAN TRADE LINKS')} — {_esc(ch['to_location'])}<br/>
+        {_esc(ch.get('destination_address') or '—')}<br/>
+        <b>GSTIN:</b> {_esc(ch.get('destination_gstin') or '—')}</td>
     </tr></table>
-    <table><thead><tr><th>#</th><th>Material Description</th><th>Code</th><th>Qty</th><th>Unit</th></tr></thead>
-    <tbody>{rows}</tbody></table>
-    <p><b>Remarks:</b> {_esc(ch.get('remarks') or '—')}</p>
-    <br/><br/>
+    <table class="kv"><tr>
+      <td><b>Out Challan No:</b> {_esc(ch['challan_no'])}</td>
+      <td><b>In Challan No:</b> {_esc(ch.get('in_challan_no') or '—')}</td>
+      <td><b>Date:</b> {_esc((ch.get('dispatched_at') or '')[:10])}</td>
+      <td><b>Against Transfer:</b> {_esc(ch['transfer_no'])}</td></tr><tr>
+      <td><b>Vehicle:</b> {_esc(ch.get('vehicle_no'))}</td>
+      <td><b>Driver:</b> {_esc(ch.get('driver_name') or '—')} {_esc(ch.get('driver_phone') or '')}</td>
+      <td><b>Transporter:</b> {_esc(ch.get('transporter') or '—')}</td>
+      <td><b>E-Way Bill:</b> {_esc(ch.get('eway_bill_no') or '—')}</td></tr><tr>
+      <td colspan="2"><b>Customer Work Order:</b> {_esc(ch.get('customer_wo_no') or 'N/A')}</td>
+      <td colspan="2"><b>Purpose:</b> {_esc(purpose_txt)}</td>
+    </tr></table>
+    <table><thead><tr><th>#</th><th>Material Description</th><th>Code</th><th>Qty</th><th>Unit</th>
+      <th>Unit Wt (kg)</th><th>Total Wt (kg)</th><th>Unit Price</th><th>Value</th></tr></thead>
+    <tbody>{rows}{totals_row}</tbody></table>
+    <p style="font-size:10px"><b>Remarks:</b> {_esc(ch.get('remarks') or '—')} ·
+      <b>Declaration:</b> {_esc(purpose_txt)}. Value declared for transit/insurance purposes only{'' if ch.get('purpose') == 'sale' else ' — no supply/sale is involved'}.</p>
+    <br/>
     <table class="kv"><tr>
       <td style="text-align:center">______________________<br/>Dispatched By<br/>{_esc(ch.get('dispatched_by'))}</td>
       <td style="text-align:center">______________________<br/>Driver Signature</td>
       <td style="text-align:center">______________________<br/>Received By<br/>{_esc(ch.get('receiver_name') or '')}</td>
     </tr></table>
-    <p style="font-size:9px;color:#666">Status: {_esc(ch['status'].upper())} · This is a material movement challan, not an invoice.</p>
-    """
+    <p style="font-size:9px;color:#666">Status: {_esc(ch['status'].upper())} · This is a material movement challan{'' if ch.get('purpose') == 'sale' else ', not a tax invoice'}.</p>
+    </div>"""
+
+    copies = ["ORIGINAL FOR CONSIGNEE", "DUPLICATE FOR TRANSPORTER", "TRIPLICATE FOR CONSIGNOR"]
+    body = "".join(copy_html(label, i == len(copies) - 1) for i, label in enumerate(copies))
     pdf = _render(_wrap(f"DELIVERY CHALLAN — {ch['challan_no']}", body))
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{ch["challan_no"]}.pdf"'})

@@ -1,0 +1,37 @@
+{
+  "summary": "Iter 159 — Scaffolding challan enhancements. Backend: created /app/backend/tests/test_iter159_scaffolding_v3.py (16 tests, all PASS) covering location-details, extended challan create (WO/purpose/addresses/per-line rate+weight/totals), IC-series in_challan_no on receive, location-statement, item-ledger direction badges, and 3-copy PDF (verified via pypdf: 3 pages with ORIGINAL/DUPLICATE/TRIPLICATE labels + out+in challan numbers + WO + Unit Wt/Unit Price/TOTAL). Regression: iter156 23/23 PASS; iter158 10/11 PASS (1 known-noise failure — see below). Frontend UI (admin @ /app/scaffolding): Delivery Challans tab shows loc filter, IC-#### IN number and 'X pcs · Y kg · ₹Z' totals line on existing rows; In/Out Ledger tab loads statement for a project (8 rows, Totals 500/0/500/1710 kg) and Challan Ledger link expands per-item challan-wise rows with OUT/IN badges.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/scaffolding/import.csv (iter158 regression)", "issue": "test_import_csv_create_update_openingstock_and_error expects created>=2 but got 1. Cause: DB already contains 'TEST_Iter158 Imp New1' from prior iterations, so it becomes an update, not a create. Not caused by iter159. Cleanup or dedupe test seed."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter159_scaffolding_v3.py",
+    "/app/test_reports/pytest/iter159.xml",
+    "/app/test_reports/pytest/iter159_regression.xml"
+  ],
+  "action_items": [
+    "(Non-blocking) Clean up duplicate 'TEST_Iter158 Imp New1' items or make iter158 CSV import test create with a unique random suffix so re-runs are deterministic.",
+    "(Non-blocking) Historic challans created before iter159 have in_challan_no=null even after receive — noted expected in agent context; no backfill action needed unless product wants."
+  ],
+  "critical_code_review_comments": [
+    "scaffolding_router.location_statement: out_challans / in_challans counters increment per line rather than per challan, so if a single challan has N lines the counter advances by N. Cosmetic — labelling in FE says 'ch' but truly counts line occurrences. Consider tracking a set of challan ids to represent distinct challans.",
+    "challan_pdf uses lambda inr = lambda v: f\"₹ {float(v or 0):,.2f}\" declared inside route body — fine, just noting single-file 825-line router is nearing the 700-line 'split into modules' guideline; consider extracting pdf render and reports into scaffolding_pdf.py.",
+    "create_challan: item lookup issues an extra db.inventory.find_one inside the deduction loop after already fetching it. Minor perf/DRY — hoist item into ch_lines dict.",
+    "GET /scaffolding/location-details returns {..., type:'unknown'} with 200 for missing IDs. Consider 404 for stricter callers; current behaviour is fine for the auto-prefill flow."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter159_scaffolding_v3.py"],
+  "success_rate": {"backend": "100% (16/16 iter159 + 23/23 iter156 + 10/11 iter158 pre-existing noise)", "frontend": "100% smoke of listed data-testids"},
+  "test_credentials": "admin@erp.com / Admin@123",
+  "seed_data_creation": "Created TEST_Iter159 Cuplock item (17.1 kg, ₹500), opening 200 @ Main Store, transfer MTN + DC-2026-#### challans + IC-2026-#### receive. Best-effort cleanup at end of test file (items with remaining stock intentionally not deleted).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter159 backend pytest lives at /app/backend/tests/test_iter159_scaffolding_v3.py — reuse. PDF text-content assertions normalize whitespace via ''.join(text.split()) because pypdf wraps 'Unit Price'→'Unit\\nPrice' and 'WO/2026/TEST159'→'WO/\\n2026/TEST159'. New scaffolding items accumulate with each run because cleanup can't delete items with stock; the noise is benign.",
+  "rca of the issue": "N/A — all iter159 features verified green. iter158 single failure is test-data pollution unrelated to iter159."
+}
