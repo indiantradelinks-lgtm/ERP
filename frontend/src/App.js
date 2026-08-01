@@ -170,14 +170,10 @@ import ProjectAuditTrail from "@/pages/ops/ProjectAuditTrail";
 import ProjectSettings from "@/pages/ops/ProjectSettings";
 import ProjectDashboardPhase1 from "@/pages/ops/ProjectDashboard";
 import MyAssignedProjects from "@/pages/ops/MyAssignedProjects";
+import PlanningHub from "@/pages/ops/PlanningHub";
 import ProjectOpsDashboard from "@/pages/ops/ProjectOpsDashboard";
 import OpsReports from "@/pages/ops/OpsReports";
 import ActivityTimeline from "@/pages/ops/ActivityTimeline";
-import ProjectPlanning from "@/pages/ops/ProjectPlanning";
-import ProjectBOQ from "@/pages/ops/ProjectBOQ";
-import ProjectWBS from "@/pages/ops/ProjectWBS";
-import ProjectActivities from "@/pages/ops/ProjectActivities";
-import ProjectResources from "@/pages/ops/ProjectResources";
 import DailyProgressReports from "@/pages/ops/DailyProgressReports";
 import WorkProgressTracker from "@/pages/ops/WorkProgressTracker";
 import MeasurementSheets from "@/pages/ops/MeasurementSheets";
@@ -265,11 +261,12 @@ export default function App() {
             <Route path="/app/ops/project-dashboard" element={<ProtectedShell><ProjectOpsDashboard /></ProtectedShell>} />
             <Route path="/app/ops/reports" element={<ProtectedShell><OpsReports /></ProtectedShell>} />
             <Route path="/app/ops/timeline" element={<ProtectedShell><ActivityTimeline /></ProtectedShell>} />
-            <Route path="/app/ops/planning" element={<ProtectedShell><ProjectPlanning /></ProtectedShell>} />
-            <Route path="/app/ops/boq" element={<ProtectedShell><ProjectBOQ /></ProtectedShell>} />
-            <Route path="/app/ops/wbs" element={<ProtectedShell><ProjectWBS /></ProtectedShell>} />
-            <Route path="/app/ops/activities" element={<ProtectedShell><ProjectActivities /></ProtectedShell>} />
-            <Route path="/app/ops/resources" element={<ProtectedShell><ProjectResources /></ProtectedShell>} />
+            <Route path="/app/ops/planning-hub" element={<ProtectedShell><PlanningHub /></ProtectedShell>} />
+            <Route path="/app/ops/planning" element={<Navigate to="/app/ops/planning-hub?tab=premob" replace />} />
+            <Route path="/app/ops/boq" element={<Navigate to="/app/ops/planning-hub?tab=boq" replace />} />
+            <Route path="/app/ops/wbs" element={<Navigate to="/app/ops/planning-hub?tab=wbs" replace />} />
+            <Route path="/app/ops/activities" element={<Navigate to="/app/ops/planning-hub?tab=schedule" replace />} />
+            <Route path="/app/ops/resources" element={<Navigate to="/app/ops/planning-hub?tab=resources" replace />} />
             <Route path="/app/ops/dpr" element={<ProtectedShell><DailyProgressReports /></ProtectedShell>} />
             <Route path="/app/ops/work-progress" element={<ProtectedShell><WorkProgressTracker /></ProtectedShell>} />
             <Route path="/app/ops/measurements" element={<ProtectedShell><MeasurementSheets /></ProtectedShell>} />

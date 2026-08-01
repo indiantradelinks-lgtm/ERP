@@ -1,0 +1,31 @@
+{
+  "summary": "Frontend regression of unified Project Planning Hub. Login OK, /app/ops/planning-hub loads and all 6 tabs (BOQ, WBS, Activity Schedule, Resource Planning, Project Budget, Pre-Mobilization) render and are clickable without runtime errors. All old-route redirects (/app/ops/planning, /ops/boq, /ops/wbs, /ops/activities, /ops/resources) redirect correctly to planning-hub?tab=<key>. Regression pages (ProjectRequests, MyApprovalsCenter, Scaffolding) all load. However a leftover duplicate sidebar entry for 'Project Planning' was found (SAME testid, both labels 'Project Planning', one -> /app/ops/planning, other -> /app/ops/planning-hub), producing React duplicate-key warnings and a confusing UX.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Sidebar (menuConfig.js)", "issue": "Two 'Project Planning' entries visible in Operations sidebar (hrefs: /app/ops/planning and /app/ops/planning-hub). Both use identical testid 'nav-ops-planning' triggering React 'Encountered two children with the same key: nav-ops-planning' warning. The old /app/ops/planning link should be removed since it now merely redirects to planning-hub. This is the exact consolidation cleanup step that was missed.", "selector": "[data-testid='nav-ops-planning'] (2 matches)", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Planning Hub tabs (BOQ/WBS/Activities/Resources/Planning)", "issues": ["React hydration warning: '<span> cannot be a child of <option>' — appears on every planning tab. Root cause: visual-editor injects <span data-ve-dynamic> wrappers inside <option> elements in ProjectBOQ:214, ProjectWBS:95, ProjectActivities:96, ProjectResources:206, ProjectPlanning:153 (all project-select dropdowns). Not blocking functionality but pollutes console and is invalid HTML. Consider using non-native Select (Radix) or removing visual-editor instrumentation on <option> children."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "REMOVE duplicate sidebar entry in /app/frontend/src/config/menuConfig.js line 103: `{ department: 'ops', label: 'Project Planning', to: '/app/ops/planning', ... testid: 'nav-ops-planning' }` — keep only line 104 pointing to /app/ops/planning-hub. This fixes the duplicate sidebar link + duplicate React key warning in one step.",
+    "(Optional) Fix HTML hydration warning: <span> inside <option> in ProjectBOQ.jsx:214, ProjectWBS.jsx:95, ProjectActivities.jsx:96, ProjectResources.jsx:206, ProjectPlanning.jsx:153. Likely caused by visual-editor wrapping map()-rendered <option> content in a span. Non-blocking."
+  ],
+  "critical_code_review_comments": [
+    "menuConfig.js lines 103-104 register the SAME testid on two different routes — always violates React key-uniqueness and produces duplicate visible menu items.",
+    "PlanningHub.jsx passes perm-gating via can(t.perm,'read') but budget tab uses 'accounting' perm — verify that non-accounting roles still see reasonable UX (currently the tab just disappears, which is acceptable).",
+    "All 5 child components (ProjectBOQ, ProjectWBS, ProjectActivities, ProjectResources, ProjectPlanning) each independently fetch /projects on mount when hosted inside PlanningHub tabs; switching tabs triggers redundant network calls. Consider lifting the project selection state into PlanningHub."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "90%"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin) — verified working",
+  "seed_data_creation": "none",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "PlanningHub tabbed page works end-to-end; only remaining defect is the duplicate 'Project Planning' sidebar link (menuConfig.js line 103). After main agent removes it, retest: (1) sidebar shows only one 'Project Planning' entry pointing to /app/ops/planning-hub, (2) no more 'duplicate key nav-ops-planning' console warnings, (3) /app/ops/planning route still redirects to planning-hub?tab=premob (route defined in App.js:265 — should be preserved). Old individual planning submenus (BOQ/WBS/Activity Schedule/Resource Planning/Pre-Mobilization Checklist) are already removed from sidebar (verified 0 occurrences).",
+  "rca of the issue": "menuConfig.js was updated to add the new /app/ops/planning-hub entry (line 104) but the old /app/ops/planning entry (line 103) was not deleted. Both share testid 'nav-ops-planning' → React warns about duplicate keys and both entries render in the DOM producing a visible duplicate item in the sidebar. Fix: delete line 103. Reproduction: login as admin, expand Operations dept in sidebar, observe two identical 'Project Planning' items."
+}
