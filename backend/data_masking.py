@@ -33,6 +33,10 @@ SENSITIVE_FIELDS: dict[str, dict[str, str]] = {
     "payroll": {
         "bank_account": "mask", "bank_ifsc": "mask",
     },
+    "workers": {
+        "aadhaar": "mask", "pan": "mask",
+        "bank_account": "mask", "ifsc": "mask",
+    },
     "vendors": {
         "bank_account": "mask", "bank_ifsc": "mask", "bank_name": "mask",
         "pan": "mask",
@@ -59,6 +63,8 @@ def mask_for(doc: dict, resource: str, user: dict) -> dict:
     role = (user or {}).get("role")
     if role in PRIVILEGED_ROLES:
         return doc
+    if doc.get("email") and doc.get("email") == (user or {}).get("email"):
+        return doc  # self-view: users may see their own record
     rules = SENSITIVE_FIELDS.get(resource) or {}
     if not rules:
         return doc

@@ -371,9 +371,6 @@ async def cancel_note(note_id: str, reason: str, request: Request,
     return {"ok": True, "note_id": note_id, "status": "cancelled"}
 
 
-@router.get("/notes/{note_id}/pdf")
-
-
 # ═════════════════════════════════════════════════════════════════════════
 # 3.  Voucher / JE PDF export
 # ═════════════════════════════════════════════════════════════════════════

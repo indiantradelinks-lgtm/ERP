@@ -10,6 +10,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 import logging
+import os
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -251,9 +252,10 @@ async def on_shutdown():
 
 app.include_router(api)
 
+_cors_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=".*",
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

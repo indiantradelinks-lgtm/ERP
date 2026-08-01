@@ -27,7 +27,7 @@ _EXPORT_RESOURCE_MAP = {
 # DPDP Act 2023 — roles allowed to see un-masked PII per resource.
 # Anyone else gets the masked (redacted) export automatically.
 _PII_PRIVILEGED_ROLES = {
-    "employees":   {"super_admin", "director", "general_manager", "hr_executive", "dept_head"},
+    "employees":   {"super_admin", "director", "general_manager", "hr_executive"},
     "candidates":  {"super_admin", "director", "general_manager", "hr_executive"},
     "payroll":     {"super_admin", "director", "general_manager", "hr_executive", "accounts_executive"},
     "attendance":  {"super_admin", "director", "general_manager", "hr_executive", "dept_head"},

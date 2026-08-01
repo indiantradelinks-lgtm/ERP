@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 
 from core import db, require_permission, now_iso, new_id
+from data_masking import mask_list
 from audit import audit
 
 router = APIRouter(prefix="/hr1", tags=["hr-phase1"])
@@ -187,7 +188,8 @@ async def list_workers(skill_id: Optional[str] = None, availability: Optional[st
         q["current_project_code"] = project_code
     if active is not None:
         q["active"] = active
-    return await db.hr_workers.find(q, {"_id": 0}).sort("name", 1).to_list(2000)
+    rows = await db.hr_workers.find(q, {"_id": 0}).sort("name", 1).to_list(2000)
+    return mask_list(rows, "workers", user)
 
 
 @router.post("/workers")

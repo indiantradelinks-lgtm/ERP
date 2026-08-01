@@ -4960,3 +4960,11 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 ### Aug 2026 — Label rename + sidebar check ✅
 - Sidebar "Material Requirement" → "Material / Asset Allocations" (menuConfig.js + StoreInventory.jsx tab). Route/API/DB untouched. Sales enquiry/quotation "Material Requirement(s)" textarea fields left as-is (different semantic — client requirements, not allocations).
 - Duplicate "Project Planning" sidebar entry: confirmed already fixed (single entry). Production needs redeploy to pick it up.
+
+### Aug 2026 — Security Hardening (payroll/PII + finance) ✅ ALL AUDIT FINDINGS FIXED
+- SEC-001 (HIGH, CORS): server.py — replaced `allow_origin_regex=".*"` with strict allowlist from CORS_ORIGINS env (preview + production + localhost). Verified: evil origin no longer reflected; legit origin echoed. (Ingress still adds inert `*` header which browsers reject with credentials — harmless.)
+- SEC-002 (HIGH, PII exposure): data_masking now applied generically in crud_router list/get (employees/payroll/vendors/clients + new "workers" ruleset); employee-360 masks `personal` and hides payroll history from non-privileged roles; /api/hr1/workers masks aadhaar/pan/bank/ifsc. Self-view exception added (users see their own record unmasked). Mass-assignment guard: non-privileged PUT strips sensitive fields from payload.
+- SEC-003 (HIGH, BOLA): GET /api/advances/{id} now enforces same self-or-privileged scope as list (verified: PM→403 on other's advance, admin→200).
+- SEC-004 (MEDIUM, CSRF): auth cookies changed samesite none→lax (frontend+API same origin; login verified working).
+- P3s: unified dept_head out of exports employees PII-privileged set; removed stray duplicate `@router.get("/notes/{note_id}/pdf")` decorator in finance_phase2_router.
+- Verified via curl (both roles) + frontend login/Employee Master screenshot. Files: server.py, core.py, data_masking.py, routers/crud_router.py, routers/hr/employee360.py, routers/hr_phase1_router.py, routers/advance_router.py, routers/exports_router.py, routers/finance_phase2_router.py.

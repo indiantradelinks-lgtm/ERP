@@ -10,6 +10,7 @@ from audit import audit
 from sequences import next_sequence
 from scope import project_filter, department_filter, projects_collection_filter
 from india_compliance import validate_employee_compliance
+from data_masking import mask_for, mask_list, SENSITIVE_FIELDS, PRIVILEGED_ROLES
 
 
 # Auto-numbering map: collection → (prefix, field_name on the doc).
@@ -124,7 +125,7 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
     async def list_items(user: dict = Depends(require_permission(perm, "read"))):
         q = await _list_filter(collection, user)
         rows = await db[collection].find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
-        return rows
+        return mask_list(rows, collection, user)
 
     @router.post(f"/{resource}")
     async def create_item(payload: Dict[str, Any], request: Request, user: dict = Depends(require_permission(perm, "write"))):
@@ -249,13 +250,16 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
             if pq is not None:
                 if pq.get("_no_match_sentinel_") or not await db.projects.find_one({"$and": [{"id": item_id}, pq]}, {"_id": 0, "id": 1}):
                     raise HTTPException(status_code=403, detail="You don't have access to this project")
-        return row
+        return mask_for(row, collection, user)
 
     @router.put(f"/{resource}/{{item_id}}")
     async def update_item(item_id: str, payload: Dict[str, Any], request: Request, user: dict = Depends(require_permission(perm, "write"))):
         payload.pop("id", None)
         payload["updated_at"] = now_iso()
         payload["updated_by"] = user["id"]
+        if user.get("role") not in PRIVILEGED_ROLES:
+            for f in SENSITIVE_FIELDS.get(collection, {}):
+                payload.pop(f, None)
         if collection == "employees":
             # Keep departments[] and legacy `department` in sync, and respect
             # allow_multi_dept on writes.

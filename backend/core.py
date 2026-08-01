@@ -66,8 +66,8 @@ def create_refresh_token(user_id: str) -> str:
 
 
 def set_auth_cookies(response: Response, access: str, refresh: str) -> None:
-    response.set_cookie("access_token", access, httponly=True, secure=True, samesite="none", max_age=ACCESS_MIN * 60, path="/")
-    response.set_cookie("refresh_token", refresh, httponly=True, secure=True, samesite="none", max_age=REFRESH_DAYS * 86400, path="/")
+    response.set_cookie("access_token", access, httponly=True, secure=True, samesite="lax", max_age=ACCESS_MIN * 60, path="/")
+    response.set_cookie("refresh_token", refresh, httponly=True, secure=True, samesite="lax", max_age=REFRESH_DAYS * 86400, path="/")
 
 
 def clear_auth_cookies(response: Response) -> None:

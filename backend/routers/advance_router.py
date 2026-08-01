@@ -330,6 +330,21 @@ async def get_advance(advance_id: str, user: dict = Depends(get_current_user)):
     adv = await db.employee_advances.find_one({"id": advance_id}, {"_id": 0})
     if not adv:
         raise HTTPException(status_code=404, detail="advance not found")
+    role = user.get("role")
+    privileged = {"super_admin", "director", "general_manager", "hr_executive", "accounts_executive"}
+    if role not in privileged:
+        allowed_ids = {user.get("id")}
+        if user.get("email"):
+            emp = await db.employees.find_one({"email": user["email"]}, {"_id": 0, "id": 1})
+            if emp:
+                allowed_ids.add(emp["id"])
+        is_owner = (
+            adv.get("employee_id") in allowed_ids
+            or adv.get("created_by_id") == user.get("id")
+            or (user.get("employee_code") and adv.get("employee_code") == user.get("employee_code"))
+        )
+        if not is_owner:
+            raise HTTPException(status_code=403, detail="You don't have access to this advance")
     # Attach approval doc for timeline display
     if adv.get("approval_id"):
         appr = await db.approvals.find_one({"id": adv["approval_id"]}, {"_id": 0})

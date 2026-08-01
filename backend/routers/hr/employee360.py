@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from core import db, require_permission, now_iso, new_id
+from data_masking import mask_for, PRIVILEGED_ROLES
 from audit import audit
 from .common import ip_of
 
@@ -54,8 +55,10 @@ async def employee_360(employee_id: str,
             att_summary[s] += 1
         att_summary["total_hours"] += float(a.get("hours") or 0)
 
-    payroll = await db.payroll.find({"employee_id": employee_id}, {"_id": 0}) \
-        .sort([("month", -1)]).limit(3).to_list(3)
+    payroll = []
+    if user.get("role") in PRIVILEGED_ROLES:
+        payroll = await db.payroll.find({"employee_id": employee_id}, {"_id": 0}) \
+            .sort([("month", -1)]).limit(3).to_list(3)
     docs = await db.files.find(
         {"parent_type": "employees", "parent_id": employee_id, "is_deleted": {"$ne": True}},
         {"_id": 0}
@@ -70,7 +73,7 @@ async def employee_360(employee_id: str,
     ).sort([("from_date", -1)]).limit(10).to_list(10)
 
     return {
-        "personal": emp, "skills": skills, "certifications": certifications,
+        "personal": mask_for(emp, "employees", user), "skills": skills, "certifications": certifications,
         "ppe_history": ppe, "trainings": trainings + toolbox,
         "deployments": deployments,
         "attendance_30d": att_summary, "attendance_rows": att_rows,
