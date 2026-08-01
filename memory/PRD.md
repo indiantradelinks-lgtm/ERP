@@ -4942,3 +4942,7 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - **3 separate forms**: header buttons Material Request / Manpower Request / Service-Payment (6 service types only). Material form has NO request-type dropdown — ONLY the Inventory Category Master select (duplication removed); manpower form only manpower fields.
 - Post-review fix: category change no longer overrides a manually chosen cost center (only auto-fills when empty).
 - Tests: 8/8 backend pytest (`tests/test_iter161_material_scaffolding.py`, one live LLM hit) + frontend 100% full E2E (bulk import → totals 159 kg → submit REQ-2026-0031 → detail dialog).
+
+### Iteration 162 (Jul 2026) — Sidebar cleanup: "Progress & Registers" group ✅
+- 8 ops submenu items (DPR, Measurement Sheet, Work Progress Tracker, Site Issue Register, Delay Register, Client Instruction, Extra Work Register, Work Permit Register) grouped under a collapsible **Progress & Registers** parent via existing `parentLabel` mechanism in menuConfig.js. Routes/permissions/functionality unchanged (temporary until modules actively used).
+- Self-tested: toggle `sub-ops__Progress & Registers` expands/collapses the 8 links; /app/ops/dpr loads normally.
