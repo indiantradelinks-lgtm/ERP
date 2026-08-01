@@ -54,6 +54,8 @@ export default function ProjectRequests() {
   const [designations, setDesignations] = useState([]);
   const [categories, setCategories] = useState([]);
   const [catItems, setCatItems] = useState([]);
+  const [mode, setMode] = useState("material");
+  const [parsing, setParsing] = useState(false);
 
   const meta = useMemo(() => types.find((t) => t.key === form.request_type), [types, form.request_type]);
   const isStockable = form.request_type && STOCKABLE.has(form.request_type);
@@ -92,6 +94,38 @@ export default function ProjectRequests() {
     api.get("/procurement/master/cost-centers", { params: { project_id: projectId } }).then((r) => setCcList(r.data || [])).catch(() => setCcList([]));
   };
 
+  const openDialog = (m) => {
+    setMode(m);
+    setForm({ ...blank(), request_type: m === "material" ? "material" : m === "manpower" ? "manpower" : "" });
+    setAttFiles([]); setStock(null); setCcList([]); setCatItems([]); setCreating(true);
+  };
+
+  const downloadMatTemplate = async () => {
+    try {
+      const { data } = await api.get("/project-requests/material-template", { responseType: "blob" });
+      const url = URL.createObjectURL(data); const a = document.createElement("a");
+      a.href = url; a.download = "material_request_template.csv"; a.click(); URL.revokeObjectURL(url);
+    } catch { toast.error("Template download failed"); }
+  };
+
+  const importFile = async (file, aiMode) => {
+    if (!file) return;
+    const fd = new FormData(); fd.append("file", file);
+    setParsing(true);
+    try {
+      const { data } = await api.post(`/project-requests/import-items?mode=${aiMode ? "ai" : "template"}`, fd,
+        { headers: { "Content-Type": "multipart/form-data" }, timeout: 120000 });
+      if (!data.items?.length) { toast.warning("No item lines found in the file"); return; }
+      const parsed = data.items.map((d) => ({ ...blankItem(), ...d, custom: true }));
+      setForm((f) => {
+        const existing = f.items.filter((x) => (x.name || "").trim());
+        return { ...f, items: [...existing, ...parsed] };
+      });
+      toast.success(`${data.count} item line(s) ${aiMode ? "extracted by AI" : "imported"} — review before submitting`);
+    } catch (e) { toast.error(e?.response?.data?.detail || "Import failed"); }
+    finally { setParsing(false); }
+  };
+
   const estValue = useMemo(() => {
     if (form.amount) return Number(form.amount);
     if (form.monthly_rate) return Number(form.monthly_rate) * Number(form.months || 1);
@@ -116,13 +150,17 @@ export default function ProjectRequests() {
   const create = async () => {
     if (!form.project_code) { toast.error("Select a project"); return; }
     if (!form.request_type) { toast.error("Select request type"); return; }
-    if (estValue <= 0 && !isStockable) { toast.error("Enter amount / rate"); return; }
+    if (isManpower && !form.items.some((i) => i.name && Number(i.quantity) > 0)) { toast.error("Add at least one manpower line"); return; }
+    if (isStockable && !form.items.some((i) => (i.name || "").trim() && Number(i.quantity) > 0)) { toast.error("Add at least one item"); return; }
+    if (estValue <= 0 && !isStockable && !isManpower) { toast.error("Enter amount / rate"); return; }
     try {
       const payload = { ...form,
         amount: form.amount ? Number(form.amount) : null,
         monthly_rate: form.monthly_rate ? Number(form.monthly_rate) : null,
         months: form.months ? Number(form.months) : null,
-        items: form.items.map((i) => ({ ...i, quantity: Number(i.quantity) || 0, rate: Number(i.rate) || 0 })) };
+        items: form.items.filter((i) => (i.name || "").trim())
+          .map((i) => ({ ...i, quantity: Number(i.quantity) || 0, rate: Number(i.rate) || 0,
+                         unit_weight_kg: Number(i.unit_weight_kg) || 0 })) };
       const r = await api.post("/project-requests", payload);
       toast.success(`${r.data.request_no} raised → routes to ${r.data.owning_dept} after Project Head approval`);
       setCreating(false); setForm(blank()); setAttFiles([]); setStock(null); load();
@@ -175,9 +213,17 @@ export default function ProjectRequests() {
             <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("xlsx")} data-testid="req-export-xlsx"><FileSpreadsheet className="h-4 w-4 mr-1.5" /> Excel</Button>
             <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("pdf")} data-testid="req-export-pdf"><FileText className="h-4 w-4 mr-1.5" /> PDF</Button>
             {canRaise && (
-              <Button className="h-9 rounded-sm" onClick={() => { setForm(blank()); setAttFiles([]); setStock(null); setCcList([]); setCreating(true); }} data-testid="req-new">
-                <Plus className="h-4 w-4 mr-1.5" /> Raise Request
-              </Button>
+              <>
+                <Button className="h-9 rounded-sm" onClick={() => openDialog("material")} data-testid="req-new-material">
+                  <Boxes className="h-4 w-4 mr-1.5" /> Material Request
+                </Button>
+                <Button variant="outline" className="h-9 rounded-sm" onClick={() => openDialog("manpower")} data-testid="req-new-manpower">
+                  <Users className="h-4 w-4 mr-1.5" /> Manpower Request
+                </Button>
+                <Button variant="outline" className="h-9 rounded-sm" onClick={() => openDialog("service")} data-testid="req-new-service">
+                  <Truck className="h-4 w-4 mr-1.5" /> Service / Payment
+                </Button>
+              </>
             )}
           </div>
         )}
@@ -287,22 +333,30 @@ export default function ProjectRequests() {
       <Dialog open={creating} onOpenChange={setCreating}>
         <DialogContent className="max-w-3xl rounded-sm max-h-[88vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="font-display">Raise Project Request</DialogTitle>
-            <DialogDescription>Approved by Project Head (+ GM → Director for large value), then routed to the owning department.</DialogDescription>
+            <DialogTitle className="font-display">
+              {mode === "material" ? "Material Request" : mode === "manpower" ? "Manpower Request" : "Service / Payment Request"}
+            </DialogTitle>
+            <DialogDescription>
+              {mode === "material" ? "Stock is checked first; shortfall converts to a Purchase Request after approval. Routed to Stores." :
+               mode === "manpower" ? "Routed to HR for fulfilment after Project Head approval." :
+               "Approved by Project Head (+ GM → Director for large value), then routed to the owning department."}
+            </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-1">
             <ProjectSelect label="Project *" value={form.project_code} onChange={(code, row) => { setForm({ ...form, project_code: code, project_id: row?.id || "", cost_center_id: "" }); loadCostCenters(row?.id); }} testid="req-form-project" />
-            <div>
-              <Label className="text-[10px] uppercase tracking-wider">Request Type / Category *</Label>
-              <select value={form.request_type} onChange={(e) => { setForm({ ...form, request_type: e.target.value, items: [blankItem()], material_category_id: "" }); setStock(null); setCatItems([]); }}
-                className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-type">
-                <option value="">— select —</option>
-                {types.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
-              </select>
-            </div>
-            {isStockable && (
-              <div className="col-span-2">
-                <Label className="text-[10px] uppercase tracking-wider">Material Category (Item Master) — links Cost Center &amp; items</Label>
+            {mode === "service" && (
+              <div>
+                <Label className="text-[10px] uppercase tracking-wider">Service Type *</Label>
+                <select value={form.request_type} onChange={(e) => { setForm({ ...form, request_type: e.target.value, items: [blankItem()] }); setStock(null); }}
+                  className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-type">
+                  <option value="">— select —</option>
+                  {types.filter((t) => !STOCKABLE.has(t.key) && t.key !== "manpower").map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+                </select>
+              </div>
+            )}
+            {mode === "material" && (
+              <div>
+                <Label className="text-[10px] uppercase tracking-wider">Category (Item Master) *</Label>
                 <select value={form.material_category_id} onChange={(e) => onCategoryChange(e.target.value)}
                   className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-material-category">
                   <option value="">— select category —</option>
@@ -333,12 +387,25 @@ export default function ProjectRequests() {
               </select>
             </div>
 
-            {/* Items (stockable / material types) */}
-            {(isStockable || form.request_type === "") && form.request_type !== "" && (
+            {/* Items (material requests) */}
+            {isStockable && (
               <div className="col-span-2 border border-border rounded-sm">
-                <div className="flex items-center justify-between p-2 border-b border-border">
+                <div className="flex items-center justify-between p-2 border-b border-border flex-wrap gap-1.5">
                   <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Items</div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-1.5 flex-wrap">
+                    <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={downloadMatTemplate} data-testid="req-mat-template"><FileSpreadsheet className="h-3 w-3 mr-1" /> Template</Button>
+                    <Button size="sm" variant="outline" className="h-7 rounded-sm" disabled={parsing}
+                      onClick={() => document.getElementById("req-bulk-file").click()} data-testid="req-bulk-upload">
+                      {parsing ? "Reading…" : "Bulk Upload"}
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 rounded-sm border-primary/40 text-primary" disabled={parsing}
+                      onClick={() => document.getElementById("req-ai-file").click()} data-testid="req-ai-upload">
+                      {parsing ? "AI reading…" : "✨ AI Read Excel"}
+                    </Button>
+                    <input id="req-bulk-file" type="file" accept=".csv,.xlsx,.xlsm" className="hidden"
+                      onChange={(e) => { importFile(e.target.files?.[0], false); e.target.value = ""; }} data-testid="req-bulk-file-input" />
+                    <input id="req-ai-file" type="file" accept=".csv,.xlsx,.xlsm" className="hidden"
+                      onChange={(e) => { importFile(e.target.files?.[0], true); e.target.value = ""; }} data-testid="req-ai-file-input" />
                     <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={runStockCheck} data-testid="req-stock-check"><PackageSearch className="h-3 w-3 mr-1" /> Check Stock</Button>
                     <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={() => setForm({ ...form, items: [...form.items, blankItem()] })} data-testid="req-add-item"><Plus className="h-3 w-3 mr-1" /> Add</Button>
                   </div>
@@ -346,6 +413,7 @@ export default function ProjectRequests() {
                 <div className="p-2 space-y-1.5">
                   {form.items.map((it, i) => {
                     const sl = stock?.lines?.[i];
+                    const totalW = (Number(it.quantity) || 0) * (Number(it.unit_weight_kg) || 0);
                     return (
                       <div key={i} className="space-y-1 pb-1.5 border-b border-border/40 last:border-0">
                         <div className="grid grid-cols-12 gap-1.5 items-center">
@@ -354,7 +422,7 @@ export default function ProjectRequests() {
                               const v = e.target.value;
                               if (v === "__custom") { setItem(i, { item_id: "", item_code: "", name: "", custom: true }); return; }
                               const m = catItems.find((x) => x.id === v);
-                              setItem(i, m ? { item_id: m.id, item_code: m.code, name: m.name, unit: m.unit || "Nos", rate: m.last_rate || 0, custom: false } : { item_id: "", item_code: "", name: "" });
+                              setItem(i, m ? { item_id: m.id, item_code: m.code, name: m.name, unit: m.unit || "Nos", rate: m.last_rate || 0, unit_weight_kg: m.unit_weight_kg || it.unit_weight_kg, custom: false } : { item_id: "", item_code: "", name: "" });
                             }} className="h-8 rounded-sm border border-input bg-background px-2 text-xs col-span-4" data-testid={`req-item-select-${i}`}>
                               <option value="">— item from master —</option>
                               {catItems.map((m) => <option key={m.id} value={m.id}>{m.name} · {m.code}{m.stock_qty ? ` (stock ${m.stock_qty})` : ""}</option>)}
@@ -365,31 +433,28 @@ export default function ProjectRequests() {
                           )}
                           <Input type="number" value={it.quantity} onChange={(e) => setItem(i, { quantity: e.target.value })} placeholder="Qty" className="h-8 rounded-sm col-span-2 text-xs tabular" data-testid={`req-item-qty-${i}`} />
                           <Input value={it.unit} onChange={(e) => setItem(i, { unit: e.target.value })} placeholder="Unit" className="h-8 rounded-sm col-span-2 text-xs" />
-                          <Input type="number" value={it.rate} onChange={(e) => setItem(i, { rate: e.target.value })} placeholder="Rate" className="h-8 rounded-sm col-span-2 text-xs tabular" />
+                          <Input type="number" value={it.rate} onChange={(e) => setItem(i, { rate: e.target.value })} placeholder="Rate ₹" className="h-8 rounded-sm col-span-2 text-xs tabular" />
                           <div className="col-span-2 text-[10px]">
                             {sl ? (sl.in_stock ? <span className="text-emerald-700 font-bold">In stock ({sl.on_hand})</span> : <span className="text-amber-700 font-bold">Short {sl.shortfall}</span>) : <span className="text-muted-foreground">—</span>}
                           </div>
                         </div>
-                        {form.request_type === "ppe" && (
-                          <div className="grid grid-cols-12 gap-1.5 items-center">
-                            <Input value={it.size} onChange={(e) => setItem(i, { size: e.target.value })} placeholder="Size (S/M/L/XL, 9-inch…)" className="h-8 rounded-sm col-span-3 text-xs" data-testid={`req-item-size-${i}`} />
-                            <Input value={it.make} onChange={(e) => setItem(i, { make: e.target.value })} placeholder="Make / Brand" className="h-8 rounded-sm col-span-3 text-xs" data-testid={`req-item-make-${i}`} />
-                            <Input value={it.item_type} onChange={(e) => setItem(i, { item_type: e.target.value })} placeholder="Type (helmet / shoes / harness…)" className="h-8 rounded-sm col-span-3 text-xs" data-testid={`req-item-type-${i}`} />
-                            <Input value={it.tech_details} onChange={(e) => setItem(i, { tech_details: e.target.value })} placeholder="Technical details (IS code, rating…)" className="h-8 rounded-sm col-span-3 text-xs" data-testid={`req-item-tech-${i}`} />
-                          </div>
-                        )}
-                        {form.request_type === "it_material" && (
-                          <div className="grid grid-cols-12 gap-1.5 items-center">
-                            <Input value={it.make} onChange={(e) => setItem(i, { make: e.target.value })} placeholder="Make / Brand (Dell, HP…)" className="h-8 rounded-sm col-span-4 text-xs" data-testid={`req-item-make-${i}`} />
-                            <Input value={it.tech_details} onChange={(e) => setItem(i, { tech_details: e.target.value })} placeholder="Technical specs (i5/16GB/512GB, A4 duplex…)" className="h-8 rounded-sm col-span-8 text-xs" data-testid={`req-item-tech-${i}`} />
-                          </div>
-                        )}
-                        {form.request_type === "material" && (
-                          <Input value={it.specs} onChange={(e) => setItem(i, { specs: e.target.value })} placeholder="Specification (size, grade, standard…)" className="h-8 rounded-sm text-xs" data-testid={`req-item-specs-${i}`} />
-                        )}
+                        <div className="grid grid-cols-12 gap-1.5 items-center">
+                          <Input value={it.size || ""} onChange={(e) => setItem(i, { size: e.target.value })} placeholder="Size" className="h-8 rounded-sm col-span-2 text-xs" data-testid={`req-item-size-${i}`} />
+                          <Input value={it.material || ""} onChange={(e) => setItem(i, { material: e.target.value })} placeholder="Material (MS/GI…)" className="h-8 rounded-sm col-span-2 text-xs" data-testid={`req-item-material-${i}`} />
+                          <Input value={it.make || ""} onChange={(e) => setItem(i, { make: e.target.value })} placeholder="Make" className="h-8 rounded-sm col-span-2 text-xs" data-testid={`req-item-make-${i}`} />
+                          <Input value={it.coating || ""} onChange={(e) => setItem(i, { coating: e.target.value })} placeholder="Coating" className="h-8 rounded-sm col-span-2 text-xs" data-testid={`req-item-coating-${i}`} />
+                          <Input value={it.item_type || ""} onChange={(e) => setItem(i, { item_type: e.target.value })} placeholder="Type" className="h-8 rounded-sm col-span-2 text-xs" data-testid={`req-item-type-${i}`} />
+                          <Input type="number" value={it.unit_weight_kg || ""} onChange={(e) => setItem(i, { unit_weight_kg: e.target.value })} placeholder="Unit wt kg" className="h-8 rounded-sm col-span-1 text-xs tabular" data-testid={`req-item-uwt-${i}`} />
+                          <div className="col-span-1 text-[10px] text-right font-mono-data tabular" data-testid={`req-item-twt-${i}`}>{totalW ? `${totalW.toFixed(1)}kg` : "—"}</div>
+                        </div>
                       </div>
                     );
                   })}
+                  <div className="flex justify-end gap-4 text-[11px] font-bold border-t border-border pt-1.5" data-testid="req-items-totals">
+                    <span>Total Qty: <span className="font-mono-data tabular">{form.items.reduce((a, i) => a + (Number(i.quantity) || 0), 0)}</span></span>
+                    <span>Total Weight: <span className="font-mono-data tabular">{form.items.reduce((a, i) => a + (Number(i.quantity) || 0) * (Number(i.unit_weight_kg) || 0), 0).toFixed(1)} kg</span></span>
+                    <span>Est. Value: <span className="font-mono-data tabular">{inr(estValue)}</span></span>
+                  </div>
                   {stock && (
                     <div className={`text-[11px] mt-1 p-1.5 rounded-sm ${stock.all_in_stock ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`} data-testid="req-stock-result">
                       {stock.all_in_stock ? "✓ All items available in Store — will route to Stores for issue." : "⚠ Some items short — after approval you can raise a Purchase Request for the shortfall."}
@@ -511,7 +576,9 @@ export default function ProjectRequests() {
                       <tbody>
                         {detail.items.map((it, i) => {
                           const sl = (detail.stock_lines || [])[i];
-                          const extras = [it.size && `Size: ${it.size}`, it.make && `Make: ${it.make}`, it.item_type && `Type: ${it.item_type}`,
+                          const extras = [it.size && `Size: ${it.size}`, it.material && `Material: ${it.material}`, it.make && `Make: ${it.make}`,
+                            it.coating && `Coating: ${it.coating}`, it.item_type && `Type: ${it.item_type}`,
+                            it.unit_weight_kg && `Unit wt: ${it.unit_weight_kg} kg`, it.total_weight_kg && `Total wt: ${it.total_weight_kg} kg`,
                             it.tech_details && `Tech: ${it.tech_details}`, it.specs && `Specs: ${it.specs}`].filter(Boolean).join(" · ");
                           return <tr key={i} className="border-b border-border/50">
                             <td className="p-1.5">{it.name}{extras && <div className="text-[10px] text-muted-foreground">{extras}</div>}</td>

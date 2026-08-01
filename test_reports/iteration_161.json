@@ -1,0 +1,36 @@
+{
+  "summary": "Iter 161 — Project Request Center material scaffolding rework + 3-button open + AI Excel reader. ALL 8 backend tests PASS in /app/backend/tests/test_iter161_material_scaffolding.py (including one live gpt-5.4 AI extraction hit which correctly returned 3 items from a messy xlsx with title/TOTAL rows). Backend verified: (a) /project-requests/types now exposes 'manpower' (dept=hr, stockable=false, payment=false); (b) GET /project-requests/material-template returns text/csv with exact headers name,code,size,material,make,coating,item_type,quantity,unit,unit_weight_kg,rate,specs; (c) POST /project-requests/import-items?mode=template parses CSV & XLSX with strict headers, skips empty rows, coerces numerics, and returns 400 'Template must have a name column…' when 'name' header is missing; (d) POST /project-requests/import-items?mode=ai with a messy scaffolding sheet (title row + 'Description of Item'/'Wt/pc (kg)' headers + TOTAL row) returned 3 clean item lines with correct quantities (100/400/50), skipping the title and TOTAL — completed within 125s budget; (e) POST /project-requests with items carrying size/material/coating/unit_weight_kg computes per-line total_weight_kg (10×17.1=171, 100×1.1=110) AND request-level total_weight_kg=281; persistence confirmed via GET list. FRONTEND UI (admin@erp.com on /app/ops/requests): header shows 3 new buttons req-new-material / req-new-manpower / req-new-service and NO legacy 'req-new'; Material dialog has NO req-form-type but DOES have req-form-material-category, req-mat-template, req-bulk-upload, req-ai-upload, req-bulk-file-input, req-ai-file-input, req-stock-check, req-items-totals, plus per-line req-item-size/material/make/coating/type/uwt/twt/qty rows; Manpower dialog exposes ONLY manpower fields (req-mp-desig/name/count/skills/from/to) and correctly hides req-form-material-category and item-size rows; Service dialog’s req-form-type dropdown lists EXACTLY the 6 keys {accommodation, fuel, insurance, vehicle_manpower, vehicle_material, one_time_vehicle}. Full E2E: selected project E2E-TEST-178532-P1 → picked category CONSUM → cost center auto-populated to 'CONSUM · Consumables' (0b192090…), Template CSV downloaded, Bulk Upload appended 2 lines (TEST_UI_Ledger 20×5.2, TEST_UI_Coupler 50×1.1), totals strip showed 'Total Qty: 70 · Total Weight: 159.0 kg · Est. Value ₹ 10,400', submit created REQ-2026-0031 pending_approval, detail dialog rendered Size/Material/Make/Coating/Type/Unit wt/Total wt (104 kg / 55 kg) per line. No blocking issues.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Material Request dialog · category / cost-center selects", "issues": ["React hydration console warning: '<span> cannot be a child of <option>' — comes from the dev-instrumentation wrapper (x-source-var spans injected by the preview build), not user code. Cosmetic only, native <option> still renders text correctly; can ignore or wrap value in a fragment to silence."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter161_material_scaffolding.py",
+    "/app/test_reports/pytest/iter161.xml"
+  ],
+  "action_items": [
+    "None blocking. Optional: swallow the <option> hydration warning by rendering `{c.code} · {c.name}` as a plain string (no <span>). Preview-only noise."
+  ],
+  "critical_code_review_comments": [
+    "project_requests_router._ai_extract_items uses 24k char cap + rows[:300] which is sensible; consider logging rows dropped so ops can debug bad extractions.",
+    "import_items reads the whole file into memory then rejects >5MB — fine, but stream-read would let you 413 sooner. Low priority.",
+    "MAT_HEADERS is duplicated as knowledge in _rows_from_upload code path and in the error message; if headers change, keep them in one constant (already are — good).",
+    "create_request: total_weight_kg rollup only counts items that carry unit_weight_kg; that is correct semantics. Consider surfacing 'weightless_lines' count on the response so UI can nudge users to fill weight for scaffolding lines.",
+    "Frontend importFile appends parsed lines to any existing non-empty rows — good UX but if user hits Bulk Upload twice with the same file they'll get duplicates silently. Consider de-dup by (name,size,make) or a warning toast.",
+    "ProjectRequests.jsx renders <option>{c.code} · {c.name}{c.item_count?...:''}</option> but the preview instrumentation is injecting a <span> inside <option>. Not a functional bug, but if you upgrade React 19 strict-mode this warning may become an error — worth extracting the label into a variable outside JSX.",
+    "onCategoryChange auto-picks a matching cost center by code — good; but silently overrides a user’s manual CC selection when they change category later. Consider only auto-picking if cost_center_id is empty.",
+    "canRaise gate hides all 3 buttons for non-raise roles — great; ensure the 3-testid absence is only expected for those roles. Currently openDialog('service') with empty request_type would let a user submit with no type — create() guards this (toast.error('Select request type')). OK."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter161_material_scaffolding.py"],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "100% (all buttons/testids present, full E2E create with bulk import + weights + submit + detail dialog verified)"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin)",
+  "seed_data_creation": "Created (not cleaned up): request REQ-2026-0031 on E2E-TEST-178532-P1 with 2 TEST_UI_* items (159 kg total), status pending_approval. Backend pytest also created 1 request via API (project E2E-TEST-178532-P1, 2 TEST_ items, 281 kg). Both are request-no auto-sequenced; no duplicates. LLM was hit exactly ONCE (test_import_items_ai_messy_xlsx) as instructed.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression pytest lives at /app/backend/tests/test_iter161_material_scaffolding.py — all 8 green including one live gpt-5.4 AI hit (skipped only if the LLM returns 502/504/422 or timeouts at 125s). ProjectSelect is a native <select> in the RaiseRequest dialog — use `page.select_option(...)` not `.click()`. openDialog('service') sets request_type='' and shows req-form-type dropdown with 6 keys; openDialog('material') sets request_type='material' and shows req-form-material-category; openDialog('manpower') sets request_type='manpower' and hides both. The Cost Center dropdown finally works (iter 160 blocker fixed — frontend calls /procurement/master/cost-centers). Also confirmed onCategoryChange auto-picks a matching CC when category codes match (CONSUM → CONSUM · Consumables auto-selected).",
+  "rca of the issue": "No blocking issues found this iteration. The old iter-160 cost-center 404 has been resolved (frontend now uses /procurement/master/cost-centers as loadCostCenters). The single React console warning is preview-instrumentation noise, not a functional bug."
+}

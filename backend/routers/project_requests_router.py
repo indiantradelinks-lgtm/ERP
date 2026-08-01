@@ -19,12 +19,16 @@ Process:
 """
 from __future__ import annotations
 
+import csv
 import io
+import json
 import logging
+import os
+import re
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from core import db, require_permission, now_iso, new_id
@@ -75,12 +79,15 @@ class ReqItem(BaseModel):
     unit: str = "Nos"
     rate: float = 0
     specs: Optional[str] = None
-    # category-specific detail fields (PPE / IT / Manpower)
+    # category-specific detail fields (PPE / IT / Manpower / Scaffolding)
     size: Optional[str] = None
     make: Optional[str] = None
     item_type: Optional[str] = None
     tech_details: Optional[str] = None
     designation_id: Optional[str] = None
+    material: Optional[str] = None
+    coating: Optional[str] = None
+    unit_weight_kg: Optional[float] = None
 
 
 class RequestIn(BaseModel):
@@ -233,7 +240,9 @@ async def create_request(p: RequestIn, request: Request,
         "material_category_id": (mcat or {}).get("id"),
         "material_category_code": (mcat or {}).get("code"),
         "material_category": (mcat or {}).get("name"),
-        "items": [i.model_dump() for i in p.items],
+        "items": [{**i.model_dump(),
+                   "total_weight_kg": round(float(i.quantity or 0) * float(i.unit_weight_kg or 0), 2)} for i in p.items],
+        "total_weight_kg": round(sum(float(i.quantity or 0) * float(i.unit_weight_kg or 0) for i in p.items), 2),
         "stock_lines": stock_lines,
         "vendor": p.vendor, "vehicle_ref": p.vehicle_ref,
         "period_from": p.period_from, "period_to": p.period_to,
@@ -456,6 +465,118 @@ async def delete_request(rid: str, request: Request,
     await db.project_requests.delete_one({"id": rid})
     await audit(user=user, action="delete", resource="project_requests", record_id=rid, ip=_ip(request))
     return {"deleted": True}
+
+
+MAT_HEADERS = ["name", "code", "size", "material", "make", "coating", "item_type",
+               "quantity", "unit", "unit_weight_kg", "rate", "specs"]
+
+
+@router.get("/project-requests/material-template")
+async def material_template(user: dict = Depends(require_permission("project_requests", "read"))):
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(MAT_HEADERS)
+    w.writerow(["Cuplock Vertical 3m", "SCF-STD-001", "3.0 m", "MS", "Apex", "Painted", "Vertical", "120", "Nos", "17.1", "1540", "48.3mm OD with cups"])
+    w.writerow(["Fixed Coupler", "", "48.3mm", "MS", "", "Galvanised", "Coupler", "500", "Nos", "1.1", "95", ""])
+    return Response(content=buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="material_request_template.csv"'})
+
+
+def _rows_from_upload(filename: str, raw: bytes) -> List[List[str]]:
+    if filename.lower().endswith((".xlsx", ".xlsm")):
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
+        rows: List[List[str]] = []
+        for ws in wb.worksheets:
+            for r in ws.iter_rows(values_only=True):
+                if any(c is not None and str(c).strip() for c in r):
+                    rows.append(["" if c is None else str(c).strip() for c in r])
+        return rows
+    text = raw.decode("utf-8-sig", errors="replace")
+    return [r for r in csv.reader(io.StringIO(text)) if any(c.strip() for c in r)]
+
+
+def _num(v) -> float:
+    try:
+        return float(str(v).replace(",", "").strip() or 0)
+    except Exception:
+        return 0
+
+
+@router.post("/project-requests/import-items")
+async def import_items(request: Request, file: UploadFile = File(...), mode: str = "template",
+                       user: dict = Depends(require_permission("project_requests", "write"))):
+    """Parse an uploaded Excel/CSV into request item lines. mode=template (strict headers) or mode=ai (LLM extraction)."""
+    raw = await file.read()
+    if len(raw) > 5 * 1024 * 1024:
+        raise HTTPException(400, "File too large (max 5 MB)")
+    rows = _rows_from_upload(file.filename or "upload.csv", raw)
+    if not rows:
+        raise HTTPException(400, "No data rows found in the file")
+
+    if mode == "ai":
+        items = await _ai_extract_items(rows)
+        return {"items": items, "count": len(items), "source": "ai"}
+
+    headers = [str(h).strip().lower().replace(" ", "_") for h in rows[0]]
+    if "name" not in headers:
+        raise HTTPException(400, f"Template must have a 'name' column. Expected headers: {', '.join(MAT_HEADERS)}. Use AI mode for free-format files.")
+    items = []
+    for r in rows[1:]:
+        d = {headers[i]: (r[i] if i < len(r) else "") for i in range(len(headers))}
+        if not (d.get("name") or "").strip():
+            continue
+        items.append({"name": d.get("name", "").strip(), "item_code": (d.get("code") or "").strip(),
+                      "size": d.get("size") or "", "material": d.get("material") or "",
+                      "make": d.get("make") or "", "coating": d.get("coating") or "",
+                      "item_type": d.get("item_type") or d.get("type") or "",
+                      "quantity": _num(d.get("quantity") or d.get("qty") or 1) or 1,
+                      "unit": (d.get("unit") or "Nos").strip() or "Nos",
+                      "unit_weight_kg": _num(d.get("unit_weight_kg") or d.get("weight")),
+                      "rate": _num(d.get("rate")), "specs": d.get("specs") or ""})
+    return {"items": items, "count": len(items), "source": "template"}
+
+
+async def _ai_extract_items(rows: List[List[str]]) -> List[dict]:
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    key = os.environ.get("EMERGENT_LLM_KEY")
+    if not key:
+        raise HTTPException(500, "EMERGENT_LLM_KEY not configured")
+    sheet = "\n".join("\t".join(r) for r in rows[:300])[:24000]
+    chat = LlmChat(
+        api_key=key, session_id=f"req-import-{new_id()[:8]}",
+        system_message=("You extract material requirement lines from messy spreadsheets for a scaffolding/construction ERP. "
+                        "Return ONLY a JSON array (no markdown). Each element: "
+                        '{"name": str, "item_code": str, "size": str, "material": str (MOC like MS/GI/Aluminium), '
+                        '"make": str, "coating": str, "item_type": str, "quantity": number, "unit": str, '
+                        '"unit_weight_kg": number, "rate": number, "specs": str}. '
+                        "Skip headers/totals/empty rows. Use empty string or 0 when unknown. Infer sensible units (Nos, Kg, Mtr, Set).")
+    ).with_model("openai", "gpt-5.4")
+    try:
+        resp = await chat.send_message(UserMessage(text=f"Extract the requirement items from this sheet:\n\n{sheet}"))
+    except Exception as e:
+        logger.exception("AI extraction failed")
+        raise HTTPException(502, f"AI extraction failed: {e}")
+    text = str(resp).strip()
+    m = re.search(r"\[.*\]", text, re.S)
+    if not m:
+        raise HTTPException(422, "AI could not find requirement lines in this file")
+    try:
+        parsed = json.loads(m.group(0))
+    except Exception:
+        raise HTTPException(422, "AI returned unparseable data — try the template upload instead")
+    items = []
+    for d in parsed:
+        if not isinstance(d, dict) or not str(d.get("name") or "").strip():
+            continue
+        items.append({"name": str(d.get("name")).strip()[:150], "item_code": str(d.get("item_code") or "")[:40],
+                      "size": str(d.get("size") or "")[:60], "material": str(d.get("material") or "")[:40],
+                      "make": str(d.get("make") or "")[:60], "coating": str(d.get("coating") or "")[:40],
+                      "item_type": str(d.get("item_type") or "")[:60],
+                      "quantity": _num(d.get("quantity")) or 1, "unit": str(d.get("unit") or "Nos")[:20],
+                      "unit_weight_kg": _num(d.get("unit_weight_kg")), "rate": _num(d.get("rate")),
+                      "specs": str(d.get("specs") or "")[:200]})
+    return items
 
 
 @router.get("/project-requests/export.{fmt}")
