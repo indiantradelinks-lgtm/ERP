@@ -100,7 +100,6 @@ export const MENU_ITEMS = [
   { department: "ops", label: "Project Request Center",     to: "/app/ops/requests",               icon: PackageSearch,   testid: "nav-ops-requests", perm: "project_requests" },
   { department: "ops", label: "Cost Centers (Budget)",      to: "/app/admin/cost-centers",         icon: Wallet,          testid: "nav-ops-cost-centers", perm: "projects" },
   { department: "ops", label: "Project P&L",                to: "/app/ops/pnl",                    icon: TrendingUp,      testid: "nav-ops-pnl", perm: "project_pnl" },
-  { department: "ops", label: "Project Planning",           to: "/app/ops/planning",               icon: ClipboardList,   testid: "nav-ops-planning", perm: "projects" },
   { department: "ops", label: "Project Planning",           to: "/app/ops/planning-hub",           icon: ClipboardList,   testid: "nav-ops-planning", perm: "projects" },
   { department: "ops", label: "Material Requirement",       to: "/app/material-allocations",       icon: Boxes,           testid: "nav-ops-material-req", perm: "material_allocations" },
   { department: "ops", parentLabel: "Progress & Registers", label: "Daily Progress Report",      to: "/app/ops/dpr",                    icon: ClipboardCheck,  testid: "nav-ops-dpr", perm: "projects" },

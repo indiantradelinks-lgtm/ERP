@@ -4946,3 +4946,13 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 ### Iteration 162 (Jul 2026) — Sidebar cleanup: "Progress & Registers" group ✅
 - 8 ops submenu items (DPR, Measurement Sheet, Work Progress Tracker, Site Issue Register, Delay Register, Client Instruction, Extra Work Register, Work Permit Register) grouped under a collapsible **Progress & Registers** parent via existing `parentLabel` mechanism in menuConfig.js. Routes/permissions/functionality unchanged (temporary until modules actively used).
 - Self-tested: toggle `sub-ops__Progress & Registers` expands/collapses the 8 links; /app/ops/dpr loads normally.
+
+### Iteration 163 (Aug 2026) — Project Planning Hub consolidation ✅ (iteration_162.json)
+- PlanningHub.jsx (/app/ops/planning-hub): single page with 6 tabs — BOQ/Scope, WBS, Activity Schedule, Resource Planning, Project Budget, Pre-Mobilization. Old routes (/app/ops/planning, /ops/boq, /ops/wbs, /ops/activities, /ops/resources) redirect to planning-hub?tab=<key>.
+- Fixed duplicate "Project Planning" sidebar entry in menuConfig.js (removed stale /app/ops/planning entry sharing testid nav-ops-planning). Verified: 1 sidebar entry, all tabs render, regression on Request Center / Approvals Inbox / Scaffolding passed (90% → fixed remaining HIGH issue).
+- Known non-blocking: hydration warning `<span> inside <option>` from visual-editor instrumentation on native selects in ProjectBOQ/WBS/Activities/Resources/Planning; child tabs each re-fetch /projects on mount (optimization backlog).
+
+## Backlog (as of Aug 2026)
+- P1: Security audit findings (PII/finance endpoint hardening) — not started
+- P2: Paystack payments, SendGrid emails, Dept Health tile, Safety Audit Log Reader UI
+- P3: Asset calibration, 30-day manpower forecast widget, GPS tracking
