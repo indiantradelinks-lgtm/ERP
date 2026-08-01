@@ -4934,3 +4934,11 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - Item lines become a **dropdown from Item Master** filtered by category (`GET /procurement/master/items?category_id=`) — auto-fills item_id/code/name/unit/last rate, shows stock qty; "Other / type manually" fallback keeps free text.
 - Backend: RequestIn.material_category_id persisted as material_category_id/code/name (validated against inv_categories); shown in detail dialog.
 - Self-tested: curl E2E (REQ-2026-0028 stored CONSUM category) + UI script (category → CC auto-pick → 30 master items → unit Kg autofill).
+
+### Iteration 161c (Jul 2026) — Easy Material Entry + AI Excel + Separate Forms ✅ (iteration_161.json all green)
+- **Item detail capture**: every material line has Size, Material (MOC), Make, Coating, Type, Unit Weight (kg), auto Total Weight; request stores per-line + request-level `total_weight_kg`; totals strip (Qty / Weight / Value) in form; detail dialog shows all extras.
+- **Bulk Upload**: `GET /project-requests/material-template` (CSV headers name,code,size,material,make,coating,item_type,quantity,unit,unit_weight_kg,rate,specs) + `POST /project-requests/import-items?mode=template` (CSV/XLSX strict headers) → lines appended into the form for review.
+- **AI Excel Reader**: `?mode=ai` — sheet text → **gpt-5.4 via Emergent LLM key** (emergentintegrations LlmChat) → JSON item lines (skips titles/totals, infers MS/GI, units). "✨ AI Read Excel" button. Verified live (messy xlsx → 3 correct lines, twice).
+- **3 separate forms**: header buttons Material Request / Manpower Request / Service-Payment (6 service types only). Material form has NO request-type dropdown — ONLY the Inventory Category Master select (duplication removed); manpower form only manpower fields.
+- Post-review fix: category change no longer overrides a manually chosen cost center (only auto-fills when empty).
+- Tests: 8/8 backend pytest (`tests/test_iter161_material_scaffolding.py`, one live LLM hit) + frontend 100% full E2E (bulk import → totals 159 kg → submit REQ-2026-0031 → detail dialog).

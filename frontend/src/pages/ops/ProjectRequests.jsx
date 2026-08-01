@@ -82,7 +82,7 @@ export default function ProjectRequests() {
   const onCategoryChange = (catId) => {
     const cat = categories.find((c) => c.id === catId);
     const cc = catId ? ccList.find((c) => c.category_id === catId || (cat && c.category_code === cat.code)) : null;
-    setForm((f) => ({ ...f, material_category_id: catId, cost_center_id: cc ? cc.id : f.cost_center_id, items: [blankItem()] }));
+    setForm((f) => ({ ...f, material_category_id: catId, cost_center_id: f.cost_center_id || (cc ? cc.id : ""), items: [blankItem()] }));
     setStock(null);
     if (catId) {
       api.get("/procurement/master/items", { params: { category_id: catId } }).then((r) => setCatItems(r.data || [])).catch(() => setCatItems([]));
