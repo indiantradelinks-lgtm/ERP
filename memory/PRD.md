@@ -4918,3 +4918,12 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - Imported into preview: 39 SCF-STD-### items, none missing weight — challan weights/values now compute from real data.
 - **Bug fixed** in import.csv: rows sharing a NAME but different CODEs overwrote each other (name-fallback match); name-match now applies only when the row has no code. Verified by re-import (23 created / 16 updated, 0 errors).
 - Self-tested via curl + UI screenshot (no testing-agent run for this small change).
+
+### Iteration 161 (Jul 2026) — 4 Pages Merged → Unified Project Request Center ✅
+- **Merged**: ops "Manpower Requirement" + "Resource Requests" (same legacy page), "Project Request Center" and "Daily Expense Booking" into ONE page at `/app/ops/requests` with tabs **Resource Requests** | **Expense Booking** (`?tab=expenses` deep link). Old routes redirect; 3 sidebar entries removed (HR recruitment page untouched).
+- **Request captures**: Project, Category, **Cost Center** (select loaded via `/api/procurement/master/cost-centers?project_id=`, validated server-side to belong to the project; fulfilment expense uses it over project default), **Site Location**, need-by, priority, attachments.
+- **Category-specific forms**: PPE (per-item Size/Make/Type/Technical Details), IT (Make + Tech specs), Material (Specification), **new Manpower category** (designation select from HR meta + free text, count, skills, Required From/Till) routed to **HR** for fulfilment (FULFIL_ROLES.hr added; est 0 allowed).
+- **ReqItem** extended with size/make/item_type/tech_details/designation_id (persisted + shown in detail dialog).
+- **Legacy section**: collapsible read-only "Legacy Resource / Manpower Requests" table (old /ops/resource-requests data preserved).
+- ProjectExpenses gets `embedded` prop (header hidden inside tab). `_book_expense` prefers request's cost_center_id.
+- **Tests**: iteration_160.json — backend 9/10 → 10/10 after fixing the flagged HIGH bug (frontend called `/api/cost-centers`; correct path `/api/procurement/master/cost-centers` — fixed + verified 16 CCs load, dropdown shows 17 options). Frontend 95%→100%. Regression: stock-check → PR conversion, payment fulfil → expense booking, exports, my-approvals inbox all green.

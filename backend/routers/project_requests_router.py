@@ -206,7 +206,9 @@ async def create_request(p: RequestIn, request: Request,
     cc = None
     if p.cost_center_id:
         cc = await db.cost_centers.find_one({"id": p.cost_center_id},
-                                            {"_id": 0, "id": 1, "category_code": 1, "category_name": 1})
+                                            {"_id": 0, "id": 1, "category_code": 1, "category_name": 1, "project_id": 1})
+        if cc and cc.get("project_id") and cc["project_id"] != project["id"]:
+            raise HTTPException(400, "Selected cost center belongs to a different project")
     steps = [("dept_head", "Project Head")]
     if est > threshold:
         steps += [("general_manager", "GM"), ("director", "Director")]

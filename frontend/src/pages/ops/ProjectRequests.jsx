@@ -76,7 +76,7 @@ export default function ProjectRequests() {
 
   const loadCostCenters = (projectId) => {
     if (!projectId) { setCcList([]); return; }
-    api.get("/cost-centers", { params: { project_id: projectId } }).then((r) => setCcList(r.data || [])).catch(() => setCcList([]));
+    api.get("/procurement/master/cost-centers", { params: { project_id: projectId } }).then((r) => setCcList(r.data || [])).catch(() => setCcList([]));
   };
 
   const estValue = useMemo(() => {
