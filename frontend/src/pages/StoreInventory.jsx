@@ -70,7 +70,7 @@ const NAV = [
   { key: "ledger",        label: "Stock Ledger",         icon: ScrollText,      group: "Stock" },
   { key: "transactions",  label: "Inventory Txns",       icon: ArrowRightLeft,  group: "Operations" },
   { key: "grn",           label: "GRN",                  icon: PackageCheck,    group: "Operations" },
-  { key: "allocations",   label: "Material Allocations", icon: Truck,           group: "Operations" },
+  { key: "allocations",   label: "Material / Asset Allocations", icon: Truck,           group: "Operations" },
   { key: "bulk_alloc",    label: "Bulk Allocation (Category)", icon: Boxes,     group: "Operations" },
   // ── Phase 2: Procurement / Accounts / Finance integration ──────────
   { key: "pr_from_stock", label: "PR from Stock",        icon: ClipboardList,   group: "Procurement Integration" },

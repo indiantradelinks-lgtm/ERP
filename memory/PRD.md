@@ -4956,3 +4956,7 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - P1: Security audit findings (PII/finance endpoint hardening) — not started
 - P2: Paystack payments, SendGrid emails, Dept Health tile, Safety Audit Log Reader UI
 - P3: Asset calibration, 30-day manpower forecast widget, GPS tracking
+
+### Aug 2026 — Label rename + sidebar check ✅
+- Sidebar "Material Requirement" → "Material / Asset Allocations" (menuConfig.js + StoreInventory.jsx tab). Route/API/DB untouched. Sales enquiry/quotation "Material Requirement(s)" textarea fields left as-is (different semantic — client requirements, not allocations).
+- Duplicate "Project Planning" sidebar entry: confirmed already fixed (single entry). Production needs redeploy to pick it up.
