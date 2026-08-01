@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, PackageSearch, CheckCircle2, XCircle, Clock, FileSpreadsheet, FileText, Boxes, ShoppingCart, Truck, Home } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { Plus, RefreshCw, PackageSearch, CheckCircle2, XCircle, Clock, FileSpreadsheet, FileText, Boxes, ShoppingCart, Truck, Home, Users, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -12,15 +14,17 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProjectSelect } from "@/components/MasterSelect";
 import FileUploader from "@/components/FileUploader";
+import ProjectExpenses from "./ProjectExpenses";
 
 const inr = (v) => `₹ ${Number(v || 0).toLocaleString("en-IN")}`;
 const RAISE_ROLES = new Set(["project_coordinator", "project_manager", "super_admin"]);
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const STOCKABLE = new Set(["material", "ppe", "it_material"]);
-const blankItem = () => ({ name: "", quantity: 1, unit: "Nos", rate: 0, specs: "" });
+const blankItem = () => ({ name: "", quantity: 1, unit: "Nos", rate: 0, specs: "", size: "", make: "", item_type: "", tech_details: "", designation_id: "" });
 const blank = () => ({ id: newId(), project_code: "", project_id: "", request_type: "", need_by: "",
   priority: "medium", description: "", items: [blankItem()], vendor: "", vehicle_ref: "",
-  period_from: "", period_to: "", monthly_rate: "", months: "", from_location: "", to_location: "", amount: "", remarks: "" });
+  period_from: "", period_to: "", monthly_rate: "", months: "", from_location: "", to_location: "", amount: "", remarks: "",
+  cost_center_id: "", site_location: "" });
 
 const STATUS = {
   pending_approval: ["Pending Approval", "border-amber-300 text-amber-900 bg-amber-50"],
@@ -30,11 +34,13 @@ const STATUS = {
   closed: ["Closed", "border-slate-300 text-slate-700 bg-slate-50"],
   rejected: ["Rejected", "border-rose-300 text-rose-900 bg-rose-50"],
 };
-const DEPT_ICON = { stores: Boxes, logistics: Truck, admin: Home };
+const DEPT_ICON = { stores: Boxes, logistics: Truck, admin: Home, hr: Users };
 
 export default function ProjectRequests() {
   const { user } = useAuth();
   const canRaise = RAISE_ROLES.has(user?.role);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get("tab") === "expenses" ? "expenses" : "requests";
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState(null);
   const [types, setTypes] = useState([]);
@@ -44,9 +50,12 @@ export default function ProjectRequests() {
   const [attFiles, setAttFiles] = useState([]);
   const [stock, setStock] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [ccList, setCcList] = useState([]);
+  const [designations, setDesignations] = useState([]);
 
   const meta = useMemo(() => types.find((t) => t.key === form.request_type), [types, form.request_type]);
   const isStockable = form.request_type && STOCKABLE.has(form.request_type);
+  const isManpower = form.request_type === "manpower";
   const isVehicle = form.request_type?.startsWith("vehicle") || form.request_type === "one_time_vehicle";
   const isPayment = meta?.payment;
 
@@ -62,7 +71,13 @@ export default function ProjectRequests() {
     } catch { toast.error("Failed to load requests"); }
   };
   useEffect(() => { api.get("/project-requests/types").then((r) => setTypes(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { api.get("/ops/resource-requests/meta/designations").then((r) => setDesignations(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { load(); }, [filters]); // eslint-disable-line
+
+  const loadCostCenters = (projectId) => {
+    if (!projectId) { setCcList([]); return; }
+    api.get("/cost-centers", { params: { project_id: projectId } }).then((r) => setCcList(r.data || [])).catch(() => setCcList([]));
+  };
 
   const estValue = useMemo(() => {
     if (form.amount) return Number(form.amount);
@@ -134,23 +149,36 @@ export default function ProjectRequests() {
           <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary mb-1.5 flex items-center gap-2">
             <PackageSearch className="h-3 w-3" /> Project Request Center
           </div>
-          <h1 className="font-display font-black text-3xl tracking-tight">Project Requests</h1>
+          <h1 className="font-display font-black text-3xl tracking-tight">Project Request Center</h1>
           <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
-            One place for every site request — Material, PPE, IT, Accommodation, Fuel, Insurance & Vehicles.
-            Stock is auto-checked; shortfalls become Purchase Requests. Payment types flow into Daily Expense & Accounts.
+            One place for every project need — Material, PPE, IT, Manpower, Accommodation, Fuel, Insurance, Vehicles
+            &amp; Expense Booking. Stock is auto-checked; shortfalls become Purchase Requests; each request routes to its
+            linked department for fulfilment.
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" className="h-9 rounded-sm" onClick={load} data-testid="req-reload"><RefreshCw className="h-4 w-4" /></Button>
-          <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("xlsx")} data-testid="req-export-xlsx"><FileSpreadsheet className="h-4 w-4 mr-1.5" /> Excel</Button>
-          <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("pdf")} data-testid="req-export-pdf"><FileText className="h-4 w-4 mr-1.5" /> PDF</Button>
-          {canRaise && (
-            <Button className="h-9 rounded-sm" onClick={() => { setForm(blank()); setAttFiles([]); setStock(null); setCreating(true); }} data-testid="req-new">
-              <Plus className="h-4 w-4 mr-1.5" /> Raise Request
-            </Button>
-          )}
-        </div>
+        {tab === "requests" && (
+          <div className="flex gap-2">
+            <Button variant="outline" className="h-9 rounded-sm" onClick={load} data-testid="req-reload"><RefreshCw className="h-4 w-4" /></Button>
+            <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("xlsx")} data-testid="req-export-xlsx"><FileSpreadsheet className="h-4 w-4 mr-1.5" /> Excel</Button>
+            <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("pdf")} data-testid="req-export-pdf"><FileText className="h-4 w-4 mr-1.5" /> PDF</Button>
+            {canRaise && (
+              <Button className="h-9 rounded-sm" onClick={() => { setForm(blank()); setAttFiles([]); setStock(null); setCcList([]); setCreating(true); }} data-testid="req-new">
+                <Plus className="h-4 w-4 mr-1.5" /> Raise Request
+              </Button>
+            )}
+          </div>
+        )}
       </div>
+
+      <Tabs value={tab} onValueChange={(v) => setSearchParams(v === "expenses" ? { tab: "expenses" } : {})}>
+        <TabsList className="rounded-sm">
+          <TabsTrigger value="requests" className="rounded-sm" data-testid="prc-tab-requests">Resource Requests</TabsTrigger>
+          <TabsTrigger value="expenses" className="rounded-sm" data-testid="prc-tab-expenses">Expense Booking</TabsTrigger>
+        </TabsList>
+        <TabsContent value="expenses" className="mt-4">
+          <ProjectExpenses embedded />
+        </TabsContent>
+        <TabsContent value="requests" className="mt-4 space-y-5">
 
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         {kpis.map(([label, v]) => (
@@ -238,6 +266,10 @@ export default function ProjectRequests() {
         </Table>
       </div>
 
+      <LegacyResourceRequests />
+        </TabsContent>
+      </Tabs>
+
       {/* Raise dialog */}
       <Dialog open={creating} onOpenChange={setCreating}>
         <DialogContent className="max-w-3xl rounded-sm max-h-[88vh] overflow-y-auto">
@@ -246,14 +278,26 @@ export default function ProjectRequests() {
             <DialogDescription>Approved by Project Head (+ GM → Director for large value), then routed to the owning department.</DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-1">
-            <ProjectSelect label="Project *" value={form.project_code} onChange={(code, row) => setForm({ ...form, project_code: code, project_id: row?.id || "" })} testid="req-form-project" />
+            <ProjectSelect label="Project *" value={form.project_code} onChange={(code, row) => { setForm({ ...form, project_code: code, project_id: row?.id || "", cost_center_id: "" }); loadCostCenters(row?.id); }} testid="req-form-project" />
             <div>
-              <Label className="text-[10px] uppercase tracking-wider">Request Type *</Label>
-              <select value={form.request_type} onChange={(e) => { setForm({ ...form, request_type: e.target.value }); setStock(null); }}
+              <Label className="text-[10px] uppercase tracking-wider">Request Type / Category *</Label>
+              <select value={form.request_type} onChange={(e) => { setForm({ ...form, request_type: e.target.value, items: [blankItem()] }); setStock(null); }}
                 className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-type">
                 <option value="">— select —</option>
                 {types.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
               </select>
+            </div>
+            <div>
+              <Label className="text-[10px] uppercase tracking-wider">Cost Center</Label>
+              <select value={form.cost_center_id} onChange={(e) => setForm({ ...form, cost_center_id: e.target.value })}
+                className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-costcenter">
+                <option value="">— auto (project default) —</option>
+                {ccList.map((cc) => <option key={cc.id} value={cc.id}>{cc.category_code} · {cc.category_name}{cc.budget ? ` (budget ${inr(cc.budget)})` : ""}</option>)}
+              </select>
+            </div>
+            <div>
+              <Label className="text-[10px] uppercase tracking-wider">Site Location</Label>
+              <Input value={form.site_location} onChange={(e) => setForm({ ...form, site_location: e.target.value })} placeholder="Site / block / area" className="h-9 rounded-sm mt-1" data-testid="req-form-location" />
             </div>
             <div>
               <Label className="text-[10px] uppercase tracking-wider">Need By</Label>
@@ -280,14 +324,33 @@ export default function ProjectRequests() {
                   {form.items.map((it, i) => {
                     const sl = stock?.lines?.[i];
                     return (
-                      <div key={i} className="grid grid-cols-12 gap-1.5 items-center">
-                        <Input value={it.name} onChange={(e) => setItem(i, { name: e.target.value })} placeholder="Item name" className="h-8 rounded-sm col-span-4 text-xs" data-testid={`req-item-name-${i}`} />
-                        <Input type="number" value={it.quantity} onChange={(e) => setItem(i, { quantity: e.target.value })} placeholder="Qty" className="h-8 rounded-sm col-span-2 text-xs tabular" data-testid={`req-item-qty-${i}`} />
-                        <Input value={it.unit} onChange={(e) => setItem(i, { unit: e.target.value })} placeholder="Unit" className="h-8 rounded-sm col-span-2 text-xs" />
-                        <Input type="number" value={it.rate} onChange={(e) => setItem(i, { rate: e.target.value })} placeholder="Rate" className="h-8 rounded-sm col-span-2 text-xs tabular" />
-                        <div className="col-span-2 text-[10px]">
-                          {sl ? (sl.in_stock ? <span className="text-emerald-700 font-bold">In stock ({sl.on_hand})</span> : <span className="text-amber-700 font-bold">Short {sl.shortfall}</span>) : <span className="text-muted-foreground">—</span>}
+                      <div key={i} className="space-y-1 pb-1.5 border-b border-border/40 last:border-0">
+                        <div className="grid grid-cols-12 gap-1.5 items-center">
+                          <Input value={it.name} onChange={(e) => setItem(i, { name: e.target.value })} placeholder="Item name" className="h-8 rounded-sm col-span-4 text-xs" data-testid={`req-item-name-${i}`} />
+                          <Input type="number" value={it.quantity} onChange={(e) => setItem(i, { quantity: e.target.value })} placeholder="Qty" className="h-8 rounded-sm col-span-2 text-xs tabular" data-testid={`req-item-qty-${i}`} />
+                          <Input value={it.unit} onChange={(e) => setItem(i, { unit: e.target.value })} placeholder="Unit" className="h-8 rounded-sm col-span-2 text-xs" />
+                          <Input type="number" value={it.rate} onChange={(e) => setItem(i, { rate: e.target.value })} placeholder="Rate" className="h-8 rounded-sm col-span-2 text-xs tabular" />
+                          <div className="col-span-2 text-[10px]">
+                            {sl ? (sl.in_stock ? <span className="text-emerald-700 font-bold">In stock ({sl.on_hand})</span> : <span className="text-amber-700 font-bold">Short {sl.shortfall}</span>) : <span className="text-muted-foreground">—</span>}
+                          </div>
                         </div>
+                        {form.request_type === "ppe" && (
+                          <div className="grid grid-cols-12 gap-1.5 items-center">
+                            <Input value={it.size} onChange={(e) => setItem(i, { size: e.target.value })} placeholder="Size (S/M/L/XL, 9-inch…)" className="h-8 rounded-sm col-span-3 text-xs" data-testid={`req-item-size-${i}`} />
+                            <Input value={it.make} onChange={(e) => setItem(i, { make: e.target.value })} placeholder="Make / Brand" className="h-8 rounded-sm col-span-3 text-xs" data-testid={`req-item-make-${i}`} />
+                            <Input value={it.item_type} onChange={(e) => setItem(i, { item_type: e.target.value })} placeholder="Type (helmet / shoes / harness…)" className="h-8 rounded-sm col-span-3 text-xs" data-testid={`req-item-type-${i}`} />
+                            <Input value={it.tech_details} onChange={(e) => setItem(i, { tech_details: e.target.value })} placeholder="Technical details (IS code, rating…)" className="h-8 rounded-sm col-span-3 text-xs" data-testid={`req-item-tech-${i}`} />
+                          </div>
+                        )}
+                        {form.request_type === "it_material" && (
+                          <div className="grid grid-cols-12 gap-1.5 items-center">
+                            <Input value={it.make} onChange={(e) => setItem(i, { make: e.target.value })} placeholder="Make / Brand (Dell, HP…)" className="h-8 rounded-sm col-span-4 text-xs" data-testid={`req-item-make-${i}`} />
+                            <Input value={it.tech_details} onChange={(e) => setItem(i, { tech_details: e.target.value })} placeholder="Technical specs (i5/16GB/512GB, A4 duplex…)" className="h-8 rounded-sm col-span-8 text-xs" data-testid={`req-item-tech-${i}`} />
+                          </div>
+                        )}
+                        {form.request_type === "material" && (
+                          <Input value={it.specs} onChange={(e) => setItem(i, { specs: e.target.value })} placeholder="Specification (size, grade, standard…)" className="h-8 rounded-sm text-xs" data-testid={`req-item-specs-${i}`} />
+                        )}
                       </div>
                     );
                   })}
@@ -298,6 +361,38 @@ export default function ProjectRequests() {
                   )}
                 </div>
               </div>
+            )}
+
+            {/* Manpower lines */}
+            {isManpower && (
+              <>
+                <div className="col-span-2 border border-border rounded-sm">
+                  <div className="flex items-center justify-between p-2 border-b border-border">
+                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Manpower Lines (routed to HR)</div>
+                    <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={() => setForm({ ...form, items: [...form.items, blankItem()] })} data-testid="req-add-manpower"><Plus className="h-3 w-3 mr-1" /> Add</Button>
+                  </div>
+                  <div className="p-2 space-y-1.5">
+                    {form.items.map((it, i) => (
+                      <div key={i} className="grid grid-cols-12 gap-1.5 items-center">
+                        <select value={it.designation_id || ""} onChange={(e) => {
+                          const d = designations.find((x) => x.id === e.target.value);
+                          setItem(i, { designation_id: e.target.value, name: d ? d.name : it.name });
+                        }} className="h-8 rounded-sm border border-input bg-background px-2 text-xs col-span-4" data-testid={`req-mp-desig-${i}`}>
+                          <option value="">— designation —</option>
+                          {designations.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                        </select>
+                        <Input value={it.name} onChange={(e) => setItem(i, { name: e.target.value })} placeholder="or type designation" className="h-8 rounded-sm col-span-3 text-xs" data-testid={`req-mp-name-${i}`} />
+                        <Input type="number" value={it.quantity} onChange={(e) => setItem(i, { quantity: e.target.value })} placeholder="Count" className="h-8 rounded-sm col-span-2 text-xs tabular" data-testid={`req-mp-count-${i}`} />
+                        <Input value={it.specs} onChange={(e) => setItem(i, { specs: e.target.value })} placeholder="Skills / certificates" className="h-8 rounded-sm col-span-3 text-xs" data-testid={`req-mp-skills-${i}`} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div><Label className="text-[10px] uppercase tracking-wider">Required From</Label>
+                  <Input type="date" value={form.period_from} onChange={(e) => setForm({ ...form, period_from: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="req-mp-from" /></div>
+                <div><Label className="text-[10px] uppercase tracking-wider">Required Till</Label>
+                  <Input type="date" value={form.period_to} onChange={(e) => setForm({ ...form, period_to: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="req-mp-to" /></div>
+              </>
             )}
 
             {/* Vehicle / accommodation / payment fields */}
@@ -365,7 +460,9 @@ export default function ProjectRequests() {
               <div className="space-y-3 text-sm">
                 <div className="grid grid-cols-3 gap-2">
                   {[["Status", (STATUS[detail.status] || [detail.status])[0]], ["Est. Value", inr(detail.est_value)],
-                    ["Priority", detail.priority], ["Need By", detail.need_by || "—"], ["Vendor", detail.vendor || "—"],
+                    ["Priority", detail.priority], ["Need By", detail.need_by || "—"],
+                    ["Cost Center", detail.cost_center_label || "Auto (project default)"],
+                    ["Site Location", detail.site_location || "—"], ["Vendor", detail.vendor || "—"],
                     ["Raised By", detail.created_by]].map(([k, v]) => (
                     <div key={k} className="border border-border rounded-sm p-2"><div className="text-[10px] uppercase text-muted-foreground">{k}</div><div className="font-semibold text-xs">{v}</div></div>
                   ))}
@@ -378,7 +475,11 @@ export default function ProjectRequests() {
                       <tbody>
                         {detail.items.map((it, i) => {
                           const sl = (detail.stock_lines || [])[i];
-                          return <tr key={i} className="border-b border-border/50"><td className="p-1.5">{it.name}</td><td className="p-1.5 tabular">{it.quantity} {it.unit}</td>
+                          const extras = [it.size && `Size: ${it.size}`, it.make && `Make: ${it.make}`, it.item_type && `Type: ${it.item_type}`,
+                            it.tech_details && `Tech: ${it.tech_details}`, it.specs && `Specs: ${it.specs}`].filter(Boolean).join(" · ");
+                          return <tr key={i} className="border-b border-border/50">
+                            <td className="p-1.5">{it.name}{extras && <div className="text-[10px] text-muted-foreground">{extras}</div>}</td>
+                            <td className="p-1.5 tabular">{it.quantity} {it.unit}</td>
                             <td className="p-1.5 text-right">{sl ? (sl.in_stock ? <span className="text-emerald-700">In stock ({sl.on_hand})</span> : <span className="text-amber-700">Short {sl.shortfall}</span>) : ""}</td></tr>;
                         })}
                       </tbody>
@@ -418,3 +519,62 @@ export default function ProjectRequests() {
     </div>
   );
 }
+
+const LEGACY_STATUS_TONE = {
+  completed: "border-emerald-300 text-emerald-800 bg-emerald-50",
+  approved: "border-blue-300 text-blue-800 bg-blue-50",
+  rejected: "border-rose-300 text-rose-800 bg-rose-50",
+  cancelled: "border-slate-300 text-slate-600 bg-slate-50",
+};
+
+function LegacyResourceRequests() {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState(null);
+
+  useEffect(() => {
+    if (!open || rows !== null) return;
+    api.get("/ops/resource-requests").then((r) => setRows(r.data || [])).catch(() => setRows([]));
+  }, [open]); // eslint-disable-line
+
+  return (
+    <div className="bg-card border border-border rounded-sm">
+      <button className="w-full flex items-center gap-2 p-3 text-left" onClick={() => setOpen(!open)} data-testid="legacy-rr-toggle">
+        {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+          Legacy Resource / Manpower Requests (old module — read only)
+        </span>
+      </button>
+      {open && (
+        <Table>
+          <TableHeader><TableRow className="bg-muted/30 hover:bg-muted/30">
+            <TableHead className="text-[10px] uppercase tracking-wider">Request # / Date</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-wider">Project</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-wider">Type / Item</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-wider text-right">Qty</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-wider">Status</TableHead>
+          </TableRow></TableHeader>
+          <TableBody>
+            {rows === null && <TableRow><TableCell colSpan={5} className="text-center py-6 text-muted-foreground">Loading…</TableCell></TableRow>}
+            {rows?.length === 0 && <TableRow><TableCell colSpan={5} className="text-center py-6 text-muted-foreground">No legacy requests.</TableCell></TableRow>}
+            {(rows || []).slice(0, 100).map((r) => (
+              <TableRow key={r.id} data-testid={`legacy-rr-row-${r.id}`}>
+                <TableCell>
+                  <div className="font-mono-data text-xs font-bold">{r.request_no || (r.id || "").slice(0, 8)}</div>
+                  <div className="text-[10px] text-muted-foreground">{(r.created_at || "").slice(0, 10)} · {r.requested_by || r.created_by || ""}</div>
+                </TableCell>
+                <TableCell className="text-xs">{r.project_code || r.project_name || "—"}</TableCell>
+                <TableCell className="text-xs">
+                  <Badge variant="outline" className="rounded-sm text-[10px]">{r.resource_type}</Badge>
+                  <span className="ml-1.5">{r.item_name || r.designation || ""}</span>
+                </TableCell>
+                <TableCell className="text-right font-mono-data tabular text-xs">{r.quantity} {r.unit || ""}</TableCell>
+                <TableCell><Badge variant="outline" className={`rounded-sm text-[10px] ${LEGACY_STATUS_TONE[r.status] || "border-amber-300 text-amber-900 bg-amber-50"}`}>{r.status}</Badge></TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </div>
+  );
+}
+

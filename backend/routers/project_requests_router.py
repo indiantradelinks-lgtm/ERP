@@ -46,12 +46,14 @@ REQUEST_TYPES: Dict[str, Dict[str, Any]] = {
     "vehicle_manpower": {"label": "Monthly Vehicle — Manpower (Car/Bus/Winger)", "dept": "logistics", "stockable": False, "payment": True, "expense_type": "vehicle"},
     "vehicle_material": {"label": "Monthly Vehicle — Material (Truck)", "dept": "logistics", "stockable": False, "payment": True, "expense_type": "vehicle"},
     "one_time_vehicle": {"label": "One-Time Vehicle (Site-to-Site / Godown)", "dept": "logistics", "stockable": False, "payment": True, "expense_type": "vehicle"},
+    "manpower":         {"label": "Manpower / Site Staff", "dept": "hr", "stockable": False, "payment": False, "expense_type": None},
 }
 RAISE_ROLES = {"project_coordinator", "project_manager", "super_admin"}
 FULFIL_ROLES = {
     "stores": {"super_admin", "store_manager", "storekeeper", "inventory_manager", "procurement_executive"},
     "logistics": {"super_admin", "logistics_executive", "logistics_manager", "dept_head"},
     "admin": {"super_admin", "accounts_executive", "hr_executive", "admin_executive", "director"},
+    "hr": {"super_admin", "hr_executive", "hr_manager", "dept_head", "director"},
 }
 
 
@@ -73,6 +75,12 @@ class ReqItem(BaseModel):
     unit: str = "Nos"
     rate: float = 0
     specs: Optional[str] = None
+    # category-specific detail fields (PPE / IT / Manpower)
+    size: Optional[str] = None
+    make: Optional[str] = None
+    item_type: Optional[str] = None
+    tech_details: Optional[str] = None
+    designation_id: Optional[str] = None
 
 
 class RequestIn(BaseModel):
@@ -95,6 +103,8 @@ class RequestIn(BaseModel):
     to_location: Optional[str] = None
     amount: Optional[float] = None
     remarks: Optional[str] = None
+    cost_center_id: Optional[str] = None
+    site_location: Optional[str] = None
 
 
 class ActionIn(BaseModel):
@@ -193,6 +203,10 @@ async def create_request(p: RequestIn, request: Request,
         stock_lines = [await _stock_for_item(i) for i in p.items]
 
     threshold = await _large_threshold()
+    cc = None
+    if p.cost_center_id:
+        cc = await db.cost_centers.find_one({"id": p.cost_center_id},
+                                            {"_id": 0, "id": 1, "category_code": 1, "category_name": 1})
     steps = [("dept_head", "Project Head")]
     if est > threshold:
         steps += [("general_manager", "GM"), ("director", "Director")]
@@ -207,6 +221,9 @@ async def create_request(p: RequestIn, request: Request,
         "owning_dept": meta["dept"], "is_payment": meta["payment"], "is_stockable": meta["stockable"],
         "expense_type": meta["expense_type"],
         "need_by": p.need_by, "priority": p.priority, "description": p.description or "",
+        "cost_center_id": (cc or {}).get("id"),
+        "cost_center_label": f"{(cc or {}).get('category_code') or ''} · {(cc or {}).get('category_name') or ''}".strip(" ·") if cc else None,
+        "site_location": p.site_location,
         "items": [i.model_dump() for i in p.items],
         "stock_lines": stock_lines,
         "vendor": p.vendor, "vehicle_ref": p.vehicle_ref,
@@ -361,8 +378,13 @@ async def fulfil_request(rid: str, p: ActionIn, request: Request,
 async def _book_expense(row: dict, user: dict) -> Optional[str]:
     """Create a Daily Expense (approved_for_payment) from a fulfilled payment request."""
     try:
-        cc = await db.cost_centers.find_one(
-            {"project_id": row["project_id"], "active": {"$ne": False}}, {"_id": 0, "id": 1, "category_code": 1, "category_name": 1})
+        cc = None
+        if row.get("cost_center_id"):
+            cc = await db.cost_centers.find_one({"id": row["cost_center_id"]},
+                                                {"_id": 0, "id": 1, "category_code": 1, "category_name": 1})
+        if not cc:
+            cc = await db.cost_centers.find_one(
+                {"project_id": row["project_id"], "active": {"$ne": False}}, {"_id": 0, "id": 1, "category_code": 1, "category_name": 1})
         threshold = await _large_threshold()
         exp = {
             "id": new_id(), "expense_no": await next_sequence("PEX"),

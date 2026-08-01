@@ -29,7 +29,7 @@ const STATUS_BADGE = {
   rejected: <Badge variant="destructive" className="rounded-sm">Rejected</Badge>,
 };
 
-export default function ProjectExpenses() {
+export default function ProjectExpenses({ embedded = false }) {
   const { user } = useAuth();
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -124,6 +124,7 @@ export default function ProjectExpenses() {
   return (
     <div className="space-y-5" data-testid="project-expenses-page">
       <div className="flex items-end justify-between gap-3 flex-wrap">
+        {!embedded ? (
         <div>
           <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary mb-1.5 flex items-center gap-2">
             <Wallet className="h-3 w-3" /> Cost Center Booking
@@ -135,6 +136,11 @@ export default function ProjectExpenses() {
             for payment review — Accounts approves, pays and updates status with payment proof.
           </p>
         </div>
+        ) : (
+        <p className="text-sm text-muted-foreground max-w-2xl">
+          Book project expenses — approved by <b>Project Head</b> (→ GM → Director above {inr(threshold)}), then paid by Accounts with proof.
+        </p>
+        )}
         <div className="flex gap-2">
           <Button variant="outline" className="h-9 rounded-sm" onClick={load} data-testid="pex-reload"><RefreshCw className="h-4 w-4" /></Button>
           <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("xlsx")} data-testid="pex-export-xlsx"><FileSpreadsheet className="h-4 w-4 mr-1.5" /> Excel</Button>

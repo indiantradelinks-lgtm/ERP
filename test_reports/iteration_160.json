@@ -1,0 +1,47 @@
+{
+  "summary": "Iter 160 — Project Request Center merge (4 pages → 1 page + Manpower + Cost Center + Item detail fields). Backend: 9/10 PASS in /app/backend/tests/test_iter160_project_request_center.py. Verified: (a) /project-requests/types now exposes manpower with dept=hr, stockable=false, payment=false; (b) PPE request persists per-item size/make/item_type/tech_details and site_location/cost_center_id on the parent doc; (c) manpower request accepts est_value=0, routes to owning_dept=hr on approve; store role blocked (403) from fulfilling hr request, super_admin allowed; (d) cost-center preference confirmed — a payment (accommodation) request created with cost_center_id → fulfil → auto-booked project_expense stores THAT cost_center_id (not the project default); (e) stock-check endpoint, material shortfall→approve→raise-pr (PR-2026-####), and export.xlsx/pdf all green. Frontend UI (test_pm@erp.com): sidebar has ONE 'Project Request Center' entry, old 'Daily Expense Booking' / 'Manpower Requirement' / 'Resource Requests' entries GONE; prc-tab-requests / prc-tab-expenses tabs render; Expenses tab embeds ProjectExpenses (57 pex-* testids); URL ?tab=expenses selects expenses; /app/ops/expenses redirects to /app/ops/requests?tab=expenses; /app/ops/resource-requests redirects to /app/ops/requests; legacy-rr-toggle present; Raise Request dialog exposes req-form-project / req-form-type / req-form-costcenter / req-form-location / req-uploader; selecting ppe renders req-item-size-0..tech-0; selecting manpower renders req-mp-desig/name/count/skills/from/to. ONE CRITICAL BACKEND ROUTING BUG surfaced (see below).",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/cost-centers",
+        "issue": "Frontend RaiseRequest dialog (/app/frontend/src/pages/ops/ProjectRequests.jsx:79) calls `api.get('/cost-centers', {params:{project_id}})` which resolves to `/api/cost-centers` and returns 404. The backend endpoint is mounted at `/api/procurement/master/cost-centers` (procurement_master_router has prefix='/procurement/master'). Effect: the Cost Center dropdown in the Raise Request dialog stays empty ('— auto (project default) —' only) for EVERY project, so users cannot pick a non-default cost center from the UI. Confirmed via curl (404) and browser network log (404 fired when project selected). Backend cost-center PREFERENCE logic itself is correct — when cost_center_id is supplied on POST /api/project-requests, the fulfilled expense uses it (verified by test_cost_center_preference_on_payment_fulfil). Fix: either add a route alias `@router.get('/cost-centers')` at api root, or change frontend to `api.get('/procurement/master/cost-centers', ...)`.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "RaiseRequest dialog · Cost Center select",
+        "issue": "Dropdown only ever shows '— auto (project default) —' because /api/cost-centers returns 404. See backend critical issue.",
+        "selector": "[data-testid=\"req-form-costcenter\"]",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter160_project_request_center.py",
+    "/app/test_reports/pytest/iter160.xml"
+  ],
+  "action_items": [
+    "Fix cost-center endpoint mismatch — either add `/cost-centers` alias to a router mounted under /api (e.g. inside project_requests_router.py or a small shim in procurement_master_router without prefix), OR patch /app/frontend/src/pages/ops/ProjectRequests.jsx:79 to call `/procurement/master/cost-centers`. Preferred fix is a backend alias so the frontend contract in the review request holds."
+  ],
+  "critical_code_review_comments": [
+    "project_requests_router._book_expense (line 386): fallback still looks up cost_centers by project_id when cost_center_id is missing — good. But no logging when a supplied cost_center_id doesn't resolve (silently falls back to project default). Consider warning + storing 'cost_center_missing' flag to help audit.",
+    "project_requests_router.create_request: no server-side check that cost_center.project_id matches p.project_id — user could pass a CC from a different project and it would be accepted (label displays but downstream expense uses whichever record is fetched). Add `if cc and cc.get('project_id') != project['id']: raise HTTPException(400, ...)`.",
+    "project_requests_router: manpower type is not stockable and not payment; that's correct, but fulfil_request has no items-consumed side-effect for manpower (no deployment / candidate creation trigger). Fine for MVP; flag if HR expects auto-create.",
+    "ProjectRequests.jsx:79 loadCostCenters swallows all errors with `.catch(() => setCcList([]))` — this masks the /cost-centers 404 in UX. Show a toast or console.warn so this class of routing bug is caught in dev.",
+    "Router mounting inconsistency: /api/cost-centers vs /api/procurement/master/cost-centers is exactly the kind of prefix drift that will bite again. Suggest a central endpoint-map lint or an OpenAPI contract test that fetches /api/openapi.json and asserts key endpoints exist."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter160_project_request_center.py"],
+  "success_rate": {"backend": "90% (9/10 pass; 1 fail = the cost-centers routing bug)", "frontend": "95% (all tabs, form fields, category-specific items, redirects verified; only CC dropdown non-functional due to backend routing bug)"},
+  "test_credentials": "admin@erp.com / Admin@123, test_pm@erp.com / PM@12345, store@erp.com / Store@1234",
+  "seed_data_creation": "Test created TEST_iter160 PPE, Manpower, Material (short_XXXX), Accommodation requests + one auto-raised PR (PR-2026-####) via the raise-pr regression. Not cleaned up — status pending_approval/with_dept/fulfilled rows remain, but request_no is auto-sequenced so no dupes.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Pytest lives at /app/backend/tests/test_iter160_project_request_center.py — 9/10 pass; test_cost_centers_list will keep failing until the /api/cost-centers alias is added (or the assertion loosened). Project select on the RaiseRequest dialog is a NATIVE <select> (via components/MasterSelect.jsx), so playwright must use `select_option`, not `.click()` + `[role='option']`. Item detail rows (req-item-size-0 etc.) only render AFTER a type is picked; manpower rows require type='manpower'. The Cost Center dropdown will remain empty in UI even after the alias fix unless the selected project actually has entries in db.cost_centers — verified project PRJ-2026-0035 has none, but there are E2E projects with 1 CC each (e.g. E2E-TEST-178532-P1 · CONSUM).",
+  "rca of the issue": "Frontend calls `/api/cost-centers` (via `api.get('/cost-centers')` where api baseURL = REACT_APP_BACKEND_URL + '/api'). Backend defines the endpoint inside procurement_master_router.py which is mounted with prefix='/procurement/master', so the true path is `/api/procurement/master/cost-centers`. Result: 404 on every dropdown load → cost center list is always empty in the Raise Request dialog. Two viable fixes: (1) add a lightweight alias route `@router.get('/cost-centers')` in a router without prefix (e.g. inside project_requests_router) that proxies to the same handler; (2) change loadCostCenters in ProjectRequests.jsx to use `/procurement/master/cost-centers`. Backend business logic (cost_center_id preference on _book_expense) is proven correct and needs no changes."
+}

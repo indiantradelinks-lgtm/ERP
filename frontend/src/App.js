@@ -170,7 +170,6 @@ import ProjectAuditTrail from "@/pages/ops/ProjectAuditTrail";
 import ProjectSettings from "@/pages/ops/ProjectSettings";
 import ProjectDashboardPhase1 from "@/pages/ops/ProjectDashboard";
 import MyAssignedProjects from "@/pages/ops/MyAssignedProjects";
-import ResourceRequests from "@/pages/ops/ResourceRequests";
 import ProjectOpsDashboard from "@/pages/ops/ProjectOpsDashboard";
 import OpsReports from "@/pages/ops/OpsReports";
 import ActivityTimeline from "@/pages/ops/ActivityTimeline";
@@ -245,7 +244,7 @@ export default function App() {
             <Route path="/app/attendance" element={<ProtectedShell><Attendance /></ProtectedShell>} />
             <Route path="/app/attendance-center" element={<ProtectedShell><AttendanceCenter /></ProtectedShell>} />
             <Route path="/app/hr/group-medical" element={<ProtectedShell><GroupMedical /></ProtectedShell>} />
-            <Route path="/app/ops/expenses" element={<ProtectedShell><ProjectExpenses /></ProtectedShell>} />
+            <Route path="/app/ops/expenses" element={<Navigate to="/app/ops/requests?tab=expenses" replace />} />
             <Route path="/app/ops/requests" element={<ProtectedShell><ProjectRequests /></ProtectedShell>} />
             <Route path="/app/scaffolding" element={<ProtectedShell><Scaffolding /></ProtectedShell>} />
             <Route path="/app/my-approvals" element={<ProtectedShell><MyApprovalsCenter /></ProtectedShell>} />
@@ -262,7 +261,7 @@ export default function App() {
             <Route path="/app/ops/settings" element={<ProtectedShell><ProjectSettings /></ProtectedShell>} />
             <Route path="/app/ops/dashboard" element={<ProtectedShell><ProjectDashboardPhase1 /></ProtectedShell>} />
             <Route path="/app/ops/my-projects" element={<ProtectedShell><MyAssignedProjects /></ProtectedShell>} />
-            <Route path="/app/ops/resource-requests" element={<ProtectedShell><ResourceRequests /></ProtectedShell>} />
+            <Route path="/app/ops/resource-requests" element={<Navigate to="/app/ops/requests" replace />} />
             <Route path="/app/ops/project-dashboard" element={<ProtectedShell><ProjectOpsDashboard /></ProtectedShell>} />
             <Route path="/app/ops/reports" element={<ProtectedShell><OpsReports /></ProtectedShell>} />
             <Route path="/app/ops/timeline" element={<ProtectedShell><ActivityTimeline /></ProtectedShell>} />
