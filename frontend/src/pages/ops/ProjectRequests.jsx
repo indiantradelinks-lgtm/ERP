@@ -20,11 +20,11 @@ const inr = (v) => `₹ ${Number(v || 0).toLocaleString("en-IN")}`;
 const RAISE_ROLES = new Set(["project_coordinator", "project_manager", "super_admin"]);
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const STOCKABLE = new Set(["material", "ppe", "it_material"]);
-const blankItem = () => ({ name: "", quantity: 1, unit: "Nos", rate: 0, specs: "", size: "", make: "", item_type: "", tech_details: "", designation_id: "" });
+const blankItem = () => ({ name: "", quantity: 1, unit: "Nos", rate: 0, specs: "", size: "", make: "", item_type: "", tech_details: "", designation_id: "", item_id: "", item_code: "", custom: false });
 const blank = () => ({ id: newId(), project_code: "", project_id: "", request_type: "", need_by: "",
   priority: "medium", description: "", items: [blankItem()], vendor: "", vehicle_ref: "",
   period_from: "", period_to: "", monthly_rate: "", months: "", from_location: "", to_location: "", amount: "", remarks: "",
-  cost_center_id: "", site_location: "" });
+  cost_center_id: "", site_location: "", material_category_id: "" });
 
 const STATUS = {
   pending_approval: ["Pending Approval", "border-amber-300 text-amber-900 bg-amber-50"],
@@ -52,6 +52,8 @@ export default function ProjectRequests() {
   const [detail, setDetail] = useState(null);
   const [ccList, setCcList] = useState([]);
   const [designations, setDesignations] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [catItems, setCatItems] = useState([]);
 
   const meta = useMemo(() => types.find((t) => t.key === form.request_type), [types, form.request_type]);
   const isStockable = form.request_type && STOCKABLE.has(form.request_type);
@@ -72,7 +74,18 @@ export default function ProjectRequests() {
   };
   useEffect(() => { api.get("/project-requests/types").then((r) => setTypes(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { api.get("/ops/resource-requests/meta/designations").then((r) => setDesignations(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { api.get("/procurement/master/categories").then((r) => setCategories(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { load(); }, [filters]); // eslint-disable-line
+
+  const onCategoryChange = (catId) => {
+    const cat = categories.find((c) => c.id === catId);
+    const cc = catId ? ccList.find((c) => c.category_id === catId || (cat && c.category_code === cat.code)) : null;
+    setForm((f) => ({ ...f, material_category_id: catId, cost_center_id: cc ? cc.id : f.cost_center_id, items: [blankItem()] }));
+    setStock(null);
+    if (catId) {
+      api.get("/procurement/master/items", { params: { category_id: catId } }).then((r) => setCatItems(r.data || [])).catch(() => setCatItems([]));
+    } else setCatItems([]);
+  };
 
   const loadCostCenters = (projectId) => {
     if (!projectId) { setCcList([]); return; }
@@ -281,12 +294,22 @@ export default function ProjectRequests() {
             <ProjectSelect label="Project *" value={form.project_code} onChange={(code, row) => { setForm({ ...form, project_code: code, project_id: row?.id || "", cost_center_id: "" }); loadCostCenters(row?.id); }} testid="req-form-project" />
             <div>
               <Label className="text-[10px] uppercase tracking-wider">Request Type / Category *</Label>
-              <select value={form.request_type} onChange={(e) => { setForm({ ...form, request_type: e.target.value, items: [blankItem()] }); setStock(null); }}
+              <select value={form.request_type} onChange={(e) => { setForm({ ...form, request_type: e.target.value, items: [blankItem()], material_category_id: "" }); setStock(null); setCatItems([]); }}
                 className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-type">
                 <option value="">— select —</option>
                 {types.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
               </select>
             </div>
+            {isStockable && (
+              <div className="col-span-2">
+                <Label className="text-[10px] uppercase tracking-wider">Material Category (Item Master) — links Cost Center &amp; items</Label>
+                <select value={form.material_category_id} onChange={(e) => onCategoryChange(e.target.value)}
+                  className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-material-category">
+                  <option value="">— select category —</option>
+                  {categories.map((c) => <option key={c.id} value={c.id}>{c.code} · {c.name}{c.item_count ? ` (${c.item_count} items)` : ""}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <Label className="text-[10px] uppercase tracking-wider">Cost Center</Label>
               <select value={form.cost_center_id} onChange={(e) => setForm({ ...form, cost_center_id: e.target.value })}
@@ -326,7 +349,20 @@ export default function ProjectRequests() {
                     return (
                       <div key={i} className="space-y-1 pb-1.5 border-b border-border/40 last:border-0">
                         <div className="grid grid-cols-12 gap-1.5 items-center">
-                          <Input value={it.name} onChange={(e) => setItem(i, { name: e.target.value })} placeholder="Item name" className="h-8 rounded-sm col-span-4 text-xs" data-testid={`req-item-name-${i}`} />
+                          {catItems.length > 0 && !it.custom ? (
+                            <select value={it.item_id || ""} onChange={(e) => {
+                              const v = e.target.value;
+                              if (v === "__custom") { setItem(i, { item_id: "", item_code: "", name: "", custom: true }); return; }
+                              const m = catItems.find((x) => x.id === v);
+                              setItem(i, m ? { item_id: m.id, item_code: m.code, name: m.name, unit: m.unit || "Nos", rate: m.last_rate || 0, custom: false } : { item_id: "", item_code: "", name: "" });
+                            }} className="h-8 rounded-sm border border-input bg-background px-2 text-xs col-span-4" data-testid={`req-item-select-${i}`}>
+                              <option value="">— item from master —</option>
+                              {catItems.map((m) => <option key={m.id} value={m.id}>{m.name} · {m.code}{m.stock_qty ? ` (stock ${m.stock_qty})` : ""}</option>)}
+                              <option value="__custom">Other / type manually…</option>
+                            </select>
+                          ) : (
+                            <Input value={it.name} onChange={(e) => setItem(i, { name: e.target.value })} placeholder="Item name" className="h-8 rounded-sm col-span-4 text-xs" data-testid={`req-item-name-${i}`} />
+                          )}
                           <Input type="number" value={it.quantity} onChange={(e) => setItem(i, { quantity: e.target.value })} placeholder="Qty" className="h-8 rounded-sm col-span-2 text-xs tabular" data-testid={`req-item-qty-${i}`} />
                           <Input value={it.unit} onChange={(e) => setItem(i, { unit: e.target.value })} placeholder="Unit" className="h-8 rounded-sm col-span-2 text-xs" />
                           <Input type="number" value={it.rate} onChange={(e) => setItem(i, { rate: e.target.value })} placeholder="Rate" className="h-8 rounded-sm col-span-2 text-xs tabular" />

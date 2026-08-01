@@ -105,6 +105,7 @@ class RequestIn(BaseModel):
     remarks: Optional[str] = None
     cost_center_id: Optional[str] = None
     site_location: Optional[str] = None
+    material_category_id: Optional[str] = None
 
 
 class ActionIn(BaseModel):
@@ -209,6 +210,9 @@ async def create_request(p: RequestIn, request: Request,
                                             {"_id": 0, "id": 1, "category_code": 1, "category_name": 1, "project_id": 1})
         if cc and cc.get("project_id") and cc["project_id"] != project["id"]:
             raise HTTPException(400, "Selected cost center belongs to a different project")
+    mcat = None
+    if p.material_category_id:
+        mcat = await db.inv_categories.find_one({"id": p.material_category_id}, {"_id": 0, "id": 1, "code": 1, "name": 1})
     steps = [("dept_head", "Project Head")]
     if est > threshold:
         steps += [("general_manager", "GM"), ("director", "Director")]
@@ -226,6 +230,9 @@ async def create_request(p: RequestIn, request: Request,
         "cost_center_id": (cc or {}).get("id"),
         "cost_center_label": f"{(cc or {}).get('category_code') or ''} · {(cc or {}).get('category_name') or ''}".strip(" ·") if cc else None,
         "site_location": p.site_location,
+        "material_category_id": (mcat or {}).get("id"),
+        "material_category_code": (mcat or {}).get("code"),
+        "material_category": (mcat or {}).get("name"),
         "items": [i.model_dump() for i in p.items],
         "stock_lines": stock_lines,
         "vendor": p.vendor, "vehicle_ref": p.vehicle_ref,

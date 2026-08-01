@@ -4927,3 +4927,10 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - **Legacy section**: collapsible read-only "Legacy Resource / Manpower Requests" table (old /ops/resource-requests data preserved).
 - ProjectExpenses gets `embedded` prop (header hidden inside tab). `_book_expense` prefers request's cost_center_id.
 - **Tests**: iteration_160.json — backend 9/10 → 10/10 after fixing the flagged HIGH bug (frontend called `/api/cost-centers`; correct path `/api/procurement/master/cost-centers` — fixed + verified 16 CCs load, dropdown shows 17 options). Frontend 95%→100%. Regression: stock-check → PR conversion, payment fulfil → expense booking, exports, my-approvals inbox all green.
+
+### Iteration 161b (Jul 2026) — Category ↔ Cost Center ↔ Item Master linkage ✅
+- Raise Request dialog (stockable types) gets a **Material Category** select fed from the Inventory/Procurement category master (`GET /procurement/master/categories` with item counts).
+- Picking a category **auto-selects the matching Cost Center** (match by category_id/category_code within the project's cost centers).
+- Item lines become a **dropdown from Item Master** filtered by category (`GET /procurement/master/items?category_id=`) — auto-fills item_id/code/name/unit/last rate, shows stock qty; "Other / type manually" fallback keeps free text.
+- Backend: RequestIn.material_category_id persisted as material_category_id/code/name (validated against inv_categories); shown in detail dialog.
+- Self-tested: curl E2E (REQ-2026-0028 stored CONSUM category) + UI script (category → CC auto-pick → 30 master items → unit Kg autofill).
