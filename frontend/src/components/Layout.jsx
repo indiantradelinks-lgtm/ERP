@@ -15,6 +15,7 @@ import Brand from "@/components/Brand";
 import ThemeToggle from "@/components/ThemeToggle";
 import MyApprovalsInbox from "@/components/MyApprovalsInbox";
 import NotificationBell from "@/components/NotificationBell";
+import PageHelp from "@/components/PageHelp";
 import RouteGuard from "@/components/RouteGuard";
 import useVisitTracker from "@/hooks/useVisitTracker";
 import {
@@ -334,6 +335,7 @@ export default function Layout({ children }) {
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
+            <PageHelp />
             <NotificationBell />
             <Button
               asChild

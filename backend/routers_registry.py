@@ -49,6 +49,7 @@ from routers.project_expenses_router import router as project_expenses_router
 from routers.project_requests_router import router as project_requests_router
 from routers.project_budget_router import router as project_budget_router
 from routers.premob_router import router as premob_router
+from routers.help_router import router as help_router
 from routers.scaffolding_router import router as scaffolding_router
 from routers.my_inbox_router import router as my_inbox_router
 from routers.admin_projects_dedupe import router as admin_projects_dedupe_router
@@ -179,6 +180,7 @@ ROUTERS_IN_ORDER: List[Tuple[str, APIRouter]] = [
     ("project_requests", project_requests_router),
     ("project_budget", project_budget_router),
     ("premob", premob_router),
+    ("help", help_router),
     ("scaffolding", scaffolding_router),
     ("my_inbox", my_inbox_router),
     ("import", import_router),
