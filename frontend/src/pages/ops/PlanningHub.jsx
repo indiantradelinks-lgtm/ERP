@@ -6,8 +6,8 @@ import ProjectBOQ from "./ProjectBOQ";
 import ProjectWBS from "./ProjectWBS";
 import ProjectActivities from "./ProjectActivities";
 import ProjectResources from "./ProjectResources";
-import ProjectPlanning from "./ProjectPlanning";
 import ProjectBudgetPlanner from "./ProjectBudgetPlanner";
+import PreMobilization from "./PreMobilization";
 
 const TABS = [
   { key: "boq", label: "BOQ / Scope", Comp: ProjectBOQ },
@@ -15,7 +15,7 @@ const TABS = [
   { key: "schedule", label: "Activity Schedule", Comp: ProjectActivities },
   { key: "resources", label: "Resource Planning", Comp: ProjectResources },
   { key: "budget", label: "Project Budget", Comp: ProjectBudgetPlanner, perm: "projects" },
-  { key: "premob", label: "Pre-Mobilization", Comp: ProjectPlanning },
+  { key: "premob", label: "Pre-Mobilization", Comp: PreMobilization },
 ];
 
 export default function PlanningHub() {
