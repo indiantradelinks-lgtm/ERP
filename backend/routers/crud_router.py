@@ -292,8 +292,8 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
             raise HTTPException(status_code=404, detail="Not found")
         row = await db[collection].find_one({"id": item_id}, {"_id": 0})
         if collection == "recruitment_requests" and row and row.get("source_request_id") \
-                and row.get("status") in ("filled", "closed") \
-                and (before or {}).get("status") not in ("filled", "closed"):
+                and (row.get("status") in ("filled", "closed")
+                     or float(row.get("hired") or 0) != float((before or {}).get("hired") or 0)):
             try:
                 from routers.project_requests_router import recruitment_link_back
                 await recruitment_link_back(row, actor=user.get("name") or user.get("email") or "")

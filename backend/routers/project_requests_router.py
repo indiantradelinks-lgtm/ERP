@@ -416,8 +416,8 @@ async def hr_queue(user: dict = Depends(get_current_user)):
 
 
 async def recruitment_link_back(rec: dict, actor: str = "System") -> None:
-    """When a recruitment request (raised from a project request) is filled/closed,
-    auto-mark the matching manpower line fulfilled."""
+    """Sync hire progress from a recruitment request onto the source manpower line.
+    Updates hired_count; marks the line fulfilled only when fully hired (or status=filled/closed)."""
     rid = rec.get("source_request_id")
     if not rid:
         return
@@ -425,15 +425,25 @@ async def recruitment_link_back(rec: dict, actor: str = "System") -> None:
     if not row or row["status"] not in ("with_dept", "sourcing", "pr_raised"):
         return
     items = row.get("items") or []
+    target = (rec.get("source_line_name") or rec.get("position") or "").strip().lower()
+    vacancies = int(float(rec.get("vacancies") or 0))
+    hired = int(float(rec.get("hired") or 0))
+    status_done = rec.get("status") in ("filled", "closed")
+    fully_hired = vacancies > 0 and hired >= vacancies
     changed = False
+    line_fulfilled = False
     for it in items:
-        if it.get("fulfil_status") != "fulfilled" and (it.get("name") or "").strip().lower() == (rec.get("position") or "").strip().lower():
+        if (it.get("name") or "").strip().lower() != target or it.get("fulfil_status") == "fulfilled":
+            continue
+        it["vacancy_count"] = vacancies or it.get("vacancy_count")
+        it["hired_count"] = min(hired, vacancies) if vacancies else hired
+        changed = True
+        if status_done or fully_hired:
             it.update({"fulfil_status": "fulfilled", "fulfil_mode": "sourced",
-                       "fulfil_remarks": f"Recruitment {rec.get('req_no')} {rec.get('status')}",
-                       "fulfilled_by": f"System (recruitment {rec.get('status')} by {actor})",
-                       "fulfilled_at": now_iso()})
-            changed = True
-            break
+                       "fulfil_remarks": f"Recruitment {rec.get('req_no')}: {it['hired_count']} of {vacancies} hired",
+                       "fulfilled_by": f"System (recruitment via {actor})", "fulfilled_at": now_iso()})
+            line_fulfilled = True
+        break
     if not changed:
         return
     patch: Dict[str, Any] = {"items": items}
@@ -445,11 +455,14 @@ async def recruitment_link_back(rec: dict, actor: str = "System") -> None:
     try:
         creator_id = row.get("created_by_id")
         if creator_id:
+            if line_fulfilled:
+                msg = f"Recruitment {rec.get('req_no')} ({rec.get('position')}) complete — line marked done."
+            else:
+                msg = f"Recruitment {rec.get('req_no')} ({rec.get('position')}): {min(hired, vacancies)} of {vacancies} hired so far."
             await db.notifications.insert_one({
                 "id": new_id(), "user_id": creator_id, "kind": "project_request",
-                "title": f"Manpower line fulfilled — {row['request_no']}",
-                "message": f"Recruitment {rec.get('req_no')} ({rec.get('position')}) is {rec.get('status')} — line auto-marked done.",
-                "link": "/app/ops/requests", "read": False, "at": now_iso()})
+                "title": f"Manpower hire update — {row['request_no']}",
+                "message": msg, "link": "/app/ops/requests", "read": False, "at": now_iso()})
     except Exception as exc:  # noqa: BLE001
         logger.warning("recruitment link-back notify failed: %s", exc)
 
@@ -470,7 +483,8 @@ async def raise_recruitment(rid: str, request: Request,
         raise HTTPException(403, "Only the HR team can raise recruitment for this request")
     avail = {a["name"]: a for a in (row.get("availability_lines") or [])}
     created = []
-    for it in row.get("items") or []:
+    items = row.get("items") or []
+    for it in items:
         a = avail.get(it.get("name"))
         vac = int(a["shortfall"]) if a else int(float(it.get("quantity") or 0))
         if vac <= 0:
@@ -478,22 +492,25 @@ async def raise_recruitment(rid: str, request: Request,
         rec = {
             "id": new_id(), "req_no": await next_sequence("REQ"),
             "position": it.get("name"), "department": "Operations",
-            "vacancies": vac, "needed_by": row.get("period_from") or row.get("need_by"),
+            "vacancies": vac, "hired": 0, "needed_by": row.get("period_from") or row.get("need_by"),
             "project_code": row.get("project_code"), "site": row.get("site_location"),
             "budget_monthly_per_head": float(it.get("rate") or 0),
             "deployment_from": row.get("period_from"), "deployment_to": row.get("period_to"),
             "skills": it.get("specs"), "status": "open",
-            "source": "project_request", "source_request_id": rid,
+            "source": "project_request", "source_request_id": rid, "source_line_name": it.get("name"),
             "remarks": f"Auto-raised from manpower request {row['request_no']} — pool shortfall",
             "created_at": now_iso(), "created_by": user.get("name") or user.get("email"),
         }
         await db.recruitment_requests.insert_one(rec)
         created.append(rec["req_no"])
+        it["recruitment_no"] = rec["req_no"]
+        it["vacancy_count"] = vac
+        it["hired_count"] = 0
     if not created:
         raise HTTPException(400, "No shortfall — the internal pool covers all requested manpower")
     await db.project_requests.update_one({"id": rid}, {"$set": {
         "status": "sourcing", "recruitment_ids": created, "recruitment_nos": created,
-        "sourcing_raised_at": now_iso()}})
+        "items": items, "sourcing_raised_at": now_iso()}})
     await audit(user=user, action="req_raise_recruitment", resource="project_requests", record_id=rid,
                 after={"recruitment_nos": created}, ip=_ip(request))
     return {"recruitment_nos": created, "count": len(created)}

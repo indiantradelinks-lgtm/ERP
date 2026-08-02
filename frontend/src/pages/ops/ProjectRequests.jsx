@@ -611,7 +611,16 @@ export default function ProjectRequests() {
                             it.unit_weight_kg && `Unit wt: ${it.unit_weight_kg} kg`, it.total_weight_kg && `Total wt: ${it.total_weight_kg} kg`,
                             it.tech_details && `Tech: ${it.tech_details}`, it.specs && `Specs: ${it.specs}`].filter(Boolean).join(" · ");
                           return <tr key={i} className="border-b border-border/50">
-                            <td className="p-1.5">{it.name}{extras && <div className="text-[10px] text-muted-foreground">{extras}</div>}</td>
+                            <td className="p-1.5">{it.name}{extras && <div className="text-[10px] text-muted-foreground">{extras}</div>}
+                              {it.vacancy_count > 0 && it.fulfil_status !== "fulfilled" && (
+                                <div className="text-[10px] mt-0.5" data-testid={`req-line-hire-${i}`}>
+                                  <span className={`px-1.5 py-0.5 rounded-sm border ${(it.hired_count || 0) >= it.vacancy_count ? "bg-emerald-50 border-emerald-300 text-emerald-800" : "bg-orange-50 border-orange-300 text-orange-800"}`}>
+                                    {it.hired_count || 0} of {it.vacancy_count} hired
+                                  </span>
+                                  {it.recruitment_no && <span className="ml-1 text-muted-foreground">· {it.recruitment_no}</span>}
+                                </div>
+                              )}
+                            </td>
                             <td className="p-1.5 tabular">{it.quantity} {it.unit}</td>
                             <td className="p-1.5 text-right">
                               {sl ? (sl.in_stock ? <span className="text-emerald-700">In stock ({sl.on_hand})</span> : <span className="text-amber-700">Short {sl.shortfall}</span>) : ""}
