@@ -31,7 +31,8 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
-from core import db, require_permission, now_iso, new_id
+from core import db, require_permission, get_current_user, now_iso, new_id
+from datetime import datetime, timezone
 from audit import audit
 from sequences import next_sequence
 from exports import to_excel, to_pdf
@@ -390,6 +391,67 @@ async def raise_pr(rid: str, request: Request,
     await audit(user=user, action="req_raise_pr", resource="project_requests", record_id=rid,
                 after={"pr_number": pr_doc["pr_number"]}, ip=_ip(request))
     return {"pr_number": pr_doc["pr_number"], "pr_id": pr_doc["id"], "items": len(pr_items)}
+
+
+@router.get("/project-requests/hr-queue")
+async def hr_queue(user: dict = Depends(get_current_user)):
+    """HR fulfilment lane: manpower requests awaiting sourcing, with ageing."""
+    allowed = FULFIL_ROLES["hr"] | {"general_manager", "director", "project_manager"}
+    if user.get("role") not in allowed:
+        raise HTTPException(403, "HR / leadership only")
+    rows = await db.project_requests.find(
+        {"request_type": "manpower", "status": {"$in": ["with_dept", "sourcing"]}},
+        {"_id": 0}).sort("approved_at", 1).to_list(500)
+    now = datetime.now(timezone.utc)
+    for r in rows:
+        ref = r.get("approved_at") or r.get("created_at")
+        try:
+            r["ageing_days"] = max((now - datetime.fromisoformat(str(ref))).days, 0)
+        except Exception:
+            r["ageing_days"] = 0
+        r["headcount"] = sum(float(i.get("quantity") or 0) for i in r.get("items") or [])
+        r["lines_pending"] = sum(1 for i in r.get("items") or [] if i.get("fulfil_status") != "fulfilled")
+        r["pool_shortfall"] = sum(float(a.get("shortfall") or 0) for a in r.get("availability_lines") or [])
+    return {"count": len(rows), "rows": rows}
+
+
+async def recruitment_link_back(rec: dict, actor: str = "System") -> None:
+    """When a recruitment request (raised from a project request) is filled/closed,
+    auto-mark the matching manpower line fulfilled."""
+    rid = rec.get("source_request_id")
+    if not rid:
+        return
+    row = await db.project_requests.find_one({"id": rid}, {"_id": 0})
+    if not row or row["status"] not in ("with_dept", "sourcing", "pr_raised"):
+        return
+    items = row.get("items") or []
+    changed = False
+    for it in items:
+        if it.get("fulfil_status") != "fulfilled" and (it.get("name") or "").strip().lower() == (rec.get("position") or "").strip().lower():
+            it.update({"fulfil_status": "fulfilled", "fulfil_mode": "sourced",
+                       "fulfil_remarks": f"Recruitment {rec.get('req_no')} {rec.get('status')}",
+                       "fulfilled_by": f"System (recruitment {rec.get('status')} by {actor})",
+                       "fulfilled_at": now_iso()})
+            changed = True
+            break
+    if not changed:
+        return
+    patch: Dict[str, Any] = {"items": items}
+    if all(i.get("fulfil_status") == "fulfilled" for i in items):
+        patch.update({"status": "fulfilled", "fulfilled_at": now_iso(),
+                      "fulfilled_by": f"System (recruitment {rec.get('status')})",
+                      "fulfil_note": "All line items fulfilled (recruitment link-back)"})
+    await db.project_requests.update_one({"id": rid}, {"$set": patch})
+    try:
+        creator_id = row.get("created_by_id")
+        if creator_id:
+            await db.notifications.insert_one({
+                "id": new_id(), "user_id": creator_id, "kind": "project_request",
+                "title": f"Manpower line fulfilled — {row['request_no']}",
+                "message": f"Recruitment {rec.get('req_no')} ({rec.get('position')}) is {rec.get('status')} — line auto-marked done.",
+                "link": "/app/ops/requests", "read": False, "at": now_iso()})
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("recruitment link-back notify failed: %s", exc)
 
 
 @router.post("/project-requests/{rid}/raise-recruitment")

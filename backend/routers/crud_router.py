@@ -291,6 +291,14 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
         if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="Not found")
         row = await db[collection].find_one({"id": item_id}, {"_id": 0})
+        if collection == "recruitment_requests" and row and row.get("source_request_id") \
+                and row.get("status") in ("filled", "closed") \
+                and (before or {}).get("status") not in ("filled", "closed"):
+            try:
+                from routers.project_requests_router import recruitment_link_back
+                await recruitment_link_back(row, actor=user.get("name") or user.get("email") or "")
+            except Exception as e:
+                logger.warning(f"recruitment link-back failed: {e}")
         await audit(user=user, action="update", resource=perm, record_id=item_id, before=before, after=row, ip=_ip(request))
         return row
 

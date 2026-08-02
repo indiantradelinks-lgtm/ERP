@@ -135,6 +135,18 @@ async def _action_item_overdue_job():
         logger.exception(f"Action item overdue job failed: {e}")
 
 
+async def _premob_delay_job():
+    """Daily — notify PMs about newly-delayed pre-mobilization items."""
+    try:
+        from routers.premob_router import premob_delay_scan
+        n = await premob_delay_scan()
+        if n:
+            logger.info(f"[premob_delay] notified {n} delayed item(s)")
+        _last_results["premob_delay"] = {"notified": n, "ts": datetime.utcnow().isoformat()}
+    except Exception as e:
+        logger.exception(f"Premob delay job failed: {e}")
+
+
 async def _gmc_weekly_job():
     """Weekly GMC review digest to HR (additions/removals + insurer email prompt)."""
     try:
@@ -174,6 +186,8 @@ def start_scheduler() -> None:
                        id="enquiry_reminders", replace_existing=True)
     _scheduler.add_job(_action_item_overdue_job, CronTrigger(hour=8, minute=45),
                        id="action_item_overdue", replace_existing=True)
+    _scheduler.add_job(_premob_delay_job, CronTrigger(hour=7, minute=45),
+                       id="premob_delay", replace_existing=True)
     _scheduler.start()
     logger.info(
         f"Scheduler started (tz={tz}). Jobs: expiry_scan@09:00, invoice_reminders@Mon 09:00, "

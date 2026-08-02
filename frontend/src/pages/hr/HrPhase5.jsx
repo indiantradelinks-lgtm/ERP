@@ -29,6 +29,52 @@ const SEVERITY_TONE = {
   info: "border-slate-200 bg-white",
 };
 
+// ─────────── MANPOWER SOURCING QUEUE (HR fulfilment lane) ───────────
+function ManpowerQueue() {
+  const nav = useNavigate();
+  const [q, setQ] = useState(null);
+  useEffect(() => { api.get("/project-requests/hr-queue").then((r) => setQ(r.data)).catch(() => setQ({ count: 0, rows: [] })); }, []);
+  if (!q) return null;
+  return (
+    <Card className="border-orange-200" data-testid="hr-manpower-queue">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center justify-between">
+          <span>Manpower Sourcing Queue <span className="text-orange-700">({q.count})</span></span>
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => nav("/app/ops/requests")} data-testid="hr-queue-open-requests">Open Request Center</Button>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        {q.rows.length === 0 ? (
+          <div className="text-xs text-muted-foreground px-4 pb-3">No manpower requests awaiting sourcing 🎉</div>
+        ) : (
+          <table className="w-full text-xs">
+            <thead><tr className="border-b text-left text-[10px] uppercase text-muted-foreground">
+              <th className="px-3 py-1.5">Request</th><th className="px-3 py-1.5">Project</th>
+              <th className="px-3 py-1.5 text-right">Headcount</th><th className="px-3 py-1.5 text-right">Pool Short</th>
+              <th className="px-3 py-1.5 text-right">Budget</th><th className="px-3 py-1.5">Timeline</th>
+              <th className="px-3 py-1.5">Status</th><th className="px-3 py-1.5 text-right">Ageing</th>
+            </tr></thead>
+            <tbody>
+              {q.rows.map((r) => (
+                <tr key={r.id} className="border-b hover:bg-muted/40 cursor-pointer" onClick={() => nav("/app/ops/requests")} data-testid={`hr-queue-row-${r.request_no}`}>
+                  <td className="px-3 py-1.5 font-semibold">{r.request_no}</td>
+                  <td className="px-3 py-1.5">{r.project_code}</td>
+                  <td className="px-3 py-1.5 text-right">{r.headcount}</td>
+                  <td className="px-3 py-1.5 text-right text-amber-700">{r.pool_shortfall || 0}</td>
+                  <td className="px-3 py-1.5 text-right">₹ {Number(r.est_value || 0).toLocaleString("en-IN")}</td>
+                  <td className="px-3 py-1.5 whitespace-nowrap">{r.period_from || "—"} → {r.period_to || "—"}</td>
+                  <td className="px-3 py-1.5">{r.status === "sourcing" ? <span className="text-orange-700">Sourcing</span> : <span className="text-blue-700">With HR</span>}</td>
+                  <td className={`px-3 py-1.5 text-right font-bold ${r.ageing_days > 7 ? "text-red-600" : r.ageing_days > 3 ? "text-amber-600" : ""}`}>{r.ageing_days}d</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─────────── FINAL DASHBOARD (30 cards) ───────────
 function FinalDashboard() {
   const nav = useNavigate();
@@ -60,6 +106,7 @@ function FinalDashboard() {
 
   return (
     <div className="space-y-3">
+      <ManpowerQueue />
       <div className="flex justify-between items-center">
         <div className="text-sm text-muted-foreground">Real-time KPIs — {d.total_cards} cards · as of {(d.as_of || "").slice(0, 16)}</div>
         <Button size="sm" variant="outline" onClick={load} data-testid="hr5-dash-refresh"><RefreshCw className="h-4 w-4 mr-1" /> Refresh</Button>

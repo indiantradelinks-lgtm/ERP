@@ -45,6 +45,36 @@ def _today() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
+async def _notify_pms(item: dict, title: str, message: str) -> None:
+    """Notify the item creator + all project managers."""
+    try:
+        pm_users = await db.users.find({"role": {"$in": ["project_manager"]}, "active": {"$ne": False}},
+                                       {"_id": 0, "id": 1}).to_list(100)
+        ids = {u["id"] for u in pm_users}
+        if item.get("created_by"):
+            ids.add(item["created_by"])
+        for uid in ids:
+            await db.notifications.insert_one({
+                "id": new_id(), "user_id": uid, "kind": "premob",
+                "title": title, "message": message,
+                "link": "/app/ops/planning-hub?tab=premob", "read": False, "at": now_iso()})
+    except Exception:
+        pass
+
+
+async def premob_delay_scan() -> int:
+    """Daily scan: notify PMs about newly-delayed pre-mobilization items."""
+    q = {"target_date": {"$lt": _today()}, "status": {"$ne": "completed"},
+         "delayed_notified": {"$ne": True}}
+    count = 0
+    async for r in db.premob_items.find(q, {"_id": 0}):
+        await _notify_pms(r, f"Pre-mobilization DELAYED — {r.get('name')}",
+                          f"{r.get('project_code')} · {r.get('item_type')} '{r.get('name')}' missed target {r.get('target_date')}. Review or raise a concern.")
+        await db.premob_items.update_one({"id": r["id"]}, {"$set": {"delayed_notified": True}})
+        count += 1
+    return count
+
+
 def _flag(r: dict) -> dict:
     r["is_delayed"] = bool(r.get("target_date") and r["target_date"] < _today() and r.get("status") != "completed")
     return r
@@ -137,6 +167,10 @@ async def raise_concern(item_id: str, c: ConcernIn, request: Request,
     await db.premob_items.update_one({"id": item_id}, {"$set": {"concern": concern},
                                                        "$push": {"concern_log": {**concern, "event": "raised"}}})
     out = await db.premob_items.find_one({"id": item_id}, {"_id": 0})
+    await _notify_pms(row, f"Concern raised — {row.get('name')}",
+                      f"{row.get('project_code')} · {CONCERN_LABELS[c.type]}"
+                      + (f" (proposed {c.proposed_date})" if c.proposed_date and c.type == "needs_extension" else "")
+                      + (f" — {c.note}" if c.note else "") + f" · raised by {user.get('name') or ''}")
     await audit(user=user, action="premob_concern_raised", resource="premob_items", record_id=item_id, after=concern,
                 ip=request.client.host if request.client else "")
     return _flag(out)
