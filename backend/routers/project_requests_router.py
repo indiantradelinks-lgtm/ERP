@@ -313,6 +313,17 @@ async def approve_request(rid: str, p: ActionIn, request: Request,
         patch["status"] = "with_dept"
         patch["approved_at"] = now_iso()
         await _notify_dept(row)
+        # Auto-raise recruitment so manpower shortfall lines appear on the
+        # HR Manpower Requirement page immediately for the recruitment team.
+        if row.get("request_type") == "manpower":
+            try:
+                fresh = {**row, "status": "with_dept"}
+                created = await _do_raise_recruitment(fresh, "System (auto on approval)")
+                if created:
+                    patch["status"] = "sourcing"
+                    patch["recruitment_nos"] = created
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("auto raise recruitment failed: %s", exc)
     await db.project_requests.update_one({"id": rid}, {"$set": patch})
     await audit(user=user, action="req_approve", resource="project_requests", record_id=rid,
                 after={"step": step["label"]}, ip=_ip(request))
@@ -467,24 +478,14 @@ async def recruitment_link_back(rec: dict, actor: str = "System") -> None:
         logger.warning("recruitment link-back notify failed: %s", exc)
 
 
-@router.post("/project-requests/{rid}/raise-recruitment")
-async def raise_recruitment(rid: str, request: Request,
-                            user: dict = Depends(require_permission("project_requests", "write"))):
-    """HR sourcing: convert manpower shortfall lines into Recruitment Requests."""
-    row = await db.project_requests.find_one({"id": rid}, {"_id": 0})
-    if not row:
-        raise HTTPException(404, "Not found")
-    if row.get("request_type") != "manpower":
-        raise HTTPException(400, "Only manpower requests can raise recruitment")
-    if row["status"] != "with_dept":
-        raise HTTPException(400, f"Cannot raise recruitment in status {row['status']} — Project Head must approve first")
-    allowed = FULFIL_ROLES.get("hr", {"super_admin"})
-    if user.get("role") not in allowed and user.get("role") != "super_admin":
-        raise HTTPException(403, "Only the HR team can raise recruitment for this request")
+async def _do_raise_recruitment(row: dict, actor: str) -> List[str]:
+    """Create recruitment requisitions for manpower shortfall lines; returns REQ numbers."""
     avail = {a["name"]: a for a in (row.get("availability_lines") or [])}
     created = []
     items = row.get("items") or []
     for it in items:
+        if it.get("recruitment_no"):  # already sourced
+            continue
         a = avail.get(it.get("name"))
         vac = int(a["shortfall"]) if a else int(float(it.get("quantity") or 0))
         if vac <= 0:
@@ -497,20 +498,39 @@ async def raise_recruitment(rid: str, request: Request,
             "budget_monthly_per_head": float(it.get("rate") or 0),
             "deployment_from": row.get("period_from"), "deployment_to": row.get("period_to"),
             "skills": it.get("specs"), "status": "open",
-            "source": "project_request", "source_request_id": rid, "source_line_name": it.get("name"),
+            "source": "project_request", "source_request_id": row["id"], "source_line_name": it.get("name"),
             "remarks": f"Auto-raised from manpower request {row['request_no']} — pool shortfall",
-            "created_at": now_iso(), "created_by": user.get("name") or user.get("email"),
+            "created_at": now_iso(), "created_by": actor,
         }
         await db.recruitment_requests.insert_one(rec)
         created.append(rec["req_no"])
         it["recruitment_no"] = rec["req_no"]
         it["vacancy_count"] = vac
         it["hired_count"] = 0
+    if created:
+        await db.project_requests.update_one({"id": row["id"]}, {"$set": {
+            "status": "sourcing", "recruitment_ids": created, "recruitment_nos": created,
+            "items": items, "sourcing_raised_at": now_iso()}})
+    return created
+
+
+@router.post("/project-requests/{rid}/raise-recruitment")
+async def raise_recruitment(rid: str, request: Request,
+                            user: dict = Depends(require_permission("project_requests", "write"))):
+    """HR sourcing: convert manpower shortfall lines into Recruitment Requests."""
+    row = await db.project_requests.find_one({"id": rid}, {"_id": 0})
+    if not row:
+        raise HTTPException(404, "Not found")
+    if row.get("request_type") != "manpower":
+        raise HTTPException(400, "Only manpower requests can raise recruitment")
+    if row["status"] not in ("with_dept", "sourcing"):
+        raise HTTPException(400, f"Cannot raise recruitment in status {row['status']} — Project Head must approve first")
+    allowed = FULFIL_ROLES.get("hr", {"super_admin"})
+    if user.get("role") not in allowed and user.get("role") != "super_admin":
+        raise HTTPException(403, "Only the HR team can raise recruitment for this request")
+    created = await _do_raise_recruitment(row, user.get("name") or user.get("email") or "HR")
     if not created:
         raise HTTPException(400, "No shortfall — the internal pool covers all requested manpower")
-    await db.project_requests.update_one({"id": rid}, {"$set": {
-        "status": "sourcing", "recruitment_ids": created, "recruitment_nos": created,
-        "items": items, "sourcing_raised_at": now_iso()}})
     await audit(user=user, action="req_raise_recruitment", resource="project_requests", record_id=rid,
                 after={"recruitment_nos": created}, ip=_ip(request))
     return {"recruitment_nos": created, "count": len(created)}

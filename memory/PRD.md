@@ -5002,3 +5002,8 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - recruitment_link_back reworked: syncs hired_count onto the source line on ANY recruitment update where `hired` changes (crud_router hook extended beyond filled/closed); marks the line fulfilled only when hired>=vacancies OR status filled/closed; request auto-fulfils when all lines done. Sends progress notifications ("3 of 5 hired so far" / "complete — line marked done").
 - Frontend: RecruitmentRequests.jsx has Hired field + "hired/vacancies" badge; ProjectRequests.jsx manpower line shows "X of Y hired" badge (green when complete) + recruitment_no.
 - Tested E2E: 0→3 (line pending, status sourcing) → 5 (line fulfilled, request fulfilled) + progress notifs; UI screenshot shows "2 of 6 hired" badge.
+
+### Aug 2026 — Manpower Request → HR Manpower Requirement page link ✅
+- Auto-raise on approval: when a manpower project-request completes its approval chain, _do_raise_recruitment() (extracted helper, skips lines already sourced) automatically creates Recruitment Requests for pool-shortfall lines → they appear instantly on /app/recruitment (Manpower Requirement page) for the recruitment team; request status → sourcing. Manual raise-recruitment endpoint still available (now also allowed in sourcing status for later lines).
+- RecruitmentRequests.jsx columns upgraded: Project (project/project_code), Source badge (Project Request=info / Manual=neutral), Hired x/y, Budget/Head (₹/mo), Needed By.
+- Tested E2E: create → approve → status sourcing + REQ auto-created with budget/timeline/source; UI screenshot shows 6 project-sourced requisitions with badges & hire progress.

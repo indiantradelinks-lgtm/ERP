@@ -8,11 +8,13 @@ export default function RecruitmentRequests() {
   const r = useResource("recruitment-requests");
   const columns = [
     { key: "position", label: "Position" },
-    { key: "department", label: "Department" },
-    { key: "project", label: "Project" },
+    { key: "project", label: "Project", render: (row) => row.project || row.project_code || "—" },
+    { key: "source", label: "Source", badge: (row) => row.source === "project_request"
+        ? { text: "Project Request", tone: "info" }
+        : { text: "Manual", tone: "neutral" } },
     { key: "vacancies", label: "Vacancies" },
     { key: "hired", label: "Hired", badge: (row) => ({ text: `${row.hired || 0} / ${row.vacancies || 0}`, tone: (row.hired || 0) >= (row.vacancies || 0) && row.vacancies ? "success" : "warning" }) },
-    { key: "skill_set", label: "Skills" },
+    { key: "budget_monthly_per_head", label: "Budget/Head", render: (row) => row.budget_monthly_per_head ? `₹${Number(row.budget_monthly_per_head).toLocaleString("en-IN")}/mo` : "—" },
     { key: "needed_by", label: "Needed By" },
     { key: "status", label: "Status", badge: (row) => ({ text: row.status || "open", tone: toneFor(RECRUIT_STATUS_TONE, row.status, "warning") }) },
   ];
