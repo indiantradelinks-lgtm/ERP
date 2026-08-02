@@ -7,14 +7,14 @@ import ProjectWBS from "./ProjectWBS";
 import ProjectActivities from "./ProjectActivities";
 import ProjectResources from "./ProjectResources";
 import ProjectPlanning from "./ProjectPlanning";
-import BudgetCommitmentCenter from "@/pages/accounts/BudgetCommitmentCenter";
+import ProjectBudgetPlanner from "./ProjectBudgetPlanner";
 
 const TABS = [
   { key: "boq", label: "BOQ / Scope", Comp: ProjectBOQ },
   { key: "wbs", label: "WBS", Comp: ProjectWBS },
   { key: "schedule", label: "Activity Schedule", Comp: ProjectActivities },
   { key: "resources", label: "Resource Planning", Comp: ProjectResources },
-  { key: "budget", label: "Project Budget", Comp: BudgetCommitmentCenter, perm: "accounting" },
+  { key: "budget", label: "Project Budget", Comp: ProjectBudgetPlanner, perm: "projects" },
   { key: "premob", label: "Pre-Mobilization", Comp: ProjectPlanning },
 ];
 
