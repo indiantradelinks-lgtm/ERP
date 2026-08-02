@@ -514,6 +514,24 @@ async def _do_raise_recruitment(row: dict, actor: str) -> List[str]:
     return created
 
 
+async def backfill_manpower_recruitment() -> int:
+    """Startup backfill: approved manpower requests that never got recruitment
+    requisitions (approved before auto-raise existed) are raised now."""
+    n = 0
+    async for row in db.project_requests.find(
+            {"request_type": "manpower", "status": "with_dept",
+             "$or": [{"recruitment_nos": {"$exists": False}}, {"recruitment_nos": []}, {"recruitment_nos": None}]},
+            {"_id": 0}):
+        try:
+            created = await _do_raise_recruitment(row, "System (backfill)")
+            if created:
+                n += 1
+                logger.info("backfilled recruitment for %s: %s", row.get("request_no"), created)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("recruitment backfill failed for %s: %s", row.get("id"), exc)
+    return n
+
+
 @router.post("/project-requests/{rid}/raise-recruitment")
 async def raise_recruitment(rid: str, request: Request,
                             user: dict = Depends(require_permission("project_requests", "write"))):

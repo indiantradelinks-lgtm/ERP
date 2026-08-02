@@ -663,7 +663,9 @@ export default function ProjectRequests() {
                 {detail.status === "with_dept" && detail.is_stockable && (detail.stock_lines || []).some((l) => l.shortfall > 0) && (
                   <Button variant="outline" className="rounded-sm" onClick={() => raisePR(detail)} data-testid="req-raise-pr"><ShoppingCart className="h-4 w-4 mr-1.5" /> Raise Purchase Request</Button>
                 )}
-                {detail.status === "with_dept" && detail.request_type === "manpower" && (detail.availability_lines || []).some((l) => l.shortfall > 0) && (
+                {["with_dept", "sourcing"].includes(detail.status) && detail.request_type === "manpower"
+                  && (detail.items || []).some((it) => !it.recruitment_no && it.fulfil_status !== "fulfilled")
+                  && ((detail.availability_lines || []).length === 0 || (detail.availability_lines || []).some((l) => l.shortfall > 0)) && (
                   <Button variant="outline" className="rounded-sm text-orange-700 border-orange-300" onClick={() => raiseRecruitment(detail)} data-testid="req-raise-recruitment"><Users className="h-4 w-4 mr-1.5" /> Raise Recruitment (HR Sourcing)</Button>
                 )}
                 {(detail.status === "with_dept" || detail.status === "pr_raised" || detail.status === "sourcing") && (
