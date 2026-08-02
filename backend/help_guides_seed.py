@@ -88,7 +88,7 @@ GUIDES = {
          "Pick Category: the Cost Center and Item list auto-link.",
          "Add items (or use AI Excel upload for scaffolding lists).",
          "Submit — the request enters its approval chain; track status in the register."],
-        ["Approved material requests flow to Store for issue / procurement.", "Use the Excel upload for long scaffolding item lists — AI reads your sheet."]),
+        ["Approved material requests flow to Store for issue / procurement.", "Manpower requests route to HR with budget & timeline; pool availability is auto-checked and shortfalls raise Recruitment Requests.", "Use the Excel upload for long scaffolding item lists — AI reads your sheet."]),
     "/app/admin/cost-centers": g("Cost Centers (Budget)", "Category-wise cost centers per project with budget caps.",
         ["Auto-provision cost centers for a project or add manually.", "Set budget per category.", "Live committed/actual/remaining is computed from POs and expenses."]),
     "/app/ops/pnl": g("Project P&L", "Profit & loss per project: billed income vs booked costs.",

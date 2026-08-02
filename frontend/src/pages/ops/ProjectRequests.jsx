@@ -30,6 +30,7 @@ const STATUS = {
   pending_approval: ["Pending Approval", "border-amber-300 text-amber-900 bg-amber-50"],
   with_dept: ["With Department", "border-blue-300 text-blue-900 bg-blue-50"],
   pr_raised: ["PR Raised", "border-violet-300 text-violet-900 bg-violet-50"],
+  sourcing: ["Sourcing (Recruitment)", "border-orange-300 text-orange-900 bg-orange-50"],
   fulfilled: ["Fulfilled", "border-emerald-300 text-emerald-900 bg-emerald-50"],
   closed: ["Closed", "border-slate-300 text-slate-700 bg-slate-50"],
   rejected: ["Rejected", "border-rose-300 text-rose-900 bg-rose-50"],
@@ -129,7 +130,9 @@ export default function ProjectRequests() {
   const estValue = useMemo(() => {
     if (form.amount) return Number(form.amount);
     if (form.monthly_rate) return Number(form.monthly_rate) * Number(form.months || 1);
-    return (form.items || []).reduce((a, i) => a + (Number(i.quantity) || 0) * (Number(i.rate) || 0), 0);
+    const itemsTotal = (form.items || []).reduce((a, i) => a + (Number(i.quantity) || 0) * (Number(i.rate) || 0), 0);
+    if (form.request_type === "manpower" && Number(form.months)) return itemsTotal * Number(form.months);
+    return itemsTotal;
   }, [form]);
 
   const setItem = (i, patch) => setForm((f) => ({ ...f, items: f.items.map((x, ix) => ix === i ? { ...x, ...patch } : x) }));
@@ -177,6 +180,20 @@ export default function ProjectRequests() {
   const raisePR = async (r) => {
     try { const res = await api.post(`/project-requests/${r.id}/raise-pr`); toast.success(`Purchase Request ${res.data.pr_number} created (${res.data.items} item(s))`); load(); setDetail(null); }
     catch (e) { toast.error(e?.response?.data?.detail || "Failed"); }
+  };
+
+  const raiseRecruitment = async (r) => {
+    try { const res = await api.post(`/project-requests/${r.id}/raise-recruitment`); toast.success(`Recruitment raised: ${res.data.recruitment_nos.join(", ")}`); load(); setDetail(null); }
+    catch (e) { toast.error(e?.response?.data?.detail || "Failed"); }
+  };
+
+  const fulfilLine = async (r, idx) => {
+    const remarks = window.prompt("Fulfilment note (optional)");
+    try {
+      const res = await api.post(`/project-requests/${r.id}/items/${idx}/fulfil`, { mode: "stock", remarks });
+      toast.success(res.data.status === "fulfilled" ? "All lines done — request fulfilled" : "Line fulfilled");
+      setDetail(res.data); load();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Failed"); }
   };
 
   const download = async (fmt) => {
@@ -478,21 +495,29 @@ export default function ProjectRequests() {
                         <select value={it.designation_id || ""} onChange={(e) => {
                           const d = designations.find((x) => x.id === e.target.value);
                           setItem(i, { designation_id: e.target.value, name: d ? d.name : it.name });
-                        }} className="h-8 rounded-sm border border-input bg-background px-2 text-xs col-span-4" data-testid={`req-mp-desig-${i}`}>
+                        }} className="h-8 rounded-sm border border-input bg-background px-2 text-xs col-span-3" data-testid={`req-mp-desig-${i}`}>
                           <option value="">— designation —</option>
                           {designations.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                         </select>
                         <Input value={it.name} onChange={(e) => setItem(i, { name: e.target.value })} placeholder="or type designation" className="h-8 rounded-sm col-span-3 text-xs" data-testid={`req-mp-name-${i}`} />
-                        <Input type="number" value={it.quantity} onChange={(e) => setItem(i, { quantity: e.target.value })} placeholder="Count" className="h-8 rounded-sm col-span-2 text-xs tabular" data-testid={`req-mp-count-${i}`} />
+                        <Input type="number" value={it.quantity} onChange={(e) => setItem(i, { quantity: e.target.value })} placeholder="Count" className="h-8 rounded-sm col-span-1 text-xs tabular" data-testid={`req-mp-count-${i}`} />
+                        <Input type="number" value={it.rate || ""} onChange={(e) => setItem(i, { rate: e.target.value })} placeholder="₹/month/head" className="h-8 rounded-sm col-span-2 text-xs tabular" data-testid={`req-mp-rate-${i}`} />
                         <Input value={it.specs} onChange={(e) => setItem(i, { specs: e.target.value })} placeholder="Skills / certificates" className="h-8 rounded-sm col-span-3 text-xs" data-testid={`req-mp-skills-${i}`} />
                       </div>
                     ))}
+                    <div className="flex justify-end gap-4 text-[11px] font-bold border-t border-border pt-1.5" data-testid="req-mp-budget">
+                      <span>Headcount: <span className="font-mono-data tabular">{form.items.reduce((a, i) => a + (Number(i.quantity) || 0), 0)}</span></span>
+                      <span>Monthly Budget: <span className="font-mono-data tabular">{inr(form.items.reduce((a, i) => a + (Number(i.quantity) || 0) * (Number(i.rate) || 0), 0))}</span></span>
+                      <span>Total Budget ({form.months || 1} mo): <span className="font-mono-data tabular">{inr(estValue)}</span></span>
+                    </div>
                   </div>
                 </div>
                 <div><Label className="text-[10px] uppercase tracking-wider">Required From</Label>
                   <Input type="date" value={form.period_from} onChange={(e) => setForm({ ...form, period_from: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="req-mp-from" /></div>
                 <div><Label className="text-[10px] uppercase tracking-wider">Required Till</Label>
                   <Input type="date" value={form.period_to} onChange={(e) => setForm({ ...form, period_to: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="req-mp-to" /></div>
+                <div><Label className="text-[10px] uppercase tracking-wider">Duration (months)</Label>
+                  <Input type="number" value={form.months} onChange={(e) => setForm({ ...form, months: e.target.value })} placeholder="for budget calc" className="h-9 rounded-sm mt-1 tabular" data-testid="req-mp-months" /></div>
               </>
             )}
 
@@ -571,19 +596,36 @@ export default function ProjectRequests() {
                 {detail.description && <div className="text-xs bg-muted/30 rounded-sm p-2">{detail.description}</div>}
                 {(detail.items || []).length > 0 && (
                   <div className="border border-border rounded-sm">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-primary p-2 border-b">Items {detail.is_stockable ? "(stock checked)" : ""}</div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-primary p-2 border-b">
+                      Items {detail.is_stockable ? "(stock checked)" : detail.request_type === "manpower" ? "(pool availability checked)" : ""}
+                    </div>
                     <table className="w-full text-xs">
                       <tbody>
                         {detail.items.map((it, i) => {
                           const sl = (detail.stock_lines || [])[i];
+                          const al = (detail.availability_lines || [])[i];
+                          const canFulfilLine = ["with_dept", "pr_raised", "sourcing"].includes(detail.status) && it.fulfil_status !== "fulfilled";
                           const extras = [it.size && `Size: ${it.size}`, it.material && `Material: ${it.material}`, it.make && `Make: ${it.make}`,
                             it.coating && `Coating: ${it.coating}`, it.item_type && `Type: ${it.item_type}`,
+                            it.rate && detail.request_type === "manpower" && `Budget: ₹${Number(it.rate).toLocaleString("en-IN")}/mo/head`,
                             it.unit_weight_kg && `Unit wt: ${it.unit_weight_kg} kg`, it.total_weight_kg && `Total wt: ${it.total_weight_kg} kg`,
                             it.tech_details && `Tech: ${it.tech_details}`, it.specs && `Specs: ${it.specs}`].filter(Boolean).join(" · ");
                           return <tr key={i} className="border-b border-border/50">
                             <td className="p-1.5">{it.name}{extras && <div className="text-[10px] text-muted-foreground">{extras}</div>}</td>
                             <td className="p-1.5 tabular">{it.quantity} {it.unit}</td>
-                            <td className="p-1.5 text-right">{sl ? (sl.in_stock ? <span className="text-emerald-700">In stock ({sl.on_hand})</span> : <span className="text-amber-700">Short {sl.shortfall}</span>) : ""}</td></tr>;
+                            <td className="p-1.5 text-right">
+                              {sl ? (sl.in_stock ? <span className="text-emerald-700">In stock ({sl.on_hand})</span> : <span className="text-amber-700">Short {sl.shortfall}</span>) : ""}
+                              {al ? (al.in_pool
+                                ? <span className="text-emerald-700">Pool OK ({al.available_workers}w + {al.matching_employees}e)</span>
+                                : <span className="text-amber-700">Pool short {al.shortfall} ({al.available} avail)</span>) : ""}
+                            </td>
+                            <td className="p-1.5 text-right whitespace-nowrap">
+                              {it.fulfil_status === "fulfilled"
+                                ? <span className="text-[10px] px-1.5 py-0.5 rounded-sm border bg-emerald-50 border-emerald-300 text-emerald-800" data-testid={`req-line-done-${i}`}>✓ Done{it.fulfilled_by ? ` · ${it.fulfilled_by}` : ""}</span>
+                                : canFulfilLine
+                                  ? <Button size="sm" variant="outline" className="h-6 rounded-sm text-[10px] px-2" onClick={() => fulfilLine(detail, i)} data-testid={`req-line-fulfil-${i}`}>Mark Done</Button>
+                                  : <span className="text-[10px] text-muted-foreground">pending</span>}
+                            </td></tr>;
                         })}
                       </tbody>
                     </table>
@@ -596,6 +638,10 @@ export default function ProjectRequests() {
                   ))}
                 </div>
                 {detail.pr_number && <div className="text-xs text-violet-700">Purchase Request raised: <b>{detail.pr_number}</b></div>}
+                {(detail.recruitment_nos || []).length > 0 && <div className="text-xs text-orange-700">Recruitment raised: <b>{detail.recruitment_nos.join(", ")}</b> — HR is sourcing.</div>}
+                {detail.request_type === "manpower" && (detail.period_from || detail.period_to) && (
+                  <div className="text-xs text-muted-foreground">Deployment timeline: <b>{detail.period_from || "—"} → {detail.period_to || "—"}</b>{detail.months ? ` · ${detail.months} month(s)` : ""} · Budget: <b>{inr(detail.est_value)}</b></div>
+                )}
                 {detail.expense_id && <div className="text-xs text-blue-700">Payment booked to Daily Expenses — Accounts will process with proof.</div>}
               </div>
               <DialogFooter className="flex-wrap gap-2">
@@ -608,7 +654,10 @@ export default function ProjectRequests() {
                 {detail.status === "with_dept" && detail.is_stockable && (detail.stock_lines || []).some((l) => l.shortfall > 0) && (
                   <Button variant="outline" className="rounded-sm" onClick={() => raisePR(detail)} data-testid="req-raise-pr"><ShoppingCart className="h-4 w-4 mr-1.5" /> Raise Purchase Request</Button>
                 )}
-                {(detail.status === "with_dept" || detail.status === "pr_raised") && (
+                {detail.status === "with_dept" && detail.request_type === "manpower" && (detail.availability_lines || []).some((l) => l.shortfall > 0) && (
+                  <Button variant="outline" className="rounded-sm text-orange-700 border-orange-300" onClick={() => raiseRecruitment(detail)} data-testid="req-raise-recruitment"><Users className="h-4 w-4 mr-1.5" /> Raise Recruitment (HR Sourcing)</Button>
+                )}
+                {(detail.status === "with_dept" || detail.status === "pr_raised" || detail.status === "sourcing") && (
                   <Button className="rounded-sm" onClick={() => act(detail, "fulfil", true)} data-testid="req-fulfil"><CheckCircle2 className="h-4 w-4 mr-1.5" /> Mark Fulfilled</Button>
                 )}
                 {detail.status === "fulfilled" && (

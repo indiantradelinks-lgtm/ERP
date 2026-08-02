@@ -124,7 +124,10 @@ def _estimate_value(p: RequestIn) -> float:
         return float(p.amount)
     if p.monthly_rate:
         return float(p.monthly_rate) * float(p.months or 1)
-    return sum(float(i.quantity or 0) * float(i.rate or 0) for i in p.items)
+    items_total = sum(float(i.quantity or 0) * float(i.rate or 0) for i in p.items)
+    if p.request_type == "manpower" and p.months:
+        return items_total * float(p.months)
+    return items_total
 
 
 @router.get("/project-requests/types")
@@ -146,6 +149,25 @@ async def _stock_for_item(item: ReqItem) -> Dict[str, Any]:
     return {"name": item.name, "item_code": (doc or {}).get("code") or item.item_code,
             "requested": req, "on_hand": on_hand, "shortfall": max(req - on_hand, 0),
             "in_stock": on_hand >= req, "matched": bool(doc)}
+
+
+async def _manpower_availability(item: ReqItem) -> Dict[str, Any]:
+    """Check the internal pool: available workers + active employees matching the designation/skill."""
+    name = (item.name or "").strip()
+    rx = {"$regex": re.escape(name), "$options": "i"} if name else None
+    workers = 0
+    employees = 0
+    if rx:
+        workers = await db.hr_workers.count_documents({
+            "active": {"$ne": False}, "availability": "available",
+            "$or": [{"skill_name": rx}, {"name": rx}, {"worker_type": rx}]})
+        employees = await db.employees.count_documents({
+            "status": {"$nin": ["exited", "inactive"]}, "designation": rx})
+    req = float(item.quantity or 0)
+    available = workers + employees
+    return {"name": name, "requested": req, "available_workers": workers,
+            "matching_employees": employees, "available": available,
+            "shortfall": max(req - available, 0), "in_pool": available >= req}
 
 
 @router.post("/project-requests/stock-check")
@@ -184,7 +206,7 @@ async def summary(project_code: Optional[str] = None,
         "pending_approval": sum(1 for r in rows if r["status"] == "pending_approval"),
         "with_dept": sum(1 for r in rows if r["status"] == "with_dept"),
         "fulfilled": sum(1 for r in rows if r["status"] in ("fulfilled", "closed")),
-        "pr_raised": sum(1 for r in rows if r["status"] == "pr_raised"),
+        "pr_raised": sum(1 for r in rows if r["status"] in ("pr_raised", "sourcing")),
         "est_value": round(sum(float(r.get("est_value") or 0) for r in rows if r["status"] != "rejected"), 2),
     }
 
@@ -209,6 +231,9 @@ async def create_request(p: RequestIn, request: Request,
     stock_lines: List[Dict[str, Any]] = []
     if meta["stockable"] and p.items:
         stock_lines = [await _stock_for_item(i) for i in p.items]
+    availability_lines: List[Dict[str, Any]] = []
+    if p.request_type == "manpower" and p.items:
+        availability_lines = [await _manpower_availability(i) for i in p.items]
 
     threshold = await _large_threshold()
     cc = None
@@ -240,10 +265,11 @@ async def create_request(p: RequestIn, request: Request,
         "material_category_id": (mcat or {}).get("id"),
         "material_category_code": (mcat or {}).get("code"),
         "material_category": (mcat or {}).get("name"),
-        "items": [{**i.model_dump(),
+        "items": [{**i.model_dump(), "fulfil_status": "pending", "fulfil_mode": None,
                    "total_weight_kg": round(float(i.quantity or 0) * float(i.unit_weight_kg or 0), 2)} for i in p.items],
         "total_weight_kg": round(sum(float(i.quantity or 0) * float(i.unit_weight_kg or 0) for i in p.items), 2),
         "stock_lines": stock_lines,
+        "availability_lines": availability_lines,
         "vendor": p.vendor, "vehicle_ref": p.vehicle_ref,
         "period_from": p.period_from, "period_to": p.period_to,
         "monthly_rate": p.monthly_rate, "months": p.months,
@@ -366,6 +392,92 @@ async def raise_pr(rid: str, request: Request,
     return {"pr_number": pr_doc["pr_number"], "pr_id": pr_doc["id"], "items": len(pr_items)}
 
 
+@router.post("/project-requests/{rid}/raise-recruitment")
+async def raise_recruitment(rid: str, request: Request,
+                            user: dict = Depends(require_permission("project_requests", "write"))):
+    """HR sourcing: convert manpower shortfall lines into Recruitment Requests."""
+    row = await db.project_requests.find_one({"id": rid}, {"_id": 0})
+    if not row:
+        raise HTTPException(404, "Not found")
+    if row.get("request_type") != "manpower":
+        raise HTTPException(400, "Only manpower requests can raise recruitment")
+    if row["status"] != "with_dept":
+        raise HTTPException(400, f"Cannot raise recruitment in status {row['status']} — Project Head must approve first")
+    allowed = FULFIL_ROLES.get("hr", {"super_admin"})
+    if user.get("role") not in allowed and user.get("role") != "super_admin":
+        raise HTTPException(403, "Only the HR team can raise recruitment for this request")
+    avail = {a["name"]: a for a in (row.get("availability_lines") or [])}
+    created = []
+    for it in row.get("items") or []:
+        a = avail.get(it.get("name"))
+        vac = int(a["shortfall"]) if a else int(float(it.get("quantity") or 0))
+        if vac <= 0:
+            continue
+        rec = {
+            "id": new_id(), "req_no": await next_sequence("REQ"),
+            "position": it.get("name"), "department": "Operations",
+            "vacancies": vac, "needed_by": row.get("period_from") or row.get("need_by"),
+            "project_code": row.get("project_code"), "site": row.get("site_location"),
+            "budget_monthly_per_head": float(it.get("rate") or 0),
+            "deployment_from": row.get("period_from"), "deployment_to": row.get("period_to"),
+            "skills": it.get("specs"), "status": "open",
+            "source": "project_request", "source_request_id": rid,
+            "remarks": f"Auto-raised from manpower request {row['request_no']} — pool shortfall",
+            "created_at": now_iso(), "created_by": user.get("name") or user.get("email"),
+        }
+        await db.recruitment_requests.insert_one(rec)
+        created.append(rec["req_no"])
+    if not created:
+        raise HTTPException(400, "No shortfall — the internal pool covers all requested manpower")
+    await db.project_requests.update_one({"id": rid}, {"$set": {
+        "status": "sourcing", "recruitment_ids": created, "recruitment_nos": created,
+        "sourcing_raised_at": now_iso()}})
+    await audit(user=user, action="req_raise_recruitment", resource="project_requests", record_id=rid,
+                after={"recruitment_nos": created}, ip=_ip(request))
+    return {"recruitment_nos": created, "count": len(created)}
+
+
+class LineFulfilIn(BaseModel):
+    mode: str = "stock"          # stock (from internal pool/store) | sourced (procured/recruited)
+    remarks: Optional[str] = None
+
+
+@router.post("/project-requests/{rid}/items/{idx}/fulfil")
+async def fulfil_line(rid: str, idx: int, p: LineFulfilIn, request: Request,
+                      user: dict = Depends(require_permission("project_requests", "write"))):
+    """Department marks a single line item fulfilled; request auto-completes when all lines are done."""
+    row = await db.project_requests.find_one({"id": rid}, {"_id": 0})
+    if not row:
+        raise HTTPException(404, "Not found")
+    if row["status"] not in ("with_dept", "pr_raised", "sourcing"):
+        raise HTTPException(400, f"Cannot fulfil lines in status {row['status']}")
+    allowed = FULFIL_ROLES.get(row["owning_dept"], {"super_admin"})
+    if user.get("role") not in allowed and user.get("role") != "super_admin":
+        raise HTTPException(403, f"Only the {row['owning_dept']} team can fulfil this request")
+    items = row.get("items") or []
+    if idx < 0 or idx >= len(items):
+        raise HTTPException(404, "Line item not found")
+    if items[idx].get("fulfil_status") == "fulfilled":
+        raise HTTPException(400, "Line already fulfilled")
+    items[idx].update({"fulfil_status": "fulfilled", "fulfil_mode": p.mode,
+                       "fulfil_remarks": p.remarks,
+                       "fulfilled_by": user.get("name") or user.get("email"),
+                       "fulfilled_at": now_iso()})
+    patch: Dict[str, Any] = {"items": items}
+    if all(i.get("fulfil_status") == "fulfilled" for i in items):
+        patch.update({"status": "fulfilled", "fulfilled_at": now_iso(),
+                      "fulfilled_by": user.get("name") or user.get("email"),
+                      "fulfil_note": "All line items fulfilled"})
+        if row.get("is_payment"):
+            expense_id = await _book_expense(row, user)
+            if expense_id:
+                patch["expense_id"] = expense_id
+    await db.project_requests.update_one({"id": rid}, {"$set": patch})
+    await audit(user=user, action="req_fulfil_line", resource="project_requests", record_id=rid,
+                after={"line": idx, "mode": p.mode}, ip=_ip(request))
+    return await db.project_requests.find_one({"id": rid}, {"_id": 0})
+
+
 @router.post("/project-requests/{rid}/fulfil")
 async def fulfil_request(rid: str, p: ActionIn, request: Request,
                          user: dict = Depends(require_permission("project_requests", "write"))):
@@ -374,7 +486,7 @@ async def fulfil_request(rid: str, p: ActionIn, request: Request,
     row = await db.project_requests.find_one({"id": rid}, {"_id": 0})
     if not row:
         raise HTTPException(404, "Not found")
-    if row["status"] not in ("with_dept", "pr_raised"):
+    if row["status"] not in ("with_dept", "pr_raised", "sourcing"):
         raise HTTPException(400, f"Cannot fulfil in status {row['status']}")
     allowed = FULFIL_ROLES.get(row["owning_dept"], {"super_admin"})
     if user.get("role") not in allowed and user.get("role") != "super_admin":
@@ -382,6 +494,9 @@ async def fulfil_request(rid: str, p: ActionIn, request: Request,
     patch: Dict[str, Any] = {"status": "fulfilled", "fulfilled_at": now_iso(),
                              "fulfilled_by": user.get("name") or user.get("email"),
                              "fulfil_note": p.remarks}
+    if row.get("items"):
+        patch["items"] = [{**i, "fulfil_status": "fulfilled",
+                           "fulfil_mode": i.get("fulfil_mode") or "bulk"} for i in row["items"]]
     expense_id = None
     if row.get("is_payment"):
         expense_id = await _book_expense(row, user)
@@ -448,7 +563,7 @@ async def close_request(rid: str, user: dict = Depends(require_permission("proje
     row = await db.project_requests.find_one({"id": rid}, {"_id": 0, "status": 1})
     if not row:
         raise HTTPException(404, "Not found")
-    if row["status"] not in ("fulfilled", "with_dept", "pr_raised"):
+    if row["status"] not in ("fulfilled", "with_dept", "pr_raised", "sourcing"):
         raise HTTPException(400, f"Cannot close a request in status {row['status']}")
     await db.project_requests.update_one({"id": rid}, {"$set": {"status": "closed", "closed_at": now_iso()}})
     return await db.project_requests.find_one({"id": rid}, {"_id": 0})
