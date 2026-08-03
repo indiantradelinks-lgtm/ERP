@@ -122,6 +122,7 @@ import RoleDepartmentMap from "@/pages/admin/RoleDepartmentMap";
 import CompanyProfile from "@/pages/admin/CompanyProfile";
 import ConditionLibrary from "@/pages/admin/ConditionLibrary";
 import UserManagement from "@/pages/admin/UserManagement";
+import AssignmentManager from "@/pages/admin/AssignmentManager";
 import RoleRegister from "@/pages/admin/RoleRegister";
 import Categories from "@/pages/admin/Categories";
 import CodeOverride from "@/pages/admin/CodeOverride";
@@ -299,6 +300,7 @@ export default function App() {
             <Route path="/app/admin/company-profile" element={<ProtectedShell><CompanyProfile /></ProtectedShell>} />
             <Route path="/app/admin/conditions" element={<ProtectedShell><ConditionLibrary /></ProtectedShell>} />
             <Route path="/app/admin/users" element={<ProtectedShell><UserManagement /></ProtectedShell>} />
+            <Route path="/app/admin/project-assignments" element={<ProtectedShell><AssignmentManager /></ProtectedShell>} />
             <Route path="/app/admin/role-register" element={<ProtectedShell><RoleRegister /></ProtectedShell>} />
             <Route path="/app/admin/categories" element={<ProtectedShell><Categories /></ProtectedShell>} />
             <Route path="/app/admin/code-override" element={<ProtectedShell><CodeOverride /></ProtectedShell>} />

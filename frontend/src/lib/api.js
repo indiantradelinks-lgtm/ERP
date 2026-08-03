@@ -38,6 +38,14 @@ api.interceptors.response.use(
       }
       return _foreverPending;
     }
+    // Friendly full-screen notice when a project-scoped user follows a link
+    // to a project that is not assigned to them.
+    const detail = error?.response?.data?.detail;
+    if (status === 403 && typeof detail === "string" && detail.toLowerCase().includes("access to this project")) {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("project-access-denied"));
+      }
+    }
     return Promise.reject(error);
   }
 );

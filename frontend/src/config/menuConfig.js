@@ -369,6 +369,7 @@ export const MENU_ITEMS = [
   // ═══════════════ 11. MANAGEMENT & ADMIN ═══════════════
   { department: "admin", label: "Admin Console",              to: "/app/admin",                      icon: ShieldCheck,   testid: "nav-admin", end: true, superAdminOnly: true },
   { department: "admin", label: "User Management",            to: "/app/admin/users",                icon: Users,         testid: "nav-admin-users", superAdminOnly: true },
+  { department: "admin", label: "Project Assignments",        to: "/app/admin/project-assignments",  icon: Users,         testid: "nav-admin-project-assignments", roles: ["super_admin", "director", "general_manager", "dept_head"] },
   { department: "admin", label: "Role Management",            to: "/app/admin/role-register",        icon: ShieldCheck,   testid: "nav-admin-role-register", superAdminOnly: true },
   { department: "admin", label: "Auto Code Override",         to: "/app/admin/code-override",        icon: KeyRound,      testid: "nav-admin-code-override", superAdminOnly: true },
   { department: "admin", label: "Role Catalog",               to: "/app/admin/role-catalog",         icon: ShieldPlus,    testid: "nav-admin-role-catalog", superAdminOnly: true },
@@ -421,6 +422,7 @@ export function isItemVisible(item, { role, can }) {
   if (item.vendorOnly && role !== "vendor") return false;
   if (!item.vendorOnly && role === "vendor") return false; // vendors never see non-vendor items
   if (item.superAdminOnly && role !== "super_admin") return false;
+  if (item.roles && !item.roles.includes(role)) return false;
   if (item.perm && can && !can(item.perm, "read")) return false;
   return true;
 }

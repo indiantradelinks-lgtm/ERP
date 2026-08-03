@@ -16,6 +16,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 import MyApprovalsInbox from "@/components/MyApprovalsInbox";
 import NotificationBell from "@/components/NotificationBell";
 import PageHelp from "@/components/PageHelp";
+import AccessDeniedOverlay from "@/components/AccessDeniedOverlay";
 import RouteGuard from "@/components/RouteGuard";
 import useVisitTracker from "@/hooks/useVisitTracker";
 import {
@@ -386,6 +387,7 @@ export default function Layout({ children }) {
         <main className="flex-1 p-4 lg:p-8">
           <RouteGuard>{children}</RouteGuard>
         </main>
+        <AccessDeniedOverlay />
       </div>
     </div>
   );
