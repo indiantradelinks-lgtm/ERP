@@ -51,6 +51,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from core import db, require_permission, now_iso, new_id
+from scope import ensure_project_access
 from audit import audit
 
 
@@ -91,6 +92,7 @@ def _wbs_level(code: str) -> int:
 @router.get("/wbs/{project_id}")
 async def list_wbs(project_id: str,
                    user: dict = Depends(require_permission("projects", "read"))):
+    await ensure_project_access(user, project_id)
     await _resolve_project(project_id)
     rows = await db.project_wbs.find({"project_id": project_id}, {"_id": 0}).to_list(2000)
     # natural sort by code (1, 1.1, 1.1.2, 1.2 …)
@@ -226,6 +228,7 @@ async def _next_activity_code(project_id: str) -> str:
 @router.get("/activities/{project_id}")
 async def list_activities(project_id: str,
                           user: dict = Depends(require_permission("projects", "read"))):
+    await ensure_project_access(user, project_id)
     await _resolve_project(project_id)
     rows = await db.project_activities.find({"project_id": project_id}, {"_id": 0}).to_list(5000)
     # sort: start_date asc, then code
@@ -417,6 +420,7 @@ async def _enrich_resource(doc: dict) -> dict:
 async def list_resources(project_id: str,
                          type: Optional[str] = None,
                          user: dict = Depends(require_permission("projects", "read"))):
+    await ensure_project_access(user, project_id)
     await _resolve_project(project_id)
     q: Dict[str, Any] = {"project_id": project_id}
     if type:

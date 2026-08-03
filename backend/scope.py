@@ -153,6 +153,16 @@ async def apply_project_scope(user: dict, q: dict, id_field: str = "project_id",
     return {"$and": [q, clause]} if q else clause
 
 
+async def ensure_project_access(user: dict, project_id: str | None) -> None:
+    """Raise 403 when a project-scoped user targets a project outside their assignment."""
+    from fastapi import HTTPException
+    if not project_id:
+        return
+    ids = await allowed_project_ids(user)
+    if ids is not None and project_id not in ids:
+        raise HTTPException(status_code=403, detail="You don't have access to this project")
+
+
 async def project_filter(user: dict, project_field: str = "project") -> dict | None:
     """Mongo filter clause restricting rows to the user's active projects.
 

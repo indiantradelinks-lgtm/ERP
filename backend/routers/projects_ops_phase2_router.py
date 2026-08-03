@@ -47,6 +47,7 @@ from openpyxl import Workbook, load_workbook
 from pydantic import BaseModel, Field
 
 from core import db, require_permission, now_iso, new_id
+from scope import apply_project_scope, ensure_project_access
 from audit import audit
 
 
@@ -120,6 +121,7 @@ async def _resolve_project(pid: str) -> dict:
 @router.get("/planning/{project_id}")
 async def get_planning(project_id: str,
                        user: dict = Depends(require_permission("projects", "read"))):
+    await ensure_project_access(user, project_id)
     p = await _resolve_project(project_id)
     doc = await db.project_planning.find_one({"project_id": project_id}, {"_id": 0})
     if not doc:
@@ -288,6 +290,7 @@ async def list_boqs(project_id: Optional[str] = None,
         q["project_id"] = project_id
     if status:
         q["status"] = status
+    q = await apply_project_scope(user, q, "project_id")
     rows = await db.project_boqs.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
     return rows
 

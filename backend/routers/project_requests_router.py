@@ -32,6 +32,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from core import db, require_permission, get_current_user, now_iso, new_id
+from scope import apply_project_scope, ensure_project_access
 from datetime import datetime, timezone
 from audit import audit
 from sequences import next_sequence
@@ -191,6 +192,7 @@ async def list_requests(project_code: Optional[str] = None, request_type: Option
         q["status"] = status
     if dept:
         q["owning_dept"] = dept
+    q = await apply_project_scope(user, q, "project_id")
     rows = await db.project_requests.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
     for r in rows:
         r["attachment_count"] = await db.files.count_documents({"parent_type": "project_requests", "parent_id": r["id"]})
@@ -201,6 +203,7 @@ async def list_requests(project_code: Optional[str] = None, request_type: Option
 async def summary(project_code: Optional[str] = None,
                   user: dict = Depends(require_permission("project_requests", "read"))):
     q: Dict[str, Any] = {"project_code": project_code} if project_code else {}
+    q = await apply_project_scope(user, q, "project_id")
     rows = await db.project_requests.find(q, {"_id": 0, "status": 1, "est_value": 1}).to_list(5000)
     return {
         "total": len(rows),
@@ -227,6 +230,7 @@ async def create_request(p: RequestIn, request: Request,
         project = await db.projects.find_one({"code": p.project_code}, {"_id": 0})
     if not project:
         raise HTTPException(400, "Select a valid project")
+    await ensure_project_access(user, project["id"])
     est = _estimate_value(p)
 
     stock_lines: List[Dict[str, Any]] = []
@@ -531,9 +535,9 @@ async def hr_queue(user: dict = Depends(get_current_user)):
     allowed = FULFIL_ROLES["hr"] | {"general_manager", "director", "project_manager"}
     if user.get("role") not in allowed:
         raise HTTPException(403, "HR / leadership only")
-    rows = await db.project_requests.find(
-        {"request_type": "manpower", "status": {"$in": ["with_dept", "sourcing"]}},
-        {"_id": 0}).sort("approved_at", 1).to_list(500)
+    q: Dict[str, Any] = {"request_type": "manpower", "status": {"$in": ["with_dept", "sourcing"]}}
+    q = await apply_project_scope(user, q, "project_id")
+    rows = await db.project_requests.find(q, {"_id": 0}).sort("approved_at", 1).to_list(500)
     now = datetime.now(timezone.utc)
     for r in rows:
         ref = r.get("approved_at") or r.get("created_at")
@@ -943,6 +947,7 @@ async def export_requests(fmt: str, project_code: Optional[str] = None, status: 
         q["project_code"] = project_code
     if status:
         q["status"] = status
+    q = await apply_project_scope(user, q, "project_id")
     if request_type:
         q["request_type"] = request_type
     rows = await db.project_requests.find(q, {"_id": 0}).sort("created_at", -1).to_list(5000)

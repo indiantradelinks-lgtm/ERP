@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from core import db, require_permission, now_iso, new_id
+from scope import apply_project_scope, ensure_project_access
 from audit import audit
 
 router = APIRouter(prefix="/ops/premob-items", tags=["pre-mobilization"])
@@ -91,6 +92,7 @@ async def list_items(project_id: str = "", item_type: str = "", status: str = ""
         q["item_type"] = item_type
     if status:
         q["status"] = status
+    q = await apply_project_scope(user, q, "project_id")
     rows = [_flag(r) for r in await db.premob_items.find(q, {"_id": 0}).sort("target_date", 1).to_list(2000)]
     if flagged:
         rows = [r for r in rows if r["is_delayed"] or r.get("concern")]
@@ -107,6 +109,7 @@ async def create_item(p: PremobItemIn, request: Request,
     proj = await db.projects.find_one({"id": p.project_id}, {"_id": 0, "id": 1, "code": 1, "name": 1})
     if not proj:
         raise HTTPException(404, "Project not found")
+    await ensure_project_access(user, proj["id"])
     doc = {**p.model_dump(), "id": new_id(),
            "project_code": proj.get("code"), "project_name": proj.get("name"),
            "concern": None, "concern_log": [], "completed_on": None,
@@ -200,6 +203,7 @@ async def resolve_concern(item_id: str, request: Request,
 async def summary(project_id: str = "",
                   user: dict = Depends(require_permission("projects", "read"))):
     q = {"project_id": project_id} if project_id else {}
+    q = await apply_project_scope(user, q, "project_id")
     rows = [_flag(r) for r in await db.premob_items.find(q, {"_id": 0}).to_list(2000)]
     return {
         "total": len(rows),

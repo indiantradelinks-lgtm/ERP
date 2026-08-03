@@ -18,6 +18,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from core import db, require_permission, now_iso, new_id
+from scope import apply_project_scope, ensure_project_access
 from audit import audit
 from exports import to_excel, to_pdf
 
@@ -119,6 +120,7 @@ async def list_budget_lines(project_id: str = "", category_id: str = "", cost_ce
                             frequency: str = "", from_date: str = "", to_date: str = "",
                             user: dict = Depends(require_permission("projects", "read"))):
     q = _list_query(project_id, category_id, cost_center_id, frequency, from_date, to_date)
+    q = await apply_project_scope(user, q, "project_id")
     rows = await db.project_budget_lines.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
     return rows
 
@@ -126,6 +128,7 @@ async def list_budget_lines(project_id: str = "", category_id: str = "", cost_ce
 @router.post("")
 async def create_budget_line(p: BudgetLineIn, request: Request,
                              user: dict = Depends(require_permission("projects", "write"))):
+    await ensure_project_access(user, p.project_id)
     doc = await _enrich(p)
     doc.update({"id": new_id(), "created_at": now_iso(), "created_by": user["id"], "created_by_name": user.get("name")})
     await db.project_budget_lines.insert_one(dict(doc))
@@ -169,6 +172,7 @@ async def budget_report(project_id: str = "", category_id: str = "", cost_center
                         user: dict = Depends(require_permission("projects", "read"))):
     """Summary grouped by category | project | frequency + grand total."""
     q = _list_query(project_id, category_id, cost_center_id, frequency, from_date, to_date)
+    q = await apply_project_scope(user, q, "project_id")
     rows = await db.project_budget_lines.find(q, {"_id": 0}).to_list(5000)
     key_map = {
         "category": lambda r: r.get("category_name") or r.get("cost_center_label") or "Uncategorised",
@@ -195,6 +199,7 @@ async def export_budget(fmt: str, project_id: str = "", category_id: str = "", c
     if fmt not in ("xlsx", "pdf"):
         raise HTTPException(400, "fmt must be xlsx or pdf")
     q = _list_query(project_id, category_id, cost_center_id, frequency, from_date, to_date)
+    q = await apply_project_scope(user, q, "project_id")
     raw = await db.project_budget_lines.find(q, {"_id": 0}).sort([("project_code", 1), ("category_name", 1)]).to_list(5000)
     rows = [{
         "Project": f"{r.get('project_code') or ''} · {r.get('project_name') or ''}".strip(" ·"),

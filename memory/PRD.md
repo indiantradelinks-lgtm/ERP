@@ -5023,3 +5023,9 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - ProjectResources.jsx: plan lines with converted_request_no show emerald "Converted → REQ-xxxx" badge (tooltip has date) instead of the selection checkbox; legacy rr_batch_id lines show "Converted → RR-xxxx". Converted lines cannot be re-selected.
 - from-plan endpoint now stamps each plan line with its OWN request number (manpower lines → manpower REQ, material/tools → material REQ) instead of a joined string.
 - Tested: per-type stamping via curl (mp line→REQ-0061, mat line→REQ-0062, artifacts cleaned) + UI screenshot of badge on Resource Planning tab.
+
+### Aug 2026 — Project-level data scoping for PM / Coordinator ✅
+- scope.py: new ensure_project_access(user, project_id) → 403 for out-of-scope projects (uses allowed_project_ids; PM/coordinator assignments come from projects.project_manager_id/project_coordinator_id/reporting_manager_id + deployments — evaluated live per request, so reassignment updates instantly; dept_head+ / global roles unrestricted).
+- Scoped endpoints added: project_requests (list, summary, export, hr-queue via apply_project_scope on project_id; create guarded), project_budget_router (list/report/export/create), premob_router (list/summary/create), proj-phase2 planning/{id}, boqs list, proj-phase2 wbs/{id}, activities/{id}, resources/{id}. Existing: /projects (crud projects_collection_filter), dashboard-kpis (pm_scope), per-project ops dashboard already PM-aware.
+- Fixed during work: stray "'})"  syntax error in project_requests export (introduced by edit), missing scope import.
+- Tested as test_pm (PM on 4 of 25 projects): projects 4 vs admin 25; requests/budget/premob rows only own codes; foreign WBS/planning/resources/activities/create → 403, own → 200; reassignment of PRJ-2025-02 → instantly 5 projects + WBS 200, revert → back to 4. UI screenshot: Request Center scoped, no foreign project leak.
