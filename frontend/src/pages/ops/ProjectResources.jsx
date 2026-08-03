@@ -684,18 +684,18 @@ function ConvertDialog({ projectId, rows, type, onClose, onSaved }) {
     }
     setSaving(true);
     try {
-      const r = await api.post("/ops/resource-requests/from-plan", {
+      const r = await api.post("/project-requests/from-plan", {
         project_id: projectId,
         resource_ids: rows.map((x) => x.id),
         required_date: head.required_date || null,
         site_location: head.site_location || null,
-        priority: head.priority,
+        priority: head.priority === "normal" ? "medium" : head.priority,
         justification: head.justification || null,
         submit: head.submit,
         ...(head.submit ? docs : {}),
       });
       const d = r.data;
-      toast.success(`Raised ${d.count} request${d.count > 1 ? "s" : ""} (${(d.rr_nos || []).join(", ")})${d.submitted ? " · submitted for approval" : " · saved as drafts"}`);
+      toast.success(`Raised ${d.count} request${d.count > 1 ? "s" : ""} (${(d.request_nos || []).join(", ")}) · submitted for approval in the Request Center`);
       onSaved();
     } catch (e) { toast.error(e.response?.data?.detail || "Conversion failed"); }
     finally { setSaving(false); }

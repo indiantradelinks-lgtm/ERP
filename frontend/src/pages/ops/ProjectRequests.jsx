@@ -342,7 +342,6 @@ export default function ProjectRequests() {
         </Table>
       </div>
 
-      <LegacyResourceRequests />
         </TabsContent>
       </Tabs>
 
@@ -683,61 +682,4 @@ export default function ProjectRequests() {
   );
 }
 
-const LEGACY_STATUS_TONE = {
-  completed: "border-emerald-300 text-emerald-800 bg-emerald-50",
-  approved: "border-blue-300 text-blue-800 bg-blue-50",
-  rejected: "border-rose-300 text-rose-800 bg-rose-50",
-  cancelled: "border-slate-300 text-slate-600 bg-slate-50",
-};
-
-function LegacyResourceRequests() {
-  const [open, setOpen] = useState(false);
-  const [rows, setRows] = useState(null);
-
-  useEffect(() => {
-    if (!open || rows !== null) return;
-    api.get("/ops/resource-requests").then((r) => setRows(r.data || [])).catch(() => setRows([]));
-  }, [open]); // eslint-disable-line
-
-  return (
-    <div className="bg-card border border-border rounded-sm">
-      <button className="w-full flex items-center gap-2 p-3 text-left" onClick={() => setOpen(!open)} data-testid="legacy-rr-toggle">
-        {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
-          Legacy Resource / Manpower Requests (old module — read only)
-        </span>
-      </button>
-      {open && (
-        <Table>
-          <TableHeader><TableRow className="bg-muted/30 hover:bg-muted/30">
-            <TableHead className="text-[10px] uppercase tracking-wider">Request # / Date</TableHead>
-            <TableHead className="text-[10px] uppercase tracking-wider">Project</TableHead>
-            <TableHead className="text-[10px] uppercase tracking-wider">Type / Item</TableHead>
-            <TableHead className="text-[10px] uppercase tracking-wider text-right">Qty</TableHead>
-            <TableHead className="text-[10px] uppercase tracking-wider">Status</TableHead>
-          </TableRow></TableHeader>
-          <TableBody>
-            {rows === null && <TableRow><TableCell colSpan={5} className="text-center py-6 text-muted-foreground">Loading…</TableCell></TableRow>}
-            {rows?.length === 0 && <TableRow><TableCell colSpan={5} className="text-center py-6 text-muted-foreground">No legacy requests.</TableCell></TableRow>}
-            {(rows || []).slice(0, 100).map((r) => (
-              <TableRow key={r.id} data-testid={`legacy-rr-row-${r.id}`}>
-                <TableCell>
-                  <div className="font-mono-data text-xs font-bold">{r.request_no || (r.id || "").slice(0, 8)}</div>
-                  <div className="text-[10px] text-muted-foreground">{(r.created_at || "").slice(0, 10)} · {r.requested_by || r.created_by || ""}</div>
-                </TableCell>
-                <TableCell className="text-xs">{r.project_code || r.project_name || "—"}</TableCell>
-                <TableCell className="text-xs">
-                  <Badge variant="outline" className="rounded-sm text-[10px]">{r.resource_type}</Badge>
-                  <span className="ml-1.5">{r.item_name || r.designation || ""}</span>
-                </TableCell>
-                <TableCell className="text-right font-mono-data tabular text-xs">{r.quantity} {r.unit || ""}</TableCell>
-                <TableCell><Badge variant="outline" className={`rounded-sm text-[10px] ${LEGACY_STATUS_TONE[r.status] || "border-amber-300 text-amber-900 bg-amber-50"}`}>{r.status}</Badge></TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
-    </div>
-  );
-}
 

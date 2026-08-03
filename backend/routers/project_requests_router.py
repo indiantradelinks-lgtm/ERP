@@ -404,6 +404,122 @@ async def raise_pr(rid: str, request: Request,
     return {"pr_number": pr_doc["pr_number"], "pr_id": pr_doc["id"], "items": len(pr_items)}
 
 
+class FromPlanIn(BaseModel):
+    project_id: str
+    resource_ids: List[str]
+    required_date: Optional[str] = None
+    site_location: Optional[str] = None
+    priority: str = "medium"
+    justification: Optional[str] = None
+    submit: Optional[bool] = True
+
+
+@router.post("/project-requests/from-plan")
+async def create_from_plan(p: FromPlanIn, request: Request,
+                           user: dict = Depends(require_permission("project_requests", "write"))):
+    """Convert Resource Planning lines into unified Project Requests
+    (manpower lines → one manpower request; material/tool lines → one material request)."""
+    rows = await db.project_resources.find(
+        {"id": {"$in": p.resource_ids}, "project_id": p.project_id}, {"_id": 0}).to_list(100)
+    found = {r["id"]: r for r in rows}
+    missing = [rid for rid in p.resource_ids if rid not in found]
+    if missing:
+        raise HTTPException(404, f"{len(missing)} plan line(s) not found for this project")
+    already = [r for r in rows if r.get("converted_request_no") or r.get("rr_batch_id")]
+    if already:
+        raise HTTPException(400, "Some lines were already converted to requests")
+    mp_items: List[ReqItem] = []
+    mat_items: List[ReqItem] = []
+    for r in [found[rid] for rid in p.resource_ids]:
+        rt = r.get("resource_type")
+        if rt == "manpower":
+            mp_items.append(ReqItem(name=r.get("designation_name") or "Manpower",
+                                    designation_id=r.get("designation_id"),
+                                    quantity=float(r.get("count_required") or 1), unit="Persons",
+                                    specs=r.get("skill_requirements") or r.get("specification")))
+        elif rt == "material":
+            mat_items.append(ReqItem(name=r.get("item_name") or "Material", category=r.get("category"),
+                                     quantity=float(r.get("quantity") or 1), unit=r.get("uom") or "Nos"))
+        elif rt == "tools":
+            mat_items.append(ReqItem(name=r.get("tool_name") or "Tool", category=r.get("tool_category"),
+                                     quantity=float(r.get("count_required") or 1), unit="Nos",
+                                     specs=r.get("specification")))
+        else:
+            raise HTTPException(400, f"Plan line type '{rt}' cannot be converted (sub-contract goes via vendor/PO flow)")
+    created = []
+    for rtype, items in (("manpower", mp_items), ("material", mat_items)):
+        if not items:
+            continue
+        req_in = RequestIn(project_id=p.project_id, request_type=rtype, items=items,
+                           need_by=p.required_date, priority=p.priority,
+                           site_location=p.site_location, remarks=p.justification,
+                           description=f"Raised from Resource Planning ({len(items)} line(s))")
+        doc = await create_request(req_in, request, user)
+        created.append(doc["request_no"])
+    if not created:
+        raise HTTPException(400, "Nothing to convert")
+    await db.project_resources.update_many(
+        {"id": {"$in": p.resource_ids}},
+        {"$set": {"converted_request_no": ", ".join(created), "converted_at": now_iso()}})
+    return {"count": len(created), "request_nos": created}
+
+
+async def migrate_legacy_resource_requests() -> int:
+    """One-time migration: legacy resource_requests → unified project_requests."""
+    type_map = {"manpower": "manpower", "consumable": "material", "material": "material",
+                "tool": "material", "ppe": "ppe", "asset": "material", "it": "it_material"}
+    status_map = {"draft": "pending_approval", "pending_approval": "pending_approval",
+                  "approved": "with_dept", "completed": "fulfilled",
+                  "cancelled": "cancelled", "rejected": "rejected"}
+    n = 0
+    async for old in db.resource_requests.find({"migrated_to": {"$exists": False}}, {"_id": 0}):
+        try:
+            rtype = type_map.get(old.get("resource_type"), "material")
+            meta = REQUEST_TYPES[rtype]
+            status = status_map.get(old.get("status"), "pending_approval")
+            project = await db.projects.find_one({"id": old.get("project_id")}, {"_id": 0}) or {}
+            approved = status in ("with_dept", "fulfilled")
+            chain = [{"role": "dept_head", "label": "Project Head",
+                      "status": "approved" if approved else "pending",
+                      "by": "Migrated from legacy module" if approved else None,
+                      "at": old.get("updated_at") if approved else None, "remarks": None}]
+            item_name = old.get("item_name") or old.get("designation") or old.get("resource_type") or "Item"
+            fulfilled = status == "fulfilled"
+            doc = {
+                "id": new_id(), "request_no": old.get("rr_no") or f"RR-MIG-{(old.get('id') or '')[:6]}",
+                "project_id": old.get("project_id"), "project_code": project.get("code"),
+                "project_name": project.get("name") or old.get("project_name"),
+                "client_name": project.get("client"),
+                "request_type": rtype, "request_type_label": meta["label"],
+                "owning_dept": meta["dept"], "is_payment": meta["payment"], "is_stockable": meta["stockable"],
+                "expense_type": meta["expense_type"],
+                "need_by": old.get("required_date"), "priority": old.get("priority") or "medium",
+                "description": old.get("justification") or "", "site_location": old.get("site_location"),
+                "items": [{"name": item_name, "quantity": float(old.get("quantity") or 1),
+                           "unit": old.get("unit") or ("Persons" if rtype == "manpower" else "Nos"),
+                           "rate": 0, "fulfil_status": "fulfilled" if fulfilled else "pending",
+                           "fulfil_mode": "bulk" if fulfilled else None}],
+                "stock_lines": [], "availability_lines": [],
+                "est_value": 0, "is_large_value": False,
+                "status": status, "chain": chain, "current_step": 0,
+                "pr_id": None, "pr_number": None, "expense_id": None,
+                "recruitment_ids": [], "recruitment_nos": [],
+                "fulfilled_at": old.get("updated_at") if fulfilled else None,
+                "fulfilled_by": None, "fulfil_note": "Migrated from legacy module" if fulfilled else None,
+                "approved_at": old.get("updated_at") if approved else None,
+                "created_at": old.get("created_at") or now_iso(),
+                "created_by": old.get("requested_by") or "Legacy",
+                "created_by_id": old.get("requested_by_id"),
+                "migrated_from": old.get("id"), "migrated_from_rr_no": old.get("rr_no"),
+            }
+            await db.project_requests.insert_one(doc)
+            await db.resource_requests.update_one({"id": old["id"]}, {"$set": {"migrated_to": doc["id"]}})
+            n += 1
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("legacy RR migration failed for %s: %s", old.get("id"), exc)
+    return n
+
+
 @router.get("/project-requests/hr-queue")
 async def hr_queue(user: dict = Depends(get_current_user)):
     """HR fulfilment lane: manpower requests awaiting sourcing, with ageing."""

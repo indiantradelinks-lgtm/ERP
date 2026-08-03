@@ -36,7 +36,7 @@ from routers.role_catalog_router import ensure_role_catalog_seeded
 from routers.onedrive_router import run_push_queue, run_db_backup  # noqa: F401  (used by scheduler)
 from routers.advance_router import seed_advance_types_if_empty
 from routers.department_master_router import seed_department_master_if_empty
-from routers.project_requests_router import backfill_manpower_recruitment
+from routers.project_requests_router import backfill_manpower_recruitment, migrate_legacy_resource_requests
 
 from seed import seed_admin, seed_sample_data
 from scheduler import start_scheduler, shutdown_scheduler, scheduler_status
@@ -236,6 +236,12 @@ async def seed_quotation_conditions_on_startup():
             logger.info(f"[department-master] Seeded {n_depts} default departments")
     except Exception as e:
         logger.warning(f"[department-master] Seed skipped: {e}")
+    try:
+        n_mig = await migrate_legacy_resource_requests()
+        if n_mig:
+            logger.info(f"[legacy-rr-migration] Migrated {n_mig} legacy resource request(s) to Project Requests")
+    except Exception as e:
+        logger.warning(f"[legacy-rr-migration] skipped: {e}")
     try:
         n_bf = await backfill_manpower_recruitment()
         if n_bf:
