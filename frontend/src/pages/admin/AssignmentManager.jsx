@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { UserCog, History, Save, RefreshCw } from "lucide-react";
+import { UserCog, History, Save, RefreshCw, ArrowRightLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -15,6 +15,23 @@ export default function AssignmentManager() {
   const [histFor, setHistFor] = useState(null);
   const [hist, setHist] = useState(null);
   const [q, setQ] = useState("");
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulk, setBulk] = useState({ from_user_id: "", to_user_id: "", remarks: "" });
+  const [bulkSaving, setBulkSaving] = useState(false);
+
+  const bulkTransfer = async () => {
+    if (!bulk.from_user_id || !bulk.to_user_id) return toast.error("Pick both users");
+    if (bulk.from_user_id === bulk.to_user_id) return toast.error("Source and target are the same person");
+    setBulkSaving(true);
+    try {
+      const r = await api.post("/ops/project-assignments/bulk/transfer", bulk);
+      toast.success(`${r.data.transferred} project(s) moved from ${r.data.from} to ${r.data.to}`);
+      setBulkOpen(false); setBulk({ from_user_id: "", to_user_id: "", remarks: "" }); load();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Transfer failed"); }
+    finally { setBulkSaving(false); }
+  };
+
+  const bulkCount = data.projects.filter((p) => p.project_manager_id === bulk.from_user_id || p.project_coordinator_id === bulk.from_user_id).length;
 
   const load = () => api.get("/ops/project-assignments").then((r) => { setData(r.data); setDrafts({}); }).catch((e) => toast.error(e?.response?.data?.detail || "Load failed"));
   useEffect(() => { load(); }, []);
@@ -61,6 +78,7 @@ export default function AssignmentManager() {
         </div>
         <div className="flex gap-2">
           <Input placeholder="Search project / client…" value={q} onChange={(e) => setQ(e.target.value)} className="h-9 w-64" data-testid="assign-search" />
+          <Button variant="outline" size="sm" className="text-orange-700 border-orange-300" onClick={() => setBulkOpen(true)} data-testid="bulk-transfer-btn"><ArrowRightLeft className="h-4 w-4 mr-1" /> Bulk Transfer</Button>
           <Button variant="outline" size="sm" onClick={load} data-testid="assign-refresh"><RefreshCw className="h-4 w-4" /></Button>
         </div>
       </div>
@@ -109,6 +127,34 @@ export default function AssignmentManager() {
           </TableBody>
         </Table>
       </div>
+
+      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><ArrowRightLeft className="h-4 w-4 text-orange-600" /> Bulk Transfer Projects</DialogTitle>
+            <DialogDescription>Move every project handled by one person (as PM or Coordinator) to someone else — for exits, leave or workload balancing.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <div className="text-xs font-semibold mb-1">Transfer FROM</div>
+              <UserSelect value={bulk.from_user_id} options={data.users} onChange={(v) => setBulk((b) => ({ ...b, from_user_id: v }))} testid="bulk-from" />
+              {bulk.from_user_id && <div className="text-[11px] mt-1 text-orange-700" data-testid="bulk-count">{bulkCount} project(s) will be transferred</div>}
+            </div>
+            <div>
+              <div className="text-xs font-semibold mb-1">Transfer TO</div>
+              <UserSelect value={bulk.to_user_id} options={data.users.filter((u) => u.id !== bulk.from_user_id)} onChange={(v) => setBulk((b) => ({ ...b, to_user_id: v }))} testid="bulk-to" />
+            </div>
+            <div>
+              <div className="text-xs font-semibold mb-1">Reason / note (shown in history)</div>
+              <Input value={bulk.remarks} onChange={(e) => setBulk((b) => ({ ...b, remarks: e.target.value }))} placeholder="e.g., On leave till Sept 15" className="h-9" data-testid="bulk-remarks" />
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={() => setBulkOpen(false)}>Cancel</Button>
+              <Button className="bg-orange-600 hover:bg-orange-700" disabled={bulkSaving || !bulkCount} onClick={bulkTransfer} data-testid="bulk-submit">{bulkSaving ? "Transferring…" : `Transfer ${bulkCount || ""} Project(s)`}</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!histFor} onOpenChange={(v) => !v && setHistFor(null)}>
         <DialogContent className="max-w-lg">

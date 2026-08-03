@@ -102,6 +102,63 @@ async def assign(project_id: str, p: AssignIn, request: Request,
     return {"ok": True, "changed": len(events), "project": out}
 
 
+class BulkTransferIn(BaseModel):
+    from_user_id: str
+    to_user_id: str
+    remarks: Optional[str] = None
+
+
+@router.post("/bulk/transfer")
+async def bulk_transfer(p: BulkTransferIn, request: Request,
+                        user: dict = Depends(get_current_user)):
+    """Transfer every project where from_user is PM or Coordinator to to_user."""
+    _require_admin(user)
+    if p.from_user_id == p.to_user_id:
+        raise HTTPException(400, "Source and target user are the same")
+    to_user = await db.users.find_one({"id": p.to_user_id}, {"_id": 0, "name": 1})
+    from_user = await db.users.find_one({"id": p.from_user_id}, {"_id": 0, "name": 1})
+    if not to_user or not from_user:
+        raise HTTPException(400, "User not found")
+    projects = await db.projects.find(
+        {"$or": [{"project_manager_id": p.from_user_id}, {"project_coordinator_id": p.from_user_id}]},
+        {"_id": 0, "id": 1, "code": 1, "name": 1, "project_manager_id": 1, "project_manager_name": 1,
+         "project_coordinator_id": 1, "project_coordinator_name": 1}).to_list(500)
+    if not projects:
+        raise HTTPException(400, f"{from_user['name']} has no assigned projects")
+    note = p.remarks or f"Bulk transfer from {from_user['name']}"
+    transferred = []
+    for proj in projects:
+        patch: dict = {"updated_at": now_iso()}
+        events = []
+        for field, name_field, label in (("project_manager_id", "project_manager_name", "Project Manager"),
+                                         ("project_coordinator_id", "project_coordinator_name", "Project Coordinator")):
+            if proj.get(field) != p.from_user_id:
+                continue
+            patch[field] = p.to_user_id
+            patch[name_field] = to_user["name"]
+            events.append({"id": new_id(), "field": label,
+                           "from_id": p.from_user_id, "from_name": proj.get(name_field),
+                           "to_id": p.to_user_id, "to_name": to_user["name"],
+                           "remarks": note, "by": user.get("name") or user.get("email"), "at": now_iso()})
+        await db.projects.update_one({"id": proj["id"]},
+                                     {"$set": patch, "$push": {"assignment_history": {"$each": events}}})
+        transferred.append({"code": proj["code"], "roles": [e["field"] for e in events]})
+    for uid, title, msg in (
+            (p.to_user_id, f"{len(transferred)} project(s) transferred to you",
+             f"{from_user['name']}'s projects are now yours: {', '.join(t['code'] for t in transferred[:10])}"
+             + ("…" if len(transferred) > 10 else "") + (f" · Note: {p.remarks}" if p.remarks else "")),
+            (p.from_user_id, f"Your projects were transferred to {to_user['name']}",
+             f"{len(transferred)} project(s) reassigned by {user.get('name')}.")):
+        await db.notifications.insert_one({"id": new_id(), "user_id": uid, "kind": "assignment",
+                                           "title": title, "message": msg,
+                                           "link": "/app/ops/my-projects", "read": False, "at": now_iso()})
+    await audit(user=user, action="project_bulk_transfer", resource="projects", record_id=p.from_user_id,
+                after={"to": to_user["name"], "projects": [t["code"] for t in transferred]},
+                ip=request.client.host if request.client else "")
+    return {"ok": True, "transferred": len(transferred), "projects": transferred,
+            "from": from_user["name"], "to": to_user["name"]}
+
+
 @router.get("/{project_id}/history")
 async def history(project_id: str, user: dict = Depends(get_current_user)):
     _require_admin(user)

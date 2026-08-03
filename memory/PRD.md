@@ -5035,3 +5035,8 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - Frontend pages/admin/AssignmentManager.jsx at /app/admin/project-assignments (sidebar "Project Assignments", roles-gated via new `roles` key support in menuConfig isItemVisible): searchable table, PM/Coordinator dropdowns, per-row Save (prompts transfer note), History dialog with from→to/by/at/remarks.
 - Access Denied: api.js interceptor dispatches "project-access-denied" on 403 with "access to this project"; components/AccessDeniedOverlay.jsx (mounted in Layout) shows friendly full-screen card with My Projects / Dashboard buttons; auto-clears on route change.
 - Tested: admin list/assign/history/notify/unassign + PM 403 on manager API + scoping updated instantly (4→5→4 projects); screenshots of Assignment Manager (25 rows) and the overlay triggered as PM on a foreign project.
+
+### Aug 2026 — Bulk Reassignment ✅
+- POST /api/ops/project-assignments/bulk/transfer (admin roles): moves every project where from_user is PM or Coordinator to to_user; per-project assignment_history events with note; notifies both users; audited; validations (same user 400, unknown user 400, non-admin 403). Two-segment path avoids /{project_id} route clash.
+- AssignmentManager.jsx: orange "Bulk Transfer" button → dialog with FROM/TO user selects, live "N project(s) will be transferred" count (submit disabled at 0), reason note.
+- Tested E2E: 4 projects Test PM→RAHUL (PM saw 0 instantly), history + both notifications recorded, reverted 4 back, validations 400/403; dialog screenshot verified.
