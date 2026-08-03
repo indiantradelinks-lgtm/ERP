@@ -366,8 +366,12 @@ function ResourceTable({ type, rows, wbsMap, actMap, canEdit, selectable, select
           <tr key={r.id} className="border-b hover:bg-slate-50/50" data-testid={`rp-row-${r.id}`}>
             {selectable && (
               <td className="px-2 py-1">
-                {r.rr_batch_id ? (
-                  <span className="inline-block px-1.5 py-0.5 text-[9px] font-bold rounded border bg-green-50 border-green-300 text-green-700 whitespace-nowrap" title={`Requested as ${r.rr_no}`} data-testid={`rp-rr-badge-${r.id}`}>{r.rr_no}</span>
+                {r.converted_request_no ? (
+                  <span className="inline-block px-1.5 py-0.5 text-[9px] font-bold rounded border bg-emerald-50 border-emerald-300 text-emerald-700 whitespace-nowrap" title={`Converted to ${r.converted_request_no}${r.converted_at ? ` on ${(r.converted_at || "").slice(0, 10)}` : ""}`} data-testid={`rp-converted-badge-${r.id}`}>
+                    Converted → {r.converted_request_no}
+                  </span>
+                ) : r.rr_batch_id ? (
+                  <span className="inline-block px-1.5 py-0.5 text-[9px] font-bold rounded border bg-green-50 border-green-300 text-green-700 whitespace-nowrap" title={`Requested as ${r.rr_no} (legacy)`} data-testid={`rp-rr-badge-${r.id}`}>Converted → {r.rr_no}</span>
                 ) : (
                   <Checkbox checked={selected.includes(r.id)} onCheckedChange={() => onToggle(r.id)} data-testid={`rp-select-${r.id}`} />
                 )}

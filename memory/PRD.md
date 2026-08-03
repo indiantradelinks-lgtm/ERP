@@ -5018,3 +5018,8 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - One-time startup migration migrate_legacy_resource_requests() (server.py, runs before recruitment backfill): 24 legacy resource_requests → project_requests (type map: manpower/consumable/tool/ppe/asset; status map: draft/pending→pending_approval, approved→with_dept, completed→fulfilled; keeps rr_no as request_no, marks migrated_to on old docs = idempotent). Approved manpower migrations auto-raised recruitment via existing backfill (6 raised).
 - Removed "Legacy Resource / Manpower Requests (old module — read only)" section from ProjectRequests.jsx entirely. /app/ops/resource-requests already redirects to /app/ops/requests.
 - Tested: migration 24/24 + idempotent restart, from-plan (REQ-0059 manpower + REQ-0060 material, double-convert 400), UI screenshot: legacy section gone, RR-* rows in unified register with Sourcing status. PRODUCTION: user must redeploy — migration+backfill run automatically on startup.
+
+### Aug 2026 — Plan Line Status badge ("Converted → REQ-xxxx") ✅
+- ProjectResources.jsx: plan lines with converted_request_no show emerald "Converted → REQ-xxxx" badge (tooltip has date) instead of the selection checkbox; legacy rr_batch_id lines show "Converted → RR-xxxx". Converted lines cannot be re-selected.
+- from-plan endpoint now stamps each plan line with its OWN request number (manpower lines → manpower REQ, material/tools → material REQ) instead of a joined string.
+- Tested: per-type stamping via curl (mp line→REQ-0061, mat line→REQ-0062, artifacts cleaned) + UI screenshot of badge on Resource Planning tab.

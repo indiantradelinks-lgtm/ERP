@@ -447,6 +447,7 @@ async def create_from_plan(p: FromPlanIn, request: Request,
         else:
             raise HTTPException(400, f"Plan line type '{rt}' cannot be converted (sub-contract goes via vendor/PO flow)")
     created = []
+    type_req: Dict[str, str] = {}
     for rtype, items in (("manpower", mp_items), ("material", mat_items)):
         if not items:
             continue
@@ -456,11 +457,15 @@ async def create_from_plan(p: FromPlanIn, request: Request,
                            description=f"Raised from Resource Planning ({len(items)} line(s))")
         doc = await create_request(req_in, request, user)
         created.append(doc["request_no"])
+        type_req[rtype] = doc["request_no"]
     if not created:
         raise HTTPException(400, "Nothing to convert")
-    await db.project_resources.update_many(
-        {"id": {"$in": p.resource_ids}},
-        {"$set": {"converted_request_no": ", ".join(created), "converted_at": now_iso()}})
+    for rid in p.resource_ids:
+        line = found[rid]
+        rtype = "manpower" if line.get("resource_type") == "manpower" else "material"
+        await db.project_resources.update_one(
+            {"id": rid},
+            {"$set": {"converted_request_no": type_req.get(rtype), "converted_at": now_iso()}})
     return {"count": len(created), "request_nos": created}
 
 
