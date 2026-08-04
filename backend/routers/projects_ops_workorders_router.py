@@ -66,11 +66,13 @@ class WorkOrderIn(BaseModel):
 @router.get("/work-orders")
 async def list_work_orders(project_id: Optional[str] = None, status: Optional[str] = None,
                             user: dict = Depends(require_permission("projects", "read"))):
+    from scope import apply_project_scope
     q: Dict[str, Any] = {}
     if project_id:
         q["project_id"] = project_id
     if status:
         q["status"] = status
+    q = await apply_project_scope(user, q, "project_id", code_field="project_code")
     rows = await db.work_orders.find(q, {"_id": 0}).sort("wo_date", -1).to_list(2000)
     return rows
 
@@ -81,6 +83,9 @@ async def create_work_order(payload: WorkOrderIn,
     clash = await db.work_orders.find_one({"wo_no": payload.wo_no.strip()})
     if clash:
         raise HTTPException(409, f"WO number '{payload.wo_no}' already exists")
+    if payload.project_id:
+        from scope import ensure_project_access
+        await ensure_project_access(user, payload.project_id)
     # Resolve project label fields if project_id was passed
     doc = payload.model_dump()
     doc["wo_no"] = doc["wo_no"].strip()
@@ -104,6 +109,10 @@ async def update_work_order(wid: str, payload: WorkOrderIn,
     existing = await db.work_orders.find_one({"id": wid})
     if not existing:
         raise HTTPException(404, "Work Order not found")
+    from scope import ensure_project_access
+    await ensure_project_access(user, existing.get("project_id"))
+    if payload.project_id and payload.project_id != existing.get("project_id"):
+        await ensure_project_access(user, payload.project_id)
     patch = payload.model_dump()
     patch["wo_no"] = patch["wo_no"].strip()
     if patch["wo_no"] != existing.get("wo_no"):
@@ -149,9 +158,11 @@ async def delete_work_order(wid: str,
 
 @router.get("/work-orders/stats")
 async def wo_stats(user: dict = Depends(require_permission("projects", "read"))):
-    """KPI roll-up across all WOs for the Project Dashboard."""
-    total = await db.work_orders.count_documents({})
-    pipeline = [
+    """KPI roll-up across visible WOs (project-scoped for PM-scoped roles)."""
+    from scope import apply_project_scope
+    q = await apply_project_scope(user, {}, "project_id", code_field="project_code")
+    total = await db.work_orders.count_documents(q or {})
+    pipeline = ([{"$match": q}] if q else []) + [
         {"$group": {"_id": "$status", "count": {"$sum": 1}, "value": {"$sum": "$value"}}},
     ]
     by_status = []

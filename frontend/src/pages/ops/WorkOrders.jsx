@@ -173,7 +173,7 @@ export default function WorkOrders() {
             <Filter className="h-3.5 w-3.5 text-muted-foreground" />
             <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)}
                      className="h-7 rounded-sm border border-input bg-background px-2" data-testid="wo-filter-project">
-              <option value="">All projects</option>
+              <option value="">{projects.length === 0 ? "No Project Assigned" : "All projects"}</option>
               {projects.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
             </select>
             <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
@@ -278,7 +278,7 @@ export default function WorkOrders() {
               <F label="Project">
                 <select value={form.project_id || ""} onChange={(e) => onProjectPicked(e.target.value)}
                          className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm" data-testid="wo-form-project">
-                  <option value="">— select —</option>
+                  <option value="">{projects.length === 0 ? "No Project Assigned" : "— select —"}</option>
                   {projects.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
                 </select>
                 <p className="text-[10px] text-muted-foreground mt-0.5">Selecting a project auto-fills client, site, offer & line items</p>

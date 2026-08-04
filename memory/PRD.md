@@ -5061,3 +5061,8 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - get_current_user attaches impersonated/impersonator fields; /auth/me exposes them; audit rows during preview stamped with impersonator_id/name; start/stop audit-logged.
 - UI: orange Eye "Preview as" button per row in Users & Logins (um-preview-{id}); persistent orange banner in Layout (impersonation-banner) with Exit Preview (exit-preview-btn) → restores admin at /app/admin/users.
 - Full session mode (admin can act as the user) per user's choice; all actions audit-stamped.
+
+### Iteration 167 (Jun 2026) — Work Order Mapping project scoping ✅ (self-tested: curl matrix + UI screenshot)
+- GET /work-orders + /work-orders/stats now project-scoped via apply_project_scope (project_id + project_code match); POST/PUT enforce ensure_project_access.
+- Verified: Manager O P sees only WOs of assigned project (positive path tested with temp WO, cleaned up); admin sees all 8; canonical PM scoped; unattached-project WOs hidden from scoped roles.
+- WorkOrders.jsx dropdowns show "No Project Assigned" when project list empty (wo-filter-project, wo-form-project).
