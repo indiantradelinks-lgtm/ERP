@@ -129,7 +129,7 @@ export default function AssignmentManager() {
       </div>
 
       <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md bg-white dark:bg-slate-900">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><ArrowRightLeft className="h-4 w-4 text-orange-600" /> Bulk Transfer Projects</DialogTitle>
             <DialogDescription>Move every project handled by one person (as PM or Coordinator) to someone else — for exits, leave or workload balancing.</DialogDescription>
@@ -157,7 +157,7 @@ export default function AssignmentManager() {
       </Dialog>
 
       <Dialog open={!!histFor} onOpenChange={(v) => !v && setHistFor(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg bg-white dark:bg-slate-900">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><History className="h-4 w-4" /> Assignment History</DialogTitle>
             <DialogDescription>{histFor?.code} · {histFor?.name}</DialogDescription>

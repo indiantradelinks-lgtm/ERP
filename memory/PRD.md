@@ -5040,3 +5040,9 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - POST /api/ops/project-assignments/bulk/transfer (admin roles): moves every project where from_user is PM or Coordinator to to_user; per-project assignment_history events with note; notifies both users; audited; validations (same user 400, unknown user 400, non-admin 403). Two-segment path avoids /{project_id} route clash.
 - AssignmentManager.jsx: orange "Bulk Transfer" button → dialog with FROM/TO user selects, live "N project(s) will be transferred" count (submit disabled at 0), reason note.
 - Tested E2E: 4 projects Test PM→RAHUL (PM saw 0 instantly), history + both notifications recorded, reverted 4 back, validations 400/403; dialog screenshot verified.
+
+### Iteration 164 (Jun 2026) — Bug-fix verification: Assignment dropdowns + Inactive users ✅ (iteration_163.json all green)
+- Verified: GET /api/ops/project-assignments returns pm_users / coord_users strictly filtered ("Manager O P" / "Executive O P" labels with fallback to project_manager / project_coordinator keys when catalog labels absent); inactive users excluded from dropdowns.
+- Verified: GET /api/admin/users returns active + inactive users; status=active|inactive filters work; Users & Logins UI shows inactive rows with filter.
+- Fixed: Bulk Transfer dialog transparent backdrop (added opaque bg to DialogContent in AssignmentManager.jsx) — verified via screenshot.
+- NOTE: role_catalog currently has NO roles labelled literally 'Manager O P' / 'Executive O P'; backend gracefully falls back to legacy keys. If user still sees wrong roles, seed/rename role_catalog labels.
