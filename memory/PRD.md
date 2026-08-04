@@ -5082,3 +5082,6 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 3. Auto Absent: auto/run marks A (source auto_absent) for past working days (date<today, not employee's WO day) with NO existing row; later punch/bulk import overwrites A → derived status automatically.
 - UI: "Auto WO / Absent" button + dialog in Attendance Center (ac-auto-btn, auto-run-btn, auto-result). Verified: 43 emps → 215 WO + 85 A created; rerun 0/0 (302 untouched); 5h→HD, 9h→P+OT1; per-employee off-days (E-1002 Saturday) correct.
 - NOTE: two search_replace edits silently failed to persist this session (state hook + td cells) — always grep-verify edits in AttendanceCenter.jsx after batch edits.
+
+### Iteration 170 (Jun 2026) — Attendance Summary: Head Office filter ✅ (curl + screenshot verified)
+- Summary "Location / Project" select now includes "Head Office (Delhi)" (value HEAD-OFFICE) + all projects; backend maps HEAD-OFFICE → project_code in [null, "", "HEAD-OFFICE"]; Project-wise view groups null-code rows under HEAD-OFFICE.

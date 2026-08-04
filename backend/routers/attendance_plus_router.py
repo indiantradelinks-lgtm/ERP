@@ -94,7 +94,10 @@ async def _summary_data(month: str, project_code: Optional[str], department: Opt
     from scope import apply_project_scope
     match: Dict[str, Any] = {"date": {"$regex": f"^{month}-"}}
     if project_code:
-        match["project_code"] = project_code
+        if project_code == "HEAD-OFFICE":
+            match["project_code"] = {"$in": [None, "", "HEAD-OFFICE"]}
+        else:
+            match["project_code"] = project_code
     if department:
         match["department"] = department
     if shift_code:
@@ -162,7 +165,7 @@ async def _summary_data(month: str, project_code: Optional[str], department: Opt
             e["shifts"].add(r["shift_code"])
         bump(by_date, r.get("date") or "?", code, r, late, early)
         bump(by_dept, r.get("department") or "—", code, r, late, early)
-        bump(by_proj, r.get("project_code") or "—", code, r, late, early)
+        bump(by_proj, r.get("project_code") or "HEAD-OFFICE", code, r, late, early)
         bump(by_shift, r.get("shift_code") or "—", code, r, late, early)
 
     emp_rows = []

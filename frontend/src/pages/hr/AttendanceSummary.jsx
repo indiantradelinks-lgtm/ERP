@@ -11,7 +11,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { ProjectSelect } from "@/components/MasterSelect";
 
 const monthIso = () => new Date().toISOString().slice(0, 7);
 const CODES = ["P", "A", "HD", "L", "WO", "H", "OD"];
@@ -110,8 +109,13 @@ export default function AttendanceSummary() {
   const [q, setQ] = useState("");
   const [view, setView] = useState("employee");
   const [data, setData] = useState(null);
+  const [projects, setProjects] = useState([]);
   const [drill, setDrill] = useState(null);
   const [downloading, setDownloading] = useState("");
+
+  useEffect(() => {
+    api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {});
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -167,7 +171,13 @@ export default function AttendanceSummary() {
       <div className="flex gap-2 items-end flex-wrap bg-card border border-border rounded-sm p-3 print:hidden">
         <div><Label className="text-[10px] uppercase tracking-wider">Month</Label>
           <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="h-9 mt-1 w-40" data-testid="summary-month" /></div>
-        <ProjectSelect label="Project" value={project} onChange={(v) => setProject(v)} className="w-56" testid="summary-project" placeholder="— all projects —" />
+        <div><Label className="text-[10px] uppercase tracking-wider">Location / Project</Label>
+          <select value={project} onChange={(e) => setProject(e.target.value)}
+                  className="h-9 mt-1 w-56 rounded-sm border border-input bg-background px-2 text-sm" data-testid="summary-project">
+            <option value="">All locations & projects</option>
+            <option value="HEAD-OFFICE">Head Office (Delhi)</option>
+            {projects.map((p) => <option key={p.id} value={p.code}>{p.code} · {p.name}</option>)}
+          </select></div>
         <div><Label className="text-[10px] uppercase tracking-wider">Department</Label>
           <select value={dept} onChange={(e) => setDept(e.target.value)} className="h-9 mt-1 w-44 rounded-sm border border-input bg-background px-2 text-sm" data-testid="summary-dept">
             <option value="">All departments</option>
