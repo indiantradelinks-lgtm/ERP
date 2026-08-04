@@ -91,6 +91,10 @@ async def get_current_user(request: Request) -> dict:
         user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password_hash": 0})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
+        if payload.get("imp"):
+            user["impersonated"] = True
+            user["impersonator_id"] = payload["imp"]
+            user["impersonator_name"] = payload.get("imp_name")
         return user
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")

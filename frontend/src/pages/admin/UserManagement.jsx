@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Users, UserPlus, Edit2, Trash2, KeyRound, Power, Search,
+  Users, UserPlus, Edit2, Trash2, KeyRound, Power, Search, Eye,
   ShieldCheck, ShieldOff, ShieldAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -97,6 +97,14 @@ export default function UserManagement() {
       catch (e) { toast.error(e.response?.data?.detail || "Save failed"); }
     }
   };
+  const previewAs = async (u) => {
+    if (!window.confirm(`Preview the ERP as ${u.name || u.email}? You'll see exactly what they see. Use "Exit Preview" in the orange banner to return.`)) return;
+    try {
+      await api.post(`/admin/impersonation/start/${u.id}`);
+      window.location.href = "/app/modules";
+    } catch (e) { toast.error(e.response?.data?.detail || "Preview failed"); }
+  };
+
   const toggleActive = async (u) => {
     try { await api.post(`/admin/users/${u.id}/toggle-active`); toast.success(u.active === false ? "Activated" : "Deactivated"); load(); }
     catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
@@ -196,6 +204,11 @@ export default function UserManagement() {
                   <TableCell className="text-[11px] text-muted-foreground">{(u.last_login || "—").slice(0, 16).replace("T", " ")}</TableCell>
                   <TableCell className="text-right">
                     <div className="inline-flex gap-1">
+                      {u.role !== "super_admin" && u.active !== false && (
+                        <Button size="sm" variant="outline" className="h-7 rounded-sm text-orange-600 border-orange-400/60 hover:bg-orange-50" onClick={() => previewAs(u)} data-testid={`um-preview-${u.id}`} title={`Preview ERP as ${u.name || u.email}`}>
+                          <Eye className="h-3 w-3" />
+                        </Button>
+                      )}
                       <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={() => openEdit(u)} data-testid={`um-edit-${u.id}`}>
                         <Edit2 className="h-3 w-3" />
                       </Button>

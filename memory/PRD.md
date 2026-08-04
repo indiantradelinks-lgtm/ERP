@@ -5055,3 +5055,9 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - project_requests create: is_pm_scoped custom roles can raise requests (backend + frontend RAISE_ROLES incl. manager_o_p/manager_op).
 - Frontend: ProjectSelect + CostCenters select show "No Project Assigned" when list is empty.
 - Test user: test_mop@erp.com / Mop@12345 (role manager_o_p, assigned only PRJ-2025-01) — see test_credentials.md.
+
+### Iteration 166 (Jun 2026) — Access Preview (admin impersonation) ✅ (self-tested: curl round-trip + 2 UI flows)
+- New /api/admin/impersonation/start/{user_id} + /stop (super_admin only; blocks other super_admins, inactive users, nested previews). Target JWT carries imp/imp_name claims; admin token preserved in imp_return_token cookie for instant restore.
+- get_current_user attaches impersonated/impersonator fields; /auth/me exposes them; audit rows during preview stamped with impersonator_id/name; start/stop audit-logged.
+- UI: orange Eye "Preview as" button per row in Users & Logins (um-preview-{id}); persistent orange banner in Layout (impersonation-banner) with Exit Preview (exit-preview-btn) → restores admin at /app/admin/users.
+- Full session mode (admin can act as the user) per user's choice; all actions audit-stamped.

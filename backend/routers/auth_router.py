@@ -44,6 +44,8 @@ class UserOut(BaseModel):
     department: Optional[str] = None
     phone: Optional[str] = None
     created_at: str
+    impersonated: Optional[bool] = None
+    impersonator_name: Optional[str] = None
 
 
 @router.post("/login")

@@ -33,6 +33,9 @@ async def audit(
             "ip": ip,
             "meta": meta or None,
         }
+        if (user or {}).get("impersonated"):
+            doc["impersonator_id"] = user.get("impersonator_id")
+            doc["impersonator_name"] = user.get("impersonator_name")
         await db.audit_logs.insert_one(doc)
     except Exception as e:  # pragma: no cover
         logger.warning(f"audit log failed: {e}")

@@ -2,8 +2,9 @@ import { useState, useMemo } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   LogOut, Menu, Search, ChevronLeft, ChevronRight, User2, Construction,
-  LayoutGrid, Mail, ChevronDown, PanelLeftClose, PanelLeftOpen,
+  LayoutGrid, Mail, ChevronDown, PanelLeftClose, PanelLeftOpen, Eye,
 } from "lucide-react";
+import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -314,8 +315,32 @@ export default function Layout({ children }) {
       </Sheet>
 
       <div className="flex-1 flex flex-col min-w-0">
+        {/* Access Preview banner (impersonation) */}
+        {user?.impersonated && (
+          <div className="sticky top-0 z-40 h-9 flex items-center gap-3 px-4 lg:px-6 bg-orange-500 text-white text-sm font-semibold shadow-md" data-testid="impersonation-banner">
+            <Eye className="h-4 w-4 shrink-0" />
+            <span className="truncate">
+              Access Preview — viewing as <b>{user?.name || user?.email}</b> ({(user?.role || "").replaceAll("_", " ")})
+              {user?.impersonator_name ? ` · started by ${user.impersonator_name}` : ""}
+            </span>
+            <button
+              onClick={async () => {
+                try {
+                  await api.post("/admin/impersonation/stop");
+                  window.location.href = "/app/admin/users";
+                } catch (e) {
+                  window.location.href = "/login";
+                }
+              }}
+              className="ml-auto shrink-0 inline-flex items-center gap-1.5 rounded-sm bg-white/20 hover:bg-white/30 px-3 py-1 text-xs font-bold uppercase tracking-wider transition-colors"
+              data-testid="exit-preview-btn"
+            >
+              <LogOut className="h-3.5 w-3.5" /> Exit Preview
+            </button>
+          </div>
+        )}
         {/* Topbar */}
-        <header className="sticky top-0 z-30 h-16 flex items-center gap-3 px-4 lg:px-6 bg-background/80 backdrop-blur-md border-b border-border">
+        <header className={cn("sticky z-30 h-16 flex items-center gap-3 px-4 lg:px-6 bg-background/80 backdrop-blur-md border-b border-border", user?.impersonated ? "top-9" : "top-0")}>
           <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setMobileOpen(true)} data-testid="mobile-menu-btn">
             <Menu className="h-5 w-5" />
           </Button>
