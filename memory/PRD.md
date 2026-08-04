@@ -5046,3 +5046,12 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - Verified: GET /api/admin/users returns active + inactive users; status=active|inactive filters work; Users & Logins UI shows inactive rows with filter.
 - Fixed: Bulk Transfer dialog transparent backdrop (added opaque bg to DialogContent in AssignmentManager.jsx) — verified via screenshot.
 - NOTE: role_catalog currently has NO roles labelled literally 'Manager O P' / 'Executive O P'; backend gracefully falls back to legacy keys. If user still sees wrong roles, seed/rename role_catalog labels.
+
+### Iteration 165 (Jun 2026) — Strict project-based access control for 'Manager O P' ✅ (iteration_164.json all green, 7/7 pytest)
+- Central fix in scope.py: allowed_project_ids / project_filter / projects_collection_filter / resolve_scope / assigned_projects_for now delegate to pm_scope.is_pm_scoped + pm_scope_clause, so custom roles (manager_o_p, dept 'Projects & Operations' with manager/coordinator labels) get the same project isolation as canonical PMs.
+- Effect: GET /api/projects (feeds shared ProjectSelect used by ~56 pages incl. Project Request Center, Issue Material/Asset, Cost Centers, Budget, Planning etc.) is now scoped.
+- GET /procurement/master/cost-centers filtered by allowed projects (unassigned project_id param → []).
+- GET /allocations: project-type rows restricted to allowed projects; POST /allocations enforces ensure_project_access.
+- project_requests create: is_pm_scoped custom roles can raise requests (backend + frontend RAISE_ROLES incl. manager_o_p/manager_op).
+- Frontend: ProjectSelect + CostCenters select show "No Project Assigned" when list is empty.
+- Test user: test_mop@erp.com / Mop@12345 (role manager_o_p, assigned only PRJ-2025-01) — see test_credentials.md.

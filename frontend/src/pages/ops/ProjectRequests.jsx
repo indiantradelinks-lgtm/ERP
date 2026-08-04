@@ -17,7 +17,7 @@ import FileUploader from "@/components/FileUploader";
 import ProjectExpenses from "./ProjectExpenses";
 
 const inr = (v) => `₹ ${Number(v || 0).toLocaleString("en-IN")}`;
-const RAISE_ROLES = new Set(["project_coordinator", "project_manager", "super_admin"]);
+const RAISE_ROLES = new Set(["project_coordinator", "project_manager", "super_admin", "manager_o_p", "manager_op"]);
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const STOCKABLE = new Set(["material", "ppe", "it_material"]);
 const blankItem = () => ({ name: "", quantity: 1, unit: "Nos", rate: 0, specs: "", size: "", make: "", item_type: "", tech_details: "", designation_id: "", item_id: "", item_code: "", custom: false });
