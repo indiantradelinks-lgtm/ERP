@@ -5066,3 +5066,12 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - GET /work-orders + /work-orders/stats now project-scoped via apply_project_scope (project_id + project_code match); POST/PUT enforce ensure_project_access.
 - Verified: Manager O P sees only WOs of assigned project (positive path tested with temp WO, cleaned up); admin sees all 8; canonical PM scoped; unattached-project WOs hidden from scoped roles.
 - WorkOrders.jsx dropdowns show "No Project Assigned" when project list empty (wo-filter-project, wo-form-project).
+
+### Iteration 168 (Jun 2026) — HR Attendance Enterprise Enhancements ✅ (iteration_165.json: backend 12/12; Daily Sheet gap fixed + screenshot-verified)
+1. Attendance Register (HrPhase2.jsx): select-all pending checkbox (att-select-all) for bulk approve.
+2. NEW Attendance Summary page (/app/hr/attendance-summary, AttendanceSummary.jsx): KPIs, P/A/HD/L/WO/H/OD counts, late/early, working/present days, OT hrs, leave balance; filters month/project/dept/shift/search; views employee/date/department/project/shift; employee drill-down dialog; Print; downloads xlsx/pdf/csv (summary-download-btn).
+3. Attendance Center Daily Sheet: In/Out time inputs per row with live Hrs + auto OT (max(0,hrs-8)) + remarks; saved via day-sheet API (extended DaySheetEntry with in_time/out_time/remarks; GET returns them for prefill).
+4. Row-based Excel bulk update: GET /hr2/attendance-plus/bulk-rows/template + POST /bulk-rows/upload with validation error report.
+5. AI Punch Machine Import (gemini-2.5-flash via EMERGENT_LLM_KEY): preview (AI column mapping for xlsx/csv/txt/dat, in/out grouping, duplicate/missing-punch/unmatched/future flags), commit (overwrite duplicates per user choice), history, rollback (removes created + restores overwritten). Collections: punch_import_batches.
+- New backend router: routers/attendance_plus_router.py (/hr2/attendance-plus/*). New FE: AttendanceImport.jsx tab in Attendance Center.
+- Testing agent fixed: missing Optional import in attendance_bulk_router.py. Main agent fixed: Daily Sheet td cells + prefill lost in earlier file truncation (lesson: after head-truncating a file, re-verify all recent edits survived).

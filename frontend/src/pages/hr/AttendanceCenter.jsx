@@ -126,7 +126,7 @@ function DailySheet({ scope, master }) {
       setSheet(r.data);
       const d = {};
       for (const row of r.data.rows) {
-        if (row.status) d[row.employee_id] = { status: row.status, ot: row.overtime_hours || 0 };
+        if (row.status) d[row.employee_id] = { status: row.status, ot: row.overtime_hours || 0, in_t: row.in_time || "", out_t: row.out_time || "", remarks: row.remarks || "" };
       }
       setDraft(d);
     } catch (e) { toast.error(e.response?.data?.detail || "Failed to load day sheet"); }
@@ -145,7 +145,7 @@ function DailySheet({ scope, master }) {
 
   const markAll = (value) => {
     const d = { ...draft };
-    for (const row of sheet?.rows || []) if (!row.entry_locked) d[row.employee_id] = { status: value, ot: d[row.employee_id]?.ot || 0 };
+    for (const row of sheet?.rows || []) if (!row.entry_locked) d[row.employee_id] = { ...d[row.employee_id], status: value, ot: d[row.employee_id]?.ot || 0 };
     setDraft(d);
   };
 
@@ -239,9 +239,27 @@ function DailySheet({ scope, master }) {
                     </div>
                   </td>
                   <td className="px-3 py-1.5">
+                    <Input type="time" value={cur.in_t || ""} disabled={row.entry_locked}
+                            onChange={(e) => setRow(row.employee_id, { in_t: e.target.value })}
+                            className="h-7 w-24 text-xs" data-testid={`ac-in-${row.employee_id}`} />
+                  </td>
+                  <td className="px-3 py-1.5">
+                    <Input type="time" value={cur.out_t || ""} disabled={row.entry_locked}
+                            onChange={(e) => setRow(row.employee_id, { out_t: e.target.value })}
+                            className="h-7 w-24 text-xs" data-testid={`ac-out-${row.employee_id}`} />
+                  </td>
+                  <td className="px-3 py-1.5 text-right tabular text-xs" data-testid={`ac-hrs-${row.employee_id}`}>
+                    {cur.in_t && cur.out_t ? hoursBetween(cur.in_t, cur.out_t) : "—"}
+                  </td>
+                  <td className="px-3 py-1.5">
                     <Input type="number" min="0" step="0.5" value={cur.ot ?? 0} disabled={row.entry_locked}
                             onChange={(e) => setRow(row.employee_id, { ot: e.target.value })}
                             className="h-7 w-20 text-right" data-testid={`ac-ot-${row.employee_id}`} />
+                  </td>
+                  <td className="px-3 py-1.5">
+                    <Input value={cur.remarks || ""} disabled={row.entry_locked} placeholder="—"
+                            onChange={(e) => setRow(row.employee_id, { remarks: e.target.value })}
+                            className="h-7 w-36 text-xs" data-testid={`ac-remarks-${row.employee_id}`} />
                   </td>
                   <td className="px-3 py-1.5 text-xs">
                     {row.approval_status ? (

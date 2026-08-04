@@ -1,0 +1,1 @@
+- 2026-06 iter168: When repairing a corrupted JSX file via `head -N` truncation, previously applied search_replace edits in the truncated region can be silently lost. Always re-grep for the edited testids/markers afterwards.
