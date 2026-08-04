@@ -150,6 +150,7 @@ import HrPhase3 from "@/pages/hr/HrPhase3";
 import HrPhase4 from "@/pages/hr/HrPhase4";
 import HrPhase5 from "@/pages/hr/HrPhase5";
 import AttendanceCenter from "@/pages/hr/AttendanceCenter";
+import AttendanceSummary from "@/pages/hr/AttendanceSummary";
 import GroupMedical from "@/pages/hr/GroupMedical";
 import ProjectExpenses from "@/pages/ops/ProjectExpenses";
 import ProjectRequests from "@/pages/ops/ProjectRequests";
@@ -240,6 +241,7 @@ export default function App() {
             <Route path="/app/workers" element={<ProtectedShell><Employees master="worker" /></ProtectedShell>} />
             <Route path="/app/attendance" element={<ProtectedShell><Attendance /></ProtectedShell>} />
             <Route path="/app/attendance-center" element={<ProtectedShell><AttendanceCenter /></ProtectedShell>} />
+            <Route path="/app/hr/attendance-summary" element={<ProtectedShell><AttendanceSummary /></ProtectedShell>} />
             <Route path="/app/hr/group-medical" element={<ProtectedShell><GroupMedical /></ProtectedShell>} />
             <Route path="/app/ops/expenses" element={<Navigate to="/app/ops/requests?tab=expenses" replace />} />
             <Route path="/app/ops/requests" element={<ProtectedShell><ProjectRequests /></ProtectedShell>} />

@@ -5,7 +5,7 @@
  *  • Project-wise register with date & designation filters
  */
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { CalendarDays, Save, Upload, ListChecks, Building2, Search } from "lucide-react";
+import { CalendarDays, Save, Upload, ListChecks, Building2, Search, Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +14,17 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { AttendanceBulkDialog } from "./HrPhase2";
+import AttendanceImport from "./AttendanceImport";
+
+const hoursBetween = (tin, tout) => {
+  if (!tin || !tout) return 0;
+  const [h1, m1] = tin.split(":").map(Number);
+  const [h2, m2] = tout.split(":").map(Number);
+  if ([h1, m1, h2, m2].some(Number.isNaN)) return 0;
+  let mins = (h2 * 60 + m2) - (h1 * 60 + m1);
+  if (mins <= 0) mins += 24 * 60;
+  return Math.round((mins / 60) * 100) / 100;
+};
 
 const STATUSES = [
   { code: "P", value: "present", tone: "bg-green-600 text-white border-green-700" },
@@ -77,6 +88,7 @@ export default function AttendanceCenter() {
         <TabsList>
           <TabsTrigger value="daily" data-testid="ac-tab-daily"><CalendarDays className="h-3.5 w-3.5 mr-1" />Daily Sheet</TabsTrigger>
           <TabsTrigger value="register" data-testid="ac-tab-register"><ListChecks className="h-3.5 w-3.5 mr-1" />Register</TabsTrigger>
+          <TabsTrigger value="import" data-testid="ac-tab-import"><Bot className="h-3.5 w-3.5 mr-1" />AI Import & Bulk Update</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -86,8 +98,10 @@ export default function AttendanceCenter() {
             No projects assigned to you yet — ask your admin to assign you via Contract Handovers.
           </div>
         )
-      ) : (
+      ) : tab === "register" ? (
         <Register scope={scope} />
+      ) : (
+        <AttendanceImport />
       )}
 
       {bulkOpen && <AttendanceBulkDialog onClose={() => setBulkOpen(false)} onDone={() => setBulkOpen(false)} />}
@@ -119,7 +133,14 @@ function DailySheet({ scope, master }) {
   }, [date, master, scope, designation, q]);
   useEffect(() => { load(); }, [load]);
 
-  const setRow = (id, patch) => setDraft((m) => ({ ...m, [id]: { status: m[id]?.status, ot: m[id]?.ot || 0, ...patch } }));
+  const setRow = (id, patch) => setDraft((m) => {
+    const cur = { status: m[id]?.status, ot: m[id]?.ot || 0, in_t: m[id]?.in_t || "", out_t: m[id]?.out_t || "", remarks: m[id]?.remarks || "", ...patch };
+    if (("in_t" in patch || "out_t" in patch) && cur.in_t && cur.out_t) {
+      const hrs = hoursBetween(cur.in_t, cur.out_t);
+      if (hrs > 0 && !("ot" in patch)) cur.ot = Math.max(0, Math.round((hrs - 8) * 100) / 100);
+    }
+    return { ...m, [id]: cur };
+  });
   const marked = Object.entries(draft).filter(([, v]) => v.status);
 
   const markAll = (value) => {
@@ -134,7 +155,8 @@ function DailySheet({ scope, master }) {
     try {
       const r = await api.post("/hr2/attendance/bulk/day-sheet", {
         date, project_code: scope, master,
-        entries: marked.map(([id, v]) => ({ employee_id: id, status: v.status, overtime_hours: Number(v.ot) || 0 })),
+        entries: marked.map(([id, v]) => ({ employee_id: id, status: v.status, overtime_hours: Number(v.ot) || 0,
+                                            in_time: v.in_t || null, out_time: v.out_t || null, remarks: v.remarks || null })),
       });
       const d = r.data;
       toast.success(`Saved ${d.created + d.updated} entr${d.created + d.updated > 1 ? "ies" : "y"} (pending approval)`);
@@ -183,13 +205,17 @@ function DailySheet({ scope, master }) {
               <th className="text-left px-3 py-2">Name</th>
               <th className="text-left px-3 py-2">Designation</th>
               <th className="text-left px-3 py-2">Status</th>
+              <th className="text-left px-3 py-2 w-24">In</th>
+              <th className="text-left px-3 py-2 w-24">Out</th>
+              <th className="text-right px-3 py-2 w-14">Hrs</th>
               <th className="text-left px-3 py-2 w-28">OT (hrs)</th>
+              <th className="text-left px-3 py-2 w-36">Remarks</th>
               <th className="text-left px-3 py-2">Approval</th>
             </tr>
           </thead>
           <tbody>
             {(sheet?.rows || []).length === 0 && (
-              <tr><td colSpan={6} className="text-center py-10 text-slate-400">No people match — check master / filters.</td></tr>
+              <tr><td colSpan={10} className="text-center py-10 text-slate-400">No people match — check master / filters.</td></tr>
             )}
             {(sheet?.rows || []).map((row) => {
               const cur = draft[row.employee_id] || {};

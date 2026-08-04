@@ -10,7 +10,7 @@ import io
 import re
 from calendar import monthrange
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
@@ -91,6 +91,9 @@ class DaySheetEntry(BaseModel):
     employee_id: str
     status: str
     overtime_hours: float = 0.0
+    in_time: Optional[str] = None
+    out_time: Optional[str] = None
+    remarks: Optional[str] = None
 
 
 class DaySheetIn(BaseModel):
@@ -129,7 +132,8 @@ async def day_sheet(date: str, master: str = "employee", project_code: str = "HE
         people = [p for p in people if s in (p.get("name") or "").lower() or s in (p.get("employee_id") or p.get("emp_code") or "").lower()]
     existing = {a["employee_id"]: a for a in await db.attendance.find(
         {"date": date, "employee_id": {"$in": [p["id"] for p in people]}},
-        {"_id": 0, "employee_id": 1, "status": 1, "overtime_hours": 1, "approval_status": 1, "locked": 1, "project_code": 1}).to_list(3000)}
+        {"_id": 0, "employee_id": 1, "status": 1, "overtime_hours": 1, "approval_status": 1, "locked": 1,
+         "project_code": 1, "in_time": 1, "out_time": 1, "remarks": 1, "total_hours": 1}).to_list(3000)}
     locked = bool(await db.hr_attendance_locks.find_one({"month": date[:7], "project_code": project_code, "locked": True}, {"_id": 0, "id": 1}))
     rows = []
     for p in people:
@@ -141,6 +145,10 @@ async def day_sheet(date: str, master: str = "employee", project_code: str = "HE
             "designation": p.get("designation") or "",
             "status": a.get("status"),
             "overtime_hours": a.get("overtime_hours") or 0,
+            "in_time": a.get("in_time"),
+            "out_time": a.get("out_time"),
+            "remarks": a.get("remarks"),
+            "total_hours": a.get("total_hours"),
             "approval_status": a.get("approval_status"),
             "entry_locked": bool(a.get("locked")),
         })
@@ -180,6 +188,18 @@ async def save_day_sheet(payload: DaySheetIn,
             "approved_by_id": None, "approved_by_name": None, "approved_at": None,
             "marked_by_id": user["id"], "marked_by_name": user.get("name") or user.get("email"),
         }
+        if e.in_time or e.out_time:
+            from routers.attendance_plus_router import _hhmm, _hours_between
+            computed = _hours_between(_hhmm(e.in_time), _hhmm(e.out_time))
+            base.update({"in_time": e.in_time or None, "out_time": e.out_time or None,
+                         "check_in": e.in_time or None, "check_out": e.out_time or None})
+            if computed > 0:
+                base["total_hours"] = computed
+                base["hours"] = computed
+                if not e.overtime_hours:
+                    base["overtime_hours"] = max(0.0, round(computed - 8.0, 2))
+        if e.remarks is not None:
+            base["remarks"] = e.remarks or None
         existing = await db.attendance.find_one({"employee_id": e.employee_id, "date": payload.date}, {"_id": 0, "id": 1, "locked": 1})
         if existing:
             if existing.get("locked"):

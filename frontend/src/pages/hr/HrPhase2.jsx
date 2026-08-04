@@ -359,7 +359,15 @@ function AttendanceView() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-8"></TableHead>
+                <TableHead className="w-8">
+                  <input type="checkbox" title="Select all pending"
+                    checked={rows.some(r => r.approval_status === "pending") && rows.filter(r => r.approval_status === "pending").every(r => selected.has(r.id))}
+                    onChange={(e) => {
+                      const pend = rows.filter(r => r.approval_status === "pending").map(r => r.id);
+                      setSelected(e.target.checked ? new Set([...selected, ...pend]) : new Set([...selected].filter(id => !pend.includes(id))));
+                    }}
+                    data-testid="att-select-all" />
+                </TableHead>
                 <TableHead>Date</TableHead><TableHead>Employee</TableHead>
                 <TableHead>Project</TableHead><TableHead>Shift</TableHead>
                 <TableHead>In</TableHead><TableHead>Out</TableHead>
