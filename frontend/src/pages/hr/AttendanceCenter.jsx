@@ -5,11 +5,12 @@
  *  • Project-wise register with date & designation filters
  */
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { CalendarDays, Save, Upload, ListChecks, Building2, Search, Bot } from "lucide-react";
+import { CalendarDays, Save, Upload, ListChecks, Building2, Search, Bot, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
@@ -44,6 +45,7 @@ export default function AttendanceCenter() {
   const [scope, setScope] = useState(isProjectRole ? "" : "HEAD-OFFICE");
   const [master, setMaster] = useState("employee");
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [autoOpen, setAutoOpen] = useState(false);
 
   useEffect(() => {
     api.get("/projects").then((r) => {
@@ -78,6 +80,9 @@ export default function AttendanceCenter() {
               <option value="worker">Worker / Labour Master</option>
             </select>
           </div>
+          <Button variant="outline" onClick={() => setAutoOpen(true)} data-testid="ac-auto-btn">
+            <Wand2 className="h-4 w-4 mr-1" /> Auto WO / Absent
+          </Button>
           <Button variant="outline" onClick={() => setBulkOpen(true)} data-testid="ac-monthly-btn">
             <Upload className="h-4 w-4 mr-1" /> Monthly Upload
           </Button>
@@ -105,7 +110,62 @@ export default function AttendanceCenter() {
       )}
 
       {bulkOpen && <AttendanceBulkDialog onClose={() => setBulkOpen(false)} onDone={() => setBulkOpen(false)} />}
+      {autoOpen && <AutoAttendanceDialog scope={scope} onClose={() => setAutoOpen(false)} />}
     </div>
+  );
+}
+
+function AutoAttendanceDialog({ scope, onClose }) {
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [doWo, setDoWo] = useState(true);
+  const [doAbsent, setDoAbsent] = useState(true);
+  const [allProjects, setAllProjects] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const run = async () => {
+    setRunning(true);
+    try {
+      const r = await api.post("/hr2/attendance-plus/auto/run", {
+        month, do_weekly_off: doWo, do_absent: doAbsent,
+        project_code: allProjects ? "ALL" : scope,
+      });
+      setResult(r.data);
+      toast.success(`Auto-marked — ${r.data.weekly_off_created} WO, ${r.data.absent_created} Absent`);
+    } catch (e) { toast.error(e.response?.data?.detail || "Auto run failed"); }
+    finally { setRunning(false); }
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-md bg-white dark:bg-slate-900" data-testid="auto-attendance-dialog">
+        <DialogHeader>
+          <DialogTitle className="font-display">Auto WO / Absent</DialogTitle>
+          <DialogDescription>
+            Marks Weekly Off from each employee's configured day (Employee Master, default Sunday) for the whole month,
+            and Absent for past working days with no entry. Existing entries (P/L/H/OD…) are never touched — HR can override any auto mark afterwards.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div><Label className="text-[10px] uppercase tracking-wider">Month</Label>
+            <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="h-9 mt-1 w-44" data-testid="auto-month" /></div>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={doWo} onChange={(e) => setDoWo(e.target.checked)} data-testid="auto-do-wo" /> Mark Weekly Off (full month)</label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={doAbsent} onChange={(e) => setDoAbsent(e.target.checked)} data-testid="auto-do-absent" /> Mark Absent for empty past working days</label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={allProjects} onChange={(e) => setAllProjects(e.target.checked)} data-testid="auto-all-projects" /> All locations / projects {!allProjects && <span className="text-xs text-slate-500">(only {scope})</span>}</label>
+          {result && (
+            <div className="text-sm bg-emerald-50 border border-emerald-200 rounded-sm p-2" data-testid="auto-result">
+              {result.weekly_off_created} WO created · {result.absent_created} Absent created · {result.employees_scanned} employees scanned · {result.skipped_existing} existing entries untouched
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onClose} data-testid="auto-close">Close</Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700" disabled={running || (!doWo && !doAbsent)} onClick={run} data-testid="auto-run-btn">
+              {running ? "Running…" : "Run Auto-Mark"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -116,6 +176,11 @@ function DailySheet({ scope, master }) {
   const [sheet, setSheet] = useState(null);
   const [draft, setDraft] = useState({});
   const [saving, setSaving] = useState(false);
+  const [fullDay, setFullDay] = useState(8);
+
+  useEffect(() => {
+    api.get("/hr2/attendance-plus/auto-settings").then((r) => setFullDay(Number(r.data?.full_day_hours) || 8)).catch(() => {});
+  }, []);
 
   const load = useCallback(async () => {
     if (!scope) return;
@@ -137,7 +202,12 @@ function DailySheet({ scope, master }) {
     const cur = { status: m[id]?.status, ot: m[id]?.ot || 0, in_t: m[id]?.in_t || "", out_t: m[id]?.out_t || "", remarks: m[id]?.remarks || "", ...patch };
     if (("in_t" in patch || "out_t" in patch) && cur.in_t && cur.out_t) {
       const hrs = hoursBetween(cur.in_t, cur.out_t);
-      if (hrs > 0 && !("ot" in patch)) cur.ot = Math.max(0, Math.round((hrs - 8) * 100) / 100);
+      if (hrs > 0) {
+        if (!("ot" in patch)) cur.ot = Math.max(0, Math.round((hrs - fullDay) * 100) / 100);
+        if (!cur.status || cur.status === "present" || cur.status === "half_day") {
+          cur.status = hrs >= fullDay ? "present" : "half_day";
+        }
+      }
     }
     return { ...m, [id]: cur };
   });

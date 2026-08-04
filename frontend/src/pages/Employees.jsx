@@ -148,6 +148,12 @@ export default function Employees({ master = "employee" }) {
       help: "Project this worker is currently assigned to (from Projects Master)",
     }] : []),
     { key: "joining_date", label: "Joining Date", type: "date" },
+    { key: "weekly_off", label: "Weekly Off Day", type: "select", options: [
+        { value: "sunday", label: "Sunday" }, { value: "monday", label: "Monday" },
+        { value: "tuesday", label: "Tuesday" }, { value: "wednesday", label: "Wednesday" },
+        { value: "thursday", label: "Thursday" }, { value: "friday", label: "Friday" },
+        { value: "saturday", label: "Saturday" },
+      ], help: "Attendance Center auto-marks WO on this day each week (default Sunday)." },
     { key: "salary", label: "Monthly Salary (₹)", type: "number", help: "For Permanent / Contractual. Daily wagers use Daily Rate below." },
 
     // ─── Contact ───

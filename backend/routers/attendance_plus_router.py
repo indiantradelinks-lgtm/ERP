@@ -275,6 +275,125 @@ async def export_summary(fmt: str = Query(..., pattern="^(xlsx|csv|pdf)$"), mont
                              headers={"Content-Disposition": f'attachment; filename="{fname}.pdf"'})
 
 
+# ──────────────────────────── AUTO ATTENDANCE (WO / P-HD / Absent) ────────────────────────────
+WEEKDAY_IDX = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+               "friday": 4, "saturday": 5, "sunday": 6}
+DEFAULT_AUTO_SETTINGS = {"full_day_hours": 8.0, "half_day_hours": 4.0}
+
+
+async def _auto_settings() -> dict:
+    doc = await db.hr_attendance_settings.find_one({"id": "auto"}, {"_id": 0}) or {}
+    return {"full_day_hours": float(doc.get("full_day_hours") or 8),
+            "half_day_hours": float(doc.get("half_day_hours") or 4)}
+
+
+def _derive_status(total_hours: float, settings: dict) -> Optional[str]:
+    if total_hours >= settings["full_day_hours"]:
+        return "present"
+    if total_hours > 0:
+        return "half_day"
+    return None
+
+
+@router.get("/auto-settings")
+async def get_auto_settings(user: dict = Depends(require_permission("attendance", "read"))):
+    return await _auto_settings()
+
+
+class AutoSettingsIn(BaseModel):
+    full_day_hours: float = 8.0
+    half_day_hours: float = 4.0
+
+
+@router.put("/auto-settings")
+async def put_auto_settings(p: AutoSettingsIn,
+                            user: dict = Depends(require_permission("attendance", "write"))):
+    if user.get("role") not in HR_ROLES:
+        raise HTTPException(403, "Only HR / Admin can change attendance settings")
+    if not (0 < p.half_day_hours <= p.full_day_hours <= 24):
+        raise HTTPException(400, "Invalid thresholds")
+    await db.hr_attendance_settings.update_one(
+        {"id": "auto"}, {"$set": {"full_day_hours": p.full_day_hours, "half_day_hours": p.half_day_hours,
+                                  "updated_by": user.get("name"), "updated_at": now_iso()}}, upsert=True)
+    return await _auto_settings()
+
+
+class AutoRunIn(BaseModel):
+    month: str
+    project_code: Optional[str] = None
+    do_weekly_off: bool = True
+    do_absent: bool = True
+
+
+def _auto_row(e: dict, date: str, status: str, source: str, user: dict) -> dict:
+    return {
+        "id": new_id(), "employee_id": e["id"], "employee_name": e.get("name"),
+        "employee_code": e.get("employee_id") or e.get("emp_code"),
+        "person_type": "employee", "date": date, "status": status,
+        "in_time": None, "out_time": None, "check_in": None, "check_out": None,
+        "total_hours": 0.0, "hours": 0.0, "overtime_hours": 0.0,
+        "late_minutes": 0, "early_exit_minutes": 0,
+        "project_code": e.get("current_project_code"),
+        "department": e.get("department"), "designation": e.get("designation"),
+        "site_location": None, "skill": None, "attachment_url": None, "shift_code": None,
+        "remarks": "Auto-marked", "source": source, "approval_status": "pending",
+        "approved_by_id": None, "approved_by_name": None, "approved_at": None,
+        "marked_by_id": user["id"], "marked_by_name": "Auto Attendance",
+        "locked": False, "lock_id": None, "created_at": now_iso(),
+    }
+
+
+@router.post("/auto/run")
+async def auto_run(p: AutoRunIn, user: dict = Depends(require_permission("attendance", "write"))):
+    """Generate WO from each employee's weekly_off + auto-Absent for empty past working days."""
+    if user.get("role") not in HR_ROLES:
+        raise HTTPException(403, "Only HR / Admin can run auto attendance")
+    try:
+        year, mon = map(int, p.month.split("-"))
+        datetime(year, mon, 1)
+    except Exception:
+        raise HTTPException(400, "month must be YYYY-MM")
+    from calendar import monthrange
+    ndays = monthrange(year, mon)[1]
+    today = datetime.now(timezone.utc).date().isoformat()
+    q: Dict[str, Any] = {"status": {"$ne": "inactive"}}
+    if p.project_code and p.project_code != "ALL":
+        q["current_project_code"] = None if p.project_code == "HEAD-OFFICE" else p.project_code
+        if p.project_code == "HEAD-OFFICE":
+            q["current_project_code"] = {"$in": [None, "", "HEAD-OFFICE"]}
+    emps = await db.employees.find(q, {"_id": 0, "id": 1, "employee_id": 1, "emp_code": 1, "name": 1,
+                                       "department": 1, "designation": 1, "current_project_code": 1,
+                                       "weekly_off": 1}).to_list(10000)
+    ids = [e["id"] for e in emps]
+    existing = set()
+    async for r in db.attendance.find({"employee_id": {"$in": ids}, "date": {"$regex": f"^{p.month}-"}},
+                                      {"_id": 0, "employee_id": 1, "date": 1}):
+        existing.add((r["employee_id"], r["date"]))
+    inserts: List[dict] = []
+    wo_created = absent_created = 0
+    for e in emps:
+        wo_idx = WEEKDAY_IDX.get(str(e.get("weekly_off") or "sunday").strip().lower(), 6)
+        for d in range(1, ndays + 1):
+            date = f"{p.month}-{d:02d}"
+            if (e["id"], date) in existing:
+                continue
+            wd = datetime(year, mon, d).weekday()
+            if wd == wo_idx:
+                if p.do_weekly_off:
+                    inserts.append(_auto_row(e, date, "weekly_off", "auto_wo", user))
+                    wo_created += 1
+            elif p.do_absent and date < today:
+                inserts.append(_auto_row(e, date, "absent", "auto_absent", user))
+                absent_created += 1
+    if inserts:
+        await db.attendance.insert_many(inserts)
+    await audit(user=user, action="auto_attendance_run", resource="attendance", record_id=p.month,
+                after={"weekly_off_created": wo_created, "absent_created": absent_created,
+                       "employees": len(emps), "project": p.project_code}, ip="attendance-plus")
+    return {"ok": True, "weekly_off_created": wo_created, "absent_created": absent_created,
+            "employees_scanned": len(emps), "skipped_existing": len(existing)}
+
+
 # ──────────────────────────── ROW-BASED BULK UPDATE ────────────────────────────
 _ROW_HEADERS = ["Employee Code", "Employee Name", "Date (YYYY-MM-DD)", "Shift",
                 "Status (P/A/HD/L/WO/OD/H)", "In Time (HH:MM)", "Out Time (HH:MM)",
@@ -319,11 +438,16 @@ async def _employee_lookup() -> Dict[str, dict]:
 async def _write_attendance(person: dict, date: str, status: str, in_time: Optional[str],
                             out_time: Optional[str], ot: Optional[float], remarks: Optional[str],
                             shift_code: Optional[str], source: str, user: dict,
-                            shifts: Dict[str, dict], overwrite: bool = True) -> tuple:
+                            shifts: Dict[str, dict], overwrite: bool = True,
+                            settings: Optional[dict] = None) -> tuple:
     """Upsert one attendance row. Returns (action, attendance_id, prev_doc|None)."""
     sh = shifts.get(shift_code or "GEN") or {}
     ti, to = _hhmm(in_time), _hhmm(out_time)
     total = _hours_between(ti, to, float(sh.get("break_minutes") or 0))
+    if ti and to and total > 0 and status in (None, "", "present", "half_day"):
+        derived = _derive_status(total, settings or DEFAULT_AUTO_SETTINGS)
+        if derived:
+            status = derived
     if total == 0.0:
         total = 8.0 if status in ("present", "on_duty") else (4.0 if status == "half_day" else 0.0)
     ot_after = float(sh.get("overtime_after") or sh.get("standard_hours") or 8.0)
@@ -370,6 +494,7 @@ async def bulk_rows_upload(file: UploadFile = File(...),
     ws = wb["ATTENDANCE_ROWS"] if "ATTENDANCE_ROWS" in wb.sheetnames else wb.active
     lookup = await _employee_lookup()
     shifts = await _shift_map()
+    settings = await _auto_settings()
     today = datetime.now(timezone.utc).date()
     created = updated = 0
     errors: List[dict] = []
@@ -423,7 +548,7 @@ async def bulk_rows_upload(file: UploadFile = File(...),
             action, _, _ = await _write_attendance(person, date, status, tin_s, tout_s, ot,
                                                    str(remarks or "").strip() or None,
                                                    str(shift or "").strip() or None,
-                                                   "upload", user, shifts)
+                                                   "upload", user, shifts, settings=settings)
         except ValueError as ve:
             errors.append({"row": rn, "error": str(ve)})
             continue
@@ -554,6 +679,7 @@ async def punch_preview(file: UploadFile = File(...),
     start_idx = 1 if mapping.get("has_header") else 0
     lookup = await _employee_lookup()
     shifts = await _shift_map()
+    auto_settings = await _auto_settings()
 
     def col(row: List[str], idx) -> Optional[str]:
         if idx is None:
@@ -638,7 +764,10 @@ async def punch_preview(file: UploadFile = File(...),
         total = _hours_between(_hhmm(row.get("in_time")), _hhmm(row.get("out_time")),
                                float(sh.get("break_minutes") or 0))
         row["working_hours"] = total
-        row["status"] = "present" if (total >= 4 or (row.get("in_time") and not row.get("out_time"))) else ("half_day" if total > 0 else "present")
+        if row.get("in_time") and row.get("out_time"):
+            row["status"] = _derive_status(total, auto_settings) or "present"
+        else:
+            row["status"] = "present"
         ot_after = float(sh.get("overtime_after") or 8.0)
         row["overtime_hours"] = max(0.0, round(total - ot_after, 2))
         late, early = _late_early({"shift_code": "GEN", "in_time": row.get("in_time"), "out_time": row.get("out_time")}, shifts)
@@ -683,6 +812,7 @@ async def punch_commit(batch_id: str, p: CommitIn,
     if batch.get("status") != "preview":
         raise HTTPException(400, f"Batch already {batch.get('status')}")
     shifts = await _shift_map()
+    settings = await _auto_settings()
     today = datetime.now(timezone.utc).date().isoformat()
     created_ids: List[str] = []
     prev_docs: List[dict] = []
@@ -700,7 +830,8 @@ async def punch_commit(batch_id: str, p: CommitIn,
             action, aid, prev = await _write_attendance(
                 person, row["date"], row.get("status") or "present",
                 row.get("in_time"), row.get("out_time"), row.get("overtime_hours"),
-                "Punch machine import", None, "biometric", user, shifts, overwrite=p.overwrite)
+                "Punch machine import", None, "biometric", user, shifts,
+                overwrite=p.overwrite, settings=settings)
         except ValueError:
             skipped += 1
             continue
