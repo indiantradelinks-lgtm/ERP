@@ -9,7 +9,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 
 export default function AssignmentManager() {
-  const [data, setData] = useState({ projects: [], users: [] });
+  const [data, setData] = useState({ projects: [], users: [], pm_users: [], coord_users: [] });
   const [drafts, setDrafts] = useState({});
   const [savingId, setSavingId] = useState(null);
   const [histFor, setHistFor] = useState(null);
@@ -57,8 +57,8 @@ export default function AssignmentManager() {
     catch { setHist({ history: [] }); }
   };
 
-  const pms = data.users.filter((u) => u.role === "project_manager" || u.role === "dept_head");
-  const coords = data.users.filter((u) => ["project_coordinator", "site_engineer", "site_supervisor"].includes(u.role));
+  const pms = data.pm_users || [];
+  const coords = data.coord_users || [];
   const filtered = data.projects.filter((p) => !q || `${p.code} ${p.name} ${p.client || ""}`.toLowerCase().includes(q.toLowerCase()));
 
   const UserSelect = ({ value, options, onChange, testid }) => (
@@ -108,7 +108,7 @@ export default function AssignmentManager() {
                   </TableCell>
                   <TableCell>
                     <UserSelect value={d.project_coordinator_id !== undefined ? d.project_coordinator_id : p.project_coordinator_id}
-                      options={coords.length ? coords : data.users} onChange={(v) => setDraft(p.id, "project_coordinator_id", v)} testid={`assign-coord-${p.code}`} />
+                      options={coords} onChange={(v) => setDraft(p.id, "project_coordinator_id", v)} testid={`assign-coord-${p.code}`} />
                     {p.project_coordinator_name && <div className="text-[10px] text-muted-foreground mt-0.5">current: {p.project_coordinator_name}</div>}
                   </TableCell>
                   <TableCell className="text-right whitespace-nowrap">

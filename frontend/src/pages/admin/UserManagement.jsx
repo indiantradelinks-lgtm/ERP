@@ -57,6 +57,8 @@ export default function UserManagement() {
   const loadEmployees = async () => {
     try {
       const { data } = await api.get("/employees");
+      // Show every non-exited employee — including Inactive ones — so logins
+      // can be created/managed for them too.
       const list = (data || []).filter((e) => String(e.status || "").toLowerCase() !== "exited");
       list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
       setEmployees(list);

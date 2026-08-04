@@ -5,6 +5,7 @@ New assignees are notified; scoping updates instantly (evaluated live).
 """
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -30,6 +31,21 @@ class AssignIn(BaseModel):
     remarks: Optional[str] = None
 
 
+def _norm_label(s: Optional[str]) -> str:
+    return re.sub(r"[^a-z]", "", (s or "").lower())
+
+
+PM_ROLE_LABEL = "Manager O P"
+COORD_ROLE_LABEL = "Executive O P"
+
+
+async def _role_keys_by_label(label: str, fallback: list) -> list:
+    target = _norm_label(label)
+    keys = [r["key"] async for r in db.role_catalog.find({}, {"_id": 0, "key": 1, "label": 1})
+            if _norm_label(r.get("label")) == target]
+    return keys or fallback
+
+
 @router.get("")
 async def list_assignments(user: dict = Depends(get_current_user)):
     _require_admin(user)
@@ -39,9 +55,23 @@ async def list_assignments(user: dict = Depends(get_current_user)):
                                            "assignment_history": 1}).sort("code", 1).to_list(500)
     for p in projects:
         p["history_count"] = len(p.pop("assignment_history", []) or [])
-    users = await db.users.find({"role": {"$in": ASSIGNEE_ROLES}, "active": {"$ne": False}},
-                                {"_id": 0, "id": 1, "name": 1, "role": 1}).sort("name", 1).to_list(300)
-    return {"projects": projects, "users": users}
+    pm_keys = await _role_keys_by_label(PM_ROLE_LABEL, ["project_manager"])
+    coord_keys = await _role_keys_by_label(COORD_ROLE_LABEL, ["project_coordinator", "pro_coor"])
+    pm_users = await db.users.find({"role": {"$in": pm_keys}, "active": {"$ne": False}},
+                                   {"_id": 0, "id": 1, "name": 1, "role": 1}).sort("name", 1).to_list(300)
+    coord_users = await db.users.find({"role": {"$in": coord_keys}, "active": {"$ne": False}},
+                                      {"_id": 0, "id": 1, "name": 1, "role": 1}).sort("name", 1).to_list(300)
+    # Bulk transfer needs anyone eligible OR currently holding a project.
+    holder_ids = {p.get("project_manager_id") for p in projects} | {p.get("project_coordinator_id") for p in projects}
+    holder_ids.discard(None)
+    extra = await db.users.find({"id": {"$in": list(holder_ids)}},
+                                {"_id": 0, "id": 1, "name": 1, "role": 1}).to_list(300)
+    seen, users = set(), []
+    for u in pm_users + coord_users + extra:
+        if u["id"] not in seen:
+            seen.add(u["id"])
+            users.append(u)
+    return {"projects": projects, "pm_users": pm_users, "coord_users": coord_users, "users": users}
 
 
 @router.post("/{project_id}")

@@ -274,8 +274,14 @@ def _ip(request: Request) -> str:
 
 
 @router.get("/users")
-async def admin_list_users(user: dict = Depends(require_permission("users", "read"))):
-    rows = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort([("created_at", 1)]).to_list(2000)
+async def admin_list_users(status: str = "", user: dict = Depends(require_permission("users", "read"))):
+    """List ALL user accounts (active + inactive). Optional status=active|inactive."""
+    q: dict = {}
+    if status == "active":
+        q["active"] = {"$ne": False}
+    elif status == "inactive":
+        q["active"] = False
+    rows = await db.users.find(q, {"_id": 0, "password_hash": 0}).sort([("created_at", 1)]).to_list(2000)
     return [_safe_user(r) for r in rows]
 
 
