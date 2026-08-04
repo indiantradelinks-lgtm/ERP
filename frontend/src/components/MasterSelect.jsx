@@ -149,7 +149,8 @@ export function ProjectSelect({ value, onChange, label = "Project", testid = "pr
     label: [p.code, p.name].filter(Boolean).join(" · ") || p.name || p.code || p.id,
     row: p,
   }));
-  return <BaseSelect {...{ value, onChange, options, label, testid, disabled, required, hint, includeBlank, placeholder, className }} />;
+  const emptyPlaceholder = options.length === 0 ? "No Project Assigned" : placeholder;
+  return <BaseSelect {...{ value, onChange, options, label, testid, disabled, required, hint, includeBlank, className }} placeholder={emptyPlaceholder} />;
 }
 
 // ─── Client ──────────────────────────────────────────────────────────────

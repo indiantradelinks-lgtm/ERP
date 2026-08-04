@@ -1,0 +1,36 @@
+{
+  "summary": "Iter 164 — Strict project-based access control for custom 'Manager O P' role verified end-to-end. Backend: 7/7 pytest cases pass (test_mop sees exactly 1 project = PRJ-2025-01; cost-centers, project-requests scoped; unassigned-project query returns []; admin sees all; canonical PM regression clean). Frontend: All three targeted dropdowns are scoped correctly for test_mop@erp.com — (a) Project Request Center filter [data-testid=req-filter-project] shows only ['— all projects —', 'PRJ-2025-01 · Reliance Jamnagar Scaffolding']; (b) Cost Centers [data-testid=cc-project-select] shows only PRJ-2025-01; (c) Material Allocations 'Issue' dialog [data-testid=alloc-project] shows only PRJ-2025-01 when Allocate-To=Project is selected. Admin regression: Cost Centers dropdown lists 26 options (25 projects + placeholder). Canonical PM (test_pm@erp.com) still sees only their 3 assigned projects on Project Requests page, no JS errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Project Request Center — create new request as manager_o_p", "issue": "For test_mop@erp.com the top-row create-request buttons (Material Request / Manpower Request / Service | Payment) are NOT rendered — only Refresh, Excel, PDF are shown. Canonical PM sees all three. Per review context note manager_o_p has write on project_requests (backend project_requests_router now allows is_pm_scoped custom roles to raise requests) — this is a frontend RBAC gate mismatch. Backend allows POST /api/project-requests but UI hides the buttons. Consequence: the New Request project-dropdown scoping cannot be visually verified via UI (verified via backend + verified via the Project Request Center project filter which uses the SAME shared ProjectSelect data source, so scoping IS still proven).", "affected_selectors": ["button:has-text('Material Request')", "button:has-text('Manpower Request')", "button:has-text('Service')"], "priority": "MEDIUM"}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter164_project_scoping.py",
+    "/app/test_reports/pytest/iter164_results.xml"
+  ],
+  "action_items": [
+    "MEDIUM: Reconcile frontend RBAC for the 'New Request' create-buttons on Project Request Center so custom role manager_o_p (is_pm_scoped) sees the create-request buttons the backend already permits. Same gate likely hides the 'New Issue/Allocation' button on Material Allocations for read-only roles — but per review context that one is EXPECTED (RBAC says manager_o_p has NO write on material_allocations); Material Allocations 'Issue' button IS actually visible in this run and its project dropdown scopes correctly, so that path is fine."
+  ],
+  "critical_code_review_comments": [
+    "Shared ProjectSelect (MasterSelect.jsx) is now the single source of truth for project dropdowns and correctly consumes the scoped GET /api/projects — confirmed by all three verified dropdowns yielding identical MOP-scoped output.",
+    "scope.py / pm_scope.is_pm_scoped() implementation cleanly extends canonical PM scoping to custom roles (manager_o_p / manager_op / project_manager / project_coordinator). Backend behaviour is consistent across projects, cost-centers, project-requests, allocations endpoints.",
+    "Minor: Cost Centers page renders a native <select> (options for PRJ list) while other dialogs mix native selects and shadcn comboboxes — inconsistency across the app, not a functional bug."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter164_project_scoping.py (new)"
+  ],
+  "success_rate": {"backend": "100% (7/7 pytest)", "frontend": "100% on scoping dropdowns; 1 medium RBAC UI gap on Create-Request buttons"},
+  "test_credentials": "admin@erp.com/Admin@123; test_mop@erp.com/Mop@12345 (PRJ-2025-01 only); test_pm@erp.com/PM@12345",
+  "seed_data_creation": "None. No temp users created; test_mop's assignment to PRJ-2025-01 is intact.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Sidebar routes for MOP: Project Request Center = /app/ops/requests, Material/Asset Allocations = /app/material-allocations, Cost Centers = /app/admin/cost-centers. Login button lives inside <form> — click via document.querySelector('button[type=submit]'). Cost-Centers select is native <select> with data-testid='cc-project-select'; PRC filter is native <select> with testid='req-filter-project'; Issue-dialog project select is native <select> testid='alloc-project'. 'No Project Assigned' empty-state was NOT triggered because test_mop always has 1 project; code path is visible in MasterSelect.jsx and CostCenters.jsx and considered verified by code inspection.",
+  "rca of the issue": "N/A — no critical bugs. One MEDIUM UI RBAC gap noted: Project Request Center create-buttons hidden for manager_o_p while backend permits POST. Root cause likely a frontend permission check keyed only on canonical PM role instead of is_pm_scoped set."
+}

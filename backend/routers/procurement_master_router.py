@@ -339,9 +339,15 @@ async def _cc_actuals(project_id: str, category_code: str) -> Dict[str, float]:
 @router.get("/cost-centers")
 async def list_cost_centers(project_id: Optional[str] = None,
                             user: dict = Depends(get_current_user)):
+    from scope import allowed_project_ids
+    allowed = await allowed_project_ids(user)
     q: Dict[str, Any] = {}
     if project_id:
+        if allowed is not None and project_id not in allowed:
+            return []
         q["project_id"] = project_id
+    elif allowed is not None:
+        q["project_id"] = {"$in": allowed}
     rows = await db.cost_centers.find(q, {"_id": 0}).sort([("project_code", 1), ("category_code", 1)]).to_list(2000)
     # Live spend rollup (best-effort; doesn't persist)
     for r in rows:

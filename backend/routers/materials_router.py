@@ -79,6 +79,15 @@ async def list_allocations(status: Optional[str] = None,
         q["project_id"] = project_id
     if employee_id:
         q["employee_id"] = employee_id
+    from scope import allowed_project_ids
+    allowed = await allowed_project_ids(user)
+    if allowed is not None:
+        projs = await db.projects.find({"id": {"$in": allowed}}, {"_id": 0, "code": 1, "name": 1}).to_list(500)
+        tokens = [t for p in projs for t in (p.get("code"), p.get("name")) if t]
+        clause = {"$or": [{"allocated_to_type": {"$ne": "project"}},
+                          {"project_id": {"$in": allowed}},
+                          {"project_code": {"$in": tokens}}]}
+        q = {"$and": [q, clause]} if q else clause
     rows = await db.material_allocations.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return rows
 
@@ -92,6 +101,9 @@ async def create_allocation(payload: AllocateIn, request: Request,
         raise HTTPException(status_code=400, detail="allocated_to_type must be project|site|department|employee")
     if payload.quantity <= 0:
         raise HTTPException(status_code=400, detail="quantity must be > 0")
+    if payload.allocated_to_type == "project" and payload.project_id:
+        from scope import ensure_project_access
+        await ensure_project_access(user, payload.project_id)
 
     # Stock guard (skip when no item_id — virtual line)
     # Race-safe: conditional update that requires quantity to be sufficient.

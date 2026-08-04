@@ -28,6 +28,7 @@ from typing import Dict, List
 from datetime import datetime, timezone
 
 from core import db
+from pm_scope import is_pm_scoped, pm_scope_clause
 
 
 GLOBAL_ROLES = {"super_admin", "director", "general_manager", "hr_executive"}
@@ -95,7 +96,7 @@ async def assigned_projects_for(user: dict) -> List[dict]:
     uid = user.get("id")
     if not uid:
         return []
-    q = {"$or": [
+    q = pm_scope_clause(user) or {"$or": [
         {"project_manager_id": uid},
         {"project_coordinator_id": uid},
         {"reporting_manager_id": uid},
@@ -108,7 +109,7 @@ async def resolve_scope(user: dict) -> Dict[str, list]:
     role = user.get("role")
     is_global = role in GLOBAL_ROLES or role == "super_admin"
     active = await _active_projects_for(user)
-    if role in PM_SCOPED_ROLES:
+    if role in PM_SCOPED_ROLES or is_pm_scoped(user):
         for p in await assigned_projects_for(user):
             for token in (p.get("code"), p.get("name")):
                 if token and token not in active:
@@ -126,8 +127,6 @@ async def allowed_project_ids(user: dict) -> List[str] | None:
     role = user.get("role")
     if role in GLOBAL_ROLES or role == "super_admin":
         return None
-    if role in PM_SCOPED_ROLES:
-        return [p["id"] for p in await assigned_projects_for(user)]
     if role in PROJECT_SCOPED_ROLES:
         active = await _active_projects_for(user)
         if not active:
@@ -135,6 +134,8 @@ async def allowed_project_ids(user: dict) -> List[str] | None:
         rows = await db.projects.find({"$or": [{"code": {"$in": active}}, {"name": {"$in": active}}]},
                                         {"_id": 0, "id": 1}).to_list(500)
         return [r["id"] for r in rows]
+    if role in PM_SCOPED_ROLES or is_pm_scoped(user):
+        return [p["id"] for p in await assigned_projects_for(user)]
     return None
 
 
@@ -174,10 +175,15 @@ async def project_filter(user: dict, project_field: str = "project") -> dict | N
     role = user.get("role")
     if role in GLOBAL_ROLES or role == "super_admin":
         return None
-    if role in PM_SCOPED_ROLES:
-        # PM/Coordinator: rows tied to projects assigned via Contract Handover
-        # (match by project code OR name — collections store either) + any
-        # deployment-based assignments.
+    if role in PROJECT_SCOPED_ROLES:
+        projects = await _active_projects_for(user)
+        if not projects:
+            return {"_no_match_sentinel_": True}  # forces empty result set
+        return {project_field: {"$in": projects}}
+    if role in PM_SCOPED_ROLES or is_pm_scoped(user):
+        # PM/Coordinator (incl. custom roles like 'Manager O P'): rows tied to
+        # projects assigned via Project Assignments / Contract Handover
+        # (match by project code OR name) + any deployment-based assignments.
         allowed = await _active_projects_for(user)
         for p in await assigned_projects_for(user):
             for token in (p.get("code"), p.get("name")):
@@ -186,12 +192,7 @@ async def project_filter(user: dict, project_field: str = "project") -> dict | N
         if not allowed:
             return {"_no_match_sentinel_": True}
         return {project_field: {"$in": allowed}}
-    if role not in PROJECT_SCOPED_ROLES:
-        return None
-    projects = await _active_projects_for(user)
-    if not projects:
-        return {"_no_match_sentinel_": True}  # forces empty result set
-    return {project_field: {"$in": projects}}
+    return None
 
 
 async def projects_collection_filter(user: dict) -> dict | None:
@@ -205,17 +206,17 @@ async def projects_collection_filter(user: dict) -> dict | None:
     if role in GLOBAL_ROLES or role == "super_admin":
         return None
     uid = user.get("id")
-    if role in PM_SCOPED_ROLES:
-        return {"$or": [
-            {"project_manager_id": uid},
-            {"project_coordinator_id": uid},
-            {"reporting_manager_id": uid},
-        ]}
     if role in PROJECT_SCOPED_ROLES:
         active = await _active_projects_for(user)
         if not active:
             return {"_no_match_sentinel_": True}
         return {"$or": [{"code": {"$in": active}}, {"name": {"$in": active}}]}
+    if role in PM_SCOPED_ROLES or is_pm_scoped(user):
+        return pm_scope_clause(user) or {"$or": [
+            {"project_manager_id": uid},
+            {"project_coordinator_id": uid},
+            {"reporting_manager_id": uid},
+        ]}
     return None
 
 

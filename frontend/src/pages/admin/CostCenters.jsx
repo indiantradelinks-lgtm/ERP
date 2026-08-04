@@ -91,7 +91,7 @@ export default function CostCenters() {
             <Label className="text-[10px] uppercase tracking-wider">Project</Label>
             <select value={projectId} onChange={(e) => setProjectId(e.target.value)}
                     className="h-9 mt-1 rounded-sm border border-input bg-background px-2 text-sm min-w-[280px]" data-testid="cc-project-select">
-              <option value="">— select a project —</option>
+              <option value="">{projects.length === 0 ? "No Project Assigned" : "— select a project —"}</option>
               {projects.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
             </select>
           </div>

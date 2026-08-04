@@ -218,7 +218,8 @@ async def summary(project_code: Optional[str] = None,
 @router.post("/project-requests")
 async def create_request(p: RequestIn, request: Request,
                          user: dict = Depends(require_permission("project_requests", "write"))):
-    if user.get("role") not in RAISE_ROLES:
+    from pm_scope import is_pm_scoped
+    if user.get("role") not in RAISE_ROLES and not is_pm_scoped(user):
         raise HTTPException(403, "Only Project Coordinator / Project Manager can raise project requests")
     if p.request_type not in REQUEST_TYPES:
         raise HTTPException(400, f"request_type must be one of {sorted(REQUEST_TYPES)}")
