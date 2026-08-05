@@ -177,10 +177,12 @@ async def _summary_data(month: str, project_code: Optional[str], department: Opt
     emp_rows = []
     for eid, e in emps.items():
         present_days = e["P"] + e["OD"] + 0.5 * e["HD"]
+        paid_days = e["P"] + e["HD"] + e["L"] + e["WO"] + e["H"] + e["OD"]
         emp_rows.append({
             **{k: v for k, v in e.items() if k not in ("projects", "shifts")},
             "projects": sorted(e["projects"]), "shift_codes": sorted(e["shifts"]),
-            "working_days": e["days"], "present_days": round(present_days, 1),
+            "working_days": e["days"], "paid_days": paid_days,
+            "present_days": round(present_days, 1),
             "leave_balance": round(lb.get(eid, 0), 1),
         })
     emp_rows.sort(key=lambda x: x["employee_name"])
@@ -196,6 +198,7 @@ async def _summary_data(month: str, project_code: Optional[str], department: Opt
         totals["total_hours"] = round(totals["total_hours"] + e["total_hours"], 2)
     totals["employees"] = len(emp_rows)
     totals["present_days"] = round(sum(e["present_days"] for e in emp_rows), 1)
+    totals["paid_days"] = sum(e["paid_days"] for e in emp_rows)
 
     return {"month": month, "totals": totals, "employees": emp_rows,
             "by_date": flat(by_date, "date"), "by_department": flat(by_dept, "department"),
@@ -211,7 +214,7 @@ async def attendance_summary(month: str = Query(...), project_code: Optional[str
 
 
 _EXPORT_HEADERS = ["Code", "Name", "Department", "Projects", "P", "A", "HD", "L", "WO", "H", "OD",
-                   "Late", "Early Exit", "Working Days", "Present Days", "OT Hours", "Total Hours", "Leave Balance"]
+                   "Late", "Early Exit", "Paid Days", "Present Days", "OT Hours", "Total Hours", "Leave Balance"]
 
 
 def _export_rows(data: dict) -> List[list]:
@@ -219,7 +222,7 @@ def _export_rows(data: dict) -> List[list]:
     for e in data["employees"]:
         out.append([e["employee_code"], e["employee_name"], e["department"], ", ".join(e["projects"]),
                     e["P"], e["A"], e["HD"], e["L"], e["WO"], e["H"], e["OD"],
-                    e["late_count"], e["early_count"], e["working_days"], e["present_days"],
+                    e["late_count"], e["early_count"], e["paid_days"], e["present_days"],
                     e["ot_hours"], e["total_hours"], e["leave_balance"]])
     return out
 
@@ -250,7 +253,7 @@ async def export_summary(fmt: str = Query(..., pattern="^(xlsx|csv|pdf)$"), mont
         t = data["totals"]
         ws.append([])
         ws.append(["TOTALS", f"{t['employees']} employees", "", "", t["P"], t["A"], t["HD"], t["L"],
-                   t["WO"], t["H"], t["OD"], t["late_count"], t["early_count"], t["days"],
+                   t["WO"], t["H"], t["OD"], t["late_count"], t["early_count"], t.get("paid_days", 0),
                    t["present_days"], t["ot_hours"], t["total_hours"], ""])
         buf = io.BytesIO()
         wb.save(buf)

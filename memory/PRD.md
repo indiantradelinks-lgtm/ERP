@@ -5093,3 +5093,6 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 
 ### Iteration 172 (Jun 2026) — Breakdown report: date-wise In/Out detail ✅ (curl verified)
 - /hr2/attendance-plus/summary/breakdown/export now leads with a DATE-WISE DETAIL section: Code, Name, Dept, Date, Status, In Time, Out Time, Working Hrs, OT Hrs (one row per employee per date). xlsx = 2 sheets (DATE-WISE DETAIL + MONTH MATRIX); pdf = detail table then month matrix. Verified 302 detail rows with correct in/out/hours/OT.
+
+### Iteration 173 (Jun 2026) — Paid Days replaces Work Days ✅ (curl + screenshot)
+- paid_days = P+HD+L+WO+H+OD per employee + totals in /hr2/attendance-plus/summary; KPI card "Paid Days" (kpi-paid-days) added; Employee-wise table column renamed Paid Days (paid-days-{id}); xlsx/csv/pdf exports headers/values updated (working_days field kept in API for compat).

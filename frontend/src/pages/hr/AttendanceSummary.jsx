@@ -231,11 +231,12 @@ export default function AttendanceSummary() {
         )}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-9 gap-2">
         <Kpi label="Employees" value={t.employees ?? 0} testid="kpi-employees" />
         <Kpi label="Present (P)" value={t.P ?? 0} testid="kpi-present" />
         <Kpi label="Absent (A)" value={t.A ?? 0} testid="kpi-absent" />
         <Kpi label="Leave (L)" value={t.L ?? 0} testid="kpi-leave" />
+        <Kpi label="Paid Days" value={t.paid_days ?? 0} testid="kpi-paid-days" />
         <Kpi label="Present Days" value={t.present_days ?? 0} testid="kpi-present-days" />
         <Kpi label="Late Entries" value={t.late_count ?? 0} testid="kpi-late" />
         <Kpi label="Early Exits" value={t.early_count ?? 0} testid="kpi-early" />
@@ -263,7 +264,7 @@ export default function AttendanceSummary() {
                 {CODES.map((c) => <th key={c} className="text-right px-2 py-2">{c}</th>)}
                 <th className="text-right px-2 py-2">Late</th>
                 <th className="text-right px-2 py-2">Early</th>
-                <th className="text-right px-2 py-2">Work Days</th>
+                <th className="text-right px-2 py-2">Paid Days</th>
                 <th className="text-right px-2 py-2">Present Days</th>
                 <th className="text-right px-2 py-2">OT hrs</th>
                 <th className="text-right px-3 py-2">Leave Bal</th>
@@ -279,7 +280,7 @@ export default function AttendanceSummary() {
                   {CODES.map((c) => <td key={c} className={`text-right px-2 py-1.5 tabular ${CODE_TONE[c]}`}>{e[c] || 0}</td>)}
                   <td className="text-right px-2 py-1.5 tabular">{e.late_count}</td>
                   <td className="text-right px-2 py-1.5 tabular">{e.early_count}</td>
-                  <td className="text-right px-2 py-1.5 tabular">{e.working_days}</td>
+                  <td className="text-right px-2 py-1.5 tabular font-semibold" data-testid={`paid-days-${e.employee_id}`}>{e.paid_days ?? 0}</td>
                   <td className="text-right px-2 py-1.5 tabular font-semibold">{e.present_days}</td>
                   <td className="text-right px-2 py-1.5 tabular">{e.ot_hours}</td>
                   <td className="text-right px-3 py-1.5 tabular">{e.leave_balance}</td>
