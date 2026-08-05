@@ -191,6 +191,22 @@ async def seed_default_shifts(user: dict = Depends(require_permission("hr_shifts
 # 2.  ATTENDANCE WORKFLOW  (extends existing `attendance` collection)
 # ──────────────────────────────────────────────────────────────────────────────
 ATT_STATUSES = {"present", "absent", "half_day", "leave", "weekly_off", "holiday", "on_duty"}
+
+
+def _pc_clause(project_code: str):
+    """HEAD-OFFICE selector must also match legacy rows with blank/None project."""
+    if project_code == "HEAD-OFFICE":
+        return {"$in": [None, "", "HEAD-OFFICE"]}
+    return project_code
+
+
+async def _inactive_emp_ids(emp_ids: List[str]) -> set:
+    out = set()
+    if not emp_ids:
+        return out
+    async for e in db.employees.find({"id": {"$in": emp_ids}, "status": "inactive"}, {"_id": 0, "id": 1}):
+        out.add(e["id"])
+    return out
 ATT_SOURCES = {"manual", "mobile", "biometric", "upload", "site_entry"}
 
 
@@ -457,7 +473,7 @@ async def attendance_register(from_date: Optional[str] = None, to_date: Optional
     elif to_date:
         q["date"] = {"$lte": to_date}
     if project_code:
-        q["project_code"] = project_code
+        q["project_code"] = _pc_clause(project_code)
     if employee_id:
         q["employee_id"] = employee_id
     if designation:
@@ -468,7 +484,8 @@ async def attendance_register(from_date: Optional[str] = None, to_date: Optional
         q["approval_status"] = approval_status
     q = await apply_project_scope(user, q, id_field="project_id", code_field="project_code")
     rows = await db.attendance.find(q, {"_id": 0}).sort([("date", -1)]).limit(limit).to_list(limit)
-    return rows
+    inactive = await _inactive_emp_ids(list({r.get("employee_id") for r in rows if r.get("employee_id")}))
+    return [r for r in rows if r.get("employee_id") not in inactive]
 
 
 @router.get("/attendance/monthly-summary")
@@ -481,7 +498,7 @@ async def monthly_summary(month: str = Query(..., description="YYYY-MM"),
         raise HTTPException(400, "month must be YYYY-MM")
     match: Dict[str, Any] = {"date": {"$regex": f"^{month}-"}}
     if project_code:
-        match["project_code"] = project_code
+        match["project_code"] = _pc_clause(project_code)
     pipeline = [
         {"$match": match},
         {"$group": {
@@ -499,6 +516,8 @@ async def monthly_summary(month: str = Query(..., description="YYYY-MM"),
         {"$sort": {"_id.emp_name": 1}},
     ]
     rows = await db.attendance.aggregate(pipeline).to_list(2000)
+    inactive = await _inactive_emp_ids([r["_id"]["emp_id"] for r in rows if r["_id"].get("emp_id")])
+    rows = [r for r in rows if r["_id"].get("emp_id") not in inactive]
     return {"month": month, "project_code": project_code,
             "rows": [{
                 "employee_id": r["_id"]["emp_id"],

@@ -106,6 +106,12 @@ async def _summary_data(month: str, project_code: Optional[str], department: Opt
         match["employee_id"] = employee_id
     match = await apply_project_scope(user, match, id_field="project_id", code_field="project_code")
     rows = await db.attendance.find(match, {"_id": 0}).to_list(20000)
+    inactive_ids = set()
+    all_ids = list({r.get("employee_id") for r in rows if r.get("employee_id")})
+    if all_ids:
+        async for e in db.employees.find({"id": {"$in": all_ids}, "status": "inactive"}, {"_id": 0, "id": 1}):
+            inactive_ids.add(e["id"])
+    rows = [r for r in rows if r.get("employee_id") not in inactive_ids]
     if q:
         s = q.lower()
         rows = [r for r in rows if s in (r.get("employee_name") or "").lower()
@@ -276,6 +282,111 @@ async def export_summary(fmt: str = Query(..., pattern="^(xlsx|csv|pdf)$"), mont
     buf.seek(0)
     return StreamingResponse(buf, media_type="application/pdf",
                              headers={"Content-Disposition": f'attachment; filename="{fname}.pdf"'})
+
+
+@router.get("/summary/breakdown/export")
+async def export_breakdown(fmt: str = Query(..., pattern="^(xlsx|pdf)$"), month: str = Query(...),
+                           project_code: Optional[str] = None, department: Optional[str] = None,
+                           shift_code: Optional[str] = None, q: Optional[str] = None,
+                           user: dict = Depends(require_permission("attendance", "read"))):
+    """Employee-wise date-wise attendance matrix (rows: employees, cols: each day of month)."""
+    data = await _summary_data(month, project_code, department, shift_code, q, None, user)
+    from calendar import monthrange
+    year, mon = map(int, month.split("-"))
+    ndays = monthrange(year, mon)[1]
+    # rebuild per-cell codes from raw rows (need employee×date)
+    from scope import apply_project_scope
+    match: Dict[str, Any] = {"date": {"$regex": f"^{month}-"}}
+    if project_code:
+        match["project_code"] = {"$in": [None, "", "HEAD-OFFICE"]} if project_code == "HEAD-OFFICE" else project_code
+    if department:
+        match["department"] = department
+    if shift_code:
+        match["shift_code"] = shift_code
+    match = await apply_project_scope(user, match, id_field="project_id", code_field="project_code")
+    raw = await db.attendance.find(match, {"_id": 0, "employee_id": 1, "date": 1, "status": 1,
+                                           "in_time": 1, "out_time": 1, "total_hours": 1,
+                                           "overtime_hours": 1, "remarks": 1}).to_list(20000)
+    cell = {(r["employee_id"], r["date"]): STATUS_CODES.get(r.get("status") or "", "") for r in raw}
+    by_emp_date = {(r["employee_id"], r["date"]): r for r in raw}
+    day_headers = [f"{d:02d}" for d in range(1, ndays + 1)]
+    headers = ["Code", "Name", "Dept"] + day_headers + ["P", "A", "HD", "L", "WO", "H", "OD", "OT Hrs"]
+    body = []
+    detail_headers = ["Code", "Name", "Dept", "Date", "Status", "In Time", "Out Time", "Working Hrs", "OT Hrs"]
+    detail = []
+    for e in data["employees"]:
+        row = [e["employee_code"], e["employee_name"], e["department"]]
+        row += [cell.get((e["employee_id"], f"{month}-{d:02d}"), "") for d in range(1, ndays + 1)]
+        row += [e["P"], e["A"], e["HD"], e["L"], e["WO"], e["H"], e["OD"], e["ot_hours"]]
+        body.append(row)
+        for d in range(1, ndays + 1):
+            r = by_emp_date.get((e["employee_id"], f"{month}-{d:02d}"))
+            if not r:
+                continue
+            detail.append([e["employee_code"], e["employee_name"], e["department"], r["date"],
+                           STATUS_CODES.get(r.get("status") or "", ""), r.get("in_time") or "—",
+                           r.get("out_time") or "—", r.get("total_hours") or 0, r.get("overtime_hours") or 0])
+    fname = f"attendance_breakdown_{month}"
+    if fmt == "xlsx":
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "DATE-WISE DETAIL"
+        ws.append([f"INDIAN TRADE LINKS — Employee Date-wise Attendance — {month}"])
+        ws.append(detail_headers)
+        for r in detail:
+            ws.append(r)
+        ws2 = wb.create_sheet("MONTH MATRIX")
+        ws2.append([f"INDIAN TRADE LINKS — Employee × Date Attendance Matrix — {month}"])
+        ws2.append(headers)
+        for r in body:
+            ws2.append(r)
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                 headers={"Content-Disposition": f'attachment; filename="{fname}.xlsx"'})
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=6 * mm, rightMargin=6 * mm,
+                            topMargin=8 * mm, bottomMargin=8 * mm)
+    styles = getSampleStyleSheet()
+    story = [Paragraph(f"INDIAN TRADE LINKS — Employee Date-wise Attendance — {month}", styles["Title"]), Spacer(1, 3)]
+    detail_data = [detail_headers] + [[str(c) for c in r] for r in detail]
+    dt = Table(detail_data, repeatRows=1,
+               colWidths=[22 * mm, 48 * mm, 30 * mm, 24 * mm, 16 * mm, 20 * mm, 20 * mm, 24 * mm, 20 * mm])
+    dt.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e3a8a")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTSIZE", (0, 0), (-1, -1), 6.5),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("ALIGN", (4, 0), (-1, -1), "CENTER"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f1f5f9")]),
+    ]))
+    story.append(dt)
+    story.append(Spacer(1, 10))
+    story.append(Paragraph(f"Month Matrix — {month}", styles["Heading2"]))
+    table_data = [headers] + [[str(c) for c in r] for r in body]
+    name_w = 34 * mm
+    day_w = (282 * mm - 18 * mm - name_w - 16 * mm - 8 * 7 * mm) / ndays
+    widths = [18 * mm, name_w, 16 * mm] + [day_w] * ndays + [7 * mm] * 8
+    tbl = Table(table_data, repeatRows=1, colWidths=widths)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e3a8a")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTSIZE", (0, 0), (-1, -1), 4.6),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("ALIGN", (3, 0), (-1, -1), "CENTER"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f1f5f9")]),
+    ]))
+    story.append(tbl)
+    doc.build(story)
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="application/pdf",
+                             headers={"Content-Disposition": f'inline; filename="{fname}.pdf"'})
 
 
 # ──────────────────────────── AUTO ATTENDANCE (WO / P-HD / Absent) ────────────────────────────

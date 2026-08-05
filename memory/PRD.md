@@ -5085,3 +5085,11 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 
 ### Iteration 170 (Jun 2026) — Attendance Summary: Head Office filter ✅ (curl + screenshot verified)
 - Summary "Location / Project" select now includes "Head Office (Delhi)" (value HEAD-OFFICE) + all projects; backend maps HEAD-OFFICE → project_code in [null, "", "HEAD-OFFICE"]; Project-wise view groups null-code rows under HEAD-OFFICE.
+
+### Iteration 171 (Jun 2026) — Attendance: Head Office everywhere, Breakdown report, Inactive exclusion ✅ (curl + screenshots)
+1. ProjectSelect gained includeHeadOffice prop; enabled on 6 HR Ops attendance dropdowns (register filter, mark dialog, lock form, monthly summary, OT form, shift roster). Backend _pc_clause maps HEAD-OFFICE → {$in:[null,"","HEAD-OFFICE"]} in /hr2/attendance/register + /monthly-summary (attendance-plus summary already had it).
+2. Employee×Date Breakdown: GET /hr2/attendance-plus/summary/breakdown/export?fmt=xlsx|pdf — matrix (day columns 01..N with P/A/HD/L/WO/H/OD codes + totals). Summary page buttons: breakdown-dl-xlsx / breakdown-dl-pdf / breakdown-print-btn (print opens inline PDF in new tab).
+3. Inactive employees excluded from: attendance-plus summary + breakdown, hr2 register, monthly-summary (new _inactive_emp_ids helper); entry/dropdowns already excluded via _employee_lookup/day-sheet/auto-run. Verified live by toggling E-1006 inactive (43→42, vanished from register) then restoring.
+
+### Iteration 172 (Jun 2026) — Breakdown report: date-wise In/Out detail ✅ (curl verified)
+- /hr2/attendance-plus/summary/breakdown/export now leads with a DATE-WISE DETAIL section: Code, Name, Dept, Date, Status, In Time, Out Time, Working Hrs, OT Hrs (one row per employee per date). xlsx = 2 sheets (DATE-WISE DETAIL + MONTH MATRIX); pdf = detail table then month matrix. Verified 302 detail rows with correct in/out/hours/OT.

@@ -146,6 +146,29 @@ export default function AttendanceSummary() {
     finally { setDownloading(""); }
   };
 
+  const breakdown = async (fmt, print) => {
+    setDownloading("breakdown");
+    try {
+      const r = await api.get("/hr2/attendance-plus/summary/breakdown/export", {
+        params: { fmt, month, project_code: project || undefined, department: dept || undefined,
+                  shift_code: shift || undefined, q: q || undefined },
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(r.data);
+      if (print) {
+        const w = window.open(url, "_blank");
+        if (w) w.focus();
+      } else {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `attendance_breakdown_${month}.${fmt}`;
+        a.click();
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) { toast.error("Breakdown export failed"); }
+    finally { setDownloading(""); }
+  };
+
   const departments = useMemo(() => (data?.by_department || []).map((d) => d.department).filter((d) => d !== "—"), [data]);
   const shiftCodes = useMemo(() => (data?.by_shift || []).map((s) => s.shift_code).filter((s) => s !== "—"), [data]);
   const t = data?.totals || {};
@@ -165,6 +188,12 @@ export default function AttendanceSummary() {
           <Button className="bg-emerald-600 hover:bg-emerald-700" disabled={!!downloading} onClick={() => download("xlsx")} data-testid="summary-download-btn">
             <Download className="h-4 w-4 mr-1.5" /> {downloading ? "Preparing…" : "Download Attendance Summary"}
           </Button>
+          <div className="w-full flex gap-2 items-center justify-end">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Employee × Date Breakdown:</span>
+            <Button variant="outline" size="sm" disabled={!!downloading} onClick={() => breakdown("xlsx", false)} data-testid="breakdown-dl-xlsx">Excel</Button>
+            <Button variant="outline" size="sm" disabled={!!downloading} onClick={() => breakdown("pdf", false)} data-testid="breakdown-dl-pdf">PDF</Button>
+            <Button variant="outline" size="sm" disabled={!!downloading} onClick={() => breakdown("pdf", true)} data-testid="breakdown-print-btn"><Printer className="h-3.5 w-3.5 mr-1" /> Print</Button>
+          </div>
         </div>
       </div>
 

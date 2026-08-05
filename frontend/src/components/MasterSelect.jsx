@@ -142,13 +142,17 @@ export const useProjects = _projects.useList;
 
 export function ProjectSelect({ value, onChange, label = "Project", testid = "project-select",
                                 valueKey = "code", disabled = false, required = false, hint,
-                                includeBlank = true, placeholder = "— select project —", className = "" }) {
+                                includeBlank = true, includeHeadOffice = false,
+                                placeholder = "— select project —", className = "" }) {
   const rows = useProjects();
-  const options = rows.map((p) => ({
-    value: p[valueKey] ?? p.code ?? p.id,
-    label: [p.code, p.name].filter(Boolean).join(" · ") || p.name || p.code || p.id,
-    row: p,
-  }));
+  const options = [
+    ...(includeHeadOffice ? [{ value: "HEAD-OFFICE", label: "HEAD-OFFICE · Head Office (Delhi)" }] : []),
+    ...rows.map((p) => ({
+      value: p[valueKey] ?? p.code ?? p.id,
+      label: [p.code, p.name].filter(Boolean).join(" · ") || p.name || p.code || p.id,
+      row: p,
+    })),
+  ];
   const emptyPlaceholder = options.length === 0 ? "No Project Assigned" : placeholder;
   return <BaseSelect {...{ value, onChange, options, label, testid, disabled, required, hint, includeBlank, className }} placeholder={emptyPlaceholder} />;
 }

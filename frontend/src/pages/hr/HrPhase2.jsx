@@ -333,7 +333,7 @@ function AttendanceView() {
           <div className="flex gap-2 flex-wrap items-end mb-3">
             <Field label="From"><Input type="date" value={filter.from_date} onChange={e => setFilter({ ...filter, from_date: e.target.value })} className="w-36" /></Field>
             <Field label="To"><Input type="date" value={filter.to_date} onChange={e => setFilter({ ...filter, to_date: e.target.value })} className="w-36" /></Field>
-            <Field label="Project"><ProjectSelect label={undefined} includeBlank value={filter.project_code} onChange={v => setFilter({ ...filter, project_code: v })} className="w-32" /></Field>
+            <Field label="Project"><ProjectSelect includeHeadOffice label={undefined} includeBlank value={filter.project_code} onChange={v => setFilter({ ...filter, project_code: v })} className="w-32" /></Field>
             <Field label="Approval">
               <Select value={filter.approval_status || "all"} onValueChange={v => setFilter({ ...filter, approval_status: v === "all" ? "" : v })}>
                 <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
@@ -443,7 +443,7 @@ function AttendanceView() {
             <Field label="Date"><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} data-testid="mark-date" /></Field>
             <Field label="Employee Name"><Input value={form.employee_name || ""} onChange={e => setForm({ ...form, employee_name: e.target.value })} data-testid="mark-emp-name" /></Field>
             <Field label="Employee Code"><Input value={form.employee_code || ""} onChange={e => setForm({ ...form, employee_code: e.target.value })} /></Field>
-            <Field label="Project Code"><ProjectSelect label={undefined} value={form.project_code || ""} onChange={v => setForm({ ...form, project_code: v })} testid="mark-project" /></Field>
+            <Field label="Project Code"><ProjectSelect includeHeadOffice label={undefined} value={form.project_code || ""} onChange={v => setForm({ ...form, project_code: v })} testid="mark-project" /></Field>
             <Field label="Department"><Input value={form.department || ""} onChange={e => setForm({ ...form, department: e.target.value })} /></Field>
             <Field label="Designation / Skill"><Input value={form.designation || ""} onChange={e => setForm({ ...form, designation: e.target.value })} /></Field>
             <Field label="Shift">
@@ -491,7 +491,7 @@ function AttendanceView() {
           <DialogHeader><DialogTitle>Lock Attendance Month</DialogTitle></DialogHeader>
           <div className="grid grid-cols-1 gap-3">
             <Field label="Month (YYYY-MM)"><Input value={lockForm.month} onChange={e => setLockForm({ ...lockForm, month: e.target.value })} data-testid="lock-month" /></Field>
-            <Field label="Project Code (blank = ALL)"><ProjectSelect label={undefined} includeBlank value={lockForm.project_code} onChange={v => setLockForm({ ...lockForm, project_code: v })} /></Field>
+            <Field label="Project Code (blank = ALL)"><ProjectSelect includeHeadOffice label={undefined} includeBlank value={lockForm.project_code} onChange={v => setLockForm({ ...lockForm, project_code: v })} /></Field>
             <Field label="Reason"><Textarea rows={2} value={lockForm.reason} onChange={e => setLockForm({ ...lockForm, reason: e.target.value })} /></Field>
           </div>
           <DialogFooter>
@@ -615,7 +615,7 @@ function MonthlySummaryView() {
         <CardTitle className="text-sm flex items-center gap-2"><Calendar className="h-4 w-4" /> Monthly Summary</CardTitle>
         <div className="flex gap-2">
           <Input value={month} onChange={e => setMonth(e.target.value)} className="w-32" placeholder="YYYY-MM" data-testid="month-input" />
-          <ProjectSelect label={undefined} includeBlank value={project} onChange={v => setProject(v)} className="w-32" />
+          <ProjectSelect includeHeadOffice label={undefined} includeBlank value={project} onChange={v => setProject(v)} className="w-32" />
           <Button size="sm" onClick={load} data-testid="month-apply"><RefreshCw className="h-4 w-4 mr-1" /> Load</Button>
         </div>
       </CardHeader>
@@ -765,7 +765,7 @@ function OvertimeView() {
           <div className="grid grid-cols-2 gap-3">
             <Field label="Employee Name"><Input value={form.employee_name || ""} onChange={e => setForm({ ...form, employee_name: e.target.value })} data-testid="ot-emp-name" /></Field>
             <Field label="Employee Code"><Input value={form.employee_code || ""} onChange={e => setForm({ ...form, employee_code: e.target.value })} /></Field>
-            <Field label="Project Code"><ProjectSelect label={undefined} value={form.project_code || ""} onChange={v => setForm({ ...form, project_code: v })} testid="ot-project" /></Field>
+            <Field label="Project Code"><ProjectSelect includeHeadOffice label={undefined} value={form.project_code || ""} onChange={v => setForm({ ...form, project_code: v })} testid="ot-project" /></Field>
             <Field label="Site Location"><Input value={form.site_location || ""} onChange={e => setForm({ ...form, site_location: e.target.value })} /></Field>
             <Field label="Date"><Input type="date" value={form.overtime_date} onChange={e => setForm({ ...form, overtime_date: e.target.value })} /></Field>
             <Field label="Normal Hours"><Input type="number" value={form.normal_hours} onChange={e => setForm({ ...form, normal_hours: e.target.value })} /></Field>
@@ -914,7 +914,7 @@ function SafetyReadinessView() {
         <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
           <CardTitle className="text-sm flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> Safety Readiness</CardTitle>
           <div className="flex gap-2">
-            <ProjectSelect label={undefined} includeBlank value={project} onChange={v => setProject(v)} className="w-40" testid="sr-project" />
+            <ProjectSelect includeHeadOffice label={undefined} includeBlank value={project} onChange={v => setProject(v)} className="w-40" testid="sr-project" />
             <Button size="sm" onClick={load} data-testid="sr-apply"><Filter className="h-4 w-4 mr-1" /> Apply</Button>
           </div>
         </CardHeader>
