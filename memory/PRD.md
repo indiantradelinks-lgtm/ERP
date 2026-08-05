@@ -5096,3 +5096,6 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 
 ### Iteration 173 (Jun 2026) — Paid Days replaces Work Days ✅ (curl + screenshot)
 - paid_days = P+HD+L+WO+H+OD per employee + totals in /hr2/attendance-plus/summary; KPI card "Paid Days" (kpi-paid-days) added; Employee-wise table column renamed Paid Days (paid-days-{id}); xlsx/csv/pdf exports headers/values updated (working_days field kept in API for compat).
+
+### Iteration 174 (Jun 2026) — Paid Days: HD counts 0.5 ✅ (curl verified)
+- Formula now P + 0.5×HD + L + WO + H + OD (rounded 1dp) in summary + totals; flows to dashboard KPI, table and all exports. Verified: 1 HD + 5 WO → 5.5; totals 219 → 218.5.

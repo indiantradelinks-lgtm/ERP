@@ -177,7 +177,7 @@ async def _summary_data(month: str, project_code: Optional[str], department: Opt
     emp_rows = []
     for eid, e in emps.items():
         present_days = e["P"] + e["OD"] + 0.5 * e["HD"]
-        paid_days = e["P"] + e["HD"] + e["L"] + e["WO"] + e["H"] + e["OD"]
+        paid_days = round(e["P"] + 0.5 * e["HD"] + e["L"] + e["WO"] + e["H"] + e["OD"], 1)
         emp_rows.append({
             **{k: v for k, v in e.items() if k not in ("projects", "shifts")},
             "projects": sorted(e["projects"]), "shift_codes": sorted(e["shifts"]),
@@ -198,7 +198,7 @@ async def _summary_data(month: str, project_code: Optional[str], department: Opt
         totals["total_hours"] = round(totals["total_hours"] + e["total_hours"], 2)
     totals["employees"] = len(emp_rows)
     totals["present_days"] = round(sum(e["present_days"] for e in emp_rows), 1)
-    totals["paid_days"] = sum(e["paid_days"] for e in emp_rows)
+    totals["paid_days"] = round(sum(e["paid_days"] for e in emp_rows), 1)
 
     return {"month": month, "totals": totals, "employees": emp_rows,
             "by_date": flat(by_date, "date"), "by_department": flat(by_dept, "department"),
