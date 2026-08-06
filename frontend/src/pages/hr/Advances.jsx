@@ -353,14 +353,21 @@ function CreateAdvanceDialog({ open, onOpenChange, types, employees, canCreateOn
           )}
 
           {onBehalf ? (
-            <div>
-              <Label>Employee *</Label>
-              <Select value={form.employee_id} onValueChange={(v) => setForm({ ...form, employee_id: v })}>
-                <SelectTrigger data-testid="emp-select"><SelectValue placeholder="Pick site employee" /></SelectTrigger>
-                <SelectContent>{employees.filter((e) => e.active !== false).map((e) => (
-                  <SelectItem key={e.id} value={e.id}>{e.name} ({e.employee_id || e.emp_code || e.id.slice(0, 6)}) — {(e.departments || [])[0] || e.department || "—"}</SelectItem>
-                ))}</SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-3">
+              <ProjectSelect label="Project (filter)" value={projFilter} includeHeadOffice
+                onChange={(v) => setProjFilter(v)} testid="emp-project-filter" placeholder="— all projects —" />
+              <EmployeeSearchSelect
+                label="Employee"
+                required
+                employees={filteredEmployees}
+                value={form.employee_id}
+                onChange={(id, row) => setForm({
+                  ...form, employee_id: id,
+                  project: row?.current_project_code || form.project,
+                  site: row?.site || form.site,
+                })}
+                testid="emp-select"
+              />
             </div>
           ) : (
             <div className="p-2 border rounded bg-slate-50 text-xs">

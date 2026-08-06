@@ -5117,3 +5117,13 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - Endpoints: GET list (filters), GET /lookup (designation-first, skill fallback), POST/PUT/DELETE (dup guard 409), GET /export (xlsx), POST /seed-defaults (idempotent; 17 indicative rows for Delhi/Haryana/UP/Gujarat/Maharashtra marked "verify latest notification").
 - RBAC: employees read/write/delete perms. Verified: seed, filters, designation lookup (Scaffolder ₹900/day beats skilled ₹842.96), dup guard, export, idempotent reseed.
 - LESSON RECURRENCE: routers_registry tuple edit silently didn't persist again — always grep-verify registry entries after edit (fixed via insert_text).
+
+## 2026-06 (Iter 166) — 7-Point UI/UX Standardization (DONE, tested)
+1. Leave Mgmt: Project filter (incl. HEAD-OFFICE) + searchable employee dropdown (Apply + Balances tabs); employees sourced from project-scoped GET /api/advances/eligible-employees.
+2. New Advance Request (on-behalf): Project filter + searchable employee dropdown (EmployeeSearchSelect); selecting employee auto-fills Project from current_project_code.
+3. Project Request Center: "Leave Apply" + "Advance Request" shortcut buttons for raise-roles → /app/hr/leave, /app/hr/advances.
+4. Service/Payment Request: primary "Category (Item Master)" dropdown (inv_categories); secondary "Request Type (Routing)" kept for dept routing.
+5. Cost Center auto-populates from selected Category (frontend match on project cost_centers; backend auto-resolve in project_requests_router when cost_center_id empty).
+6. Centralized SiteLocationSelect (MasterSelect.jsx) sourced from Site Master — used in Project Requests + Advances.
+7. Site/Project free-text fields in Advances replaced with master dropdowns. Category Master gained "Cost Center (default)" field (inv_categories.cost_center).
+New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /app/test_reports/iteration_166.json (backend 7/7 pass; Advances dialog fix self-verified via Playwright).
