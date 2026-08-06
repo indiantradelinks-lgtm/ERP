@@ -94,6 +94,7 @@ class DaySheetEntry(BaseModel):
     in_time: Optional[str] = None
     out_time: Optional[str] = None
     remarks: Optional[str] = None
+    manual: bool = False
 
 
 class DaySheetIn(BaseModel):
@@ -133,7 +134,7 @@ async def day_sheet(date: str, master: str = "employee", project_code: str = "HE
     existing = {a["employee_id"]: a for a in await db.attendance.find(
         {"date": date, "employee_id": {"$in": [p["id"] for p in people]}},
         {"_id": 0, "employee_id": 1, "status": 1, "overtime_hours": 1, "approval_status": 1, "locked": 1,
-         "project_code": 1, "in_time": 1, "out_time": 1, "remarks": 1, "total_hours": 1}).to_list(3000)}
+         "project_code": 1, "in_time": 1, "out_time": 1, "remarks": 1, "total_hours": 1, "status_manual": 1}).to_list(3000)}
     locked = bool(await db.hr_attendance_locks.find_one({"month": date[:7], "project_code": project_code, "locked": True}, {"_id": 0, "id": 1}))
     rows = []
     for p in people:
@@ -150,6 +151,7 @@ async def day_sheet(date: str, master: str = "employee", project_code: str = "HE
             "remarks": a.get("remarks"),
             "total_hours": a.get("total_hours"),
             "approval_status": a.get("approval_status"),
+            "status_manual": bool(a.get("status_manual")),
             "entry_locked": bool(a.get("locked")),
         })
     designations = sorted({p.get("designation") for p in await _people(master) if p.get("designation")})
@@ -182,6 +184,7 @@ async def save_day_sheet(payload: DaySheetIn,
             continue
         base = {
             "status": e.status, "overtime_hours": e.overtime_hours or 0.0,
+            "status_manual": bool(e.manual),
             "total_hours": 8.0 if e.status in ("present", "on_duty") else (4.0 if e.status == "half_day" else 0.0),
             "hours": 8.0 if e.status in ("present", "on_duty") else (4.0 if e.status == "half_day" else 0.0),
             "project_code": payload.project_code,
@@ -194,7 +197,7 @@ async def save_day_sheet(payload: DaySheetIn,
             computed = _hours_between(_hhmm(e.in_time), _hhmm(e.out_time))
             base.update({"in_time": e.in_time or None, "out_time": e.out_time or None,
                          "check_in": e.in_time or None, "check_out": e.out_time or None})
-            if e.in_time and e.out_time and e.status in ("present", "half_day"):
+            if not e.manual and e.in_time and e.out_time and e.status in ("present", "half_day"):
                 derived = _derive_status(_hhmm(e.in_time), _hhmm(e.out_time), auto_cfg)
                 if derived:
                     base["status"] = derived
@@ -207,11 +210,16 @@ async def save_day_sheet(payload: DaySheetIn,
                     base["overtime_hours"] = max(0.0, round(computed - 8.0, 2))
         if e.remarks is not None:
             base["remarks"] = e.remarks or None
-        existing = await db.attendance.find_one({"employee_id": e.employee_id, "date": payload.date}, {"_id": 0, "id": 1, "locked": 1})
+        existing = await db.attendance.find_one({"employee_id": e.employee_id, "date": payload.date},
+                                                {"_id": 0, "id": 1, "locked": 1, "status": 1, "status_manual": 1})
         if existing:
             if existing.get("locked"):
                 errors.append({"employee_id": e.employee_id, "error": "Entry locked"})
                 continue
+            # A previously manual status must never be overwritten by auto derivation
+            if not e.manual and existing.get("status_manual"):
+                base["status"] = existing.get("status") or base["status"]
+                base["status_manual"] = True
             await db.attendance.update_one({"id": existing["id"]}, {"$set": base})
             updated += 1
         else:

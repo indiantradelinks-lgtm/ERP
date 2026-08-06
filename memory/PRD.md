@@ -5134,3 +5134,8 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - Applied in: Day-Sheet save (attendance_bulk_router, server-side override), bulk rows upload (_write_attendance), AI punch-import preview, and AttendanceCenter.jsx client-side chip derive (re-derives from absent too).
 - Reports/summary/payroll unchanged — they read stored statuses (Paid Days: P+L+WO+H+OD=1, HD=0.5).
 - Tested: testing agent 19/19 backend + UI derive verified (iteration_167.json, /app/backend/tests/test_iter167_attendance_derive.py); post-fix edge (absent hours=0) curl-verified.
+
+## 2026-06 (Iter 168) — Daily Sheet Date Picker + Manual Attendance Override (DONE, tested)
+- Daily Sheet date filter replaced with shadcn Calendar popover + Previous/Next day buttons (future dates disabled). Testids: ac-date, ac-date-prev, ac-date-next, ac-date-calendar.
+- Manual override: clicking a status chip (or Mark All) sets manual=true → client derive skips the row (violet "M" badge, testid ac-manual-{id}); day-sheet POST stores status_manual and skips server derive; existing status_manual rows are never overwritten by auto derivation in day-sheet re-saves, bulk rows upload, or punch-import commit (_write_attendance guard). Auto P/HD/A time-window rule unchanged for non-manual rows.
+- Tested: curl (manual preserved across day-sheet auto save + xlsx upload; fresh rows still auto-derive) + Playwright UI (date nav, calendar popover, M badge, P preserved with HD-window times). Test rows cleaned.

@@ -5,10 +5,12 @@
  *  • Project-wise register with date & designation filters
  */
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { CalendarDays, Save, Upload, ListChecks, Building2, Search, Bot, Wand2 } from "lucide-react";
+import { CalendarDays, Save, Upload, ListChecks, Building2, Search, Bot, Wand2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
@@ -36,6 +38,8 @@ const STATUSES = [
   { code: "OD", value: "on_duty", tone: "bg-cyan-600 text-white border-cyan-700" },
 ];
 const todayIso = () => new Date().toISOString().slice(0, 10);
+const parseIso = (iso) => new Date(iso + "T00:00:00");
+const toIso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 export default function AttendanceCenter() {
   const { user } = useAuth();
@@ -171,6 +175,7 @@ function AutoAttendanceDialog({ scope, onClose }) {
 
 function DailySheet({ scope, master }) {
   const [date, setDate] = useState(todayIso());
+  const [dateOpen, setDateOpen] = useState(false);
   const [designation, setDesignation] = useState("");
   const [q, setQ] = useState("");
   const [sheet, setSheet] = useState(null);
@@ -181,6 +186,14 @@ function DailySheet({ scope, master }) {
   useEffect(() => {
     api.get("/hr2/attendance-plus/auto-settings").then((r) => setAutoCfg((c) => ({ ...c, ...(r.data || {}) }))).catch(() => {});
   }, []);
+
+  const shiftDate = (delta) => {
+    const d = parseIso(date);
+    d.setDate(d.getDate() + delta);
+    const iso = toIso(d);
+    if (iso > todayIso()) return;
+    setDate(iso);
+  };
 
   const toMin = (s) => { const m = /^(\d{1,2})[:.](\d{2})/.exec(s || ""); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
   // P: in ≤ full_in_by & out ≥ full_out_after · HD: covers either half window · else A
@@ -202,7 +215,7 @@ function DailySheet({ scope, master }) {
       setSheet(r.data);
       const d = {};
       for (const row of r.data.rows) {
-        if (row.status) d[row.employee_id] = { status: row.status, ot: row.overtime_hours || 0, in_t: row.in_time || "", out_t: row.out_time || "", remarks: row.remarks || "" };
+        if (row.status) d[row.employee_id] = { status: row.status, ot: row.overtime_hours || 0, in_t: row.in_time || "", out_t: row.out_time || "", remarks: row.remarks || "", manual: !!row.status_manual };
       }
       setDraft(d);
     } catch (e) { toast.error(e.response?.data?.detail || "Failed to load day sheet"); }
@@ -210,11 +223,13 @@ function DailySheet({ scope, master }) {
   useEffect(() => { load(); }, [load]);
 
   const setRow = (id, patch) => setDraft((m) => {
-    const cur = { status: m[id]?.status, ot: m[id]?.ot || 0, in_t: m[id]?.in_t || "", out_t: m[id]?.out_t || "", remarks: m[id]?.remarks || "", ...patch };
+    const cur = { status: m[id]?.status, ot: m[id]?.ot || 0, in_t: m[id]?.in_t || "", out_t: m[id]?.out_t || "", remarks: m[id]?.remarks || "", manual: m[id]?.manual || false, ...patch };
+    // Explicit status click = manual override — auto derivation must not overwrite it
+    if ("status" in patch) cur.manual = !!patch.status;
     if (("in_t" in patch || "out_t" in patch) && cur.in_t && cur.out_t) {
       const hrs = hoursBetween(cur.in_t, cur.out_t);
       if (hrs > 0 && !("ot" in patch)) cur.ot = Math.max(0, Math.round((hrs - 8) * 100) / 100);
-      if (!cur.status || cur.status === "present" || cur.status === "half_day" || cur.status === "absent") {
+      if (!cur.manual && (!cur.status || cur.status === "present" || cur.status === "half_day" || cur.status === "absent")) {
         const d = deriveStatus(cur.in_t, cur.out_t);
         if (d) cur.status = d;
       }
@@ -225,7 +240,7 @@ function DailySheet({ scope, master }) {
 
   const markAll = (value) => {
     const d = { ...draft };
-    for (const row of sheet?.rows || []) if (!row.entry_locked) d[row.employee_id] = { ...d[row.employee_id], status: value, ot: d[row.employee_id]?.ot || 0 };
+    for (const row of sheet?.rows || []) if (!row.entry_locked) d[row.employee_id] = { ...d[row.employee_id], status: value, ot: d[row.employee_id]?.ot || 0, manual: true };
     setDraft(d);
   };
 
@@ -236,7 +251,8 @@ function DailySheet({ scope, master }) {
       const r = await api.post("/hr2/attendance/bulk/day-sheet", {
         date, project_code: scope, master,
         entries: marked.map(([id, v]) => ({ employee_id: id, status: v.status, overtime_hours: Number(v.ot) || 0,
-                                            in_time: v.in_t || null, out_time: v.out_t || null, remarks: v.remarks || null })),
+                                            in_time: v.in_t || null, out_time: v.out_t || null, remarks: v.remarks || null,
+                                            manual: !!v.manual })),
       });
       const d = r.data;
       toast.success(`Saved ${d.created + d.updated} entr${d.created + d.updated > 1 ? "ies" : "y"} (pending approval)`);
@@ -250,7 +266,28 @@ function DailySheet({ scope, master }) {
     <div className="space-y-3">
       <div className="flex gap-2 items-end flex-wrap bg-white border rounded-lg p-3">
         <div><Label className="text-[10px] uppercase tracking-wider">Date</Label>
-          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9 mt-1" data-testid="ac-date" /></div>
+          <div className="flex items-center gap-1 mt-1">
+            <Button variant="outline" className="h-9 w-9 p-0" onClick={() => shiftDate(-1)} data-testid="ac-date-prev" title="Previous day">
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Popover open={dateOpen} onOpenChange={setDateOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="h-9 w-48 justify-start font-normal" data-testid="ac-date">
+                  <CalendarDays className="h-4 w-4 mr-2 text-slate-500" />
+                  {parseIso(date).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar mode="single" selected={parseIso(date)}
+                          onSelect={(d) => { if (d) { setDate(toIso(d)); setDateOpen(false); } }}
+                          disabled={(d) => toIso(d) > todayIso()} initialFocus data-testid="ac-date-calendar" />
+              </PopoverContent>
+            </Popover>
+            <Button variant="outline" className="h-9 w-9 p-0" onClick={() => shiftDate(1)} disabled={date >= todayIso()} data-testid="ac-date-next" title="Next day">
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
         <div><Label className="text-[10px] uppercase tracking-wider">Designation</Label>
           <select value={designation} onChange={(e) => setDesignation(e.target.value)}
                    className="h-9 mt-1 w-48 rounded-sm border border-input bg-background px-2 text-sm" data-testid="ac-designation">
@@ -316,6 +353,10 @@ function DailySheet({ scope, master }) {
                           {s.code}
                         </button>
                       ))}
+                      {cur.manual && (
+                        <span className="self-center ml-1 text-[9px] font-bold uppercase px-1 py-0.5 rounded-sm bg-violet-100 text-violet-700 border border-violet-300"
+                              title="Manually set — auto attendance will not overwrite" data-testid={`ac-manual-${row.employee_id}`}>M</span>
+                      )}
                     </div>
                   </td>
                   <td className="px-3 py-1.5">

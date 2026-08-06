@@ -594,6 +594,12 @@ async def _write_attendance(person: dict, date: str, status: str, in_time: Optio
         "marked_by_id": user["id"], "marked_by_name": user.get("name") or user.get("email"),
     }
     existing = await db.attendance.find_one({"employee_id": person["id"], "date": date}, {"_id": 0})
+    if existing and existing.get("status_manual"):
+        # Manually set statuses are never overwritten by auto derivation (uploads / punch imports)
+        base["status"] = existing.get("status") or base["status"]
+        base["status_manual"] = True
+        if base["status"] == "absent":
+            base["total_hours"] = base["hours"] = 0.0
     if existing:
         if existing.get("locked"):
             raise ValueError("Entry locked")
