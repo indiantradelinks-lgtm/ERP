@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { DepartmentSelect } from "@/components/DepartmentSelect";
+import ApprovalDocsGate from "@/components/ApprovalDocsGate";
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select";
@@ -61,6 +62,7 @@ export default function Advances() {
   const [advances, setAdvances] = useState([]);
   const [types, setTypes] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [canOnBehalf, setCanOnBehalf] = useState(false);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState({ status: "", advance_type: "", department: "" });
@@ -69,7 +71,7 @@ export default function Advances() {
   const [showPayment, setShowPayment] = useState(null);
 
   const isPrivileged = PRIVILEGED.includes(user?.role);
-  const canCreateOnBehalf = ON_BEHALF_ROLES.includes(user?.role);
+  const canCreateOnBehalf = canOnBehalf || ON_BEHALF_ROLES.includes(user?.role);
   const canPay = PAYMENT_ROLES.includes(user?.role);
 
   const load = async () => {
@@ -78,13 +80,14 @@ export default function Advances() {
       const reqs = [
         api.get("/advances"),
         api.get("/advance-types?active_only=true"),
-        api.get("/employees"),
+        api.get("/advances/eligible-employees"),
       ];
       if (isPrivileged) reqs.push(api.get("/advances/dashboard/summary"));
       const results = await Promise.all(reqs);
       setAdvances(results[0].data || []);
       setTypes(results[1].data || []);
-      setEmployees(results[2].data || []);
+      setEmployees(results[2].data?.employees || []);
+      setCanOnBehalf(!!results[2].data?.can_on_behalf);
       if (results[3]) setSummary(results[3].data);
     } catch (e) {
       toast.error(apiErrorMessage(e, "Failed to load advances"));
@@ -305,6 +308,8 @@ function CreateAdvanceDialog({ open, onOpenChange, types, employees, canCreateOn
     ? Math.round(Number(form.requested_amount) / Number(form.installments))
     : 0;
 
+  const [docs, setDocs] = useState({ documents: [], linked_attachments: [], documents_not_required: false, documents_not_required_reason: "" });
+
   const submit = async (asDraft) => {
     if (!form.employee_id || !form.advance_type || !form.requested_amount || !form.reason) {
       toast.error("Employee, type, amount and reason are required");
@@ -312,7 +317,7 @@ function CreateAdvanceDialog({ open, onOpenChange, types, employees, canCreateOn
     }
     setSaving(true);
     try {
-      await api.post("/advances", { ...form, requested_amount: Number(form.requested_amount), installments: Number(form.installments), submit: !asDraft });
+      await api.post("/advances", { ...form, ...docs, requested_amount: Number(form.requested_amount), installments: Number(form.installments), submit: !asDraft });
       toast.success(asDraft ? "Saved as draft" : "Advance request submitted for approval");
       onCreated();
     } catch (e) {
@@ -413,6 +418,8 @@ function CreateAdvanceDialog({ open, onOpenChange, types, employees, canCreateOn
               <strong>Computed EMI:</strong> {inr(emi)} × {form.installments} starting {form.repayment_start_month}
             </div>
           )}
+
+          <ApprovalDocsGate parentType="employee_advances" value={docs} onChange={setDocs} testidPrefix="advance-docs" />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => submit(true)} disabled={saving} data-testid="save-draft-btn"><FileText className="h-4 w-4 mr-1" />Save as Draft</Button>

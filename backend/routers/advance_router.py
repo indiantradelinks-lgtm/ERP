@@ -120,6 +120,10 @@ class AdvanceCreateIn(BaseModel):
     installments: int = Field(ge=1, default=1)
     remarks: str = ""
     attachments: list[str] = []   # file ids
+    documents: list = []
+    linked_attachments: list = []
+    documents_not_required: bool = False
+    documents_not_required_reason: str = ""
     submit: bool = True            # if False saves as draft
 
 
@@ -139,6 +143,49 @@ CREATE_ON_BEHALF_ROLES = {
 }
 
 PAYMENT_ROLES = {"super_admin", "accounts_executive", "general_manager", "director"}
+
+PRIVILEGED_VIEW_ROLES = {"super_admin", "director", "general_manager", "hr_executive", "accounts_executive"}
+
+
+async def _pm_allowed_tokens(user: dict) -> Optional[set]:
+    """Project scope for on-behalf advance creation.
+    None → unrestricted (privileged/HR/dept_head). set of project code/name tokens → PM-scoped.
+    Empty set → self-service only."""
+    role = user.get("role")
+    if role in PRIVILEGED_VIEW_ROLES or role == "dept_head":
+        return None
+    from pm_scope import is_pm_scoped
+    if not is_pm_scoped(user):
+        return set()
+    from scope import assigned_projects_for
+    tokens: set = set()
+    for p in await assigned_projects_for(user):
+        for t in (p.get("code"), p.get("name")):
+            if t:
+                tokens.add(t)
+    return tokens
+
+
+@router.get("/advances/eligible-employees")
+async def eligible_employees(user: dict = Depends(get_current_user)):
+    """Employees the current user may raise an advance for (project-scoped for managers)."""
+    tokens = await _pm_allowed_tokens(user)
+    proj = {"_id": 0, "id": 1, "employee_id": 1, "emp_code": 1, "name": 1, "email": 1,
+            "department": 1, "departments": 1, "designation": 1, "active": 1, "status": 1,
+            "current_project_code": 1, "site": 1, "salary": 1, "joining_date": 1}
+    base = {"status": {"$ne": "inactive"}}
+    if tokens is None:
+        rows = await db.employees.find(base, proj).sort("name", 1).to_list(5000)
+        return {"can_on_behalf": True, "scope": "all", "employees": rows}
+    if tokens:
+        rows = await db.employees.find({**base, "current_project_code": {"$in": sorted(tokens)}},
+                                       proj).sort("name", 1).to_list(5000)
+        me = await db.employees.find_one({**base, "email": user.get("email")}, proj) if user.get("email") else None
+        if me and not any(r["id"] == me["id"] for r in rows):
+            rows.insert(0, me)
+        return {"can_on_behalf": True, "scope": "projects", "projects": sorted(tokens), "employees": rows}
+    me = await db.employees.find_one({**base, "email": user.get("email")}, proj) if user.get("email") else None
+    return {"can_on_behalf": False, "scope": "self", "employees": [me] if me else []}
 
 
 async def _fetch_employee(emp_id: str) -> dict:
@@ -170,8 +217,15 @@ async def _approval_pending_step(advance_id: str) -> Optional[dict]:
 async def create_advance(payload: AdvanceCreateIn, user: dict = Depends(get_current_user)):
     emp = await _fetch_employee(payload.employee_id)
     on_behalf = not _is_self_request(user, emp)
-    if on_behalf and user.get("role") not in CREATE_ON_BEHALF_ROLES:
-        raise HTTPException(status_code=403, detail="not allowed to create on behalf of another employee")
+    if on_behalf:
+        tokens = await _pm_allowed_tokens(user)
+        if tokens is not None:
+            from pm_scope import is_pm_scoped
+            if not (is_pm_scoped(user) or user.get("role") in CREATE_ON_BEHALF_ROLES):
+                raise HTTPException(status_code=403, detail="not allowed to create on behalf of another employee")
+            if (emp.get("current_project_code") or "") not in tokens:
+                raise HTTPException(status_code=403,
+                                    detail="You can only raise advances for employees assigned to your projects")
 
     # Resolve advance type
     atype = await db.advance_types.find_one(
@@ -304,6 +358,13 @@ async def list_advances(
             emp = await db.employees.find_one({"email": user["email"]}, {"_id": 0, "id": 1})
             if emp:
                 q["$or"].append({"employee_id": emp["id"]})
+        # PM-scoped roles also see advances of employees on their assigned projects
+        tokens = await _pm_allowed_tokens(user)
+        if tokens:
+            ids = [e["id"] async for e in db.employees.find(
+                {"current_project_code": {"$in": sorted(tokens)}}, {"_id": 0, "id": 1})]
+            if ids:
+                q["$or"].append({"employee_id": {"$in": ids}})
     if status:
         q["status"] = status
     if employee_id:

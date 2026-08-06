@@ -5099,3 +5099,9 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 
 ### Iteration 174 (Jun 2026) — Paid Days: HD counts 0.5 ✅ (curl verified)
 - Formula now P + 0.5×HD + L + WO + H + OD (rounded 1dp) in summary + totals; flows to dashboard KPI, table and all exports. Verified: 1 HD + 5 WO → 5.5; totals 219 → 218.5.
+
+### Iteration 175 (Jun 2026) — Advance Requests: on-behalf for project managers ✅ (curl + UI verified)
+- NEW GET /advances/eligible-employees: privileged/HR → all active; PM-scoped roles (incl. manager_o_p) → active employees with current_project_code in their assigned project tokens (+self); others → self only. Returns can_on_behalf flag.
+- create_advance: PM-scoped users may raise on behalf ONLY for employees on their assigned projects (403 otherwise; zero-project PMs restricted to self). list_advances: PM-scoped users also see advances of their project employees.
+- Advances.jsx: dialog now sources employees from eligible-employees (canOnBehalf from API); FIXED pre-existing blocker — dialog had no reference-docs section so every submit failed the approval docs gate; added ApprovalDocsGate + AdvanceCreateIn docs fields (documents/linked_attachments/documents_not_required/reason).
+- Verified: manager_o_p sees only Arjun Reddy (PRJ-2025-01), submitted AD-2026-0086 on-behalf (status submitted), 403 for non-project employee; test data cleaned. NOTE: E-1001 left assigned to PRJ-2025-01 for future PM-scope testing.
