@@ -576,6 +576,8 @@ async def _write_attendance(person: dict, date: str, status: str, in_time: Optio
         derived = _derive_status(ti, to, settings or DEFAULT_AUTO_SETTINGS)
         if derived:
             status = derived
+    if status == "absent":
+        total = 0.0
     if total == 0.0:
         total = 8.0 if status in ("present", "on_duty") else (4.0 if status == "half_day" else 0.0)
     ot_after = float(sh.get("overtime_after") or sh.get("standard_hours") or 8.0)

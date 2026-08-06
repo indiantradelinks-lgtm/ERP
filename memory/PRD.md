@@ -5127,3 +5127,10 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 6. Centralized SiteLocationSelect (MasterSelect.jsx) sourced from Site Master — used in Project Requests + Advances.
 7. Site/Project free-text fields in Advances replaced with master dropdowns. Category Master gained "Cost Center (default)" field (inv_categories.cost_center).
 New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /app/test_reports/iteration_166.json (backend 7/7 pass; Advances dialog fix self-verified via Playwright).
+
+## 2026-06 (Iter 167) — Attendance Auto-Status Time-Window Rule (DONE, tested)
+- Removed old hours-based auto-Present logic. New rule: P if in ≤ 09:10 AND out ≥ 17:00; HD if covering either half window (in ≤ 09:10 & out ≥ 13:00, or in ≤ 13:00 & out ≥ 17:00); else Absent (0 hours). Boundaries inclusive.
+- Configurable via GET/PUT /api/hr2/attendance-plus/auto-settings {full_in_by, full_out_after, mid_time} (legacy full_day_hours/half_day_hours removed).
+- Applied in: Day-Sheet save (attendance_bulk_router, server-side override), bulk rows upload (_write_attendance), AI punch-import preview, and AttendanceCenter.jsx client-side chip derive (re-derives from absent too).
+- Reports/summary/payroll unchanged — they read stored statuses (Paid Days: P+L+WO+H+OD=1, HD=0.5).
+- Tested: testing agent 19/19 backend + UI derive verified (iteration_167.json, /app/backend/tests/test_iter167_attendance_derive.py); post-fix edge (absent hours=0) curl-verified.

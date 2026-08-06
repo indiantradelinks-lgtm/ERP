@@ -198,7 +198,9 @@ async def save_day_sheet(payload: DaySheetIn,
                 derived = _derive_status(_hhmm(e.in_time), _hhmm(e.out_time), auto_cfg)
                 if derived:
                     base["status"] = derived
-            if computed > 0:
+                    fallback = 8.0 if derived == "present" else (4.0 if derived == "half_day" else 0.0)
+                    base["total_hours"] = base["hours"] = fallback
+            if computed > 0 and base["status"] != "absent":
                 base["total_hours"] = computed
                 base["hours"] = computed
                 if not e.overtime_hours:

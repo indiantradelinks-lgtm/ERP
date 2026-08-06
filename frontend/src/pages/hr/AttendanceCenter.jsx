@@ -214,7 +214,7 @@ function DailySheet({ scope, master }) {
     if (("in_t" in patch || "out_t" in patch) && cur.in_t && cur.out_t) {
       const hrs = hoursBetween(cur.in_t, cur.out_t);
       if (hrs > 0 && !("ot" in patch)) cur.ot = Math.max(0, Math.round((hrs - 8) * 100) / 100);
-      if (!cur.status || cur.status === "present" || cur.status === "half_day") {
+      if (!cur.status || cur.status === "present" || cur.status === "half_day" || cur.status === "absent") {
         const d = deriveStatus(cur.in_t, cur.out_t);
         if (d) cur.status = d;
       }
