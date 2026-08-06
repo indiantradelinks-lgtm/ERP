@@ -395,21 +395,29 @@ async def export_breakdown(fmt: str = Query(..., pattern="^(xlsx|pdf)$"), month:
 # ──────────────────────────── AUTO ATTENDANCE (WO / P-HD / Absent) ────────────────────────────
 WEEKDAY_IDX = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
                "friday": 4, "saturday": 5, "sunday": 6}
-DEFAULT_AUTO_SETTINGS = {"full_day_hours": 8.0, "half_day_hours": 4.0}
+DEFAULT_AUTO_SETTINGS = {"full_in_by": "09:10", "full_out_after": "17:00", "mid_time": "13:00"}
 
 
 async def _auto_settings() -> dict:
     doc = await db.hr_attendance_settings.find_one({"id": "auto"}, {"_id": 0}) or {}
-    return {"full_day_hours": float(doc.get("full_day_hours") or 8),
-            "half_day_hours": float(doc.get("half_day_hours") or 4)}
+    return {"full_in_by": doc.get("full_in_by") or "09:10",
+            "full_out_after": doc.get("full_out_after") or "17:00",
+            "mid_time": doc.get("mid_time") or "13:00"}
 
 
-def _derive_status(total_hours: float, settings: dict) -> Optional[str]:
-    if total_hours >= settings["full_day_hours"]:
+def _derive_status(t_in: Optional[dtime], t_out: Optional[dtime], settings: dict) -> Optional[str]:
+    """Time-window rule — P: in ≤ full_in_by AND out ≥ full_out_after.
+    HD: covers either half (in ≤ full_in_by & out ≥ mid, or in ≤ mid & out ≥ full_out_after). Else absent."""
+    if not t_in or not t_out:
+        return None
+    fi = _hhmm(settings.get("full_in_by")) or dtime(9, 10)
+    fo = _hhmm(settings.get("full_out_after")) or dtime(17, 0)
+    mid = _hhmm(settings.get("mid_time")) or dtime(13, 0)
+    if t_in <= fi and t_out >= fo:
         return "present"
-    if total_hours > 0:
+    if (t_in <= fi and t_out >= mid) or (t_in <= mid and t_out >= fo):
         return "half_day"
-    return None
+    return "absent"
 
 
 @router.get("/auto-settings")
@@ -418,8 +426,9 @@ async def get_auto_settings(user: dict = Depends(require_permission("attendance"
 
 
 class AutoSettingsIn(BaseModel):
-    full_day_hours: float = 8.0
-    half_day_hours: float = 4.0
+    full_in_by: str = "09:10"
+    full_out_after: str = "17:00"
+    mid_time: str = "13:00"
 
 
 @router.put("/auto-settings")
@@ -427,10 +436,12 @@ async def put_auto_settings(p: AutoSettingsIn,
                             user: dict = Depends(require_permission("attendance", "write"))):
     if user.get("role") not in HR_ROLES:
         raise HTTPException(403, "Only HR / Admin can change attendance settings")
-    if not (0 < p.half_day_hours <= p.full_day_hours <= 24):
-        raise HTTPException(400, "Invalid thresholds")
+    fi, fo, mid = _hhmm(p.full_in_by), _hhmm(p.full_out_after), _hhmm(p.mid_time)
+    if not (fi and fo and mid) or not (fi < mid < fo):
+        raise HTTPException(400, "Invalid time windows — need full-in < mid < full-out (HH:MM)")
     await db.hr_attendance_settings.update_one(
-        {"id": "auto"}, {"$set": {"full_day_hours": p.full_day_hours, "half_day_hours": p.half_day_hours,
+        {"id": "auto"}, {"$set": {"full_in_by": p.full_in_by, "full_out_after": p.full_out_after,
+                                  "mid_time": p.mid_time,
                                   "updated_by": user.get("name"), "updated_at": now_iso()}}, upsert=True)
     return await _auto_settings()
 
@@ -561,8 +572,8 @@ async def _write_attendance(person: dict, date: str, status: str, in_time: Optio
     sh = shifts.get(shift_code or "GEN") or {}
     ti, to = _hhmm(in_time), _hhmm(out_time)
     total = _hours_between(ti, to, float(sh.get("break_minutes") or 0))
-    if ti and to and total > 0 and status in (None, "", "present", "half_day"):
-        derived = _derive_status(total, settings or DEFAULT_AUTO_SETTINGS)
+    if ti and to and status in (None, "", "present", "half_day"):
+        derived = _derive_status(ti, to, settings or DEFAULT_AUTO_SETTINGS)
         if derived:
             status = derived
     if total == 0.0:
@@ -882,7 +893,7 @@ async def punch_preview(file: UploadFile = File(...),
                                float(sh.get("break_minutes") or 0))
         row["working_hours"] = total
         if row.get("in_time") and row.get("out_time"):
-            row["status"] = _derive_status(total, auto_settings) or "present"
+            row["status"] = _derive_status(_hhmm(row["in_time"]), _hhmm(row["out_time"]), auto_settings) or "present"
         else:
             row["status"] = "present"
         ot_after = float(sh.get("overtime_after") or 8.0)

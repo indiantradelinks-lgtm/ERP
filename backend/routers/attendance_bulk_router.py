@@ -168,6 +168,8 @@ async def save_day_sheet(payload: DaySheetIn,
     if await db.hr_attendance_locks.find_one({"month": payload.date[:7], "project_code": payload.project_code, "locked": True}, {"_id": 0, "id": 1}):
         raise HTTPException(400, f"{payload.date[:7]} is locked for {payload.project_code}")
     people = {p["id"]: p for p in await _people(payload.master)}
+    from routers.attendance_plus_router import _hhmm, _hours_between, _derive_status, _auto_settings
+    auto_cfg = await _auto_settings()
     created = updated = 0
     errors: List[Dict[str, Any]] = []
     for e in payload.entries:
@@ -189,10 +191,13 @@ async def save_day_sheet(payload: DaySheetIn,
             "marked_by_id": user["id"], "marked_by_name": user.get("name") or user.get("email"),
         }
         if e.in_time or e.out_time:
-            from routers.attendance_plus_router import _hhmm, _hours_between
             computed = _hours_between(_hhmm(e.in_time), _hhmm(e.out_time))
             base.update({"in_time": e.in_time or None, "out_time": e.out_time or None,
                          "check_in": e.in_time or None, "check_out": e.out_time or None})
+            if e.in_time and e.out_time and e.status in ("present", "half_day"):
+                derived = _derive_status(_hhmm(e.in_time), _hhmm(e.out_time), auto_cfg)
+                if derived:
+                    base["status"] = derived
             if computed > 0:
                 base["total_hours"] = computed
                 base["hours"] = computed

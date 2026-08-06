@@ -176,11 +176,22 @@ function DailySheet({ scope, master }) {
   const [sheet, setSheet] = useState(null);
   const [draft, setDraft] = useState({});
   const [saving, setSaving] = useState(false);
-  const [fullDay, setFullDay] = useState(8);
+  const [autoCfg, setAutoCfg] = useState({ full_in_by: "09:10", full_out_after: "17:00", mid_time: "13:00" });
 
   useEffect(() => {
-    api.get("/hr2/attendance-plus/auto-settings").then((r) => setFullDay(Number(r.data?.full_day_hours) || 8)).catch(() => {});
+    api.get("/hr2/attendance-plus/auto-settings").then((r) => setAutoCfg((c) => ({ ...c, ...(r.data || {}) }))).catch(() => {});
   }, []);
+
+  const toMin = (s) => { const m = /^(\d{1,2})[:.](\d{2})/.exec(s || ""); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
+  // P: in ≤ full_in_by & out ≥ full_out_after · HD: covers either half window · else A
+  const deriveStatus = (inT, outT) => {
+    const ti = toMin(inT), to = toMin(outT);
+    if (ti == null || to == null) return null;
+    const fi = toMin(autoCfg.full_in_by) ?? 550, fo = toMin(autoCfg.full_out_after) ?? 1020, mid = toMin(autoCfg.mid_time) ?? 780;
+    if (ti <= fi && to >= fo) return "present";
+    if ((ti <= fi && to >= mid) || (ti <= mid && to >= fo)) return "half_day";
+    return "absent";
+  };
 
   const load = useCallback(async () => {
     if (!scope) return;
@@ -202,11 +213,10 @@ function DailySheet({ scope, master }) {
     const cur = { status: m[id]?.status, ot: m[id]?.ot || 0, in_t: m[id]?.in_t || "", out_t: m[id]?.out_t || "", remarks: m[id]?.remarks || "", ...patch };
     if (("in_t" in patch || "out_t" in patch) && cur.in_t && cur.out_t) {
       const hrs = hoursBetween(cur.in_t, cur.out_t);
-      if (hrs > 0) {
-        if (!("ot" in patch)) cur.ot = Math.max(0, Math.round((hrs - fullDay) * 100) / 100);
-        if (!cur.status || cur.status === "present" || cur.status === "half_day") {
-          cur.status = hrs >= fullDay ? "present" : "half_day";
-        }
+      if (hrs > 0 && !("ot" in patch)) cur.ot = Math.max(0, Math.round((hrs - 8) * 100) / 100);
+      if (!cur.status || cur.status === "present" || cur.status === "half_day") {
+        const d = deriveStatus(cur.in_t, cur.out_t);
+        if (d) cur.status = d;
       }
     }
     return { ...m, [id]: cur };

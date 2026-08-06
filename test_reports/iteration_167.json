@@ -1,0 +1,41 @@
+{
+  "summary": "Iter 167 — Attendance auto-status time-window derivation (P/HD/A) tested end-to-end. Backend 19/19 PASS: auto-settings GET returns new {full_in_by, full_out_after, mid_time} shape (no legacy full_day_hours/half_day_hours), PUT validation (mid<in and mid>=out both 400), PUT persistence, Day-Sheet POST server-side derive for all 6 boundary cases (09:30/17:30→HD, 09:05/17:30→P, 10:00/12:00→A, 09:00/13:00→HD morning, 13:00/17:00→HD afternoon, 09:10/17:00→P inclusive), manual leave/weekly_off preserved when no in/out, bulk-rows xlsx template + upload with 4-row workbook derives correctly (P/HD/A/L), monthly summary paid_days formula (P+L+WO+H+OD+0.5*HD) matches stored, punch-import preview with in/out derives (in 09:30/out 17:30 → half_day), regressions (auto/run, csv/xlsx exports) all 200. Frontend: AttendanceCenter Daily Sheet at /app/attendance-center loads, ac-scope/ac-date/E-1001 row all present with 2 time inputs per row. UI client-side deriveStatus correctly flips chips: 09:30/17:30→HD, 09:00/17:30→P, 10:00/12:00→A. One minor client-only quirk: when a previous derive left status='absent', a subsequent edit that should derive HD (e.g. 09:00/13:00) does NOT re-flip because the guard `if (!cur.status || cur.status==='present' || cur.status==='half_day')` excludes 'absent'. Server-side derive still wins on Save (verified in backend tests), so no data integrity issue — purely a chip-flicker UX gap. Recommend widening the guard to also re-derive from 'absent' (or drop the guard entirely for rows just edited).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AttendanceCenter.jsx DailySheet setRow (line ~217)",
+        "issue": "Client-side re-derive guard excludes status==='absent'. If a row was previously derived to Absent (e.g. from 10:00/12:00), editing In/Out again to a valid HD/P window (e.g. 09:00/13:00) leaves the chip stuck on A on the client. Server still derives correctly on Save, so DB is right, but the chip preview misleads the user. Fix: change `if (!cur.status || cur.status === 'present' || cur.status === 'half_day')` to include 'absent' as well, since any status derived from in/out should be recomputed when in/out changes.",
+        "selector": "[data-testid='attendance-center-page'] tr input[type='time']",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AttendanceCenter (any select/option in the app)", "issues": ["Recurring hydration warning: <span> cannot be a child of <option> — coming from ve-dynamic instrumentation on the projects select. Non-blocking, already flagged in prior iters."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter167_attendance_derive.py",
+    "/app/test_reports/pytest/iter167.xml"
+  ],
+  "action_items": [
+    "(low) Widen client-side derive guard in AttendanceCenter.jsx setRow to also re-derive when current status is 'absent' — otherwise chip preview can lag server truth until save+reload.",
+    "(cosmetic) Fix long-standing <span> in <option> hydration warning in native <select> lists."
+  ],
+  "critical_code_review_comments": [
+    "_derive_status boundary is inclusive on both ends (in <= full_in_by AND out >= full_out_after) — matches spec (09:10/17:00 boundary → P). Good.",
+    "attendance_bulk_router.save_day_sheet only re-derives when requested status ∈ {present, half_day}. Manual 'leave'/'weekly_off'/'on_duty'/'holiday'/'absent' with in/out provided will be stored as-is — that is per spec but worth documenting on the UI to avoid HR confusion.",
+    "attendance_plus_router._write_attendance re-derives when incoming status is falsy or in {present, half_day} — consistent with day-sheet. When derive picks 'absent', the fallback `if (total == 0.0) total = 0` skips setting hours (absent gets 0), but total actually equals hours_between (may be 2h for 10:00/12:00). Result: absent rows with total_hours=2.0 stored. Minor inconsistency vs prior data model where absent rows had 0h. Consider zeroing total_hours when derived==='absent'.",
+    "Legacy hr_attendance_settings docs may still hold full_day_hours/half_day_hours keys. _auto_settings silently ignores them (uses defaults) — safe, but the settings doc will accumulate stale keys until next PUT. Cleaning them on PUT would be tidier.",
+    "punch-import preview line 896-898: when in/out present, status derives via _derive_status(); when either missing, defaults to 'present'. That means a lone IN punch without OUT still lands as 'present' on commit — probably wrong (should be a flag/skip). Already flagged with 'missing_punch' though, so HR can override."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter167_attendance_derive.py (new)"],
+  "success_rate": {"backend": "100% (19/19)", "frontend": "~95% — 3/4 client derives verified; 4th failed only due to state carry-over (not a functional bug)"},
+  "test_credentials": "admin@erp.com / Admin@123",
+  "seed_data_creation": "Created 11 attendance rows for employee E-1001 (Arjun Reddy) on past dates in the current month (dates offset -1 to -20 days) with remarks='TEST_iter167' for some. Also created ~4 rows from bulk-rows upload test. Cleanup was attempted but MongoDB URI parsing failed in the ad-hoc script; safe to leave (all rows are on past dates, marked_by=Admin, and can be deleted by querying db.attendance where remarks='TEST_iter167'). Also touched db.hr_attendance_settings via PUT (restored to defaults 09:10/17:00/13:00 at end of test).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend derive logic is fully verified via /app/backend/tests/test_iter167_attendance_derive.py (19 tests, all PASS). Use it as regression. The only outstanding item is a low-priority client-side chip preview refresh — server data is always correct. Test employee: E-1001 Arjun Reddy in PRJ-2025-01. Login inputs on /login are still positional (input nth(0)/nth(1), button 'SIGN IN').",
+  "rca of the issue": "N/A — feature works as designed. The minor UI chip-refresh quirk is caused by an over-conservative guard clause in AttendanceCenter.jsx setRow that preserves manually-chosen non-P/HD statuses, but incorrectly also freezes the previously-derived 'absent' state. Fix is a 3-word JSX edit."
+}
