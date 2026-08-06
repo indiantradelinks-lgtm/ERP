@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { Plus, RefreshCw, PackageSearch, CheckCircle2, XCircle, Clock, FileSpreadsheet, FileText, Boxes, ShoppingCart, Truck, Home, Users, ChevronDown, ChevronRight } from "lucide-react";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import { Plus, RefreshCw, PackageSearch, CheckCircle2, XCircle, Clock, FileSpreadsheet, FileText, Boxes, ShoppingCart, Truck, Home, Users, ChevronDown, ChevronRight, CalendarDays, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { ProjectSelect } from "@/components/MasterSelect";
+import { ProjectSelect, SiteLocationSelect } from "@/components/MasterSelect";
 import FileUploader from "@/components/FileUploader";
 import ProjectExpenses from "./ProjectExpenses";
 
@@ -39,6 +39,7 @@ const DEPT_ICON = { stores: Boxes, logistics: Truck, admin: Home, hr: Users };
 
 export default function ProjectRequests() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const canRaise = RAISE_ROLES.has(user?.role);
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get("tab") === "expenses" ? "expenses" : "requests";
@@ -89,6 +90,20 @@ export default function ProjectRequests() {
       api.get("/procurement/master/items", { params: { category_id: catId } }).then((r) => setCatItems(r.data || [])).catch(() => setCatItems([]));
     } else setCatItems([]);
   };
+
+  const onServiceCategoryChange = (catId) => {
+    const cat = categories.find((c) => c.id === catId);
+    const cc = catId ? ccList.find((c) => c.category_id === catId || (cat && c.category_code === cat.code)) : null;
+    setForm((f) => ({ ...f, material_category_id: catId, cost_center_id: cc ? cc.id : f.cost_center_id }));
+  };
+
+  // Auto-populate cost center from selected category once project cost centers load
+  useEffect(() => {
+    if (!form.material_category_id || form.cost_center_id || !ccList.length) return;
+    const cat = categories.find((c) => c.id === form.material_category_id);
+    const cc = ccList.find((c) => c.category_id === form.material_category_id || (cat && c.category_code === cat.code));
+    if (cc) setForm((f) => ({ ...f, cost_center_id: f.cost_center_id || cc.id }));
+  }, [ccList, form.material_category_id]); // eslint-disable-line
 
   const loadCostCenters = (projectId) => {
     if (!projectId) { setCcList([]); return; }
@@ -240,6 +255,12 @@ export default function ProjectRequests() {
                 <Button variant="outline" className="h-9 rounded-sm" onClick={() => openDialog("service")} data-testid="req-new-service">
                   <Truck className="h-4 w-4 mr-1.5" /> Service / Payment
                 </Button>
+                <Button variant="outline" className="h-9 rounded-sm" onClick={() => navigate("/app/hr/leave")} data-testid="req-shortcut-leave">
+                  <CalendarDays className="h-4 w-4 mr-1.5" /> Leave Apply
+                </Button>
+                <Button variant="outline" className="h-9 rounded-sm" onClick={() => navigate("/app/hr/advances")} data-testid="req-shortcut-advance">
+                  <Wallet className="h-4 w-4 mr-1.5" /> Advance Request
+                </Button>
               </>
             )}
           </div>
@@ -361,14 +382,24 @@ export default function ProjectRequests() {
           <div className="grid grid-cols-2 gap-3 py-1">
             <ProjectSelect label="Project *" value={form.project_code} onChange={(code, row) => { setForm({ ...form, project_code: code, project_id: row?.id || "", cost_center_id: "" }); loadCostCenters(row?.id); }} testid="req-form-project" />
             {mode === "service" && (
-              <div>
-                <Label className="text-[10px] uppercase tracking-wider">Service Type *</Label>
-                <select value={form.request_type} onChange={(e) => { setForm({ ...form, request_type: e.target.value, items: [blankItem()] }); setStock(null); }}
-                  className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-type">
-                  <option value="">— select —</option>
-                  {types.filter((t) => !STOCKABLE.has(t.key) && t.key !== "manpower").map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
-                </select>
-              </div>
+              <>
+                <div>
+                  <Label className="text-[10px] uppercase tracking-wider">Category (Item Master) *</Label>
+                  <select value={form.material_category_id} onChange={(e) => onServiceCategoryChange(e.target.value)}
+                    className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-service-category">
+                    <option value="">— select category —</option>
+                    {categories.map((c) => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-[10px] uppercase tracking-wider">Request Type (Routing) *</Label>
+                  <select value={form.request_type} onChange={(e) => { setForm({ ...form, request_type: e.target.value, items: [blankItem()] }); setStock(null); }}
+                    className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-type">
+                    <option value="">— select —</option>
+                    {types.filter((t) => !STOCKABLE.has(t.key) && t.key !== "manpower").map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+                  </select>
+                </div>
+              </>
             )}
             {mode === "material" && (
               <div>
@@ -388,10 +419,8 @@ export default function ProjectRequests() {
                 {ccList.map((cc) => <option key={cc.id} value={cc.id}>{cc.category_code} · {cc.category_name}{cc.budget ? ` (budget ${inr(cc.budget)})` : ""}</option>)}
               </select>
             </div>
-            <div>
-              <Label className="text-[10px] uppercase tracking-wider">Site Location</Label>
-              <Input value={form.site_location} onChange={(e) => setForm({ ...form, site_location: e.target.value })} placeholder="Site / block / area" className="h-9 rounded-sm mt-1" data-testid="req-form-location" />
-            </div>
+            <SiteLocationSelect label="Site Location" value={form.site_location}
+              onChange={(v) => setForm({ ...form, site_location: v })} testid="req-form-location" />
             <div>
               <Label className="text-[10px] uppercase tracking-wider">Need By</Label>
               <Input type="date" value={form.need_by} onChange={(e) => setForm({ ...form, need_by: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="req-form-needby" />

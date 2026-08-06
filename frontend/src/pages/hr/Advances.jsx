@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { DepartmentSelect } from "@/components/DepartmentSelect";
+import { ProjectSelect, SiteLocationSelect } from "@/components/MasterSelect";
+import { EmployeeSearchSelect } from "@/components/EmployeeSearchSelect";
 import ApprovalDocsGate from "@/components/ApprovalDocsGate";
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
@@ -284,6 +286,7 @@ function SummaryTile({ label, value, icon: Icon, tone = "slate" }) {
 
 function CreateAdvanceDialog({ open, onOpenChange, types, employees, canCreateOnBehalf, currentUser, onCreated }) {
   const [onBehalf, setOnBehalf] = useState(false);
+  const [projFilter, setProjFilter] = useState("");
   const [form, setForm] = useState({
     employee_id: "", advance_type: "", requested_amount: "", reason: "",
     emergency: false, site: "", project: "",
@@ -304,6 +307,14 @@ function CreateAdvanceDialog({ open, onOpenChange, types, employees, canCreateOn
   }, [onBehalf, selfEmpId]);
 
   const selectedEmp = employees.find((e) => e.id === form.employee_id);
+  const filteredEmployees = useMemo(() => {
+    const active = employees.filter((e) => e.active !== false);
+    if (!projFilter) return active;
+    if (projFilter === "HEAD-OFFICE") {
+      return active.filter((e) => !e.current_project_code || e.current_project_code === "HEAD-OFFICE");
+    }
+    return active.filter((e) => e.current_project_code === projFilter);
+  }, [employees, projFilter]);
   const emi = form.installments > 0 && form.requested_amount > 0
     ? Math.round(Number(form.requested_amount) / Number(form.installments))
     : 0;
@@ -389,14 +400,8 @@ function CreateAdvanceDialog({ open, onOpenChange, types, employees, canCreateOn
               <Label>Repayment Start Month</Label>
               <Input type="month" value={form.repayment_start_month} onChange={(e) => setForm({ ...form, repayment_start_month: e.target.value })} data-testid="repay-month" />
             </div>
-            <div>
-              <Label>Site</Label>
-              <Input value={form.site} onChange={(e) => setForm({ ...form, site: e.target.value })} data-testid="site" />
-            </div>
-            <div>
-              <Label>Project</Label>
-              <Input value={form.project} onChange={(e) => setForm({ ...form, project: e.target.value })} data-testid="project" />
-            </div>
+            <SiteLocationSelect label="Site" value={form.site} onChange={(v) => setForm({ ...form, site: v })} testid="site" />
+            <ProjectSelect label="Project" value={form.project} onChange={(v) => setForm({ ...form, project: v })} testid="project" />
           </div>
 
           <div>

@@ -251,6 +251,11 @@ async def create_request(p: RequestIn, request: Request,
     mcat = None
     if p.material_category_id:
         mcat = await db.inv_categories.find_one({"id": p.material_category_id}, {"_id": 0, "id": 1, "code": 1, "name": 1})
+    if not cc and mcat:
+        cc = await db.cost_centers.find_one(
+            {"project_id": project["id"],
+             "$or": [{"category_id": mcat["id"]}, {"category_code": mcat.get("code")}]},
+            {"_id": 0, "id": 1, "category_code": 1, "category_name": 1, "project_id": 1})
     steps = [("dept_head", "Project Head")]
     if est > threshold:
         steps += [("general_manager", "GM"), ("director", "Director")]

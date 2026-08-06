@@ -41,6 +41,7 @@ class CategoryIn(BaseModel):
     description: Optional[str] = None
     gst_pct: Optional[float] = 18.0
     default_hsn: Optional[str] = None
+    cost_center: Optional[str] = None
     active: bool = True
 
 
@@ -50,6 +51,7 @@ class CategoryUpdate(BaseModel):
     description: Optional[str] = None
     gst_pct: Optional[float] = None
     default_hsn: Optional[str] = None
+    cost_center: Optional[str] = None
     active: Optional[bool] = None
 
 

@@ -1,0 +1,52 @@
+{
+  "summary": "Iter 166 — UI/UX standardization (7 points). Backend 7/7 tests PASS: eligible-employees admin/MOP scoping, project-request auto-CC resolution from material_category_id, category master cost_center CRUD, site master + inv_categories + request-types endpoints. Frontend mostly PASS: Leave Apply/Balances tabs have all required testids and search+scoping (MOP sees only Arjun Reddy E-1001), Project Request Center shortcuts (req-shortcut-leave, req-shortcut-advance) render, Service/Payment dialog has req-form-service-category / req-form-type / req-form-location / req-form-costcenter, Categories master has cat-form-costcenter. CRITICAL BUG: Advances 'New Advance Request' dialog is MISSING the promised project-filter + searchable employee UI — the JSX still renders a plain shadcn Select for employees and the `projFilter`/`filteredEmployees` state is defined in the component but never rendered/used. Required testid `emp-project-filter` is absent; `emp-select` exists but as a plain Select (not searchable input, no {testid}-list / {testid}-option-{id} pattern). Also spec-listed searchable option testid pattern for the Advances employee picker is not implemented.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Advances → CreateAdvanceDialog (Advances.jsx L346-364)",
+        "issue": "Missing `emp-project-filter` dropdown and searchable employee UI. When on-behalf is enabled, the dialog only shows a plain <Select data-testid='emp-select'> listing ALL employees. The `projFilter` state + `filteredEmployees` memo (lines 289, 310-317) are defined but never rendered. Spec requires: (a) a Project (filter) select with data-testid `emp-project-filter` (incl. HEAD-OFFICE), (b) searchable employee input via EmployeeSearchSelect with `emp-select-list` and `emp-select-option-{id}` pattern (mirroring the Leave apply-employee flow). Also employees list should be sourced from GET /api/advances/eligible-employees for project scoping — currently it reads full employees list.",
+        "selector": "[data-testid='emp-project-filter'], [data-testid^='emp-select-option-']",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Advances New Dialog (and generally Select components)",
+        "issues": ["React hydration warning: <span> cannot be a child of <option> (from ve-dynamic instrumentation) — same warning noted in prior iter reports, non-blocking."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter166_ux_standardization.py",
+    "/app/test_reports/pytest/iter166.xml"
+  ],
+  "action_items": [
+    "Advances.jsx CreateAdvanceDialog: replace the plain <Select data-testid='emp-select'> block with the same pattern used in Leave.jsx apply tab — a Project (filter) select with data-testid `emp-project-filter` bound to `projFilter`, and the shared EmployeeSearchSelect (from /app/frontend/src/components/EmployeeSearchSelect.jsx) with testid `emp-select` iterating `filteredEmployees` (already computed). Options should render with data-testid `emp-select-option-{employee.id}`. Load candidates from GET /api/advances/eligible-employees instead of full employees list so PM/MOP roles only see their scoped employees.",
+    "(cosmetic) Fix <span> in <option> hydration warning in Select components — wrap plain text or move meta text out of native <option>."
+  ],
+  "critical_code_review_comments": [
+    "Advances.jsx: state variables `projFilter` and `filteredEmployees` are declared and computed but never referenced in the render tree — dead code that misleads reviewers into thinking the feature is complete.",
+    "Advances.jsx currently reads GET /api/employees for the on-behalf list. Backend already exposes GET /api/advances/eligible-employees which enforces project scoping. Switch to the eligible-employees endpoint to make MOP/PM lists automatically project-scoped without extra client filtering.",
+    "project_requests_router.create_request: cost_center auto-resolve logic correctly matches by `category_id` OR `category_code` — good defensive fallback. But when a project has no cost_center row for the chosen category, cost_center_id ends up null and cost_center_label is null (silent). Consider surfacing a warning field like `cost_center_auto_resolved: false` so the UI can hint the user.",
+    "procurement_master_router CategoryIn.cost_center is a free-text field (Optional[str]) — no validation against `cost_centers` collection. Acceptable for a 'default hint' field but flag for future to switch to cost_center_id.",
+    "Login page inputs (login form) do not carry data-testid — tests must fall back to type='password' and positional selectors. Add `login-email` / `login-password` / `login-submit` testids for future automation stability."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter166_ux_standardization.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7)",
+    "frontend": "~85% — 6 of 7 spec areas fully working, Advances on-behalf project-filter/search UI missing"
+  },
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin), test_mop@erp.com / Mop@12345 (Manager O P — verified scoped to PRJ-2025-01 with only Arjun Reddy E-1001 in eligible list)",
+  "seed_data_creation": "Test run created 1 project-request (type=fuel, amount 5000, TEST_iter166 auto-CC …) — safe to leave; auto-CC resolution verified. Created & deleted TEST_ category rows for cost_center CRUD test (self-cleaning).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend cost-center auto-resolve + category cost_center field + eligible-employees scoping are all verified green. If main agent adds the missing emp-project-filter + searchable EmployeeSearchSelect to Advances.jsx CreateAdvanceDialog, re-run test_iter166_ux_standardization.py (still passes as-is) and run a Playwright test that: (1) logs in as admin, opens /app/hr/advances, clicks 'New Advance Request', toggles on-behalf, verifies [data-testid='emp-project-filter'] exists, types 'Arjun' into [data-testid='emp-select'], clicks [data-testid='emp-select-option-{id}'], and confirms [data-testid='project'] auto-fills with 'PRJ-2025-01'. (2) Repeat as test_mop@erp.com and confirm only Arjun Reddy shows.",
+  "rca of the issue": "Advances.jsx dialog UI drift — main agent added the `projFilter` state and `filteredEmployees` memo (lines 289-317) intending to wire a project-filter dropdown + searchable employee input above the on-behalf employee picker, but the JSX (lines 355-364) still renders the old plain <Select> that iterates the full `employees` array. As a result the promised testids `emp-project-filter` and the searchable {testid}-option-{id} pattern are absent, and admin/PM/MOP users all see the same unfiltered employee list (though backend still enforces authz at POST time). Repro: login as admin → /app/hr/advances → New Advance → check 'Create on behalf' → observe there is only one Employee <Select> and no separate Project (filter) dropdown. Fix: swap the JSX to mirror Leave.jsx apply tab (project filter <select> bound to projFilter + <EmployeeSearchSelect> bound to filteredEmployees, sourced from /api/advances/eligible-employees)."
+}

@@ -20,6 +20,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { api, apiErrorMessage, stripEmpty } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { ProjectSelect } from "@/components/MasterSelect";
+import { EmployeeSearchSelect } from "@/components/EmployeeSearchSelect";
 import { toast } from "sonner";
 
 const STATUS_TONE = {
@@ -43,6 +45,8 @@ export default function Leave() {
   const [balanceEmp, setBalanceEmp] = useState("");
   const [calendar, setCalendar] = useState({ month: currentMonth(), rows: [] });
 
+  const [applyProject, setApplyProject] = useState("");
+  const [balanceProject, setBalanceProject] = useState("");
   const [applyForm, setApplyForm] = useState({
     employee_id: "", leave_type: "CL", from_date: todayIso(), to_date: todayIso(),
     half_day: false, reason: "",
@@ -54,17 +58,24 @@ export default function Leave() {
 
   const load = async () => {
     try {
-      const [lt, emps, m, b] = await Promise.all([
+      const [lt, m] = await Promise.all([
         api.get("/hr/leave-types"),
-        api.get("/employees"),
         api.get("/hr/leave-applications/mine"),
-        api.get("/employees"),
       ]);
+      let empList = [];
+      try {
+        // project-scoped list (managers only see their projects' employees)
+        const r = await api.get("/advances/eligible-employees");
+        empList = r.data?.employees || [];
+      } catch {
+        const r = await api.get("/employees");
+        empList = r.data || [];
+      }
       setLeaveTypes(lt.data || []);
-      setEmployees(emps.data || []);
+      setEmployees(empList);
       setMine(m.data || []);
       // Default applyForm.employee_id to self
-      const selfEmp = (emps.data || []).find((e) => e.email === user?.email);
+      const selfEmp = empList.find((e) => (e.email || "").toLowerCase() === (user?.email || "").toLowerCase());
       if (selfEmp) setApplyForm((f) => ({ ...f, employee_id: f.employee_id || selfEmp.id }));
       if (canApprove) {
         const inboxResp = await api.get("/hr/leave-applications?status=pending");
@@ -75,9 +86,9 @@ export default function Leave() {
         setBalanceEmp(selfEmp.id);
         const r = await api.get(`/hr/leave-balances/${selfEmp.id}`);
         setBalances(r.data.balances || []);
-      } else if ((emps.data || []).length) {
+      } else if (empList.length) {
         // Admin/HR with no self-employee — fall back to first active employee
-        const fallback = (emps.data || []).find((e) => e.status === "active") || emps.data[0];
+        const fallback = empList.find((e) => e.status === "active" || e.active !== false) || empList[0];
         setBalanceEmp(fallback.id);
         const r = await api.get(`/hr/leave-balances/${fallback.id}`);
         setBalances(r.data.balances || []);
@@ -102,6 +113,17 @@ export default function Leave() {
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  const filterByProject = (list, projectCode) => {
+    if (!projectCode) return list;
+    if (projectCode === "HEAD-OFFICE") {
+      return list.filter((e) => !e.current_project_code || e.current_project_code === "HEAD-OFFICE");
+    }
+    return list.filter((e) => e.current_project_code === projectCode);
+  };
+  const applyEmployees = useMemo(() => filterByProject(employees, applyProject), [employees, applyProject]);
+  const balanceEmployees = useMemo(() => filterByProject(employees, balanceProject), [employees, balanceProject]);
+
   useEffect(() => {
     if (tab === "calendar") loadCalendar(calendar.month);
     // eslint-disable-next-line
@@ -167,15 +189,18 @@ export default function Leave() {
           <div className="bg-card border border-border rounded-sm p-5 max-w-2xl">
             <div className="font-display font-bold mb-3">New Leave Application</div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <Label className="text-[10px] uppercase tracking-wider">Employee</Label>
-                <Select value={applyForm.employee_id} onValueChange={(v) => setApplyForm({ ...applyForm, employee_id: v })}>
-                  <SelectTrigger className="h-9 rounded-sm mt-1" data-testid="apply-employee"><SelectValue placeholder="Pick employee…" /></SelectTrigger>
-                  <SelectContent>
-                    {employees.map((e) => <SelectItem key={e.id} value={e.id}>{e.name} ({e.emp_code})</SelectItem>)}
-                  </SelectContent>
-                </Select>
+              <div>
+                <ProjectSelect label="Project (filter)" value={applyProject} includeHeadOffice
+                  onChange={(v) => setApplyProject(v)} testid="apply-project-filter" placeholder="— all projects —" />
               </div>
+              <EmployeeSearchSelect
+                label="Employee"
+                required
+                employees={applyEmployees}
+                value={applyForm.employee_id}
+                onChange={(id) => setApplyForm({ ...applyForm, employee_id: id })}
+                testid="apply-employee"
+              />
               <div>
                 <Label className="text-[10px] uppercase tracking-wider">Leave Type</Label>
                 <Select value={applyForm.leave_type} onValueChange={(v) => setApplyForm({ ...applyForm, leave_type: v })}>
@@ -213,19 +238,21 @@ export default function Leave() {
 
         {/* BALANCES */}
         <TabsContent value="balances" className="mt-4 space-y-3">
-          <div className="bg-card border border-border rounded-sm p-3 flex flex-wrap items-center gap-2">
-            <Label className="text-[10px] uppercase tracking-wider">Employee</Label>
-            <Select value={balanceEmp} onValueChange={loadBalancesFor}>
-              <SelectTrigger className="h-9 w-72 rounded-sm" data-testid="balance-employee-picker">
-                <SelectValue placeholder="Pick employee…" />
-              </SelectTrigger>
-              <SelectContent>
-                {employees.map((e) => (
-                  <SelectItem key={e.id} value={e.id}>{e.name} ({e.emp_code}) · {e.department || "—"}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <span className="text-[11px] text-muted-foreground">
+          <div className="bg-card border border-border rounded-sm p-3 flex flex-wrap items-end gap-3">
+            <div className="w-64">
+              <ProjectSelect label="Project (filter)" value={balanceProject} includeHeadOffice
+                onChange={(v) => setBalanceProject(v)} testid="balance-project-filter" placeholder="— all projects —" />
+            </div>
+            <div className="w-72">
+              <EmployeeSearchSelect
+                label="Employee"
+                employees={balanceEmployees}
+                value={balanceEmp}
+                onChange={(id) => loadBalancesFor(id)}
+                testid="balance-employee-picker"
+              />
+            </div>
+            <span className="text-[11px] text-muted-foreground pb-2">
               {balances.length} type(s) for year {new Date().getFullYear()}
             </span>
           </div>

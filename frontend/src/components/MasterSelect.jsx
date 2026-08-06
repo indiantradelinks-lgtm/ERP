@@ -211,6 +211,20 @@ export function SiteSelect({ value, onChange, clientId, label = "Site", testid =
   return <BaseSelect {...{ value, onChange, options, label, testid, disabled, required, hint, includeBlank, placeholder, className }} />;
 }
 
+// ─── Site Location (centralized, value = human label from Site Master) ──────
+export function SiteLocationSelect({ value, onChange, clientId, label = "Site Location",
+                                     testid = "site-location-select", disabled = false, required = false,
+                                     hint, includeBlank = true, placeholder = "— select site location —",
+                                     className = "" }) {
+  const rows = useSites(clientId);
+  const options = rows.map((s) => {
+    const display = [s.site_code, s.name || s.site_name || [s.client_name, s.city].filter(Boolean).join(" — ")]
+      .filter(Boolean).join(" · ") || s.id;
+    return { value: display, label: display, row: s };
+  });
+  return <BaseSelect {...{ value, onChange, options, label, testid, disabled, required, hint, includeBlank, placeholder, className }} />;
+}
+
 // ─── Item (scoped by category_id when provided) ─────────────────────────────
 const _items = makeKeyedList("/procurement/master/items", "category_id");
 export const fetchItems = _items.fetchFor;

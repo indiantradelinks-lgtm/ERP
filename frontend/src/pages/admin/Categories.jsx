@@ -9,7 +9,7 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 
-const blank = () => ({ code: "", name: "", description: "", gst_pct: 18, default_hsn: "", active: true });
+const blank = () => ({ code: "", name: "", description: "", gst_pct: 18, default_hsn: "", cost_center: "", active: true });
 
 export default function Categories() {
   const [rows, setRows] = useState([]);
@@ -94,6 +94,7 @@ export default function Categories() {
                 <TableHead>Description</TableHead>
                 <TableHead className="text-right">GST %</TableHead>
                 <TableHead>Default HSN</TableHead>
+                <TableHead>Cost Center</TableHead>
                 <TableHead className="text-right">Items</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -107,6 +108,7 @@ export default function Categories() {
                   <TableCell className="text-[12px] text-muted-foreground max-w-md truncate">{r.description}</TableCell>
                   <TableCell className="text-right tabular">{r.gst_pct ?? "—"}</TableCell>
                   <TableCell className="font-mono text-[12px]">{r.default_hsn || "—"}</TableCell>
+                  <TableCell className="text-[12px]">{r.cost_center || "—"}</TableCell>
                   <TableCell className="text-right">
                     <button className="text-primary hover:underline text-[12px]" onClick={() => viewItems(r)} data-testid={`cat-items-${r.id}`}>
                       <Layers className="h-3 w-3 inline mr-1" />{r.item_count || 0}
@@ -153,6 +155,7 @@ export default function Categories() {
               </label>
             </div>
             <Field label="Name *" value={form.name} onChange={(v) => setForm({ ...form, name: v })} testid="cat-form-name" />
+            <Field label="Cost Center (default)" value={form.cost_center} onChange={(v) => setForm({ ...form, cost_center: v })} testid="cat-form-costcenter" />
             <div>
               <Label className="text-[10px] uppercase tracking-wider">Description</Label>
               <Textarea value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} className="rounded-sm mt-1 min-h-[80px]" data-testid="cat-form-desc" />
