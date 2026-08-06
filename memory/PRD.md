@@ -5110,3 +5110,10 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - payroll_router._compute_payslip now derives Paid Days from per-day attendance rows (P+0.5HD+L+WO+H+OD — same as Attendance Summary) and OT hours (sum overtime_hours); salary components pro-rated by paid_days/total_days; OT amount = hrs × (master.ot_rate_per_hour or auto monthly-fixed/(days×8)) × ot_multiplier (new PayrollMasterIn fields). Legacy aggregated-doc fallback kept; slip has ot_hours + attendance_linked.
 - Advance EMI recovery already flowed in (unchanged). Fixed pre-existing 500: legacy masters missing special_allowance (all component reads now .get default 0); employee_code fallback to emp_code.
 - Payroll Run preview table shows OT Hrs column. Verified: E-1001 8/31 paid days, OT 3 hrs → ₹579, basic 30000→7741.94, net ₹11,998; full 12-slip run with 31 skipped (no master).
+
+### Iteration 177 (Jun 2026) — Minimum Wage Master ✅ (curl + screenshot verified)
+- NEW module HR → Masters → Minimum Wage Master (/app/hr/minimum-wages, MinimumWages.jsx; backend routers/minimum_wage_router.py, collection minimum_wages).
+- Rows: state / zone / skill_category (unskilled, semi_skilled, skilled, highly_skilled, clerical) / optional designation override / wage_per_day ⇄ wage_per_month (26-day auto-derive) / VDA / effective_from / notes / active.
+- Endpoints: GET list (filters), GET /lookup (designation-first, skill fallback), POST/PUT/DELETE (dup guard 409), GET /export (xlsx), POST /seed-defaults (idempotent; 17 indicative rows for Delhi/Haryana/UP/Gujarat/Maharashtra marked "verify latest notification").
+- RBAC: employees read/write/delete perms. Verified: seed, filters, designation lookup (Scaffolder ₹900/day beats skilled ₹842.96), dup guard, export, idempotent reseed.
+- LESSON RECURRENCE: routers_registry tuple edit silently didn't persist again — always grep-verify registry entries after edit (fixed via insert_text).
