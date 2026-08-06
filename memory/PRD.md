@@ -5105,3 +5105,8 @@ User flow: Projects/Ops team raises RA/Final bill request → 4-level approval (
 - create_advance: PM-scoped users may raise on behalf ONLY for employees on their assigned projects (403 otherwise; zero-project PMs restricted to self). list_advances: PM-scoped users also see advances of their project employees.
 - Advances.jsx: dialog now sources employees from eligible-employees (canOnBehalf from API); FIXED pre-existing blocker — dialog had no reference-docs section so every submit failed the approval docs gate; added ApprovalDocsGate + AdvanceCreateIn docs fields (documents/linked_attachments/documents_not_required/reason).
 - Verified: manager_o_p sees only Arjun Reddy (PRJ-2025-01), submitted AD-2026-0086 on-behalf (status submitted), 403 for non-project employee; test data cleaned. NOTE: E-1001 left assigned to PRJ-2025-01 for future PM-scope testing.
+
+### Iteration 176 (Jun 2026) — Payroll ⇄ Attendance link ✅ (curl + UI verified)
+- payroll_router._compute_payslip now derives Paid Days from per-day attendance rows (P+0.5HD+L+WO+H+OD — same as Attendance Summary) and OT hours (sum overtime_hours); salary components pro-rated by paid_days/total_days; OT amount = hrs × (master.ot_rate_per_hour or auto monthly-fixed/(days×8)) × ot_multiplier (new PayrollMasterIn fields). Legacy aggregated-doc fallback kept; slip has ot_hours + attendance_linked.
+- Advance EMI recovery already flowed in (unchanged). Fixed pre-existing 500: legacy masters missing special_allowance (all component reads now .get default 0); employee_code fallback to emp_code.
+- Payroll Run preview table shows OT Hrs column. Verified: E-1001 8/31 paid days, OT 3 hrs → ₹579, basic 30000→7741.94, net ₹11,998; full 12-slip run with 31 skipped (no master).

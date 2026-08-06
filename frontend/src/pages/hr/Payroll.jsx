@@ -102,13 +102,14 @@ function RunTab() {
             )}
             <div className="border rounded overflow-x-auto">
               <Table>
-                <TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Dept</TableHead><TableHead className="text-right">Paid Days</TableHead><TableHead className="text-right">Earnings</TableHead><TableHead className="text-right">Deductions</TableHead><TableHead className="text-right">Advance EMI</TableHead><TableHead className="text-right">Net Pay</TableHead><TableHead></TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Dept</TableHead><TableHead className="text-right">Paid Days</TableHead><TableHead className="text-right">OT Hrs</TableHead><TableHead className="text-right">Earnings</TableHead><TableHead className="text-right">Deductions</TableHead><TableHead className="text-right">Advance EMI</TableHead><TableHead className="text-right">Net Pay</TableHead><TableHead></TableHead></TableRow></TableHeader>
                 <TableBody>
                   {preview.payslips.map((s) => (
                     <TableRow key={s.employee_id} data-testid={`slip-row-${s.employee_code}`}>
                       <TableCell><div className="font-medium">{s.employee_name}</div><div className="text-xs text-muted-foreground">{s.employee_code}</div></TableCell>
                       <TableCell>{s.department}</TableCell>
                       <TableCell className="text-right">{s.paid_days}/{s.total_days}</TableCell>
+                      <TableCell className="text-right">{s.ot_hours > 0 ? s.ot_hours : "—"}</TableCell>
                       <TableCell className="text-right">{inr(s.total_earnings)}</TableCell>
                       <TableCell className="text-right">{inr(s.total_deductions)}</TableCell>
                       <TableCell className="text-right">{s.advance_emi > 0 ? <Badge className="bg-amber-100 text-amber-700">{inr(s.advance_emi)}</Badge> : "—"}</TableCell>

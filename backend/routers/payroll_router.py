@@ -57,6 +57,8 @@ class PayrollMasterIn(BaseModel):
     esi_applicable: bool = False
     pt_state: str = "GJ"   # Gujarat by default for ITL
     tds_override_pct: float = 0
+    ot_rate_per_hour: float = 0   # 0 = auto (monthly fixed gross / (days × 8))
+    ot_multiplier: float = 1.0
     fixed_other_earnings: list[dict] = Field(default_factory=list)
     fixed_other_deductions: list[dict] = Field(default_factory=list)
     pan: str = ""
@@ -76,7 +78,7 @@ async def list_payroll_master(user: dict = Depends(get_current_user)):
                                           {"_id": 0, "name": 1, "employee_id": 1, "designation": 1, "departments": 1})
         if emp:
             r["employee_name"] = emp.get("name")
-            r["employee_code"] = emp.get("employee_id")
+            r["employee_code"] = emp.get("employee_id") or emp.get("emp_code")
             r["designation"] = emp.get("designation")
             r["department"] = (emp.get("departments") or [None])[0]
     return rows
@@ -133,29 +135,56 @@ async def _compute_payslip(month: str, emp: dict, master: dict) -> dict:
     """Compute a single payslip from a payroll_master + attendance + active advances."""
     year, mm = int(month[:4]), int(month[5:7])
     total_days = monthrange(year, mm)[1]
-    att = await db.attendance.find_one(
-        {"employee_id": emp["id"], "month": month}, {"_id": 0}
-    ) or {}
-    paid_days = float(att.get("paid_days", total_days))
-    lop_days = float(att.get("lop_days", max(0, total_days - paid_days)))
+    # ── Attendance link: derive Paid Days + OT hours from per-day attendance rows
+    # Paid Days = P + 0.5×HD + L + WO + H + OD  (same formula as Attendance Summary)
+    att_rows = await db.attendance.find(
+        {"employee_id": emp["id"], "date": {"$regex": f"^{month}-"}},
+        {"_id": 0, "status": 1, "overtime_hours": 1},
+    ).to_list(400)
+    ot_hours = 0.0
+    if att_rows:
+        w = {"present": 1, "on_duty": 1, "leave": 1, "weekly_off": 1, "holiday": 1, "half_day": 0.5}
+        paid_days = sum(w.get(r.get("status") or "", 0) for r in att_rows)
+        ot_hours = round(sum(float(r.get("overtime_hours") or 0) for r in att_rows), 2)
+        lop_days = max(0.0, total_days - paid_days)
+    else:
+        # Legacy fallback (aggregated doc) → full month when no attendance exists
+        att = await db.attendance.find_one({"employee_id": emp["id"], "month": month}, {"_id": 0}) or {}
+        paid_days = float(att.get("paid_days", total_days))
+        lop_days = float(att.get("lop_days", max(0, total_days - paid_days)))
     factor = max(0.0, min(1.0, paid_days / total_days))
 
+    def _m(k: str) -> float:
+        return float(master.get(k) or 0)
+
     base_earn = {
-        "basic": round(master["basic"] * factor, 2),
-        "hra": round(master["hra"] * factor, 2),
-        "special_allowance": round(master["special_allowance"] * factor, 2),
-        "site_allowance": round(master["site_allowance"] * factor, 2),
-        "conveyance": round(master["conveyance"] * factor, 2),
-        "medical": round(master["medical"] * factor, 2),
+        "basic": round(_m("basic") * factor, 2),
+        "hra": round(_m("hra") * factor, 2),
+        "special_allowance": round(_m("special_allowance") * factor, 2),
+        "site_allowance": round(_m("site_allowance") * factor, 2),
+        "conveyance": round(_m("conveyance") * factor, 2),
+        "medical": round(_m("medical") * factor, 2),
     }
     extra_earnings = []
     for r in master.get("fixed_other_earnings", []):
         extra_earnings.append({"label": r.get("label", "Other"), "amount": round(float(r.get("amount", 0)) * factor, 2)})
 
-    # Overtime (if attendance row carries it)
-    ot_amount = float(att.get("ot_amount", 0))
+    # Overtime: hours from attendance × rate (master.ot_rate_per_hour, else auto
+    # hourly = monthly fixed gross / (total_days × 8), scaled by ot_multiplier)
+    ot_amount = 0.0
+    if ot_hours > 0:
+        rate = float(master.get("ot_rate_per_hour") or 0)
+        if rate <= 0:
+            monthly_fixed = (_m("basic") + _m("hra") + _m("special_allowance")
+                             + _m("site_allowance") + _m("conveyance") + _m("medical"))
+            rate = monthly_fixed / (total_days * 8) if monthly_fixed > 0 else 0
+        ot_amount = round(ot_hours * rate * float(master.get("ot_multiplier") or 1.0), 2)
+    else:
+        # Legacy aggregated fallback
+        ot_amount = float((await db.attendance.find_one({"employee_id": emp["id"], "month": month},
+                                                        {"_id": 0, "ot_amount": 1}) or {}).get("ot_amount", 0)) if not att_rows else 0.0
     if ot_amount > 0:
-        extra_earnings.append({"label": "Overtime", "amount": ot_amount})
+        extra_earnings.append({"label": f"Overtime ({ot_hours} hrs)" if ot_hours else "Overtime", "amount": ot_amount})
 
     total_earnings = sum(base_earn.values()) + sum(e["amount"] for e in extra_earnings)
 
@@ -194,13 +223,15 @@ async def _compute_payslip(month: str, emp: dict, master: dict) -> dict:
     return {
         "employee_id": emp["id"],
         "employee_name": emp.get("name"),
-        "employee_code": emp.get("employee_id"),
+        "employee_code": emp.get("employee_id") or emp.get("emp_code"),
         "department": (emp.get("departments") or [None])[0] or emp.get("department"),
         "designation": emp.get("designation"),
         "month": month,
         "total_days": total_days,
-        "paid_days": paid_days,
-        "lop_days": lop_days,
+        "paid_days": round(paid_days, 1),
+        "lop_days": round(lop_days, 1),
+        "ot_hours": ot_hours,
+        "attendance_linked": bool(att_rows),
         "earnings": base_earn,
         "extra_earnings": extra_earnings,
         "statutory_deductions": stat,
