@@ -5145,3 +5145,9 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - Profile page (/app/profile, avatar menu → My Profile) now has a view-only "My Attendance" card: month navigation (prev/next, future blocked), summary tiles, day-wise table. Not-linked users see a friendly notice.
 - Seeded employee E-MOP-01 "Mop Manager" (email test_mop@erp.com, PRJ-2025-01) + 3 June-2026 attendance rows for testing.
 - Tested: curl (linked/unlinked/bad month) + Playwright as test_mop (card renders, June 2026 shows 3 rows, Paid Days 1.5).
+
+## 2026-06 (Iter 170) — My Leave Balance Card on Personal Dashboard (DONE, tested)
+- New self-only endpoint GET /api/hr/leave/my-summary (get_current_user; resolves own employee via user_id/email) → {linked, year, balances, pending, recent}.
+- Profile page gained view-only "My Leave" card: current-year balances grid (balance/granted/used per type) + Pending Requests list with status badges + recent decided requests. Testids: my-leave-card, my-leave-bal-{TYPE}, my-leave-pending-{id}.
+- Demo data: granted CL 12 to E-MOP-01 (test_mop) + 1 pending CL application 2026-08-20→21.
+- Tested: curl (linked summary with balances/pending) + Playwright as test_mop (card, CL tile, pending item render).

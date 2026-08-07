@@ -134,6 +134,115 @@ export default function Profile() {
 
       {/* Personal attendance dashboard — self-only, view-only */}
       <MyAttendance />
+
+      {/* Personal leave balances + pending requests — self-only, view-only */}
+      <MyLeave />
+    </div>
+  );
+}
+
+const LEAVE_STATUS_TONE = {
+  pending: "bg-amber-100 text-amber-900 border-amber-300",
+  approved: "bg-emerald-100 text-emerald-900 border-emerald-300",
+  rejected: "bg-red-100 text-red-900 border-red-300",
+  cancelled: "bg-secondary text-muted-foreground border-border",
+};
+
+function MyLeave() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    api.get("/hr/leave/my-summary")
+      .then((r) => { if (alive) setData(r.data); })
+      .catch(() => { if (alive) setData(null); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  return (
+    <div className="bg-card border border-border rounded-sm p-6" data-testid="my-leave-card">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+        <div>
+          <div className="font-display font-bold text-lg flex items-center gap-2">
+            <Wallet className="h-4 w-4 text-primary" /> My Leave
+          </div>
+          <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+            <Eye className="h-3 w-3" /> View-only — your balances & requests for {data?.year || new Date().getFullYear()}
+          </div>
+        </div>
+      </div>
+
+      {loading && <div className="text-sm text-muted-foreground py-4">Loading leave data…</div>}
+      {!loading && data && !data.linked && (
+        <div className="text-sm text-muted-foreground py-6 text-center border border-dashed border-border rounded-sm" data-testid="my-leave-not-linked">
+          No employee record is linked to your login — contact HR to link your account.
+        </div>
+      )}
+      {!loading && data?.linked && (
+        <div className="grid lg:grid-cols-2 gap-4">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary mb-2">Leave Balances</div>
+            {(data.balances || []).length === 0 && (
+              <div className="text-sm text-muted-foreground py-4 border border-dashed border-border rounded-sm text-center">
+                No leave balances granted yet.
+              </div>
+            )}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {(data.balances || []).map((b) => (
+                <div key={b.leave_type} className="border border-border rounded-sm p-2.5 bg-muted/20" data-testid={`my-leave-bal-${b.leave_type}`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold font-mono-data">{b.leave_type}</span>
+                    <span className="text-[9px] text-muted-foreground uppercase truncate ml-1">{b.leave_type_label}</span>
+                  </div>
+                  <div className="text-xl font-black tabular mt-1">{b.balance}</div>
+                  <div className="text-[10px] text-muted-foreground">of {b.granted} · used {b.used}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary mb-2">
+              Pending Requests ({(data.pending || []).length})
+            </div>
+            {(data.pending || []).length === 0 && (
+              <div className="text-sm text-muted-foreground py-4 border border-dashed border-border rounded-sm text-center" data-testid="my-leave-no-pending">
+                No pending leave requests.
+              </div>
+            )}
+            <ul className="space-y-1.5">
+              {(data.pending || []).map((a) => (
+                <li key={a.id} className="flex items-center justify-between border border-border rounded-sm p-2.5 bg-muted/20" data-testid={`my-leave-pending-${a.id}`}>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold">
+                      {a.leave_type} · {a.from_date} → {a.to_date}
+                      {a.half_day && <span className="ml-1 text-[10px] text-muted-foreground">(½)</span>}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground truncate">{a.days} day(s){a.reason ? ` · ${a.reason}` : ""}</div>
+                  </div>
+                  <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-sm border flex-shrink-0 ml-2", LEAVE_STATUS_TONE[a.status])}>
+                    {a.status}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {(data.recent || []).filter((a) => a.status !== "pending").length > 0 && (
+              <>
+                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground mt-4 mb-2">Recent</div>
+                <ul className="space-y-1">
+                  {(data.recent || []).filter((a) => a.status !== "pending").slice(0, 3).map((a) => (
+                    <li key={a.id} className="flex items-center justify-between text-xs text-muted-foreground px-1" data-testid={`my-leave-recent-${a.id}`}>
+                      <span>{a.leave_type} · {a.from_date} → {a.to_date} ({a.days}d)</span>
+                      <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded-sm border", LEAVE_STATUS_TONE[a.status])}>{a.status}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

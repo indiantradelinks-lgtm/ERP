@@ -194,6 +194,27 @@ async def my_leave_applications(user: dict = Depends(get_current_user)):
         .sort([("applied_at", -1)]).to_list(200)
 
 
+@router.get("/leave/my-summary")
+async def my_leave_summary(user: dict = Depends(get_current_user)):
+    """Self-only leave balances + pending requests for the personal dashboard. View-only."""
+    import re as _re
+    ors = []
+    if user.get("id"):
+        ors.append({"user_id": user["id"]})
+    if user.get("email"):
+        ors.append({"email": {"$regex": f"^{_re.escape(user['email'])}$", "$options": "i"}})
+    emp = await db.employees.find_one({"$or": ors}, {"_id": 0, "id": 1, "name": 1}) if ors else None
+    if not emp:
+        return {"linked": False, "balances": [], "pending": [], "recent": []}
+    y = datetime.now(timezone.utc).year
+    balances = await db.leave_balances.find({"employee_id": emp["id"], "year": y}, {"_id": 0}) \
+        .sort([("leave_type", 1)]).to_list(20)
+    apps = await db.leave_applications.find({"employee_id": emp["id"]}, {"_id": 0}) \
+        .sort([("applied_at", -1)]).to_list(100)
+    pending = [a for a in apps if a.get("status") == "pending"]
+    return {"linked": True, "year": y, "balances": balances, "pending": pending, "recent": apps[:5]}
+
+
 class LeaveDecisionIn(BaseModel):
     remarks: Optional[str] = None
 
