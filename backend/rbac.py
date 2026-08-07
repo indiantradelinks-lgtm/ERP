@@ -48,6 +48,12 @@ PERMISSIONS_BASE = {
         "write": {"super_admin", "director", "general_manager", "dept_head", "project_manager", "project_coordinator"},
         "delete": {"super_admin", "director"},
     },
+    "bill_requests": {
+        "read": {"*"},
+        "write": {"super_admin", "director", "general_manager", "dept_head", "project_manager",
+                  "project_coordinator", "manager_o_p", "accounts_executive", "billing_executive"},
+        "delete": {"super_admin", "director"},
+    },
     "project_handovers": {
         "read": {"super_admin", "director", "general_manager", "dept_head", "sales_executive", "project_manager", "project_coordinator", "accounts_executive"},
         "write": {"super_admin", "director", "general_manager", "dept_head", "sales_executive"},

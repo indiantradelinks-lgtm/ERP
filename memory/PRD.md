@@ -5151,3 +5151,10 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - Profile page gained view-only "My Leave" card: current-year balances grid (balance/granted/used per type) + Pending Requests list with status badges + recent decided requests. Testids: my-leave-card, my-leave-bal-{TYPE}, my-leave-pending-{id}.
 - Demo data: granted CL 12 to E-MOP-01 (test_mop) + 1 pending CL application 2026-08-20→21.
 - Tested: curl (linked summary with balances/pending) + Playwright as test_mop (card, CL tile, pending item render).
+
+## 2026-06 (Iter 171) — Bill Generation Requests RBAC Fix (DONE, tested)
+- Root cause: POST /api/bill-requests required projects:write and frontend hid the button behind a hardcoded REQUEST_ROLES set — custom roles (manager_o_p, executive_o_p) could neither see nor use it.
+- Fix: new dedicated RBAC resource "bill_requests" (rbac.py base: read=*, write incl. manager_o_p + PM/coordinator/GM/dept_head/director/accounts/billing). ra_bills_router bill-request endpoints now use bill_requests resource. menuConfig ops entry perm → bill_requests. BillRequests.jsx canRequest now permission-driven via can("bill_requests","write") — custom roles can be granted via Admin → Role Register.
+- Hardening: create endpoint now enforces project scope (apply_project_scope) — scoped managers cannot raise bills for other projects (404 outside scope).
+- Executive O P: role not present in preview DB; after redeploy, grant via Admin → Role Register → bill_requests → write.
+- Tested: curl as test_mop (permissions show write=true, create OK BR-2026-0009/10, list scoped, out-of-scope blocked) + Playwright UI (nav visible, New Bill Request button + dialog). Test requests + approvals cleaned up.

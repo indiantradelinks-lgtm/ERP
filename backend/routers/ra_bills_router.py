@@ -213,12 +213,13 @@ def _request_status(req: Dict[str, Any], approval: Optional[Dict[str, Any]]) -> 
 
 @router.post("/bill-requests")
 async def create_bill_request(payload: BillRequestIn, request: Request,
-                              user: dict = Depends(require_permission("projects", "write"))):
+                              user: dict = Depends(require_permission("bill_requests", "write"))):
     if payload.bill_type not in ("running", "final"):
         raise HTTPException(400, "bill_type must be running or final")
-    project = await db.projects.find_one({"code": payload.project_code}, {"_id": 0})
+    scoped_q = await apply_project_scope(user, {"code": payload.project_code}, id_field="id", code_field="code")
+    project = await db.projects.find_one(scoped_q, {"_id": 0})
     if not project:
-        raise HTTPException(404, "Project not found")
+        raise HTTPException(404, "Project not found or outside your project scope")
     handover = await db.project_handovers.find_one(
         {"project_code": payload.project_code}, {"_id": 0}, sort=[("created_at", -1)])
     req_no = await next_sequence("BR")
@@ -274,7 +275,7 @@ async def create_bill_request(payload: BillRequestIn, request: Request,
 
 @router.get("/bill-requests")
 async def list_bill_requests(status: Optional[str] = None,
-                             user: dict = Depends(require_permission("projects", "read"))):
+                             user: dict = Depends(require_permission("bill_requests", "read"))):
     q: Dict[str, Any] = {}
     q = await apply_project_scope(user, q, id_field="project_id", code_field="project_code")
     rows = await db.bill_requests.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
@@ -295,7 +296,7 @@ async def list_bill_requests(status: Optional[str] = None,
 
 @router.get("/bill-requests/{rid}")
 async def get_bill_request(rid: str,
-                           user: dict = Depends(require_permission("projects", "read"))):
+                           user: dict = Depends(require_permission("bill_requests", "read"))):
     r = await db.bill_requests.find_one({"id": rid}, {"_id": 0})
     if not r:
         raise HTTPException(404, "Bill request not found")

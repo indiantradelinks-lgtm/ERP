@@ -16,7 +16,6 @@ import FileUploader from "@/components/FileUploader";
 import RowAttachments from "@/components/RowAttachments";
 
 const GENERATE_ROLES = new Set(["super_admin", "director", "accounts_executive", "billing_executive"]);
-const REQUEST_ROLES = new Set(["super_admin", "director", "general_manager", "dept_head", "project_manager", "project_coordinator"]);
 
 const STATUS_BADGE = {
   pending_approval: <Badge variant="outline" className="rounded-sm border-amber-300 text-amber-900 bg-amber-50">Pending Approval</Badge>,
@@ -34,10 +33,11 @@ const blank = () => ({
 });
 
 export default function BillRequests() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const nav = useNavigate();
-  const canRequest = user && REQUEST_ROLES.has(user.role);
-  const canGenerate = user && GENERATE_ROLES.has(user.role);
+  // Permission-driven (Role Register) — works for custom roles like Manager O P / Executive O P
+  const canRequest = !!can && can("bill_requests", "write");
+  const canGenerate = (user && GENERATE_ROLES.has(user.role)) || (!!can && can("ra_bills", "write"));
   const [rows, setRows] = useState([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [creating, setCreating] = useState(false);
