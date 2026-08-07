@@ -27,7 +27,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from openpyxl import Workbook, load_workbook
 
-from core import db, require_permission, now_iso, new_id
+from core import db, require_permission, get_current_user, now_iso, new_id
 from audit import audit
 
 logger = logging.getLogger("erp.attendance_plus")
@@ -390,6 +390,47 @@ async def export_breakdown(fmt: str = Query(..., pattern="^(xlsx|pdf)$"), month:
     buf.seek(0)
     return StreamingResponse(buf, media_type="application/pdf",
                              headers={"Content-Disposition": f'inline; filename="{fname}.pdf"'})
+
+
+# ──────────────────────────── PERSONAL (SELF-ONLY) ATTENDANCE ────────────────────────────
+@router.get("/my/monthly")
+async def my_monthly_attendance(month: str = Query(...), user: dict = Depends(get_current_user)):
+    """Personal attendance dashboard — strictly scoped to the logged-in user's own records. View-only."""
+    try:
+        datetime.strptime(month + "-01", "%Y-%m-%d")
+    except Exception:
+        raise HTTPException(400, "month must be YYYY-MM")
+    ors = []
+    if user.get("id"):
+        ors.append({"user_id": user["id"]})
+    if user.get("email"):
+        ors.append({"email": {"$regex": f"^{re.escape(user['email'])}$", "$options": "i"}})
+    emp = await db.employees.find_one(
+        {"$or": ors}, {"_id": 0, "id": 1, "name": 1, "employee_id": 1, "emp_code": 1,
+                       "department": 1, "designation": 1, "current_project_code": 1}) if ors else None
+    if not emp:
+        return {"linked": False, "month": month, "employee": None, "rows": [], "summary": None}
+    rows = await db.attendance.find(
+        {"employee_id": emp["id"], "date": {"$gte": f"{month}-01", "$lte": f"{month}-31"}},
+        {"_id": 0, "date": 1, "status": 1, "in_time": 1, "out_time": 1,
+         "total_hours": 1, "overtime_hours": 1, "approval_status": 1}).sort("date", 1).to_list(62)
+    counts = {c: 0 for c in STATUS_CODES.values()}
+    ot = th = 0.0
+    for r in rows:
+        code = STATUS_CODES.get(r.get("status") or "")
+        r["code"] = code
+        if code:
+            counts[code] += 1
+        ot += float(r.get("overtime_hours") or 0)
+        th += float(r.get("total_hours") or 0)
+    paid = counts["P"] + counts["L"] + counts["WO"] + counts["H"] + counts["OD"] + 0.5 * counts["HD"]
+    return {"linked": True, "month": month,
+            "employee": {"name": emp.get("name"), "code": emp.get("employee_id") or emp.get("emp_code"),
+                         "department": emp.get("department"), "designation": emp.get("designation"),
+                         "project_code": emp.get("current_project_code")},
+            "rows": rows,
+            "summary": {**counts, "paid_days": round(paid, 1), "ot_hours": round(ot, 1),
+                        "total_hours": round(th, 1), "marked_days": len(rows)}}
 
 
 # ──────────────────────────── AUTO ATTENDANCE (WO / P-HD / Absent) ────────────────────────────

@@ -5139,3 +5139,9 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - Daily Sheet date filter replaced with shadcn Calendar popover + Previous/Next day buttons (future dates disabled). Testids: ac-date, ac-date-prev, ac-date-next, ac-date-calendar.
 - Manual override: clicking a status chip (or Mark All) sets manual=true → client derive skips the row (violet "M" badge, testid ac-manual-{id}); day-sheet POST stores status_manual and skips server derive; existing status_manual rows are never overwritten by auto derivation in day-sheet re-saves, bulk rows upload, or punch-import commit (_write_attendance guard). Auto P/HD/A time-window rule unchanged for non-manual rows.
 - Tested: curl (manual preserved across day-sheet auto save + xlsx upload; fresh rows still auto-derive) + Playwright UI (date nav, calendar popover, M badge, P preserved with HD-window times). Test rows cleaned.
+
+## 2026-06 (Iter 169) — Personal Attendance Dashboard (DONE, tested)
+- New self-only endpoint GET /api/hr2/attendance-plus/my/monthly?month=YYYY-MM (get_current_user; resolves own employee via user_id/email match — no employee_id param, cross-user access structurally impossible). Returns linked flag, employee info, month rows, summary (P/A/HD/L/WO/H/OD, paid_days, ot_hours).
+- Profile page (/app/profile, avatar menu → My Profile) now has a view-only "My Attendance" card: month navigation (prev/next, future blocked), summary tiles, day-wise table. Not-linked users see a friendly notice.
+- Seeded employee E-MOP-01 "Mop Manager" (email test_mop@erp.com, PRJ-2025-01) + 3 June-2026 attendance rows for testing.
+- Tested: curl (linked/unlinked/bad month) + Playwright as test_mop (card renders, June 2026 shows 3 rows, Paid Days 1.5).

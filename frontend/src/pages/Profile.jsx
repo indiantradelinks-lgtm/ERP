@@ -5,8 +5,19 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/DataTableShell";
-import { LayoutGrid, Briefcase, FileText, Wallet, Boxes, ShieldAlert, Car, HardHat, Truck, ArrowRight, Users } from "lucide-react";
+import { LayoutGrid, Briefcase, FileText, Wallet, Boxes, ShieldAlert, Car, HardHat, Truck, ArrowRight, Users, CalendarDays, ChevronLeft, ChevronRight, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const STATUS_TONE = {
+  P: "bg-green-100 text-green-800 border-green-300",
+  A: "bg-red-100 text-red-800 border-red-300",
+  HD: "bg-amber-100 text-amber-800 border-amber-300",
+  L: "bg-blue-100 text-blue-800 border-blue-300",
+  WO: "bg-slate-100 text-slate-700 border-slate-300",
+  H: "bg-purple-100 text-purple-800 border-purple-300",
+  OD: "bg-cyan-100 text-cyan-800 border-cyan-300",
+};
+const currentMonth = () => new Date().toISOString().slice(0, 7);
 
 const DEPT_ICONS = { Briefcase, FileText, Wallet, Boxes, ShieldAlert, Car, HardHat, Truck, LayoutGrid };
 const TONE_TEXT = {
@@ -120,6 +131,125 @@ export default function Profile() {
           )}
         </div>
       </div>
+
+      {/* Personal attendance dashboard — self-only, view-only */}
+      <MyAttendance />
+    </div>
+  );
+}
+
+function MyAttendance() {
+  const [month, setMonth] = useState(currentMonth());
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    api.get("/hr2/attendance-plus/my/monthly", { params: { month } })
+      .then((r) => { if (alive) setData(r.data); })
+      .catch(() => { if (alive) setData(null); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [month]);
+
+  const shiftMonth = (delta) => {
+    const [y, m] = month.split("-").map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (next > currentMonth()) return;
+    setMonth(next);
+  };
+
+  const monthLabel = new Date(month + "-01T00:00:00").toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+  const s = data?.summary;
+
+  return (
+    <div className="bg-card border border-border rounded-sm p-6" data-testid="my-attendance-card">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+        <div>
+          <div className="font-display font-bold text-lg flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-primary" /> My Attendance
+          </div>
+          <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+            <Eye className="h-3 w-3" /> View-only — your own records, month-wise
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button variant="outline" className="h-8 w-8 p-0 rounded-sm" onClick={() => shiftMonth(-1)} data-testid="my-att-prev">
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <div className="text-sm font-bold w-40 text-center" data-testid="my-att-month">{monthLabel}</div>
+          <Button variant="outline" className="h-8 w-8 p-0 rounded-sm" onClick={() => shiftMonth(1)}
+                  disabled={month >= currentMonth()} data-testid="my-att-next">
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {loading && <div className="text-sm text-muted-foreground py-6">Loading attendance…</div>}
+      {!loading && data && !data.linked && (
+        <div className="text-sm text-muted-foreground py-8 text-center border border-dashed border-border rounded-sm" data-testid="my-att-not-linked">
+          No employee record is linked to your login — contact HR to link your account.
+        </div>
+      )}
+      {!loading && data?.linked && (
+        <>
+          <div className="text-xs text-muted-foreground mb-3" data-testid="my-att-employee">
+            {data.employee?.name} {data.employee?.code && `(${data.employee.code})`}
+            {data.employee?.designation && ` · ${data.employee.designation}`}
+            {` · ${data.employee?.project_code || "Head Office"}`}
+          </div>
+          {s && (
+            <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2 mb-4">
+              {[["Paid Days", s.paid_days], ["P", s.P], ["HD", s.HD], ["A", s.A], ["L", s.L],
+                ["WO", s.WO], ["H", s.H], ["OD", s.OD], ["OT (hrs)", s.ot_hours]].map(([k, v]) => (
+                <div key={k} className="border border-border rounded-sm p-2 text-center bg-muted/20" data-testid={`my-att-sum-${k.toLowerCase().replace(/[^a-z]+/g, "-")}`}>
+                  <div className="text-[9px] uppercase tracking-wider text-muted-foreground">{k}</div>
+                  <div className="text-lg font-black tabular">{v}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="border border-border rounded-sm overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/30 text-[10px] uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="text-left px-3 py-2">Date</th>
+                  <th className="text-left px-3 py-2">Day</th>
+                  <th className="text-left px-3 py-2">Status</th>
+                  <th className="text-left px-3 py-2">In</th>
+                  <th className="text-left px-3 py-2">Out</th>
+                  <th className="text-right px-3 py-2">Hours</th>
+                  <th className="text-right px-3 py-2">OT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data.rows || []).length === 0 && (
+                  <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">No attendance marked for {monthLabel}.</td></tr>
+                )}
+                {(data.rows || []).map((r) => (
+                  <tr key={r.date} className="border-t border-border/60" data-testid={`my-att-row-${r.date}`}>
+                    <td className="px-3 py-1.5 font-mono-data text-xs">{r.date}</td>
+                    <td className="px-3 py-1.5 text-xs text-muted-foreground">
+                      {new Date(r.date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short" })}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-sm border", STATUS_TONE[r.code] || "bg-secondary border-border")}>
+                        {r.code || "—"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-1.5 text-xs tabular">{r.in_time || "—"}</td>
+                    <td className="px-3 py-1.5 text-xs tabular">{r.out_time || "—"}</td>
+                    <td className="px-3 py-1.5 text-xs text-right tabular">{r.total_hours ?? "—"}</td>
+                    <td className="px-3 py-1.5 text-xs text-right tabular">{r.overtime_hours || 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   );
 }
