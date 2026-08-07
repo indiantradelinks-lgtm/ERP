@@ -61,6 +61,7 @@ from routers.employees_bulk_router import router as employees_bulk_router
 from routers.inventory_bulk_router import router as inventory_bulk_router
 from routers.resource_plan_bulk_router import router as resource_plan_bulk_router
 from routers.attendance_bulk_router import router as attendance_bulk_router
+from routers.dms_router import router as dms_router
 from routers.projects_ops_masters_router import router as projects_ops_masters_router
 from routers.projects_ops_workorders_router import router as projects_ops_workorders_router
 from routers.projects_ops_phase1_router import router as projects_ops_phase1_router
@@ -195,6 +196,7 @@ ROUTERS_IN_ORDER: List[Tuple[str, APIRouter]] = [
     ("inventory_bulk", inventory_bulk_router),
     ("resource_plan_bulk", resource_plan_bulk_router),
     ("attendance_bulk", attendance_bulk_router),
+    ("dms", dms_router),
     ("inventory_intel", inventory_intel_router),
     ("inventory_master", inventory_master_router),
     ("inventory_phase2", inventory_phase2_router),

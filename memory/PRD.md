@@ -5158,3 +5158,13 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - Hardening: create endpoint now enforces project scope (apply_project_scope) — scoped managers cannot raise bills for other projects (404 outside scope).
 - Executive O P: role not present in preview DB; after redeploy, grant via Admin → Role Register → bill_requests → write.
 - Tested: curl as test_mop (permissions show write=true, create OK BR-2026-0009/10, list scoped, out-of-scope blocked) + Playwright UI (nav visible, New Bill Request button + dialog). Test requests + approvals cleaned up.
+
+## 2026-06 (Iter 172) — Document Management System (DONE, tested)
+- New central DMS: backend /app/backend/routers/dms_router.py (prefix /api/dms), frontend /app/frontend/src/pages/DocumentCenter.jsx at /app/dms (nav: Projects & Operations + Admin, perm "documents").
+- Storage: instant upload to object storage (db.files, folder "documents", parent_type dms_documents) + background OneDrive push via existing onedrive_queue (segments ERP-Documents/<Module>/<Project|General>/<Category>); per-doc sync badge (Queued/Synced/Retry). Downloads stream via existing /api/files/{id}/download.
+- Features: DOC-2026-xxxx numbering, 7 modules, seeded dms_categories (Contracts & Drawings require approval → central approval type "document", default chain Dept Head→Director; status computed live), version control + history dialog, expiry tracking (stats tiles: total/expiring 30d/expired/pending), tags, search, module/category/status filters, archive (uploader or admin/director).
+- RBAC: "documents" write extended with manager_o_p + project_coordinator; list + upload enforce project scope (manager_o_p sees own project docs + non-project docs; out-of-scope upload 404).
+- Fixed during testing: multipart POSTs needed explicit Content-Type header (api client defaults JSON → 422) + safe 422 toast rendering.
+- NOTE: preview OneDrive tenant_id invalid → pushes show Retry (expected); production creds should work after redeploy.
+- Tested: full backend curl E2E (direct + approval upload, versioning v2, list, stats, download, scoping) + Playwright UI (upload flow DOC-2026-0004, history, filters, pending badge). testing_agent timed out; self-tested instead.
+- Test docs remaining in preview: DOC-2026-0001..0004.

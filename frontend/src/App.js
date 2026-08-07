@@ -168,6 +168,7 @@ import SiteMaster from "@/pages/ops/SiteMaster";
 import WorkOrders from "@/pages/ops/WorkOrders";
 import ProjectTeam from "@/pages/ops/ProjectTeam";
 import ProjectDocuments from "@/pages/ops/ProjectDocuments";
+import DocumentCenter from "@/pages/DocumentCenter";
 import ProjectStatus from "@/pages/ops/ProjectStatus";
 import ProjectAuditTrail from "@/pages/ops/ProjectAuditTrail";
 import ProjectSettings from "@/pages/ops/ProjectSettings";
@@ -400,6 +401,7 @@ export default function App() {
             <Route path="/app/logistics/dashboard-advanced" element={<ProtectedShell><LogisticsAdvancedDashboard /></ProtectedShell>} />
             <Route path="/app/logistics/dispatch-requests/:id/closure" element={<ProtectedShell><TripClosurePanel /></ProtectedShell>} />
             <Route path="/app/documents" element={<ProtectedShell><Documents /></ProtectedShell>} />
+            <Route path="/app/dms" element={<ProtectedShell><DocumentCenter /></ProtectedShell>} />
             <Route path="/app/approvals" element={<ProtectedShell><Approvals /></ProtectedShell>} />
             <Route path="/app/approvals/my-revisions" element={<ProtectedShell><MyRevisions /></ProtectedShell>} />
             <Route path="/app/approvals/dashboard" element={<ProtectedShell><ApprovalsDashboard /></ProtectedShell>} />

@@ -143,7 +143,7 @@ PERMISSIONS_BASE = {
     },
     "documents": {
         "read": {"*"},
-        "write": {"super_admin", "director", "general_manager", "dept_head", "project_manager", "safety_officer", "hr_executive", "accounts_executive"},
+        "write": {"super_admin", "director", "general_manager", "dept_head", "project_manager", "safety_officer", "hr_executive", "accounts_executive", "manager_o_p", "project_coordinator"},
         "delete": {"super_admin", "director"},
     },
     "approvals": {

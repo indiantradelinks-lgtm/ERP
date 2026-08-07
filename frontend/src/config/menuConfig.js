@@ -114,6 +114,7 @@ export const MENU_ITEMS = [
   { department: "ops", label: "Internal Project Review",    to: "/app/ops/internal-review",        icon: ClipboardCheck,  testid: "nav-ops-internal-review", perm: "projects" },
   { department: "ops", label: "Execution Dashboard",        to: "/app/ops/execution-dashboard",    icon: Activity,        testid: "nav-ops-ed", perm: "projects" },
   { department: "ops", label: "Bill Requests",              to: "/app/ops/bill-requests",          icon: Receipt,         testid: "nav-ops-bill-requests", perm: "bill_requests" },
+  { department: "ops", label: "Document Center",            to: "/app/dms",                        icon: FolderArchive,   testid: "nav-ops-dms", perm: "documents" },
   { department: "ops", label: "RA Billing Support",         to: "/app/ra-bills",                   icon: Receipt,         testid: "nav-ops-ra", perm: "ra_bills" },
   { department: "ops", label: "Final Billing Support",      to: "/app/ra-bills",                   icon: Receipt,         testid: "nav-ops-final-bill", perm: "ra_bills" },
   { department: "ops", label: "Project Cost Summary",       to: "/app/accounts/budget",            icon: Calculator,      testid: "nav-ops-cost", perm: "accounting" },
@@ -370,6 +371,7 @@ export const MENU_ITEMS = [
 
   // ═══════════════ 11. MANAGEMENT & ADMIN ═══════════════
   { department: "admin", label: "Admin Console",              to: "/app/admin",                      icon: ShieldCheck,   testid: "nav-admin", end: true, superAdminOnly: true },
+  { department: "admin", label: "Document Center",            to: "/app/dms",                        icon: FolderArchive, testid: "nav-admin-dms", perm: "documents" },
   { department: "admin", label: "User Management",            to: "/app/admin/users",                icon: Users,         testid: "nav-admin-users", superAdminOnly: true },
   { department: "admin", label: "Project Assignments",        to: "/app/admin/project-assignments",  icon: Users,         testid: "nav-admin-project-assignments", roles: ["super_admin", "director", "general_manager", "dept_head"] },
   { department: "admin", label: "Role Management",            to: "/app/admin/role-register",        icon: ShieldCheck,   testid: "nav-admin-role-register", superAdminOnly: true },
