@@ -125,6 +125,16 @@ async def list_budget_lines(project_id: str = "", category_id: str = "", cost_ce
     return rows
 
 
+async def _sync_cost_center_budget(cost_center_id: Optional[str]):
+    """Keep Project Cost Center budget = sum of its Project Planning budget lines."""
+    if not cost_center_id:
+        return
+    rows = await db.project_budget_lines.find({"cost_center_id": cost_center_id}, {"_id": 0, "total": 1}).to_list(2000)
+    total = round(sum(float(r.get("total") or 0) for r in rows), 2)
+    await db.cost_centers.update_one({"id": cost_center_id}, {"$set": {
+        "budget": total, "budget_synced_from": "project_planning", "budget_synced_at": now_iso()}})
+
+
 @router.post("")
 async def create_budget_line(p: BudgetLineIn, request: Request,
                              user: dict = Depends(require_permission("projects", "write"))):
@@ -133,6 +143,7 @@ async def create_budget_line(p: BudgetLineIn, request: Request,
     doc.update({"id": new_id(), "created_at": now_iso(), "created_by": user["id"], "created_by_name": user.get("name")})
     await db.project_budget_lines.insert_one(dict(doc))
     doc.pop("_id", None)
+    await _sync_cost_center_budget(doc.get("cost_center_id"))
     await audit(user=user, action="create", resource="project_budget_lines", record_id=doc["id"], after=doc,
                 ip=request.client.host if request.client else "")
     return doc
@@ -148,6 +159,9 @@ async def update_budget_line(line_id: str, p: BudgetLineIn, request: Request,
     doc.update({"updated_at": now_iso(), "updated_by": user["id"]})
     await db.project_budget_lines.update_one({"id": line_id}, {"$set": doc})
     out = await db.project_budget_lines.find_one({"id": line_id}, {"_id": 0})
+    await _sync_cost_center_budget(doc.get("cost_center_id"))
+    if before.get("cost_center_id") and before.get("cost_center_id") != doc.get("cost_center_id"):
+        await _sync_cost_center_budget(before.get("cost_center_id"))
     await audit(user=user, action="update", resource="project_budget_lines", record_id=line_id, before=before, after=out,
                 ip=request.client.host if request.client else "")
     return out
@@ -160,6 +174,7 @@ async def delete_budget_line(line_id: str, request: Request,
     if not before:
         raise HTTPException(404, "Budget line not found")
     await db.project_budget_lines.delete_one({"id": line_id})
+    await _sync_cost_center_budget(before.get("cost_center_id"))
     await audit(user=user, action="delete", resource="project_budget_lines", record_id=line_id, before=before,
                 ip=request.client.host if request.client else "")
     return {"ok": True}

@@ -413,7 +413,7 @@ async def my_monthly_attendance(month: str = Query(...), user: dict = Depends(ge
     rows = await db.attendance.find(
         {"employee_id": emp["id"], "date": {"$gte": f"{month}-01", "$lte": f"{month}-31"}},
         {"_id": 0, "date": 1, "status": 1, "in_time": 1, "out_time": 1,
-         "total_hours": 1, "overtime_hours": 1, "approval_status": 1}).sort("date", 1).to_list(62)
+         "total_hours": 1, "overtime_hours": 1, "remarks": 1, "approval_status": 1}).sort("date", 1).to_list(62)
     counts = {c: 0 for c in STATUS_CODES.values()}
     ot = th = 0.0
     for r in rows:

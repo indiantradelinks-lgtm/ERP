@@ -61,7 +61,7 @@ export default function WorkOrders() {
   const [statusFilter, setStatusFilter] = useState("");
   const [handoverPickerOpen, setHandoverPickerOpen] = useState(false);
   const { user } = useAuth() || {};
-  const canWrite = !["sales_executive", "purchase_officer", "store_incharge"].includes(user?.role);
+  const canWrite = !["sales_executive", "purchase_officer", "store_incharge", "manager_o_p"].includes(user?.role);
 
   const load = async () => {
     try {

@@ -5168,3 +5168,9 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - NOTE: preview OneDrive tenant_id invalid → pushes show Retry (expected); production creds should work after redeploy.
 - Tested: full backend curl E2E (direct + approval upload, versioning v2, list, stats, download, scoping) + Playwright UI (upload flow DOC-2026-0004, history, filters, pending badge). testing_agent timed out; self-tested instead.
 - Test docs remaining in preview: DOC-2026-0001..0004.
+
+## 2026-06 (Iter 173) — 4-Point Fix Pack (DONE, tested)
+1. Project Planning → Cost Center budget sync: _sync_cost_center_budget in project_budget_router — on create/update/delete of a budget line, cost_centers.budget = Σ(line totals) for that cost center (handles cost-center change on update). Curl-verified: 0→50000→75000→0.
+2. Site Master + Service Type Master hidden for manager_o_p: new `hideForRoles` field supported in menuConfig.isItemVisible + RouteGuard (nav hidden AND direct URL → Access Denied).
+3. Work Order Mapping: "New from Handover" + "New Work Order" buttons hidden for manager_o_p (canWrite exclusion in WorkOrders.jsx); read view unchanged.
+4. Personal My Attendance (Profile): OT (hrs) tile + OT column removed for ALL users; Remarks column added (backend my/monthly now returns remarks). Playwright-verified.

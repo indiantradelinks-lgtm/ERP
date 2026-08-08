@@ -310,9 +310,9 @@ function MyAttendance() {
             {` · ${data.employee?.project_code || "Head Office"}`}
           </div>
           {s && (
-            <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2 mb-4">
+            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
               {[["Paid Days", s.paid_days], ["P", s.P], ["HD", s.HD], ["A", s.A], ["L", s.L],
-                ["WO", s.WO], ["H", s.H], ["OD", s.OD], ["OT (hrs)", s.ot_hours]].map(([k, v]) => (
+                ["WO", s.WO], ["H", s.H], ["OD", s.OD]].map(([k, v]) => (
                 <div key={k} className="border border-border rounded-sm p-2 text-center bg-muted/20" data-testid={`my-att-sum-${k.toLowerCase().replace(/[^a-z]+/g, "-")}`}>
                   <div className="text-[9px] uppercase tracking-wider text-muted-foreground">{k}</div>
                   <div className="text-lg font-black tabular">{v}</div>
@@ -330,7 +330,7 @@ function MyAttendance() {
                   <th className="text-left px-3 py-2">In</th>
                   <th className="text-left px-3 py-2">Out</th>
                   <th className="text-right px-3 py-2">Hours</th>
-                  <th className="text-right px-3 py-2">OT</th>
+                  <th className="text-left px-3 py-2">Remarks</th>
                 </tr>
               </thead>
               <tbody>
@@ -351,7 +351,7 @@ function MyAttendance() {
                     <td className="px-3 py-1.5 text-xs tabular">{r.in_time || "—"}</td>
                     <td className="px-3 py-1.5 text-xs tabular">{r.out_time || "—"}</td>
                     <td className="px-3 py-1.5 text-xs text-right tabular">{r.total_hours ?? "—"}</td>
-                    <td className="px-3 py-1.5 text-xs text-right tabular">{r.overtime_hours || 0}</td>
+                    <td className="px-3 py-1.5 text-xs text-muted-foreground max-w-[240px] truncate" title={r.remarks || ""}>{r.remarks || "—"}</td>
                   </tr>
                 ))}
               </tbody>

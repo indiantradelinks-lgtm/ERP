@@ -47,6 +47,9 @@ export default function RouteGuard({ children }) {
   if (item.superAdminOnly && user.role !== "super_admin") {
     return <AccessDenied reason="This page is restricted to super admin only." />;
   }
+  if (item.hideForRoles && item.hideForRoles.includes(user.role)) {
+    return <AccessDenied reason="This page is not available for your role." />;
+  }
   if (item.vendorOnly && user.role !== "vendor") {
     return <AccessDenied reason="This page is restricted to vendor users only." />;
   }

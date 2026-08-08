@@ -93,8 +93,8 @@ export const MENU_ITEMS = [
   // ═══════════════ 3. PROJECTS & OPERATIONS ═══════════════
   { department: "ops", label: "Projects Dashboard",         to: "/app/ops/dashboard",              icon: Activity,        testid: "nav-ops-dashboard", perm: "projects" },
   { department: "ops", label: "Project Master",             to: "/app/projects",                   icon: Briefcase,       testid: "nav-ops-master", perm: "projects" },
-  { department: "ops", label: "Site Master",                to: "/app/ops/site-master",            icon: MapPin,          testid: "nav-ops-sites", perm: "projects" },
-  { department: "ops", label: "Service Type Master",        to: "/app/ops/service-types",          icon: Wrench,          testid: "nav-ops-service-types", perm: "projects" },
+  { department: "ops", label: "Site Master",                to: "/app/ops/site-master",            icon: MapPin,          testid: "nav-ops-sites", perm: "projects", hideForRoles: ["manager_o_p"] },
+  { department: "ops", label: "Service Type Master",        to: "/app/ops/service-types",          icon: Wrench,          testid: "nav-ops-service-types", perm: "projects", hideForRoles: ["manager_o_p"] },
   { department: "ops", label: "Contract Handovers",         to: "/app/ops/handovers",              icon: Briefcase,       testid: "nav-ops-handovers", perm: "project_handovers" },
   { department: "ops", label: "Work Order Mapping",         to: "/app/ops/work-orders",            icon: FileSignature,   testid: "nav-ops-wo", perm: "projects" },
   { department: "ops", label: "Project Request Center",     to: "/app/ops/requests",               icon: PackageSearch,   testid: "nav-ops-requests", perm: "project_requests" },
@@ -426,6 +426,7 @@ export function isItemVisible(item, { role, can }) {
   if (item.vendorOnly && role !== "vendor") return false;
   if (!item.vendorOnly && role === "vendor") return false; // vendors never see non-vendor items
   if (item.superAdminOnly && role !== "super_admin") return false;
+  if (item.hideForRoles && item.hideForRoles.includes(role)) return false;
   if (item.roles && !item.roles.includes(role)) return false;
   if (item.perm && can && !can(item.perm, "read")) return false;
   return true;
