@@ -466,8 +466,11 @@ class RoleRegisterUpdateIn(BaseModel):
 async def update_role_register(payload: RoleRegisterUpdateIn, request: Request,
                                user: dict = Depends(require_permission("role_register", "write"))):
     from routers.role_catalog_router import get_active_role_keys
+    from rbac import base_roles
     catalog_keys = set(await get_active_role_keys())
-    allowed_tokens = catalog_keys | set(ROLES) | {"*"}
+    # base_roles(): legacy tokens referenced in code defaults (e.g. storekeeper,
+    # inventory_manager) — must stay valid or the matrix can't re-save base sets
+    allowed_tokens = catalog_keys | set(ROLES) | base_roles() | {"*"}
     cleaned: Dict[str, Dict[str, List[str]]] = {}
     for res, rules in (payload.overrides or {}).items():
         if res not in _resolved() and res not in PERMISSIONS_BASE:
@@ -518,10 +521,10 @@ async def load_rbac_overrides_on_startup() -> int:
         row = await db.rbac_overrides.find_one({"id": "default"}, {"_id": 0})
         overrides = (row or {}).get("overrides") or {}
         set_overrides(overrides)
-        from rbac import wildcard_actions, get_overrides_serializable
+        from rbac import wildcard_actions, get_overrides_serializable, base_roles
         from core import ROLES
         from routers.role_catalog_router import get_active_role_keys
-        allowed_tokens = set(ROLES) | set(await get_active_role_keys())
+        allowed_tokens = set(ROLES) | set(await get_active_role_keys()) | base_roles()
         allowed_tokens.discard("*")
         wilds = wildcard_actions()
         merged = get_overrides_serializable()
