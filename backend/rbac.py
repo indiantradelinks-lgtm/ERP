@@ -522,6 +522,16 @@ PERMISSIONS_BASE = {
                   "billing_executive"},
         "delete": {"super_admin"},
     },
+    "dashboard": {
+        "read": {"*"},
+        "write": {"super_admin", "director"},
+        "delete": {"super_admin"},
+    },
+    "reports": {
+        "read": {"*"},
+        "write": {"super_admin", "director", "general_manager", "dept_head"},
+        "delete": {"super_admin"},
+    },
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -581,6 +591,25 @@ def get_overrides_serializable() -> Dict[str, Dict[str, List[str]]]:
         res: {action: sorted(list(roles)) for action, roles in rules.items()}
         for res, rules in _overrides.items()
     }
+
+
+def wildcard_actions() -> Dict[str, List[str]]:
+    """resource → actions whose effective role set still contains the '*' wildcard."""
+    out: Dict[str, List[str]] = {}
+    for res, rules in _resolved().items():
+        acts = [a for a, roles in rules.items() if "*" in roles]
+        if acts:
+            out[res] = acts
+    return out
+
+
+def base_roles() -> Set[str]:
+    """All role tokens referenced anywhere in the code-default permission map."""
+    roles: Set[str] = set()
+    for rules in PERMISSIONS_BASE.values():
+        for role_set in rules.values():
+            roles |= {r for r in role_set if r != "*"}
+    return roles
 
 
 # ──────────────────────────────────────────────────────────────────────────────

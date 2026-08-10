@@ -318,7 +318,7 @@ function MenuItemRow({ item, indent, roles, draft, base, overrideMask, onToggle,
         <td colSpan={roles.length + 2} className="px-3 py-1 text-[10px] text-muted-foreground">
           {item.superAdminOnly ? <SuperOnlyBadge />
             : item.vendorOnly ? <span className="text-[10px]">Vendor portal only</span>
-            : <span className="inline-flex items-center gap-1"><Globe className="h-3 w-3" /> Visible to all logged-in users (no permission gate)</span>}
+            : <span className="inline-flex items-center gap-1"><Globe className="h-3 w-3" /> No permission resource mapped — contact developer to gate this page</span>}
         </td>
       </tr>
     );

@@ -115,6 +115,7 @@ class RequestIn(BaseModel):
     cost_center_id: Optional[str] = None
     site_location: Optional[str] = None
     material_category_id: Optional[str] = None
+    employee_id: Optional[str] = None      # HR master employee (service/payment requests)
 
 
 class ActionIn(BaseModel):
@@ -261,6 +262,12 @@ async def create_request(p: RequestIn, request: Request,
         steps += [("general_manager", "GM"), ("director", "Director")]
     chain = [{"role": r, "label": l, "status": "pending", "by": None, "at": None, "remarks": None} for r, l in steps]
 
+    emp = None
+    if p.employee_id:
+        emp = await db.employees.find_one({"id": p.employee_id},
+                                          {"_id": 0, "id": 1, "name": 1, "employee_id": 1, "emp_code": 1})
+        if not emp:
+            raise HTTPException(404, "Employee not found in HR master")
     doc = {
         "id": p.id or new_id(),
         "request_no": await next_sequence("REQ"),
@@ -270,6 +277,9 @@ async def create_request(p: RequestIn, request: Request,
         "owning_dept": meta["dept"], "is_payment": meta["payment"], "is_stockable": meta["stockable"],
         "expense_type": meta["expense_type"],
         "need_by": p.need_by, "priority": p.priority, "description": p.description or "",
+        "employee_id": (emp or {}).get("id"),
+        "employee_code": (emp or {}).get("employee_id") or (emp or {}).get("emp_code"),
+        "employee_name": (emp or {}).get("name"),
         "cost_center_id": (cc or {}).get("id"),
         "cost_center_label": f"{(cc or {}).get('category_code') or ''} · {(cc or {}).get('category_name') or ''}".strip(" ·") if cc else None,
         "site_location": p.site_location,

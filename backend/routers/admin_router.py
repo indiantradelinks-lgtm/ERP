@@ -510,12 +510,42 @@ async def reset_role_register(request: Request,
 # Startup loader
 # ============================================================================
 async def load_rbac_overrides_on_startup() -> int:
-    """Load DB overrides into the in-memory rbac cache. Returns the count of
-    resource entries loaded. Safe to call multiple times."""
+    """Load DB overrides into the in-memory rbac cache, then materialize any
+    remaining '*' wildcards into explicit per-role grants so the Role Register
+    matrix has full role-wise control (View/Edit/None) over every module.
+    Idempotent — once materialized, no wildcards remain. Returns entry count."""
     try:
         row = await db.rbac_overrides.find_one({"id": "default"}, {"_id": 0})
         overrides = (row or {}).get("overrides") or {}
         set_overrides(overrides)
+        from rbac import wildcard_actions, get_overrides_serializable
+        from core import ROLES
+        from routers.role_catalog_router import get_active_role_keys
+        allowed_tokens = set(ROLES) | set(await get_active_role_keys())
+        allowed_tokens.discard("*")
+        wilds = wildcard_actions()
+        merged = get_overrides_serializable()
+        # sanitize any stray tokens so future Role Register saves validate cleanly
+        dirty = False
+        for res, rules in merged.items():
+            for a, lst in rules.items():
+                clean = [r for r in lst if r in allowed_tokens]
+                if clean != lst:
+                    merged[res][a] = clean
+                    dirty = True
+        if wilds or dirty:
+            roles_list = sorted(allowed_tokens)
+            for res, acts in wilds.items():
+                cur = merged.setdefault(res, {})
+                for a in acts:
+                    cur[a] = roles_list
+            await db.rbac_overrides.update_one({"id": "default"}, {"$set": {
+                "overrides": merged, "updated_at": now_iso(),
+                "updated_by": "system:materialize_wildcards"}}, upsert=True)
+            set_overrides(merged)
+            logger.info(f"[rbac] Materialized '*' into {len(roles_list)} explicit roles "
+                        f"across {len(wilds)} resources (Role Register now fully role-wise)")
+            return len(merged)
         return len(overrides)
     except Exception as e:
         logger.warning(f"RBAC override load skipped: {e}")

@@ -5174,3 +5174,15 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 2. Site Master + Service Type Master hidden for manager_o_p: new `hideForRoles` field supported in menuConfig.isItemVisible + RouteGuard (nav hidden AND direct URL → Access Denied).
 3. Work Order Mapping: "New from Handover" + "New Work Order" buttons hidden for manager_o_p (canWrite exclusion in WorkOrders.jsx); read view unchanged.
 4. Personal My Attendance (Profile): OT (hrs) tile + OT column removed for ALL users; Remarks column added (backend my/monthly now returns remarks). Playwright-verified.
+
+## 2026-06 (Iter 174) — Emp ID + Employee Name on Service/Payment Requests (DONE, tested)
+- RequestIn gained employee_id; create endpoint validates against db.employees (404 if unknown) and stores employee_id/employee_code/employee_name on the request doc.
+- Service/Payment dialog (ProjectRequests.jsx): searchable "Emp ID" field (EmployeeSearchSelect, employees from /advances/eligible-employees) strictly filtered by selected Project (label shows count); read-only auto-filled Employee Name; employee cleared on project change; optional field — requests without employee unaffected.
+- Detail dialog shows Emp ID + Employee Name rows when present. NOTE: ProjectRequests route is /app/ops/requests (not /project-requests).
+- Tested: curl (create with emp → stored E-1001/Arjun Reddy, invalid emp 404, without emp OK, list returns fields) + Playwright (project-filtered search, auto name, detail display). Test requests cleaned up.
+
+## 2026-06 (Iter 175) — Role × Permission Matrix Full Control (DONE, tested)
+- Removed "*" (visible-to-all) defaults: startup migration in admin_router.load_rbac_overrides_on_startup materializes every wildcard action into explicit per-role grants (valid tokens = core.ROLES ∪ role_catalog; stray tokens sanitized so matrix saves validate). Idempotent; behavior preserved for all existing roles; NEW roles get no access until granted (View=read, Edit=write, none=blocked).
+- Every menu item now has a perm resource (added "dashboard" + "reports" resources to PERMISSIONS_BASE; gated Main/Mgmt/Dept Dashboard, My Pending Approvals→approvals, all Reports pages→reports, My Assigned Projects/Timeline→projects). "Visible to all logged-in users (no permission gate)" label eliminated from Role Register.
+- Enforcement verified: revoke manager_o_p documents.read via PUT /api/admin/role-register → GET /api/dms/documents 403 + /auth/permissions read=false (menus/RouteGuard auto-hide); restore → 200. Existing access intact post-migration (mop: projects/bill_requests/dashboard all work).
+- NOTE: rbac_overrides is per-environment data; production materializes automatically on first startup after redeploy.

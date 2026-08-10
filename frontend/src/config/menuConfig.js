@@ -60,17 +60,17 @@ export const DEPARTMENT_MAP = Object.fromEntries(DEPARTMENTS.map((d) => [d.key, 
 // ─── Menu items ──────────────────────────────────────────────────────────
 export const MENU_ITEMS = [
   // ═══════════════ 1. DASHBOARD ═══════════════
-  { department: "dashboard", label: "Main Dashboard",        to: "/app",                            icon: LayoutDashboard, testid: "nav-dashboard", end: true },
-  { department: "dashboard", label: "My Pending Approvals",  to: "/app/my-approvals",               icon: Inbox,           testid: "nav-my-approvals" },
-  { department: "dashboard", label: "Management Dashboard",  to: "/app",                            icon: TrendingUp,      testid: "nav-mgmt-dashboard" },
-  { department: "dashboard", label: "Department Dashboard",  to: "/app/modules",                    icon: LayoutGrid,      testid: "nav-dept-dashboard" },
-  { department: "dashboard", label: "Reports Center",        to: "/app/reports-center",             icon: FileSpreadsheet, testid: "nav-reports-center" },
+  { department: "dashboard", label: "Main Dashboard",        to: "/app",                            icon: LayoutDashboard, testid: "nav-dashboard", end: true, perm: "dashboard" },
+  { department: "dashboard", label: "My Pending Approvals",  to: "/app/my-approvals",               icon: Inbox,           testid: "nav-my-approvals", perm: "approvals" },
+  { department: "dashboard", label: "Management Dashboard",  to: "/app",                            icon: TrendingUp,      testid: "nav-mgmt-dashboard", perm: "dashboard" },
+  { department: "dashboard", label: "Department Dashboard",  to: "/app/modules",                    icon: LayoutGrid,      testid: "nav-dept-dashboard", perm: "dashboard" },
+  { department: "dashboard", label: "Reports Center",        to: "/app/reports-center",             icon: FileSpreadsheet, testid: "nav-reports-center", perm: "reports" },
   { department: "dashboard", label: "Alerts & Notifications", to: "/app/accounts/alerts",            icon: Bell,            testid: "nav-alerts", perm: "accounting" },
   { department: "dashboard", label: "Pending Approvals",     to: "/app/approvals",                  icon: CheckSquare,     testid: "nav-approvals", perm: "approvals" },
   { department: "dashboard", label: "Approvals Dashboard",   to: "/app/approvals/dashboard",        icon: CheckSquare,     testid: "nav-approvals-dashboard", perm: "approvals" },
   { department: "dashboard", label: "Approvals Analytics",   to: "/app/approvals/analytics",        icon: BarChart3,       testid: "nav-approvals-analytics", perm: "approvals" },
   { department: "dashboard", label: "My Revisions",          to: "/app/approvals/my-revisions",     icon: CheckSquare,     testid: "nav-my-revisions", perm: "approvals" },
-  { department: "dashboard", label: "Reports Summary",       to: "/app/reports",                    icon: BarChart3,       testid: "nav-reports" },
+  { department: "dashboard", label: "Reports Summary",       to: "/app/reports",                    icon: BarChart3,       testid: "nav-reports", perm: "reports" },
 
   // ═══════════════ 2. SALES ═══════════════
   { department: "sales", label: "Sales Dashboard",          to: "/app/sales-reports",              icon: BarChart3,    testid: "nav-sales-dashboard", perm: "sales_reports" },
@@ -122,8 +122,8 @@ export const MENU_ITEMS = [
   { department: "ops", label: "Project Closure",            to: "/app/ops/closure-center",         icon: Lock,            testid: "nav-ops-clo", perm: "projects" },
   { department: "ops", label: "Project Team",               to: "/app/ops/team",                   icon: Users,           testid: "nav-ops-team", perm: "projects" },
   { department: "ops", label: "Project Documents",          to: "/app/ops/documents",              icon: FileText,        testid: "nav-ops-docs", perm: "projects" },
-  { department: "ops", label: "My Assigned Projects",       to: "/app/ops/my-projects",            icon: Activity,        testid: "nav-ops-my-projects" },
-  { department: "ops", label: "Activity Timeline",          to: "/app/ops/timeline",               icon: Clock,           testid: "nav-ops-timeline" },
+  { department: "ops", label: "My Assigned Projects",       to: "/app/ops/my-projects",            icon: Activity,        testid: "nav-ops-my-projects", perm: "projects" },
+  { department: "ops", label: "Activity Timeline",          to: "/app/ops/timeline",               icon: Clock,           testid: "nav-ops-timeline", perm: "projects" },
   { department: "ops", label: "Project Audit Trail",        to: "/app/ops/audit-trail",            icon: History,         testid: "nav-ops-audit", perm: "projects" },
   { department: "ops", label: "Project Reports",            to: "/app/ops/reports",                icon: FileBarChart,    testid: "nav-ops-reports", perm: "projects" },
   { department: "ops", label: "Project Settings",           to: "/app/ops/settings",               icon: SettingsIcon,    testid: "nav-ops-settings", perm: "projects" },
@@ -172,7 +172,7 @@ export const MENU_ITEMS = [
   { department: "hr", parentLabel: "Exit",       label: "Full & Final Settlement", to: "/app/hr/exit",             icon: Calculator,      testid: "nav-fnf", perm: "hr_exit" },
   { department: "hr", parentLabel: "Exit",       label: "Employee Clearance",    to: "/app/hr/exit",               icon: ClipboardCheck,  testid: "nav-clearance", perm: "hr_exit" },
   { department: "hr", parentLabel: "Reports",    label: "HR Letters & Templates", to: "/app/hr/letters",           icon: ScrollText,      testid: "nav-hr-letters", perm: "hr_letters" },
-  { department: "hr", parentLabel: "Reports",    label: "HR Reports",            to: "/app/reports",               icon: FileBarChart,    testid: "nav-hr-reports" },
+  { department: "hr", parentLabel: "Reports",    label: "HR Reports",            to: "/app/reports",               icon: FileBarChart,    testid: "nav-hr-reports", perm: "reports" },
 
   // ═══════════════ 5. STORE & INVENTORY ═══════════════
   { department: "store", label: "Inventory Dashboard",      to: "/app/inventory-intel",            icon: BarChart3,    testid: "nav-inv-dashboard", perm: "inventory" },
@@ -273,7 +273,7 @@ export const MENU_ITEMS = [
   { department: "accounts", label: "Compliance Center",        to: "/app/accounts/compliance",       icon: Landmark,    testid: "nav-finance-compliance", perm: "accounting" },
   { department: "accounts", label: "Approval Inbox",           to: "/app/approvals",                 icon: CheckSquare, testid: "nav-acc-approvals", perm: "approvals" },
   { department: "accounts", label: "Audit Trail",              to: "/app/admin/audit-logs",          icon: FileSearch,  testid: "nav-acc-audit", superAdminOnly: true },
-  { department: "accounts", label: "Reports Center",           to: "/app/reports",                   icon: FileBarChart, testid: "nav-acc-reports" },
+  { department: "accounts", label: "Reports Center",           to: "/app/reports",                   icon: FileBarChart, testid: "nav-acc-reports", perm: "reports" },
   { department: "accounts", label: "Month-End Closing",        to: "/app/accounts",                  icon: Lock,        testid: "nav-mec", perm: "accounting" },
   { department: "accounts", label: "Year-End Closing",         to: "/app/accounts",                  icon: Lock,        testid: "nav-yec", perm: "accounting" },
 
@@ -294,7 +294,7 @@ export const MENU_ITEMS = [
   { department: "finance", label: "Loan Approval",             to: "/app/approvals",                 icon: CheckSquare, testid: "nav-loan-approval", perm: "approvals" },
   { department: "finance", label: "Financial Risk Dashboard",  to: "/app/accounts/dashboard",        icon: AlertTriangle, testid: "nav-risk", perm: "accounting" },
   { department: "finance", label: "Project Financial Health",  to: "/app/accounts/dashboard",        icon: Activity,    testid: "nav-proj-health", perm: "accounting" },
-  { department: "finance", label: "Finance Reports",           to: "/app/reports",                   icon: FileBarChart, testid: "nav-finance-reports" },
+  { department: "finance", label: "Finance Reports",           to: "/app/reports",                   icon: FileBarChart, testid: "nav-finance-reports", perm: "reports" },
   { department: "finance", label: "Go-Live Center",            to: "/app/admin/go-live",             icon: ListChecks,  testid: "nav-finance-golive", superAdminOnly: true },
 
   // ═══════════════ 9. SAFETY ═══════════════
@@ -367,7 +367,7 @@ export const MENU_ITEMS = [
   { department: "logistics", label: "Logistics Audit Trail",  to: "/app/logistics/audit-trail",           icon: History,       testid: "nav-logistics-audit", perm: "logistics_audit" },
   { department: "logistics", label: "Reports Center",         to: "/app/logistics/reports-center",        icon: FileBarChart,  testid: "nav-logistics-reports-center", perm: "logistics_reports" },
   { department: "logistics", label: "Advanced Dashboard",     to: "/app/logistics/dashboard-advanced",    icon: TrendingUp,    testid: "nav-logistics-adv-dashboard", perm: "vehicles" },
-  { department: "logistics", label: "Logistics Reports",      to: "/app/reports",                         icon: FileBarChart,  testid: "nav-logistics-reports" },
+  { department: "logistics", label: "Logistics Reports",      to: "/app/reports",                         icon: FileBarChart,  testid: "nav-logistics-reports", perm: "reports" },
 
   // ═══════════════ 11. MANAGEMENT & ADMIN ═══════════════
   { department: "admin", label: "Admin Console",              to: "/app/admin",                      icon: ShieldCheck,   testid: "nav-admin", end: true, superAdminOnly: true },

@@ -13,6 +13,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProjectSelect, SiteLocationSelect } from "@/components/MasterSelect";
+import { EmployeeSearchSelect } from "@/components/EmployeeSearchSelect";
 import FileUploader from "@/components/FileUploader";
 import ProjectExpenses from "./ProjectExpenses";
 
@@ -24,7 +25,7 @@ const blankItem = () => ({ name: "", quantity: 1, unit: "Nos", rate: 0, specs: "
 const blank = () => ({ id: newId(), project_code: "", project_id: "", request_type: "", need_by: "",
   priority: "medium", description: "", items: [blankItem()], vendor: "", vehicle_ref: "",
   period_from: "", period_to: "", monthly_rate: "", months: "", from_location: "", to_location: "", amount: "", remarks: "",
-  cost_center_id: "", site_location: "", material_category_id: "" });
+  cost_center_id: "", site_location: "", material_category_id: "", employee_id: "" });
 
 const STATUS = {
   pending_approval: ["Pending Approval", "border-amber-300 text-amber-900 bg-amber-50"],
@@ -53,6 +54,19 @@ export default function ProjectRequests() {
   const [stock, setStock] = useState(null);
   const [detail, setDetail] = useState(null);
   const [ccList, setCcList] = useState([]);
+  const [employees, setEmployees] = useState([]);
+
+  useEffect(() => {
+    api.get("/advances/eligible-employees")
+      .then((r) => setEmployees(r.data?.employees || []))
+      .catch(() => setEmployees([]));
+  }, []);
+
+  const projectEmployees = useMemo(() => {
+    if (!form.project_code) return employees;
+    return employees.filter((e) => e.current_project_code === form.project_code);
+  }, [employees, form.project_code]);
+  const selectedEmp = employees.find((e) => e.id === form.employee_id);
   const [designations, setDesignations] = useState([]);
   const [categories, setCategories] = useState([]);
   const [catItems, setCatItems] = useState([]);
@@ -380,7 +394,7 @@ export default function ProjectRequests() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-1">
-            <ProjectSelect label="Project *" value={form.project_code} onChange={(code, row) => { setForm({ ...form, project_code: code, project_id: row?.id || "", cost_center_id: "" }); loadCostCenters(row?.id); }} testid="req-form-project" />
+            <ProjectSelect label="Project *" value={form.project_code} onChange={(code, row) => { setForm({ ...form, project_code: code, project_id: row?.id || "", cost_center_id: "", employee_id: "" }); loadCostCenters(row?.id); }} testid="req-form-project" />
             {mode === "service" && (
               <>
                 <div>
@@ -398,6 +412,19 @@ export default function ProjectRequests() {
                     <option value="">— select —</option>
                     {types.filter((t) => !STOCKABLE.has(t.key) && t.key !== "manpower").map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
                   </select>
+                </div>
+                <EmployeeSearchSelect
+                  label={`Emp ID${form.project_code ? ` (${projectEmployees.length} in project)` : ""}`}
+                  employees={projectEmployees}
+                  value={form.employee_id}
+                  onChange={(id) => setForm({ ...form, employee_id: id })}
+                  placeholder={form.project_code ? "Search by ID / name…" : "Select project first…"}
+                  testid="req-form-employee"
+                />
+                <div>
+                  <Label className="text-[10px] uppercase tracking-wider">Employee Name</Label>
+                  <Input value={selectedEmp?.name || ""} readOnly disabled placeholder="Auto-filled from Emp ID"
+                    className="h-9 rounded-sm mt-1 bg-muted/40" data-testid="req-form-employee-name" />
                 </div>
               </>
             )}
@@ -617,6 +644,7 @@ export default function ProjectRequests() {
                     ["Priority", detail.priority], ["Need By", detail.need_by || "—"],
                     ["Cost Center", detail.cost_center_label || "Auto (project default)"],
                     ["Site Location", detail.site_location || "—"], ["Vendor", detail.vendor || "—"],
+                    ...(detail.employee_id ? [["Emp ID", detail.employee_code || "—"], ["Employee Name", detail.employee_name || "—"]] : []),
                     ["Raised By", detail.created_by]].map(([k, v]) => (
                     <div key={k} className="border border-border rounded-sm p-2"><div className="text-[10px] uppercase text-muted-foreground">{k}</div><div className="font-semibold text-xs">{v}</div></div>
                   ))}
