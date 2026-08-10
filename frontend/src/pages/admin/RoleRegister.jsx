@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { ShieldCheck, Save, RotateCcw, Search, AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Lock, Globe, List, PanelsTopLeft } from "lucide-react";
+import { ShieldCheck, Save, RotateCcw, Search, AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Lock, Globe, List, PanelsTopLeft, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -28,6 +29,7 @@ export default function RoleRegister() {
   const [saving, setSaving] = useState(false);
   const [q, setQ] = useState("");
   const [view, setView] = useState("menu");
+  const [copyOpen, setCopyOpen] = useState(false);
   const [openDepts, setOpenDepts] = useState(() => new Set([DEPARTMENTS[0]?.key]));
 
   const load = async () => {
@@ -172,6 +174,9 @@ export default function RoleRegister() {
             {roles.length + 1} roles · <span className="text-primary font-semibold">{overrideCount} override(s)</span>
           </div>
           <div className="ml-auto flex gap-2">
+            <Button variant="outline" className="rounded-sm h-9" onClick={() => setCopyOpen(true)} data-testid="rr-copy-open">
+              <Copy className="h-3.5 w-3.5 mr-1.5" /> Copy Permissions
+            </Button>
             <Button variant="outline" className="rounded-sm h-9" onClick={resetAll} data-testid="rr-reset-all">
               <RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Reset to Defaults
             </Button>
@@ -254,7 +259,73 @@ export default function RoleRegister() {
           ))}
         </div>
       )}
+      <CopyPermissionsDialog open={copyOpen} onOpenChange={setCopyOpen} roles={data.roles || []} onDone={load} />
     </div>
+  );
+}
+
+function CopyPermissionsDialog({ open, onOpenChange, roles, onDone }) {
+  const [src, setSrc] = useState("");
+  const [tgt, setTgt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const targets = roles.filter((r) => r !== "super_admin");
+
+  const submit = async () => {
+    if (!src || !tgt) return toast.error("Pick both source and target roles");
+    if (src === tgt) return toast.error("Source and target must differ");
+    setBusy(true);
+    try {
+      const r = await api.post("/admin/role-register/copy", { source_role: src, target_role: tgt });
+      toast.success(`Copied ${src} → ${tgt} (${r.data.actions_updated} permission(s) updated)`);
+      onOpenChange(false);
+      setSrc(""); setTgt("");
+      onDone();
+    } catch (e) {
+      const d = e?.response?.data?.detail;
+      toast.error(typeof d === "string" ? d : "Copy failed");
+    }
+    setBusy(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Copy className="h-4 w-4" /> Copy Role Permissions</DialogTitle>
+          <DialogDescription>
+            The target role's View/Edit/Delete access will be changed to exactly mirror the source role — across every module.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider mb-1">Copy from (source)</div>
+            <select value={src} onChange={(e) => setSrc(e.target.value)}
+              className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm" data-testid="rr-copy-source">
+              <option value="">— select role —</option>
+              {roles.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider mb-1">Apply to (target)</div>
+            <select value={tgt} onChange={(e) => setTgt(e.target.value)}
+              className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm" data-testid="rr-copy-target">
+              <option value="">— select role —</option>
+              {targets.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <div className="flex items-start gap-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-sm p-2">
+            <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+            This overwrites the target role's current permissions everywhere. You can still adjust individual cells afterwards.
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" className="rounded-sm" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button className="rounded-sm" onClick={submit} disabled={busy} data-testid="rr-copy-submit">
+            {busy ? "Copying…" : "Copy Permissions"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

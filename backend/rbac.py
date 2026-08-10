@@ -534,6 +534,15 @@ PERMISSIONS_BASE = {
     },
 }
 
+# Legacy role tokens not present in the Role Catalog — purged from code defaults
+# so the Role × Permission Matrix only ever carries real, assignable roles.
+LEGACY_ROLE_TOKENS = {"accountant", "auditor", "doctor", "finance_head", "hr_head",
+                      "inventory_manager", "logistics_executive", "logistics_manager",
+                      "procurement_executive", "site_supervisor", "store_manager", "storekeeper"}
+for _rules in PERMISSIONS_BASE.values():
+    for _role_set in _rules.values():
+        _role_set -= LEGACY_ROLE_TOKENS
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Override layer (DB-backed, editable via /api/admin/role-register).
 # ──────────────────────────────────────────────────────────────────────────────

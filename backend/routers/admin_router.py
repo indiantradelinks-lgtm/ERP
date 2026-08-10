@@ -499,6 +499,52 @@ async def update_role_register(payload: RoleRegisterUpdateIn, request: Request,
     return await get_role_register(user)
 
 
+class RoleCopyIn(BaseModel):
+    source_role: str
+    target_role: str
+
+
+@router.post("/role-register/copy")
+async def copy_role_permissions(payload: RoleCopyIn, request: Request,
+                                user: dict = Depends(require_permission("role_register", "write"))):
+    """One-click template: make target role's permissions mirror the source role's, everywhere."""
+    from routers.role_catalog_router import get_active_role_keys
+    from rbac import base_roles
+    src, tgt = payload.source_role.strip(), payload.target_role.strip()
+    allowed = set(await get_active_role_keys()) | set(ROLES) | base_roles()
+    if src not in allowed and src != "super_admin":
+        raise HTTPException(400, f"Unknown source role '{src}'")
+    if tgt not in allowed:
+        raise HTTPException(400, f"Unknown target role '{tgt}'")
+    if src == tgt:
+        raise HTTPException(400, "Source and target roles must differ")
+    if tgt == "super_admin":
+        raise HTTPException(400, "super_admin always has full access")
+    merged = get_overrides_serializable()
+    changed = 0
+    for res, rules in _resolved().items():
+        for action, roles in rules.items():
+            has_src = src == "super_admin" or src in roles or "*" in roles
+            has_tgt = tgt in roles or "*" in roles
+            if has_src == has_tgt:
+                continue
+            cur = set(merged.get(res, {}).get(action) or list(roles))
+            if has_src:
+                cur.add(tgt)
+            else:
+                cur.discard(tgt)
+            cur.add("super_admin")
+            merged.setdefault(res, {})[action] = sorted(cur)
+            changed += 1
+    if changed:
+        await db.rbac_overrides.update_one({"id": "default"}, {"$set": {
+            "overrides": merged, "updated_at": now_iso(), "updated_by": user.get("email")}}, upsert=True)
+        set_overrides(merged)
+    await audit(user=user, action="copy_role_permissions", resource="role_register", record_id=tgt,
+                after={"source": src, "target": tgt, "actions_updated": changed}, ip=_ip(request))
+    return {"ok": True, "source": src, "target": tgt, "actions_updated": changed}
+
+
 @router.post("/role-register/reset")
 async def reset_role_register(request: Request,
                               user: dict = Depends(require_permission("role_register", "delete"))):
