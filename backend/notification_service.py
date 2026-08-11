@@ -169,6 +169,58 @@ def tmpl_ppe_expiry(record: dict, days_left: int, app_url: str) -> dict:
     return {"subject": f"[PPE Expiry] {item_type} — {employee} — {days_left}d", "html": _shell(title, preheader, body, "Open PPE Register", f"{app_url}/app/ppe")}
 
 
+def tmpl_payment_advice(v: dict, row: dict, utr: str, paid_date: str) -> dict:
+    def _inr(x):
+        try:
+            return f"₹ {float(x or 0):,.2f}"
+        except Exception:
+            return f"₹ {x}"
+    gross = float(v.get("verified_amount") or 0)
+    tds = float(v.get("tds_amount") or 0)
+    advance = float(v.get("advance_adjusted") or 0)
+    net = round(gross - tds - advance, 2)
+    acct = str(v.get("vendor_account_no") or "")
+    masked = f"••••{acct[-4:]}" if len(acct) > 4 else acct
+    ref = v.get("request_no") or ""
+    inv = v.get("invoice_no") or "—"
+
+    def _row(label, value, bold=False, top=True):
+        w = "font-weight:700;" if bold else ""
+        bt = "border-top:1px solid #e2e8f0;" if top else ""
+        return (f'<tr><td style="padding:9px 14px;color:#64748b;font-size:11px;text-transform:uppercase;'
+                f'letter-spacing:0.12em;border-right:1px solid #e2e8f0;{bt}width:190px;">{label}</td>'
+                f'<td style="padding:9px 14px;font-size:13px;color:#0f172a;{bt}{w}">{value}</td></tr>')
+
+    deductions = ""
+    if tds > 0:
+        deductions += _row("TDS Deducted", f"− {_inr(tds)}" + (f" ({v.get('tds_pct')}%)" if v.get("tds_pct") else ""))
+    if advance > 0:
+        deductions += _row("Advance Adjusted", f"− {_inr(advance)}")
+    body = f"""
+      <h2 style="font-size:22px;font-weight:900;color:#0f172a;margin:0 0 8px 0;letter-spacing:-0.01em;">Payment Advice — {ref}</h2>
+      <p style="color:#475569;font-size:13px;line-height:1.6;margin:0 0 18px 0;">
+        Dear <strong>{v.get('vendor_name') or 'Partner'}</strong>,<br/>
+        We have processed a payment towards invoice <strong>{inv}</strong>. Details are below.
+      </p>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #e2e8f0;border-radius:4px;margin:0 0 18px 0;">
+        {_row("Reference", ref, top=False)}
+        {_row("Invoice No", inv)}
+        {_row("Project", row.get('project_name') or row.get('project_code') or '—')}
+        {_row("Gross Amount", _inr(gross))}
+        {deductions}
+        {_row("Net Amount Paid", _inr(net), bold=True)}
+        {_row("Credited To A/c", masked + (f" · {v.get('bank_name')}" if v.get('bank_name') else "") + (f" · {v.get('ifsc')}" if v.get('ifsc') else ""))}
+        {_row("UTR / Transaction Ref", f"<strong>{utr}</strong>")}
+        {_row("Payment Date", paid_date)}
+      </table>
+      <p style="color:#64748b;font-size:12px;line-height:1.6;margin:0;">
+        Please allow 1–2 banking days for the credit to reflect. For any discrepancy, contact our Accounts team quoting the UTR above.
+      </p>
+    """
+    return {"subject": f"Payment Advice — {inv} · UTR {utr} · {v.get('vendor_name') or ''}".strip(),
+            "html": _shell("Payment Advice", f"Payment of {_inr(net)} released — UTR {utr}", body)}
+
+
 # ---------- Send ----------
 async def send_email(to: str, subject: str, html: str) -> bool:
     if not email_enabled():

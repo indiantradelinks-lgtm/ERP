@@ -5210,3 +5210,11 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - Pay Mod fixed "N"; **blank when beneficiary IFSC starts with ICIC** (ICICI exception). Legacy files that stored "NEFT" normalize to "N" on re-download.
 - Amt = net_payable (post TDS/advance). All validations, stage flow, JE posting unchanged. Curl-verified generated + legacy re-download output against the uploaded CMS.xls sample.
 
+
+### Iteration 170 (Aug 2026) — Vendor Payment Advice Email ✅
+- On Mark Paid, a branded ITL payment advice email is sent to the vendor automatically: reference, invoice no, project, gross amount, TDS deducted (with %), advance adjusted, **net paid (bold)**, masked account + bank + IFSC, UTR, payment date.
+- New `tmpl_payment_advice()` in `notification_service.py` (uses existing `_shell` brand template). Send path in `payment_processing_router._send_payment_advice()`: M365 shared-mailbox outbox (with 10-min retry job) when configured, else Resend `send_email`; never blocks/fails the mark-paid flow.
+- Vendor email resolution: new `vendor_email` field on the Verify dialog (`ppc-v-email`) → fallback lookup in `db.vendors` by name. Result stamped on verification as `advice_status` (sent/queued/no_email/failed) + `advice_to`.
+- UI: Mark Paid dialog shows target email; Paid History tab gained an "Advice" column (Emailed / No Email badges); toast reports email outcome.
+- Curl-verified: no_email case (REQ-2026-0006) skips gracefully; email case (REQ-2026-0007 → delivered@resend.dev) sent via Resend (log id 8d99402c). JEs still post correctly.
+

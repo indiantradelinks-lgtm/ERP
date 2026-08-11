@@ -27,6 +27,7 @@ const STAGE_BADGE = {
 
 const blankVerify = (row) => ({
   decision: "verified", vendor_name: row?.vendor || "", vendor_account_no: "", ifsc: "", bank_name: "",
+  vendor_email: "",
   gst_applicable: false, gstin: "", gst_amount: 0,
   invoice_type: "bill", invoice_no: "", invoice_date: "",
   verified_amount: Number(row?.est_value || 0),
@@ -195,8 +196,11 @@ export default function PaymentProcessingCenter() {
     if (!payForm.utr_no.trim()) { toast.error("UTR number is required"); return; }
     setBusy(true);
     try {
-      await api.post(`/accounts/payment-queue/${payFor.id}/mark-paid`, payForm);
-      toast.success("Marked paid — Journal Entry posted");
+      const res = await api.post(`/accounts/payment-queue/${payFor.id}/mark-paid`, payForm);
+      const adv = res.data?.advice_status;
+      if (adv === "sent" || adv === "queued") toast.success(`Marked paid — JE posted · payment advice emailed to ${res.data.advice_to}`);
+      else if (adv === "no_email") toast.success("Marked paid — JE posted (no vendor email on record, advice not sent)");
+      else toast.success("Marked paid — Journal Entry posted");
       setPayFor(null);
       setPayForm({ utr_no: "", paid_date: new Date().toISOString().slice(0, 10) });
       load();
@@ -347,10 +351,11 @@ export default function PaymentProcessingCenter() {
 
         <TabsContent value="paid" className="mt-3">
           <QueueTable testid="ppc-paid-table" emptyText="No payments completed yet"
-            cols={["Request No", "Type", "Project", "Vendor", "Paid Amt", "UTR", "Paid Date", "Voucher", "Docs"]}
+            cols={["Request No", "Type", "Project", "Vendor", "Paid Amt", "UTR", "Paid Date", "Voucher", "Advice", "Docs"]}
             rows={byStage.paid}
             renderActions={(r) => {
               const v = r.verification || {};
+              const adv = v.advice_status;
               return (
                 <TableRow key={r.id} data-testid={`ppc-paid-row-${r.request_no}`}>
                   {baseCells(r)}
@@ -358,6 +363,13 @@ export default function PaymentProcessingCenter() {
                   <TableCell className="text-xs font-mono">{v.utr_no}</TableCell>
                   <TableCell className="text-xs whitespace-nowrap">{v.paid_date}</TableCell>
                   <TableCell className="text-xs font-mono">{v.voucher_number || "—"}</TableCell>
+                  <TableCell>
+                    {(adv === "sent" || adv === "queued")
+                      ? <Badge className="rounded-sm bg-emerald-100 text-emerald-900 border-emerald-300" title={v.advice_to}>Emailed</Badge>
+                      : adv === "no_email"
+                        ? <Badge variant="outline" className="rounded-sm text-slate-500">No Email</Badge>
+                        : adv ? <Badge variant="outline" className="rounded-sm border-amber-300 text-amber-900">{adv}</Badge> : <span className="text-xs text-slate-400">—</span>}
+                  </TableCell>
                   <TableCell>{attachBtn(r)}</TableCell>
                 </TableRow>
               );
@@ -395,6 +407,11 @@ export default function PaymentProcessingCenter() {
                 <Label className="text-[10px] uppercase tracking-wider">IFSC *</Label>
                 <Input value={vform.ifsc} onChange={(e) => setVform({ ...vform, ifsc: e.target.value.toUpperCase() })}
                   className="rounded-sm mt-1" data-testid="ppc-v-ifsc" />
+              </div>
+              <div className="col-span-2">
+                <Label className="text-[10px] uppercase tracking-wider">Vendor Email (payment advice sent here on payment)</Label>
+                <Input type="email" value={vform.vendor_email} onChange={(e) => setVform({ ...vform, vendor_email: e.target.value })}
+                  placeholder="vendor@company.com" className="rounded-sm mt-1" data-testid="ppc-v-email" />
               </div>
             </div>
 
@@ -519,6 +536,7 @@ export default function PaymentProcessingCenter() {
             <DialogDescription className="text-xs">
               {payFor?.verification?.vendor_name} · Net {inr(payFor?.verification?.net_payable ?? payFor?.verification?.verified_amount)}.
               Posts Journal Entry (DR expense / CR bank{Number(payFor?.verification?.tds_amount) > 0 ? " / CR TDS Payable" : ""}{Number(payFor?.verification?.advance_adjusted) > 0 ? " / CR Vendor Advances" : ""}).
+              {payFor?.verification?.vendor_email ? ` Payment advice will be emailed to ${payFor.verification.vendor_email}.` : ""}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
