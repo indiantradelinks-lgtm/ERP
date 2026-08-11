@@ -80,6 +80,7 @@ export default function PaymentProcessingCenter() {
   const [selected, setSelected] = useState({});
   const [payFor, setPayFor] = useState(null);
   const [payForm, setPayForm] = useState({ utr_no: "", paid_date: new Date().toISOString().slice(0, 10) });
+  const [debitAcNo, setDebitAcNo] = useState(localStorage.getItem("ppc_debit_ac_no") || "169405500094");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -165,10 +166,12 @@ export default function PaymentProcessingCenter() {
   const generateBankFile = async () => {
     const ids = Object.keys(selected).filter((k) => selected[k]);
     if (!ids.length) { toast.error("Select at least one verified payment"); return; }
+    if (!debitAcNo.trim()) { toast.error("Debit A/c No is required"); return; }
+    localStorage.setItem("ppc_debit_ac_no", debitAcNo.trim());
     setBusy(true);
     try {
       const res = await api.post("/accounts/payment-queue/bank-file",
-        { request_ids: ids, payment_mode: "NEFT" }, { responseType: "blob" });
+        { request_ids: ids, debit_ac_no: debitAcNo.trim() }, { responseType: "blob" });
       const fileNo = res.headers["x-file-no"] || "BANK_PAYMENT";
       downloadBlob(res.data, `${fileNo}.xlsx`);
       toast.success(`Bank file ${fileNo} generated & downloaded`);
@@ -264,12 +267,18 @@ export default function PaymentProcessingCenter() {
         </TabsContent>
 
         <TabsContent value="verified" className="mt-3 space-y-3">
-          <div className="flex justify-end">
-            {canWrite && <Button size="sm" className="rounded-sm" onClick={generateBankFile} disabled={busy}
+          <div className="flex justify-end items-end gap-2 flex-wrap">
+            <div>
+              <Label className="text-[10px] uppercase tracking-wider">Debit A/c No (repeated on all rows)</Label>
+              <Input value={debitAcNo} onChange={(e) => setDebitAcNo(e.target.value)}
+                className="rounded-sm mt-1 h-9 w-52 font-mono" data-testid="ppc-debit-ac-no" />
+            </div>
+            {canWrite && <Button size="sm" className="rounded-sm h-9" onClick={generateBankFile} disabled={busy}
               data-testid="ppc-generate-bank-file">
               <FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> Generate Bank File ({Object.values(selected).filter(Boolean).length})
             </Button>}
           </div>
+          <p className="text-[11px] text-slate-500 text-right">CMS bank-upload format · Pay Mod "N" (blank for ICICI beneficiaries) · Date auto-stamped</p>
           <QueueTable testid="ppc-verified-table" emptyText="No verified payments waiting for a bank file"
             cols={["", "Request No", "Type", "Project", "Vendor", "Verified Amt", "TDS", "Advance Adj.", "Net Payable", "Docs"]}
             rows={byStage.verified}

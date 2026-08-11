@@ -22,6 +22,7 @@ router = APIRouter(prefix="/accounts/payment-queue", tags=["payment-processing"]
 
 QUEUE_STATUSES = ["with_dept", "pr_raised", "sourcing", "fulfilled"]
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+DEFAULT_DEBIT_AC_NO = "169405500094"
 
 
 def _ip(request: Request) -> str:
@@ -116,20 +117,43 @@ async def verify_payment(rid: str, p: VerifyIn, request: Request,
 class BankFileIn(BaseModel):
     request_ids: List[str]
     bank_account_code: str = "1100"
-    payment_mode: str = "NEFT"
+    payment_mode: str = "N"
+    debit_ac_no: str = DEFAULT_DEBIT_AC_NO
+
+
+CMS_HEADERS = ["Debit Ac No", "Beneficiary Ac No", "Beneficiary Name", "Amt", "Pay Mod", "Date",
+               "IFSC", "Payable Location", "Print Location", "Bene Mobile No.", "Bene Email ID",
+               "Bene add1", "Bene add2", "Bene add3", "Bene add4",
+               "Add Details 1", "Add Details 2", "Add Details 3", "Add Details 4", "Add Details 5",
+               "Remarks"]
+
+
+def _cms_date(iso: str) -> str:
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(iso[:10]).strftime("%d-%b-%Y").upper()
+    except Exception:
+        return iso[:10]
 
 
 def _bank_xlsx(f: dict) -> bytes:
+    """CMS bank-upload format (matches customer-provided template)."""
     from openpyxl import Workbook
     wb = Workbook()
     ws = wb.active
     ws.title = "BANK_PAYMENT"
-    ws.append(["Sr", "Beneficiary Name", "Account Number", "IFSC", "Amount (INR)", "Payment Mode", "Narration"])
-    for i, r in enumerate(f["rows"], 1):
-        ws.append([i, r["vendor_name"], r["vendor_account_no"], r["ifsc"],
-                   r["amount"], f.get("payment_mode", "NEFT"), r["narration"]])
-    ws.append([])
-    ws.append(["", "TOTAL", "", "", f["total_amount"], "", f["file_no"]])
+    ws.append(CMS_HEADERS)
+    debit_ac = f.get("debit_ac_no") or DEFAULT_DEBIT_AC_NO
+    pay_mode = f.get("payment_mode") or "N"
+    if len(pay_mode) > 2:  # legacy files stored 'NEFT'
+        pay_mode = "N"
+    file_date = _cms_date(f.get("created_at") or now_iso())
+    for r in f["rows"]:
+        ifsc = (r.get("ifsc") or "").upper()
+        pay_mod = "" if ifsc.startswith("ICIC") else pay_mode
+        ws.append([debit_ac, r["vendor_account_no"], r["vendor_name"], r["amount"], pay_mod,
+                   file_date, ifsc, "", "", "", "", "", "", "", "", "", "", "", "", "",
+                   r["narration"]])
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -156,9 +180,12 @@ async def create_bank_file(p: BankFileIn, request: Request,
                      "ifsc": v.get("ifsc"), "amount": amt,
                      "narration": f"{v.get('request_no')} {v.get('invoice_no') or ''}".strip()})
         total += amt
+    if not str(p.debit_ac_no).strip():
+        raise HTTPException(400, "Debit A/c No is required")
     file_doc = {"id": new_id(), "file_no": await next_sequence("BPF"),
                 "rows": rows, "total_amount": round(total, 2),
                 "bank_account_code": p.bank_account_code, "payment_mode": p.payment_mode,
+                "debit_ac_no": str(p.debit_ac_no).strip(),
                 "created_by": user.get("name") or user.get("email"), "created_at": now_iso()}
     await db.bank_payment_files.insert_one(dict(file_doc))
     await db.payment_verifications.update_many(

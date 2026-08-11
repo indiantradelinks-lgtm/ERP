@@ -5203,3 +5203,10 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - **Frontend** (`pages/accounts/PaymentProcessingCenter.jsx`, route `/app/accounts/payment-processing`, menu `nav-payment-processing` under Accounts): 4 KPI tiles + 4 tabs (Pending Verification · Verified/Bank File · Bank Files & Mark Paid · Paid History), Verify dialog with live net-payable, TDS % auto-compute, expense account picker from COA, RowAttachments (parentType=project_requests), checkbox bank-file generation with blob download, Mark Paid dialog.
 - **Tests**: 13/13 backend (`tests/test_iter168_payment_processing.py`) + full frontend E2E (verify→bank file BPF-2026-0002→mark paid) PASS — iteration_168.json.
 
+
+### Iteration 169 (Aug 2026) — CMS bank-upload format for Payment Processing bank file ✅
+- Bank file export rewritten to the customer's CMS Excel template (21 columns): Debit Ac No · Beneficiary Ac No · Beneficiary Name · Amt · Pay Mod · Date (DD-MMM-YYYY upper) · IFSC · 13 blank cols · Remarks (request_no + invoice_no).
+- Debit A/c No repeated on every row — editable input on the Verified tab (`ppc-debit-ac-no`, default 169405500094, persisted in localStorage + stored on file doc).
+- Pay Mod fixed "N"; **blank when beneficiary IFSC starts with ICIC** (ICICI exception). Legacy files that stored "NEFT" normalize to "N" on re-download.
+- Amt = net_payable (post TDS/advance). All validations, stage flow, JE posting unchanged. Curl-verified generated + legacy re-download output against the uploaded CMS.xls sample.
+
