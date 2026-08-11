@@ -212,6 +212,7 @@ import Sessions from "@/pages/admin/Sessions";
 import SecurityCenter from "@/pages/admin/SecurityCenter";
 import GoLiveCenter from "@/pages/admin/GoLiveCenter";
 import FinanceAlerts from "@/pages/accounts/FinanceAlerts";
+import PaymentProcessingCenter from "@/pages/accounts/PaymentProcessingCenter";
 import EnquiryFollowUpTracker from "@/pages/sales/EnquiryFollowUpTracker";
 import InternalProjectReview from "@/pages/ops/InternalProjectReview";
 import "@/App.css";
@@ -291,6 +292,7 @@ export default function App() {
             <Route path="/app/accounts/compliance" element={<ProtectedShell><ComplianceCenter /></ProtectedShell>} />
             <Route path="/app/accounts/dashboard" element={<ProtectedShell><FinanceDashboard /></ProtectedShell>} />
             <Route path="/app/accounts/alerts" element={<ProtectedShell><FinanceAlerts /></ProtectedShell>} />
+            <Route path="/app/accounts/payment-processing" element={<ProtectedShell><PaymentProcessingCenter /></ProtectedShell>} />
             <Route path="/app/sales/enquiry-followup" element={<ProtectedShell><EnquiryFollowUpTracker /></ProtectedShell>} />
             <Route path="/app/ops/internal-review" element={<ProtectedShell><InternalProjectReview /></ProtectedShell>} />
             <Route path="/app/admin/security-center" element={<ProtectedShell><SecurityCenter /></ProtectedShell>} />

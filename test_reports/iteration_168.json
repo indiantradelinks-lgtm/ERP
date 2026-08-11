@@ -1,0 +1,24 @@
+{
+  "summary": "Iter 168 — Accounts Payment Processing Center (new centralized payment flow with TDS + vendor advance adjustment) tested end-to-end. Backend 13/13 PASS (test_iter168_payment_processing.py): RBAC (safety=403, accounts=200), queue returns is_payment rows with embedded verification & pay_stage, verify validations (missing fields, negative net, tds_applicable+0, gst_applicable+no gstin all 400), happy-path verify with tds+advance persists net_payable=8500 (10000-1000-500), bank-file rejects unverified id, creates xlsx with X-File-No BPF sequence, bank-files list + re-download work, re-verify after in_bank_file/paid → 400, mark-paid posts balanced JE voucher_type PYV with 4 legs (DR 5150 / CR 1100 / CR 2400 / CR 1510), verification stage flips to paid with utr_no + voucher_number. Frontend E2E as admin@erp.com: /app/accounts/payment-processing loads with 'payment-processing-center' testid, all 4 KPIs (ppc-kpi-pending/verified/bank/paid) and 4 tabs (ppc-tab-pending/verified/bank/paid) present, menu entry nav-payment-processing visible. Full happy-path E2E on REQ-2026-0013: opened Verify dialog, filled vendor/account/IFSC/invoice/amount=10000, enabled ppc-v-tds-check → ppc-v-tds-pct=10 auto-computed ppc-v-tds-amt=1000, ppc-v-advance=500, ppc-v-net displayed ₹ 8,500 live, ppc-v-submit → toast 'Payment verified — ready for bank file', row moved to Verified tab (ppc-select-REQ-2026-0013 present) → Generate Bank File downloaded BPF-2026-0002.xlsx → Mark Paid with UTRUIE2E123 → row appeared in Paid History tab with UTR + voucher_number. Bank files table (ppc-bank-files-table) renders. Attachments buttons (ppc-attach-*) present on rows.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter168_payment_processing.py",
+    "/app/test_reports/pytest/iter168.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "payment_processing_router.verify: allows editing an existing verified row while stage=='verified' (only in_bank_file/paid are blocked) — good, matches spec. However, if the row was previously 'rejected', the branch stage=p.decision will simply overwrite to verified/rejected freely; consider audit trail retention if a rejected row can silently be re-verified.",
+    "mark_paid: writes JE with net computed locally as amt-tds-advance but the 'net' leg (CR 1100) is skipped when net<=0. If verified_amount==tds+advance (100% adjusted), JE will have only DR + CR 2400 + CR 1510 which is balanced and correct. Good.",
+    "bank-file endpoint uses net_payable if present else falls back to verified_amount — fine for legacy verifications lacking net_payable, but exposes a potential mismatch if TDS/advance were captured but net_payable wasn't recomputed on legacy rows. Not observed in current data.",
+    "PaymentProcessingCenter.jsx (541 lines) is large; consider splitting VerifyDialog/MarkPaidDialog/BankFilesTable into sub-components for maintainability (soft nit)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter168_payment_processing.py (new)"],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100% (all critical selectors present, full E2E verify→bank-file→mark-paid succeeded)"},
+  "test_credentials": "admin@erp.com/Admin@123, accounts@erp.com/Accounts@123, safety@erp.com/Safety@123",
+  "seed_data_creation": "Verified REQ-2026-0013 with TEST_UI_Vendor, generated bank file BPF-2026-0002.xlsx, marked paid with UTR=UTRUIE2E123. This request is now in paid stage (do not disturb).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Payment Processing Center is fully functional. Remaining pending queue rows after this test: REQ-2026-0012, 0007, 0006. Backend regression at /app/backend/tests/test_iter168_payment_processing.py — the happy-path uses the first pending row so it will skip cleanly if none exist. Login page still positional inputs on /login.",
+  "rca of the issue": "N/A — feature works end-to-end as specified."
+}

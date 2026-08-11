@@ -23,6 +23,9 @@ ALLOWED_FOLDERS = {
     "purchase_orders",
     "quotations",
     "approvals",
+    "payment_request",
+    "project_requests",
+    "payments",
 }
 CLIENT_DOC_CATEGORIES = {"PAN", "GST", "MSA", "NDA", "TradeLicense", "IncorporationCert", "AddressProof", "BankDetails", "Other"}
 

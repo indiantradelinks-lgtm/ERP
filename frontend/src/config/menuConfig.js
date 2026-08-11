@@ -253,6 +253,7 @@ export const MENU_ITEMS = [
   { department: "accounts", label: "Vendor Invoice",           to: "/app/accounts",                  icon: Receipt,     testid: "nav-vendor-inv", perm: "accounting" },
   { department: "accounts", label: "Receipt Entry",            to: "/app/receivables",               icon: Wallet,      testid: "nav-receipts", perm: "receivables" },
   { department: "accounts", label: "Payment Entry",            to: "/app/accounts",                  icon: Wallet,      testid: "nav-payments", perm: "accounting" },
+  { department: "accounts", label: "Payment Processing",       to: "/app/accounts/payment-processing", icon: Wallet,    testid: "nav-payment-processing", perm: "accounting" },
   { department: "accounts", label: "Journal Voucher",          to: "/app/accounts",                  icon: FileSignature, testid: "nav-jv", perm: "accounting" },
   { department: "accounts", label: "Contra Voucher",           to: "/app/accounts",                  icon: FileSignature, testid: "nav-contra", perm: "accounting" },
   { department: "accounts", label: "Debit Note",               to: "/app/accounts/notes",            icon: Receipt,     testid: "nav-dn", perm: "accounting" },
