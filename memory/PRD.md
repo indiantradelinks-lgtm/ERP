@@ -5218,3 +5218,9 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - UI: Mark Paid dialog shows target email; Paid History tab gained an "Advice" column (Emailed / No Email badges); toast reports email outcome.
 - Curl-verified: no_email case (REQ-2026-0006) skips gracefully; email case (REQ-2026-0007 → delivered@resend.dev) sent via Resend (log id 8d99402c). JEs still post correctly.
 
+
+### Iteration 171 (Aug 2026) — "Raise Payment Request" header shortcut for Manager PNV / Manager LOG ✅
+- Top header bar button (`header-raise-payment-btn` in `Layout.jsx`) shown only when `user.role ∈ {manager_pnv, manager_p_n_v, manager_log, manager_l_o_g}` → navigates to `/app/ops/requests?new=service`.
+- `ProjectRequests.jsx`: new `?new=service` deep-link auto-opens the Service / Payment Request dialog (gated by `canRaise`), then strips the param. RAISE_ROLES extended with the 4 role-key variants (frontend gate only — backend perms remain Role-Register driven, unchanged).
+- NOTE: Manager PNV / LOG roles exist only in PRODUCTION; role keys were assumed as `manager_pnv` / `manager_log` (variants included). Preview test role `manager_pnv` + user test_pnv@erp.com / Pnv@12345 created (granted project_requests read+write via Role Register override) — verified button + auto-open dialog via screenshot.
+

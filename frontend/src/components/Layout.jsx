@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   LogOut, Menu, Search, ChevronLeft, ChevronRight, User2, Construction,
-  LayoutGrid, Mail, ChevronDown, PanelLeftClose, PanelLeftOpen, Eye,
+  LayoutGrid, Mail, ChevronDown, PanelLeftClose, PanelLeftOpen, Eye, Wallet,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
@@ -363,6 +363,18 @@ export default function Layout({ children }) {
           <div className="ml-auto flex items-center gap-2">
             <PageHelp />
             <NotificationBell />
+            {["manager_pnv", "manager_p_n_v", "manager_log", "manager_l_o_g"].includes(user?.role) && (
+              <Button
+                asChild
+                size="sm"
+                className="h-9 rounded-sm hidden md:inline-flex"
+                data-testid="header-raise-payment-btn"
+              >
+                <NavLink to="/app/ops/requests?new=service">
+                  <Wallet className="h-4 w-4 mr-1.5" /> Raise Payment Request
+                </NavLink>
+              </Button>
+            )}
             <Button
               asChild
               variant="outline"

@@ -18,7 +18,8 @@ import FileUploader from "@/components/FileUploader";
 import ProjectExpenses from "./ProjectExpenses";
 
 const inr = (v) => `₹ ${Number(v || 0).toLocaleString("en-IN")}`;
-const RAISE_ROLES = new Set(["project_coordinator", "project_manager", "super_admin", "manager_o_p", "manager_op"]);
+const RAISE_ROLES = new Set(["project_coordinator", "project_manager", "super_admin", "manager_o_p", "manager_op",
+  "manager_pnv", "manager_p_n_v", "manager_log", "manager_l_o_g"]);
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const STOCKABLE = new Set(["material", "ppe", "it_material"]);
 const blankItem = () => ({ name: "", quantity: 1, unit: "Nos", rate: 0, specs: "", size: "", make: "", item_type: "", tech_details: "", designation_id: "", item_id: "", item_code: "", custom: false });
@@ -94,6 +95,16 @@ export default function ProjectRequests() {
   useEffect(() => { api.get("/ops/resource-requests/meta/designations").then((r) => setDesignations(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { api.get("/procurement/master/categories").then((r) => setCategories(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { load(); }, [filters]); // eslint-disable-line
+
+  // Quick shortcut: /app/ops/requests?new=service auto-opens the Service/Payment form
+  useEffect(() => {
+    if (searchParams.get("new") === "service" && canRaise) {
+      openDialog("service");
+      const next = new URLSearchParams(searchParams);
+      next.delete("new");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams]); // eslint-disable-line
 
   const onCategoryChange = (catId) => {
     const cat = categories.find((c) => c.id === catId);
