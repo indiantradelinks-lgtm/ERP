@@ -1,0 +1,40 @@
+{
+  "summary": "Iter 169 — Tested new expense_type/date/settlement/paid_to fields on project-requests + Accounts payment queue enrichment + CMS remarks-from-verification. Backend 4/6 PASS. CRITICAL BUG found: POST /api/project-requests raises 500 NameError: PEX_TYPES is not defined (line 293 of /app/backend/routers/project_requests_router.py). This BLOCKS creation of ALL project requests (payment AND non-payment), including the entire feature (1) of this batch. Confirmed by curl with a minimal fuel request (no expense_type field) — still 500. Other passing checks: list_requests correctly attaches pay_stage on approved payment rows and omits it on non-payment rows; payment-queue rows include project_manager/project_name keys; bank-file CMS 'Remarks' column correctly uses verification.remarks (verified by generating xlsx with remarks='TEST CMS REMARK 123' and reading last col of BANK_PAYMENT sheet); project-expenses accepts paid_to_type='person' + employee_id/code/name and persists them. Frontend spot-check: /app/ops/requests table shows req-created-{id} timestamps ('2026-08-11 11:51') and req-paystage-{id} badges ('Accounts: In Bank File'); /app/ops/requests?new=service dialog shows req-form-paidto-type; conditional expense-type/date/settlement fields appear only after picking a payment routing type (not a bug). /app/accounts/payment-processing renders (payment-processing-center testid present); Verified tab shows 'Verified At' column ('Verified At' string in DOM). 'PM:' string NOT visible in DOM of Verified tab currently — either no verified row has a project with project_manager_name/manager set, or none in view. Daily Expenses dialog on /app/ops/expenses shows pex-form-paidto-type + pex-form-paidto (approved vendor list); pex-form-employee only renders when Paid To=Person is chosen (default is Vendor, so appears MISSING until switched — conditional, not a bug).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/project-requests", "issue": "NameError: name 'PEX_TYPES' is not defined at project_requests_router.py:293 — reference to undefined symbol in `expense_type: (p.expense_type if p.expense_type in PEX_TYPES else None) or meta['expense_type']`. Python evaluates the `in PEX_TYPES` lookup regardless of whether p.expense_type is None, so ALL POST /api/project-requests now return 500. This blocks new request creation entirely (both payment and non-payment types).", "priority": "CRITICAL"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Raise new Service/Payment request", "issue": "Because POST /api/project-requests is 500-ing, submitting the dialog will always fail with server error toast. Cannot test paid-to=Vendor validation, expense-type override, or full E2E raise→approve→verify chain for new requests raised in this iteration.", "affected_selectors": ["req-form-paidto-type", "req-form-vendor-select", "req-form-expense-type", "req-form-settlement"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter169_expense_workflow.py",
+    "/app/test_reports/pytest/iter169.xml"
+  ],
+  "action_items": [
+    "URGENT: Fix NameError in /app/backend/routers/project_requests_router.py line 293 — replace `PEX_TYPES` with the correct reference (likely `EXPENSE_TYPES` from project_expenses_router, or import it locally). Suggested fix: at top of file `from routers.project_expenses_router import EXPENSE_TYPES as PEX_TYPES` OR change line 293 to use `EXPENSE_TYPES`. Verify all POST /api/project-requests return 200 after fix, then re-run /app/backend/tests/test_iter169_expense_workflow.py (2 currently-failing tests should pass).",
+    "After fix, re-verify FE flow: raise a payment request via /app/ops/requests?new=service with paid_to=vendor + expense_type override, then approve chain to reach with_dept/pr_raised so it appears in accounts queue with the new expense fields."
+  ],
+  "critical_code_review_comments": [
+    "project_requests_router.py line 293 references undefined PEX_TYPES — a symbol was clearly renamed/relocated but the reference was not updated. This is a hard NameError that crashes every request creation call — should have been caught by a smoke test.",
+    "list_requests joins payment_verifications per-request with a projection that includes 'remarks' — good for showing UTR/verified_at/remarks on the request row. Consider also projecting 'net_payable' so the request card can show the net payable-to-bank amount without a second fetch.",
+    "payment_processing.payment_queue only joins projects.project_manager_name/manager — spec says 'employee_code/employee_name' should also appear on queue rows. These fields already exist on the project_requests doc itself (set at raise time via employee_id lookup), so they naturally flow through the `{**r, ...}` spread. Fine.",
+    "CMS remarks column now uses verification.remarks with a fallback to `request_no + invoice_no` — implementation matches spec. Note: remarks are NOT sanitized for tab/newline characters before writing to Excel; a multiline remark would still work in xlsx but could look odd."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter169_expense_workflow.py (new)"
+  ],
+  "success_rate": {"backend": "67% (4/6 — 2 blocked by PEX_TYPES NameError)", "frontend": "smoke-tested (selectors present; full E2E blocked by backend 500)"},
+  "test_credentials": "admin@erp.com / Admin@123 (used); accounts@erp.com / Accounts@123 available.",
+  "seed_data_creation": "Verified a pending payment queue row with remarks='TEST CMS REMARK 123' and generated bank file BPF-2026-XXXX to prove CMS Remarks column carries verification remarks. That row is now in_bank_file (do not disturb).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "PRIMARY BLOCKER: NameError PEX_TYPES in project_requests_router.py:293. Once fixed, run pytest /app/backend/tests/test_iter169_expense_workflow.py -v — all 6 tests should pass. Then do FE E2E on /app/ops/requests?new=service: pick Accommodation → Paid To Vendor → dropdown should list approved vendors (e.g. SteelTech Supplies) → expense-type/date/settlement fields appear → submit; also test Person mode requires Emp ID and auto-fills name. Then verify /app/accounts/payment-processing 'PM:' text renders when a row's project has project_manager_name set.",
+  "rca of the issue": "Main agent added new fields (expense_type/date/settlement_mode/paid_to_type) to RequestIn and referenced a set/dict named PEX_TYPES to whitelist expense_type overrides but never defined or imported PEX_TYPES in project_requests_router.py. The correct dict `EXPENSE_TYPES` lives in /app/backend/routers/project_expenses_router.py. Reproduction: `curl -X POST $BASE/api/project-requests -H 'Content-Type: application/json' -d '{\"request_type\":\"fuel\",\"project_id\":\"<any>\",\"amount\":100}'` → 500 Internal Server Error; backend log shows `NameError: name 'PEX_TYPES' is not defined`. Mitigation: import EXPENSE_TYPES from project_expenses_router (as PEX_TYPES) at module top, or inline the whitelist in RequestIn validation."
+}

@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProjectSelect } from "@/components/MasterSelect";
+import { EmployeeSearchSelect } from "@/components/EmployeeSearchSelect";
 import FileUploader from "@/components/FileUploader";
 import RowAttachments from "@/components/RowAttachments";
 
@@ -20,7 +21,7 @@ const RAISE_ROLES = new Set(["project_coordinator", "project_manager", "super_ad
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const blank = () => ({ id: newId(), project_code: "", project_id: "", cost_center_id: "", expense_type: "",
   expense_date: new Date().toISOString().slice(0, 10), amount: "", description: "", bill_no: "",
-  paid_to: "", payment_mode: "Cash", settlement_mode: "petty_cash", remarks: "" });
+  paid_to: "", paid_to_type: "vendor", employee_id: "", payment_mode: "Cash", settlement_mode: "petty_cash", remarks: "" });
 
 const STATUS_BADGE = {
   pending_approval: <Badge variant="outline" className="rounded-sm border-amber-300 text-amber-900 bg-amber-50">Pending Approval</Badge>,
@@ -44,6 +45,8 @@ export default function ProjectExpenses({ embedded = false }) {
   const [payFor, setPayFor] = useState(null);
   const [payRef, setPayRef] = useState("");
   const [proofFiles, setProofFiles] = useState([]);
+  const [vendors, setVendors] = useState([]);
+  const [employees, setEmployees] = useState([]);
 
   const load = async () => {
     try {
@@ -59,6 +62,8 @@ export default function ProjectExpenses({ embedded = false }) {
   useEffect(() => {
     api.get("/project-expenses/types").then((r) => setTypes(r.data || [])).catch(() => {});
     api.get("/project-expenses/settings").then((r) => setThreshold(r.data?.large_threshold || 10000)).catch(() => {});
+    api.get("/vendors").then((r) => setVendors((r.data || []).filter((v) => v.status === "approved"))).catch(() => {});
+    api.get("/advances/eligible-employees").then((r) => setEmployees(r.data || [])).catch(() => {});
   }, []);
   useEffect(() => { load(); }, [filters]); // eslint-disable-line
 
@@ -76,8 +81,15 @@ export default function ProjectExpenses({ embedded = false }) {
     if (!form.project_code) { toast.error("Select a project"); return; }
     if (!form.expense_type) { toast.error("Select expense type"); return; }
     if (!Number(form.amount)) { toast.error("Enter amount"); return; }
+    if (form.paid_to_type === "vendor" && !form.paid_to) { toast.error("Select the approved vendor"); return; }
+    if (form.paid_to_type === "person" && !form.employee_id) { toast.error("Select the employee (Emp ID)"); return; }
     try {
-      const r = await api.post("/project-expenses", { ...form, amount: Number(form.amount) });
+      const emp = employees.find((e) => e.id === form.employee_id);
+      const r = await api.post("/project-expenses", {
+        ...form, amount: Number(form.amount),
+        employee_code: emp?.employee_id || emp?.emp_code || null,
+        employee_name: emp?.name || null,
+      });
       toast.success(`${r.data.expense_no} booked — ${r.data.is_large_value ? "LARGE value: extra GM + Director approval applies" : "standard approval chain"}`);
       setCreating(false); setForm(blank()); setAttFiles([]); load();
     } catch (e) { toast.error(e?.response?.data?.detail || "Booking failed"); }
@@ -297,9 +309,35 @@ export default function ProjectExpenses({ embedded = false }) {
               )}
             </div>
             <div>
-              <Label className="text-[10px] uppercase tracking-wider">Paid To (vendor / person)</Label>
-              <Input value={form.paid_to} onChange={(e) => setForm({ ...form, paid_to: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="pex-form-paidto" />
+              <Label className="text-[10px] uppercase tracking-wider">Paid To *</Label>
+              <select value={form.paid_to_type} onChange={(e) => setForm({ ...form, paid_to_type: e.target.value, paid_to: "", employee_id: "" })}
+                className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="pex-form-paidto-type">
+                <option value="vendor">Vendor (from Vendor Master)</option>
+                <option value="person">Person (Employee / Worker)</option>
+              </select>
             </div>
+            {form.paid_to_type === "vendor" ? (
+              <div>
+                <Label className="text-[10px] uppercase tracking-wider">Vendor (approved) *</Label>
+                <select value={form.paid_to} onChange={(e) => setForm({ ...form, paid_to: e.target.value })}
+                  className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="pex-form-paidto">
+                  <option value="">— select approved vendor —</option>
+                  {vendors.map((v) => <option key={v.id} value={v.name}>{v.name}</option>)}
+                </select>
+              </div>
+            ) : (
+              <EmployeeSearchSelect
+                label="Emp ID *"
+                employees={employees}
+                value={form.employee_id}
+                onChange={(id) => {
+                  const emp = employees.find((e) => e.id === id);
+                  setForm({ ...form, employee_id: id, paid_to: emp?.name || "" });
+                }}
+                placeholder="Search by ID / name…"
+                testid="pex-form-employee"
+              />
+            )}
             <div>
               <Label className="text-[10px] uppercase tracking-wider">Bill / Voucher #</Label>
               <Input value={form.bill_no} onChange={(e) => setForm({ ...form, bill_no: e.target.value })} className="h-9 rounded-sm mt-1 font-mono-data" data-testid="pex-form-billno" />

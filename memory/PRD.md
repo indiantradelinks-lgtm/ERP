@@ -5224,3 +5224,13 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - `ProjectRequests.jsx`: new `?new=service` deep-link auto-opens the Service / Payment Request dialog (gated by `canRaise`), then strips the param. RAISE_ROLES extended with the 4 role-key variants (frontend gate only — backend perms remain Role-Register driven, unchanged).
 - NOTE: Manager PNV / LOG roles exist only in PRODUCTION; role keys were assumed as `manager_pnv` / `manager_log` (variants included). Preview test role `manager_pnv` + user test_pnv@erp.com / Pnv@12345 created (granted project_requests read+write via Role Register override) — verified button + auto-open dialog via screenshot.
 
+
+### Iteration 172 (Aug 2026) — 7-point Payment/Expense workflow update ✅
+1. **Expense fields**: Service/Payment Request form now has Expense Type (override dropdown from `/project-expenses/types`, defaults to routing meta), Expense Date, Settlement dropdowns (payment types only). Daily Expenses form already had them.
+2. **Paid To**: Vendor/Person selector on BOTH forms — Vendor = approved Vendor Master dropdown; Person = Emp ID search with auto-fetched name. Backend stores `paid_to_type` (+ employee fields on project_expenses).
+3. **Timestamps**: Request Center rows + detail dialog show full created date & time (`req-created-{id}`, "Raised At").
+4+5. **Workflow status**: `GET /project-requests` joins payment_verifications → `pay_stage`/`pay_info` on approved payment rows; UI shows second badge (`req-paystage-{id}`: Accounts Pending Verification/Verified/In Bank File/Paid/Rejected + UTR) and an "Accounts Workflow" strip in detail (`req-detail-paystage`).
+6. **Accounts view**: payment-queue joins projects → `project_manager`; PPC tables show Project code+name+PM, Paid To (vendor + emp code·name), Verified At (date-time + verified_by) column on Verified tab; verify dialog shows full context.
+7. **CMS Remark**: bank-file Remarks column = verification `remarks` (fallback request_no + invoice_no).
+- BUG FIXED during testing: `PEX_TYPES` import missing in project_requests_router (500 on ALL request creation) — import added, 6/6 pytest pass (`tests/test_iter169_expense_workflow.py`), FE fields verified by screenshot. Test report: iteration_169.json.
+

@@ -42,13 +42,18 @@ async def payment_queue(stage: str = "", project_code: str = "",
         {"_id": 0}).sort("created_at", -1).to_list(1000)
     ver = {v["request_id"]: v async for v in db.payment_verifications.find(
         {"request_id": {"$in": [r["id"] for r in reqs]}}, {"_id": 0})}
+    proj_ids = list({r.get("project_id") for r in reqs if r.get("project_id")})
+    pmap = {p["id"]: p async for p in db.projects.find(
+        {"id": {"$in": proj_ids}}, {"_id": 0, "id": 1, "project_manager_name": 1, "manager": 1})}
     out = []
     for r in reqs:
         v = ver.get(r["id"])
         st = _stage(v)
         if stage and st != stage:
             continue
-        out.append({**r, "verification": v, "pay_stage": st})
+        proj = pmap.get(r.get("project_id")) or {}
+        out.append({**r, "verification": v, "pay_stage": st,
+                    "project_manager": proj.get("project_manager_name") or proj.get("manager")})
     return out
 
 
@@ -179,7 +184,7 @@ async def create_bank_file(p: BankFileIn, request: Request,
         rows.append({"request_id": rid, "request_no": v.get("request_no"),
                      "vendor_name": v.get("vendor_name"), "vendor_account_no": v.get("vendor_account_no"),
                      "ifsc": v.get("ifsc"), "amount": amt,
-                     "narration": f"{v.get('request_no')} {v.get('invoice_no') or ''}".strip()})
+                     "narration": (v.get("remarks") or "").strip() or f"{v.get('request_no')} {v.get('invoice_no') or ''}".strip()})
         total += amt
     if not str(p.debit_ac_no).strip():
         raise HTTPException(400, "Debit A/c No is required")

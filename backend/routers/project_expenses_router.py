@@ -69,6 +69,10 @@ class ExpenseIn(BaseModel):
     description: Optional[str] = ""
     bill_no: Optional[str] = None
     paid_to: Optional[str] = None
+    paid_to_type: Optional[str] = None   # vendor | person
+    employee_id: Optional[str] = None
+    employee_code: Optional[str] = None
+    employee_name: Optional[str] = None
     payment_mode: str = "Cash"
     settlement_mode: str = "petty_cash"  # petty_cash | employee_reimbursement | vendor_payable
     remarks: Optional[str] = None
@@ -169,6 +173,8 @@ async def create_expense(p: ExpenseIn, request: Request,
         "expense_type": p.expense_type, "expense_type_label": EXPENSE_TYPES[p.expense_type]["label"],
         "expense_date": p.expense_date, "amount": round(float(p.amount), 2),
         "description": p.description or "", "bill_no": p.bill_no, "paid_to": p.paid_to,
+        "paid_to_type": p.paid_to_type,
+        "employee_id": p.employee_id, "employee_code": p.employee_code, "employee_name": p.employee_name,
         "payment_mode": p.payment_mode, "settlement_mode": p.settlement_mode,
         "remarks": p.remarks,
         "is_large_value": p.amount > threshold, "large_threshold": threshold,

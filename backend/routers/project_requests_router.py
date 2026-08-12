@@ -35,6 +35,7 @@ from core import db, require_permission, get_current_user, now_iso, new_id
 from scope import apply_project_scope, ensure_project_access
 from datetime import datetime, timezone
 from audit import audit
+from routers.project_expenses_router import EXPENSE_TYPES as PEX_TYPES
 from sequences import next_sequence
 from exports import to_excel, to_pdf
 
@@ -116,6 +117,10 @@ class RequestIn(BaseModel):
     site_location: Optional[str] = None
     material_category_id: Optional[str] = None
     employee_id: Optional[str] = None      # HR master employee (service/payment requests)
+    expense_type: Optional[str] = None     # override (defaults to routing meta)
+    expense_date: Optional[str] = None
+    settlement_mode: Optional[str] = None  # petty_cash | employee_reimbursement | vendor_payable
+    paid_to_type: Optional[str] = None     # vendor | person
 
 
 class ActionIn(BaseModel):
@@ -195,8 +200,19 @@ async def list_requests(project_code: Optional[str] = None, request_type: Option
         q["owning_dept"] = dept
     q = await apply_project_scope(user, q, "project_id")
     rows = await db.project_requests.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    pay_ids = [r["id"] for r in rows if r.get("is_payment")]
+    vmap: Dict[str, Any] = {}
+    if pay_ids:
+        vmap = {v["request_id"]: v async for v in db.payment_verifications.find(
+            {"request_id": {"$in": pay_ids}},
+            {"_id": 0, "request_id": 1, "stage": 1, "verified_by": 1, "verified_at": 1,
+             "utr_no": 1, "paid_date": 1, "bank_file_no": 1, "vendor_name": 1, "remarks": 1})}
     for r in rows:
         r["attachment_count"] = await db.files.count_documents({"parent_type": "project_requests", "parent_id": r["id"]})
+        if r.get("is_payment") and r.get("status") in ("with_dept", "pr_raised", "sourcing", "fulfilled"):
+            v = vmap.get(r["id"])
+            r["pay_stage"] = (v or {}).get("stage") or "pending_verification"
+            r["pay_info"] = v
     return rows
 
 
@@ -275,7 +291,10 @@ async def create_request(p: RequestIn, request: Request,
         "project_name": project.get("name"), "client_name": project.get("client"),
         "request_type": p.request_type, "request_type_label": meta["label"],
         "owning_dept": meta["dept"], "is_payment": meta["payment"], "is_stockable": meta["stockable"],
-        "expense_type": meta["expense_type"],
+        "expense_type": (p.expense_type if p.expense_type in PEX_TYPES else None) or meta["expense_type"],
+        "expense_date": p.expense_date,
+        "settlement_mode": p.settlement_mode,
+        "paid_to_type": p.paid_to_type,
         "need_by": p.need_by, "priority": p.priority, "description": p.description or "",
         "employee_id": (emp or {}).get("id"),
         "employee_code": (emp or {}).get("employee_id") or (emp or {}).get("emp_code"),
@@ -785,10 +804,14 @@ async def _book_expense(row: dict, user: dict) -> Optional[str]:
             "category_name": (cc or {}).get("category_name"),
             "expense_type": row["expense_type"],
             "expense_type_label": row["request_type_label"],
-            "expense_date": now_iso()[:10], "amount": round(float(row.get("est_value") or 0), 2),
+            "expense_date": row.get("expense_date") or now_iso()[:10], "amount": round(float(row.get("est_value") or 0), 2),
             "description": f"From request {row['request_no']} — {row.get('description') or row['request_type_label']}",
-            "bill_no": None, "paid_to": row.get("vendor"), "payment_mode": "Bank",
-            "settlement_mode": "vendor_payable", "remarks": f"Auto-booked from project request {row['request_no']}",
+            "bill_no": None, "paid_to": row.get("vendor") or row.get("employee_name"), "payment_mode": "Bank",
+            "settlement_mode": row.get("settlement_mode") or "vendor_payable",
+            "paid_to_type": row.get("paid_to_type"),
+            "employee_id": row.get("employee_id"), "employee_code": row.get("employee_code"),
+            "employee_name": row.get("employee_name"),
+            "remarks": f"Auto-booked from project request {row['request_no']}",
             "is_large_value": float(row.get("est_value") or 0) > threshold, "large_threshold": threshold,
             "status": "approved_for_payment",
             "chain": [{"role": "dept_head", "label": "Project Head", "status": "approved",

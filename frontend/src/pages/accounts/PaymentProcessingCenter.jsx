@@ -26,7 +26,7 @@ const STAGE_BADGE = {
 };
 
 const blankVerify = (row) => ({
-  decision: "verified", vendor_name: row?.vendor || "", vendor_account_no: "", ifsc: "", bank_name: "",
+  decision: "verified", vendor_name: row?.vendor || row?.employee_name || "", vendor_account_no: "", ifsc: "", bank_name: "",
   vendor_email: "",
   gst_applicable: false, gstin: "", gst_amount: 0,
   invoice_type: "bill", invoice_no: "", invoice_date: "",
@@ -213,8 +213,15 @@ export default function PaymentProcessingCenter() {
     <>
       <TableCell className="font-mono text-xs whitespace-nowrap">{r.request_no}</TableCell>
       <TableCell className="text-xs">{r.request_type_label}</TableCell>
-      <TableCell className="text-xs whitespace-nowrap">{r.project_code}</TableCell>
-      <TableCell className="text-xs">{r.verification?.vendor_name || r.vendor || "—"}</TableCell>
+      <TableCell className="text-xs">
+        <div className="whitespace-nowrap font-medium">{r.project_code}</div>
+        <div className="text-[10px] text-slate-500 max-w-[180px] truncate" title={r.project_name}>{r.project_name}</div>
+        {r.project_manager && <div className="text-[10px] text-slate-500 whitespace-nowrap">PM: {r.project_manager}</div>}
+      </TableCell>
+      <TableCell className="text-xs">
+        <div>{r.verification?.vendor_name || r.vendor || (r.employee_name ? "" : "—")}</div>
+        {r.employee_name && <div className="text-[10px] text-slate-500 whitespace-nowrap">{r.employee_code ? `${r.employee_code} · ` : ""}{r.employee_name}</div>}
+      </TableCell>
     </>
   );
 
@@ -254,7 +261,7 @@ export default function PaymentProcessingCenter() {
 
         <TabsContent value="pending" className="mt-3">
           <QueueTable testid="ppc-pending-table" emptyText="No payments awaiting verification"
-            cols={["Request No", "Type", "Project", "Vendor", "Est. Value", "Stage", "Docs", "Action"]}
+            cols={["Request No", "Type", "Project", "Paid To", "Est. Value", "Stage", "Docs", "Action"]}
             rows={byStage.pending}
             renderActions={(r) => (
               <TableRow key={r.id} data-testid={`ppc-pending-row-${r.request_no}`}>
@@ -284,7 +291,7 @@ export default function PaymentProcessingCenter() {
           </div>
           <p className="text-[11px] text-slate-500 text-right">CMS bank-upload format · Pay Mod "N" (blank for ICICI beneficiaries) · Date auto-stamped</p>
           <QueueTable testid="ppc-verified-table" emptyText="No verified payments waiting for a bank file"
-            cols={["", "Request No", "Type", "Project", "Vendor", "Verified Amt", "TDS", "Advance Adj.", "Net Payable", "Docs"]}
+            cols={["", "Request No", "Type", "Project", "Paid To", "Verified Amt", "TDS", "Advance Adj.", "Net Payable", "Verified At", "Docs"]}
             rows={byStage.verified}
             renderActions={(r) => {
               const v = r.verification || {};
@@ -300,6 +307,10 @@ export default function PaymentProcessingCenter() {
                   <TableCell className="text-xs whitespace-nowrap">{v.tds_amount ? inr(v.tds_amount) : "—"}</TableCell>
                   <TableCell className="text-xs whitespace-nowrap">{v.advance_adjusted ? inr(v.advance_adjusted) : "—"}</TableCell>
                   <TableCell className="text-xs font-semibold whitespace-nowrap">{inr(net)}</TableCell>
+                  <TableCell className="text-xs whitespace-nowrap">
+                    <div>{(v.verified_at || "").slice(0, 16).replace("T", " ")}</div>
+                    <div className="text-[10px] text-slate-500">{v.verified_by}</div>
+                  </TableCell>
                   <TableCell>{attachBtn(r)}</TableCell>
                 </TableRow>
               );
@@ -308,7 +319,7 @@ export default function PaymentProcessingCenter() {
 
         <TabsContent value="bank" className="mt-3 space-y-4">
           <QueueTable testid="ppc-bank-table" emptyText="No payments in bank files awaiting UTR"
-            cols={["Request No", "Type", "Project", "Vendor", "Net Payable", "Bank File", "Docs", "Action"]}
+            cols={["Request No", "Type", "Project", "Paid To", "Net Payable", "Bank File", "Docs", "Action"]}
             rows={byStage.bank}
             renderActions={(r) => {
               const v = r.verification || {};
@@ -351,7 +362,7 @@ export default function PaymentProcessingCenter() {
 
         <TabsContent value="paid" className="mt-3">
           <QueueTable testid="ppc-paid-table" emptyText="No payments completed yet"
-            cols={["Request No", "Type", "Project", "Vendor", "Paid Amt", "UTR", "Paid Date", "Voucher", "Advice", "Docs"]}
+            cols={["Request No", "Type", "Project", "Paid To", "Paid Amt", "UTR", "Paid Date", "Voucher", "Advice", "Docs"]}
             rows={byStage.paid}
             renderActions={(r) => {
               const v = r.verification || {};
@@ -383,7 +394,9 @@ export default function PaymentProcessingCenter() {
           <DialogHeader>
             <DialogTitle className="text-base">Verify Payment — {verifyFor?.request_no}</DialogTitle>
             <DialogDescription className="text-xs">
-              {verifyFor?.request_type_label} · {verifyFor?.project_code} · Requested {inr(verifyFor?.est_value)}
+              {verifyFor?.request_type_label} · {verifyFor?.project_code} — {verifyFor?.project_name}
+              {verifyFor?.project_manager ? ` · PM: ${verifyFor.project_manager}` : ""} · Requested {inr(verifyFor?.est_value)}
+              {verifyFor?.employee_name ? ` · Employee: ${verifyFor.employee_code || ""} ${verifyFor.employee_name}` : ""}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

@@ -26,7 +26,16 @@ const blankItem = () => ({ name: "", quantity: 1, unit: "Nos", rate: 0, specs: "
 const blank = () => ({ id: newId(), project_code: "", project_id: "", request_type: "", need_by: "",
   priority: "medium", description: "", items: [blankItem()], vendor: "", vehicle_ref: "",
   period_from: "", period_to: "", monthly_rate: "", months: "", from_location: "", to_location: "", amount: "", remarks: "",
-  cost_center_id: "", site_location: "", material_category_id: "", employee_id: "" });
+  cost_center_id: "", site_location: "", material_category_id: "", employee_id: "",
+  expense_type: "", expense_date: new Date().toISOString().slice(0, 10), settlement_mode: "vendor_payable", paid_to_type: "vendor" });
+
+const PAY_STAGE = {
+  pending_verification: ["Accounts: Pending Verification", "border-amber-300 text-amber-900 bg-amber-50"],
+  verified: ["Accounts: Verified", "border-blue-300 text-blue-900 bg-blue-50"],
+  rejected: ["Accounts: Rejected", "border-rose-300 text-rose-900 bg-rose-50"],
+  in_bank_file: ["Accounts: In Bank File", "border-violet-300 text-violet-900 bg-violet-50"],
+  paid: ["Paid by Accounts", "border-emerald-300 text-emerald-900 bg-emerald-50"],
+};
 
 const STATUS = {
   pending_approval: ["Pending Approval", "border-amber-300 text-amber-900 bg-amber-50"],
@@ -71,6 +80,8 @@ export default function ProjectRequests() {
   const [designations, setDesignations] = useState([]);
   const [categories, setCategories] = useState([]);
   const [catItems, setCatItems] = useState([]);
+  const [expTypes, setExpTypes] = useState([]);
+  const [vendors, setVendors] = useState([]);
   const [mode, setMode] = useState("material");
   const [parsing, setParsing] = useState(false);
 
@@ -94,6 +105,10 @@ export default function ProjectRequests() {
   useEffect(() => { api.get("/project-requests/types").then((r) => setTypes(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { api.get("/ops/resource-requests/meta/designations").then((r) => setDesignations(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { api.get("/procurement/master/categories").then((r) => setCategories(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { api.get("/project-expenses/types").then((r) => setExpTypes(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => {
+    api.get("/vendors").then((r) => setVendors((r.data || []).filter((v) => v.status === "approved"))).catch(() => {});
+  }, []);
   useEffect(() => { load(); }, [filters]); // eslint-disable-line
 
   // Quick shortcut: /app/ops/requests?new=service auto-opens the Service/Payment form
@@ -196,6 +211,11 @@ export default function ProjectRequests() {
     if (isManpower && !form.items.some((i) => i.name && Number(i.quantity) > 0)) { toast.error("Add at least one manpower line"); return; }
     if (isStockable && !form.items.some((i) => (i.name || "").trim() && Number(i.quantity) > 0)) { toast.error("Add at least one item"); return; }
     if (estValue <= 0 && !isStockable && !isManpower) { toast.error("Enter amount / rate"); return; }
+    if (isPayment && mode === "service") {
+      if (form.paid_to_type === "vendor" && !form.vendor) { toast.error("Select the approved vendor to be paid"); return; }
+      if (form.paid_to_type === "person" && !form.employee_id) { toast.error("Select the employee (Emp ID) to be paid"); return; }
+      if (!form.expense_date) { toast.error("Select expense date"); return; }
+    }
     try {
       const payload = { ...form,
         amount: form.amount ? Number(form.amount) : null,
@@ -353,7 +373,8 @@ export default function ProjectRequests() {
                 <TableRow key={r.id} data-testid={`req-row-${r.id}`} className="cursor-pointer" onClick={() => setDetail(r)}>
                   <TableCell>
                     <div className="font-mono-data text-xs font-bold">{r.request_no}</div>
-                    <div className="text-[10px] text-muted-foreground">{(r.created_at || "").slice(0, 10)} · {r.created_by}</div>
+                    <div className="text-[10px] text-muted-foreground whitespace-nowrap" data-testid={`req-created-${r.id}`}>{(r.created_at || "").slice(0, 16).replace("T", " ")}</div>
+                    <div className="text-[10px] text-muted-foreground">{r.created_by}</div>
                   </TableCell>
                   <TableCell><div className="font-semibold text-sm">{r.project_code}</div>
                     <div className="text-[11px] text-muted-foreground truncate max-w-[160px]">{r.project_name}</div></TableCell>
@@ -379,7 +400,15 @@ export default function ProjectRequests() {
                     </div>
                     {r.pr_number && <div className="text-[10px] text-violet-700 font-mono-data mt-0.5">PR: {r.pr_number}</div>}
                   </TableCell>
-                  <TableCell><Badge variant="outline" className={`rounded-sm ${(STATUS[r.status] || [])[1]}`}>{(STATUS[r.status] || [r.status])[0]}</Badge></TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={`rounded-sm ${(STATUS[r.status] || [])[1]}`}>{(STATUS[r.status] || [r.status])[0]}</Badge>
+                    {r.pay_stage && (
+                      <div className="mt-1" data-testid={`req-paystage-${r.id}`}>
+                        <Badge variant="outline" className={`rounded-sm text-[9px] ${(PAY_STAGE[r.pay_stage] || [])[1]}`}>{(PAY_STAGE[r.pay_stage] || [r.pay_stage])[0]}</Badge>
+                        {r.pay_info?.utr_no && <div className="text-[9px] font-mono-data text-muted-foreground mt-0.5">UTR {r.pay_info.utr_no}</div>}
+                      </div>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right"><Button size="sm" variant="ghost" className="h-7" onClick={(e) => { e.stopPropagation(); setDetail(r); }} data-testid={`req-open-${r.id}`}>Open</Button></TableCell>
                 </TableRow>
               );
@@ -424,8 +453,29 @@ export default function ProjectRequests() {
                     {types.filter((t) => !STOCKABLE.has(t.key) && t.key !== "manpower").map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
                   </select>
                 </div>
+                <div>
+                  <Label className="text-[10px] uppercase tracking-wider">Paid To *</Label>
+                  <select value={form.paid_to_type} onChange={(e) => setForm({ ...form, paid_to_type: e.target.value, vendor: "", employee_id: "" })}
+                    className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-paidto-type">
+                    <option value="vendor">Vendor (from Vendor Master)</option>
+                    <option value="person">Person (Employee / Worker)</option>
+                  </select>
+                </div>
+                {form.paid_to_type === "vendor" ? (
+                  <div>
+                    <Label className="text-[10px] uppercase tracking-wider">Vendor (approved) *</Label>
+                    <select value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })}
+                      className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-vendor-select">
+                      <option value="">— select approved vendor —</option>
+                      {vendors.map((v) => <option key={v.id} value={v.name}>{v.name}</option>)}
+                    </select>
+                    {vendors.length === 0 && <p className="text-[10px] text-amber-700 mt-0.5">No approved vendors in Vendor Master.</p>}
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-muted-foreground self-end pb-2">Select the person via Emp ID below — name auto-fills from HR master.</div>
+                )}
                 <EmployeeSearchSelect
-                  label={`Emp ID${form.project_code ? ` (${projectEmployees.length} in project)` : ""}`}
+                  label={`Emp ID${form.paid_to_type === "person" ? " *" : ""}${form.project_code ? ` (${projectEmployees.length} in project)` : ""}`}
                   employees={projectEmployees}
                   value={form.employee_id}
                   onChange={(id) => setForm({ ...form, employee_id: id })}
@@ -437,6 +487,32 @@ export default function ProjectRequests() {
                   <Input value={selectedEmp?.name || ""} readOnly disabled placeholder="Auto-filled from Emp ID"
                     className="h-9 rounded-sm mt-1 bg-muted/40" data-testid="req-form-employee-name" />
                 </div>
+                {isPayment && (
+                  <>
+                    <div>
+                      <Label className="text-[10px] uppercase tracking-wider">Expense Type *</Label>
+                      <select value={form.expense_type} onChange={(e) => setForm({ ...form, expense_type: e.target.value })}
+                        className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-expense-type">
+                        <option value="">— auto (from routing) —</option>
+                        {expTypes.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <Label className="text-[10px] uppercase tracking-wider">Expense Date *</Label>
+                      <Input type="date" value={form.expense_date} onChange={(e) => setForm({ ...form, expense_date: e.target.value })}
+                        className="h-9 rounded-sm mt-1" data-testid="req-form-expense-date" />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] uppercase tracking-wider">Settlement *</Label>
+                      <select value={form.settlement_mode} onChange={(e) => setForm({ ...form, settlement_mode: e.target.value })}
+                        className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-settlement">
+                        <option value="vendor_payable">Vendor Payable</option>
+                        <option value="petty_cash">Petty Cash</option>
+                        <option value="employee_reimbursement">Employee Reimbursement</option>
+                      </select>
+                    </div>
+                  </>
+                )}
               </>
             )}
             {mode === "material" && (
@@ -589,12 +665,8 @@ export default function ProjectRequests() {
 
             {/* Vehicle / accommodation / payment fields */}
             {isVehicle && (
-              <>
-                <div><Label className="text-[10px] uppercase tracking-wider">Vehicle Type / Ref</Label>
-                  <Input value={form.vehicle_ref} onChange={(e) => setForm({ ...form, vehicle_ref: e.target.value })} placeholder={form.request_type === "vehicle_material" ? "Big Truck / Small Truck" : "Car / Bus / Winger / Magic"} className="h-9 rounded-sm mt-1" data-testid="req-form-vehicle" /></div>
-                <div><Label className="text-[10px] uppercase tracking-wider">Vendor</Label>
-                  <Input value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="req-form-vendor" /></div>
-              </>
+              <div><Label className="text-[10px] uppercase tracking-wider">Vehicle Type / Ref</Label>
+                <Input value={form.vehicle_ref} onChange={(e) => setForm({ ...form, vehicle_ref: e.target.value })} placeholder={form.request_type === "vehicle_material" ? "Big Truck / Small Truck" : "Car / Bus / Winger / Magic"} className="h-9 rounded-sm mt-1" data-testid="req-form-vehicle" /></div>
             )}
             {form.request_type === "one_time_vehicle" && (
               <>
@@ -615,10 +687,6 @@ export default function ProjectRequests() {
             {(form.request_type === "fuel" || form.request_type === "insurance" || form.request_type === "one_time_vehicle" || form.request_type === "accommodation") && (
               <div><Label className="text-[10px] uppercase tracking-wider">{form.request_type === "accommodation" ? "One-time / Deposit Amount (₹)" : "Amount (₹)"}</Label>
                 <Input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="h-9 rounded-sm mt-1 tabular" data-testid="req-form-amount" /></div>
-            )}
-            {isPayment && form.request_type !== "one_time_vehicle" && !isVehicle && form.request_type !== "accommodation" && (
-              <div><Label className="text-[10px] uppercase tracking-wider">Vendor / Paid To</Label>
-                <Input value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="req-form-vendor2" /></div>
             )}
 
             <div className="col-span-2"><Label className="text-[10px] uppercase tracking-wider">Description / Justification *</Label>
@@ -654,9 +722,15 @@ export default function ProjectRequests() {
                   {[["Status", (STATUS[detail.status] || [detail.status])[0]], ["Est. Value", inr(detail.est_value)],
                     ["Priority", detail.priority], ["Need By", detail.need_by || "—"],
                     ["Cost Center", detail.cost_center_label || "Auto (project default)"],
-                    ["Site Location", detail.site_location || "—"], ["Vendor", detail.vendor || "—"],
+                    ["Site Location", detail.site_location || "—"],
+                    ["Paid To", detail.paid_to_type === "person" ? `Person${detail.employee_name ? ` — ${detail.employee_name}` : ""}` : (detail.vendor ? `Vendor — ${detail.vendor}` : detail.vendor || "—")],
+                    ...(detail.is_payment ? [
+                      ["Expense Type", (expTypes.find((t) => t.key === detail.expense_type) || {}).label || detail.expense_type || "—"],
+                      ["Expense Date", detail.expense_date || "—"],
+                      ["Settlement", (detail.settlement_mode || "—").replace(/_/g, " ")]] : []),
                     ...(detail.employee_id ? [["Emp ID", detail.employee_code || "—"], ["Employee Name", detail.employee_name || "—"]] : []),
-                    ["Raised By", detail.created_by]].map(([k, v]) => (
+                    ["Raised By", detail.created_by],
+                    ["Raised At", (detail.created_at || "").slice(0, 16).replace("T", " ")]].map(([k, v]) => (
                     <div key={k} className="border border-border rounded-sm p-2"><div className="text-[10px] uppercase text-muted-foreground">{k}</div><div className="font-semibold text-xs">{v}</div></div>
                   ))}
                 </div>
@@ -719,6 +793,15 @@ export default function ProjectRequests() {
                   <div className="text-xs text-muted-foreground">Deployment timeline: <b>{detail.period_from || "—"} → {detail.period_to || "—"}</b>{detail.months ? ` · ${detail.months} month(s)` : ""} · Budget: <b>{inr(detail.est_value)}</b></div>
                 )}
                 {detail.expense_id && <div className="text-xs text-blue-700">Payment booked to Daily Expenses — Accounts will process with proof.</div>}
+                {detail.pay_stage && (
+                  <div className="border border-border rounded-sm p-2 text-xs" data-testid="req-detail-paystage">
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground mr-2">Accounts Workflow</span>
+                    <Badge variant="outline" className={`rounded-sm ${(PAY_STAGE[detail.pay_stage] || [])[1]}`}>{(PAY_STAGE[detail.pay_stage] || [detail.pay_stage])[0]}</Badge>
+                    {detail.pay_info?.verified_by && <span className="ml-2 text-muted-foreground">verified by {detail.pay_info.verified_by} · {(detail.pay_info.verified_at || "").slice(0, 16).replace("T", " ")}</span>}
+                    {detail.pay_info?.bank_file_no && <span className="ml-2 font-mono-data">{detail.pay_info.bank_file_no}</span>}
+                    {detail.pay_info?.utr_no && <span className="ml-2 font-mono-data">UTR {detail.pay_info.utr_no} · {detail.pay_info.paid_date}</span>}
+                  </div>
+                )}
               </div>
               <DialogFooter className="flex-wrap gap-2">
                 {detail.status === "pending_approval" && (user?.role === (detail.chain || [])[detail.current_step]?.role || user?.role === "super_admin") && (
