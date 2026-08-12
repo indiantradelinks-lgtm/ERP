@@ -5241,3 +5241,10 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - PDF: new PDF_COLUMNS["enquiries"] (16 workflow columns incl. Opened/Submitted/Won/Quote/Order/Project #) with Paragraph-wrapped cells (font 6.5) so nothing clips; fits landscape A4 (verified by rendering page image).
 - Curl-verified: xlsx 40 headers + sample won row shows all milestones/links; pdf contains all target columns.
 
+
+### Iteration 174 (Aug 2026) — PM Handover Pack ✅
+- New `routers/pm_handover_router.py`: `GET /api/projects/{pid}/handover-pack` (JSON) + `.pdf` (branded landscape A4 with watermark). Registered in routers_registry as "pm_handover". Permission: projects read.
+- Pack contents: project header (code/name/client/PM/contract), summary (open requests, pending approvals, with-accounts, pending bills, delayed, open value), 5 sections: Open Requests · Pending Approvals (pending_with from chain[current_step]) · Payments with Accounts (pay stage/bank file) · Pending Bill Requests · Delayed Items (approval pending >3d, accounts verification >7d, need_by passed) with reasons.
+- Frontend `pages/ops/PmHandover.jsx` at `/app/ops/handover-pack`, menu "PM Handover Pack" (ops, perm projects, testid nav-ops-handover-pack). Project selector → on-screen pack + Download PDF (testids handover-*).
+- Note: reportlab Helvetica can't render ₹ — PDF headers use "Rs". Verified: JSON via curl (PRJ-2026-0036: 18 open/5 approvals/3 accounts/3 delayed), PDF page render inspected, UI screenshot OK.
+

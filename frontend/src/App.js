@@ -155,6 +155,7 @@ import MinimumWages from "@/pages/hr/MinimumWages";
 import GroupMedical from "@/pages/hr/GroupMedical";
 import ProjectExpenses from "@/pages/ops/ProjectExpenses";
 import ProjectRequests from "@/pages/ops/ProjectRequests";
+import PmHandover from "@/pages/ops/PmHandover";
 import Scaffolding from "@/pages/store/Scaffolding";
 import MyApprovalsCenter from "@/pages/MyApprovalsCenter";
 import ProjectPnl from "@/pages/ops/ProjectPnl";
@@ -249,6 +250,7 @@ export default function App() {
             <Route path="/app/hr/group-medical" element={<ProtectedShell><GroupMedical /></ProtectedShell>} />
             <Route path="/app/ops/expenses" element={<Navigate to="/app/ops/requests?tab=expenses" replace />} />
             <Route path="/app/ops/requests" element={<ProtectedShell><ProjectRequests /></ProtectedShell>} />
+            <Route path="/app/ops/handover-pack" element={<ProtectedShell><PmHandover /></ProtectedShell>} />
             <Route path="/app/scaffolding" element={<ProtectedShell><Scaffolding /></ProtectedShell>} />
             <Route path="/app/my-approvals" element={<ProtectedShell><MyApprovalsCenter /></ProtectedShell>} />
             <Route path="/app/ops/pnl" element={<ProtectedShell><ProjectPnl /></ProtectedShell>} />

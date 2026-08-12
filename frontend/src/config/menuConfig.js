@@ -98,6 +98,7 @@ export const MENU_ITEMS = [
   { department: "ops", label: "Contract Handovers",         to: "/app/ops/handovers",              icon: Briefcase,       testid: "nav-ops-handovers", perm: "project_handovers" },
   { department: "ops", label: "Work Order Mapping",         to: "/app/ops/work-orders",            icon: FileSignature,   testid: "nav-ops-wo", perm: "projects" },
   { department: "ops", label: "Project Request Center",     to: "/app/ops/requests",               icon: PackageSearch,   testid: "nav-ops-requests", perm: "project_requests" },
+  { department: "ops", label: "PM Handover Pack",           to: "/app/ops/handover-pack",          icon: FileSignature,   testid: "nav-ops-handover-pack", perm: "projects" },
   { department: "ops", label: "Cost Centers (Budget)",      to: "/app/admin/cost-centers",         icon: Wallet,          testid: "nav-ops-cost-centers", perm: "projects" },
   { department: "ops", label: "Project P&L",                to: "/app/ops/pnl",                    icon: TrendingUp,      testid: "nav-ops-pnl", perm: "project_pnl" },
   { department: "ops", label: "Project Planning",           to: "/app/ops/planning-hub",           icon: ClipboardList,   testid: "nav-ops-planning", perm: "projects" },
