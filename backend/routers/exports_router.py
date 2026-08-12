@@ -84,6 +84,11 @@ async def export_resource(resource: str, fmt: str,
         q["created_at"] = rng
 
     rows = await db[perm_key].find(q, {"_id": 0}).sort("created_at", -1).to_list(5000)
+    if perm_key == "enquiries":
+        from exports import enrich_enquiries
+        uids = list({r.get("created_by") for r in rows if r.get("created_by")})
+        umap = {u["id"]: u.get("name") async for u in db.users.find({"id": {"$in": uids}}, {"_id": 0, "id": 1, "name": 1})}
+        rows = enrich_enquiries(rows, umap)
     mask = _should_mask_pii(user.get("role"), perm_key)
     fname = f"{perm_key}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.{fmt}"
     if fmt == "xlsx":

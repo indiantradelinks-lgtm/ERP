@@ -302,20 +302,67 @@ COLUMNS: Dict[str, List[Dict[str, str]]] = {
     ],
     "enquiries": [
         {"key": "enquiry_no", "label": "Enquiry #"},
+        {"key": "customer_enquiry_no", "label": "Customer Enq #"},
+        {"key": "dept_doc_no", "label": "Dept Doc #"},
         {"key": "enquiry_date", "label": "Date"},
+        {"key": "client_code", "label": "Client Code"},
         {"key": "customer", "label": "Customer"},
-        {"key": "site_location", "label": "Site"},
+        {"key": "site_code", "label": "Site Code"},
+        {"key": "site_name", "label": "Site Name"},
+        {"key": "site_location", "label": "Site Location"},
+        {"key": "department", "label": "Department"},
+        {"key": "contact_person", "label": "Contact Person"},
+        {"key": "contact_email", "label": "Contact Email"},
+        {"key": "contact_phone", "label": "Contact Phone"},
         {"key": "rfq_type", "label": "RFQ Type"},
-        {"key": "service_categories", "label": "Categories"},
+        {"key": "service_categories", "label": "Services"},
         {"key": "priority", "label": "Priority"},
         {"key": "expected_value", "label": "Expected Value"},
         {"key": "scope_of_work", "label": "Scope of Work"},
+        {"key": "technical_requirements", "label": "Technical Requirements"},
         {"key": "material_requirement", "label": "Material Requirement"},
         {"key": "manpower_requirement", "label": "Manpower Requirement"},
+        {"key": "site_conditions", "label": "Site Conditions"},
+        {"key": "special_instructions", "label": "Special Instructions"},
+        {"key": "commercial_notes", "label": "Commercial Notes"},
         {"key": "submission_deadline", "label": "Submission Deadline"},
+        {"key": "bid_closing_date", "label": "Bid Closing Date"},
         {"key": "status", "label": "Status"},
+        {"key": "open_at", "label": "Opened At"},
+        {"key": "under_review_at", "label": "Under Review At"},
+        {"key": "submitted_at", "label": "Submitted At"},
+        {"key": "negotiation_at", "label": "Negotiation At"},
+        {"key": "hold_at", "label": "Hold At"},
+        {"key": "won_at", "label": "Won At"},
+        {"key": "lost_at", "label": "Lost At"},
+        {"key": "quotation_no", "label": "Quotation #"},
+        {"key": "order_no", "label": "Order #"},
+        {"key": "project_code", "label": "Project Number"},
+        {"key": "created_at", "label": "Created At"},
+        {"key": "created_by_name", "label": "Created By"},
+        {"key": "updated_at", "label": "Last Updated"},
     ],
 }
+
+
+ENQ_STATUSES = ("open", "under_review", "submitted", "negotiation", "hold", "won", "lost")
+
+
+def enrich_enquiries(rows: List[Dict[str, Any]], name_map: Dict[str, str]) -> List[Dict[str, Any]]:
+    """Flatten enquiry docs for export: status-history milestones, list joins, name resolution."""
+    for r in rows:
+        hist = r.get("status_history") or []
+        for st in ENQ_STATUSES:
+            first = next((h for h in hist if h.get("status") == st), None)
+            r[f"{st}_at"] = (first.get("at") or "")[:16].replace("T", " ") if first else ""
+        for k in ("rfq_type", "service_categories"):
+            if isinstance(r.get(k), list):
+                r[k] = ", ".join(str(x).replace("_", " ") for x in r[k])
+        r["material_requirement"] = r.get("material_requirement") or r.get("material_requirements") or ""
+        r["created_by_name"] = name_map.get(r.get("created_by") or "", r.get("created_by") or "")
+        for k in ("created_at", "updated_at"):
+            r[k] = (r.get(k) or "")[:16].replace("T", " ")
+    return rows
 
 
 def to_excel(resource: str, rows: List[Dict[str, Any]], mask_pii: bool = False) -> bytes:
@@ -403,6 +450,24 @@ PDF_COLUMNS: Dict[str, List[Dict[str, Any]]] = {
         {"key": "project_manager_label", "label": "PM", "w": 30},
         {"key": "status", "label": "Status", "w": 22},
     ],
+    "enquiries": [
+        {"key": "enquiry_no", "label": "Enquiry #", "w": 19},
+        {"key": "enquiry_date", "label": "Date", "w": 14},
+        {"key": "customer", "label": "Client / Site", "w": 24},
+        {"key": "site_location", "label": "Location", "w": 16},
+        {"key": "rfq_type", "label": "RFQ Type", "w": 15},
+        {"key": "service_categories", "label": "Services", "w": 19},
+        {"key": "priority", "label": "Priority", "w": 11},
+        {"key": "expected_value", "label": "Value", "w": 15},
+        {"key": "submission_deadline", "label": "Deadline", "w": 14},
+        {"key": "status", "label": "Status", "w": 13},
+        {"key": "open_at", "label": "Opened", "w": 17},
+        {"key": "submitted_at", "label": "Submitted", "w": 17},
+        {"key": "won_at", "label": "Won", "w": 17},
+        {"key": "quotation_no", "label": "Quote #", "w": 16},
+        {"key": "order_no", "label": "Order #", "w": 16},
+        {"key": "project_code", "label": "Project #", "w": 16},
+    ],
 }
 
 
@@ -447,8 +512,13 @@ def to_pdf(resource: str, rows: List[Dict[str, Any]], mask_pii: bool = False) ->
     story.append(Spacer(1, 4 * mm))
 
     table_data = [[c["label"] for c in cols]]
-    for r in rows:
-        table_data.append([_fmt(r.get(c["key"])) for c in cols])
+    if resource == "enquiries":  # many columns — wrap cell text so nothing is clipped
+        cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=6.5, leading=8)
+        for r in rows:
+            table_data.append([Paragraph(str(_fmt(r.get(c["key"]))), cell_style) for c in cols])
+    else:
+        for r in rows:
+            table_data.append([_fmt(r.get(c["key"])) for c in cols])
 
     col_widths = [c["w"] * mm for c in cols] if all("w" in c for c in cols) else None
     t = Table(table_data, repeatRows=1, colWidths=col_widths)

@@ -5234,3 +5234,10 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 7. **CMS Remark**: bank-file Remarks column = verification `remarks` (fallback request_no + invoice_no).
 - BUG FIXED during testing: `PEX_TYPES` import missing in project_requests_router (500 on ALL request creation) — import added, 6/6 pytest pass (`tests/test_iter169_expense_workflow.py`), FE fields verified by screenshot. Test report: iteration_169.json.
 
+
+### Iteration 173 (Aug 2026) — Enquiries export: full data in Excel + PDF ✅
+- `exports.py` COLUMNS["enquiries"] expanded to 40 columns: all identity/reference fields (enquiry_no, customer_enquiry_no, dept_doc_no, client/site codes+names), contacts, department, RFQ/services, priority, value, all scope/requirement/notes fields, deadlines, status + **per-status milestone timestamps derived from status_history** (Opened/Under Review/Submitted/Negotiation/Hold/Won/Lost At), Quotation #, Order #, **Project Number**, created/updated at, Created By (user id → name resolved).
+- New `enrich_enquiries()` in exports.py (called from exports_router for enquiries only): flattens status_history milestones, joins list fields, merges material_requirement(s), resolves user names, trims timestamps.
+- PDF: new PDF_COLUMNS["enquiries"] (16 workflow columns incl. Opened/Submitted/Won/Quote/Order/Project #) with Paragraph-wrapped cells (font 6.5) so nothing clips; fits landscape A4 (verified by rendering page image).
+- Curl-verified: xlsx 40 headers + sample won row shows all milestones/links; pdf contains all target columns.
+
