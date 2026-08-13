@@ -54,6 +54,7 @@ REQUEST_TYPES: Dict[str, Dict[str, Any]] = {
     "vehicle_material": {"label": "Monthly Vehicle — Material (Truck)", "dept": "logistics", "stockable": False, "payment": True, "expense_type": "vehicle"},
     "one_time_vehicle": {"label": "One-Time Vehicle (Site-to-Site / Godown)", "dept": "logistics", "stockable": False, "payment": True, "expense_type": "vehicle"},
     "manpower":         {"label": "Manpower / Site Staff", "dept": "hr", "stockable": False, "payment": False, "expense_type": None},
+    "other":            {"label": "Other", "dept": "admin", "stockable": False, "payment": True, "expense_type": "misc"},
 }
 RAISE_ROLES = {"project_coordinator", "project_manager", "super_admin"}
 FULFIL_ROLES = {

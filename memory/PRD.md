@@ -5248,3 +5248,7 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - Frontend `pages/ops/PmHandover.jsx` at `/app/ops/handover-pack`, menu "PM Handover Pack" (ops, perm projects, testid nav-ops-handover-pack). Project selector → on-screen pack + Download PDF (testids handover-*).
 - Note: reportlab Helvetica can't render ₹ — PDF headers use "Rs". Verified: JSON via curl (PRJ-2026-0036: 18 open/5 approvals/3 accounts/3 delayed), PDF page render inspected, UI screenshot OK.
 
+
+### Iteration 175 (Aug 2026) — "Other" request routing type ✅
+- REQUEST_TYPES += `other` (label "Other", dept admin, payment=True, expense_type misc → account 5900). All existing options untouched. Frontend Amount field condition extended to include "other". Flows through approval chain → accounts payment queue like any payment type; Expense Type dropdown can still override. Curl-verified: /types lists Other; created REQ-2026-0079 correctly.
+
