@@ -5267,3 +5267,10 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - Backend: VendorBillIn += optional `id` (vb_create honors client id: `payload.id or new_id()`); vb_update pops `id` to avoid clobbering. Explicit cost_center_id respected (auto-link only fills blanks).
 - Verified: curl (client id + explicit CC saved on VB-2026-0005) + UI screenshot (auto CC selection on project pick, uploader visible).
 
+
+### Iteration 178 (Aug 2026) — URGENT: TRANS vendors + bulk "already updated" guard ✅
+1. `/api/logistics/transport-vendors` regex relaxed to "trans" (matches production category code **TRANS**, transportation, etc.); still approved-only.
+2. Manager Log project list confirmed unscoped (pm_scope only restricts PM/coordinator + P&O-dept PM-hint roles); Project (ID · Name) + auto cost-center fetch already live (iter-177).
+3. Bulk employee/worker import (`employees_bulk_router`): NEW guards — (a) row data already matches → "Employee already updated — data already matches"; (b) record modified by a previous bulk update (has bulk_update_snapshot_id) → blocked with date/user in message; (c) blank-id rows duplicating existing Employee ID / Aadhaar / Name+Father's Name → "already exists in the master; duplicate row not created". `already_updated` counter in summary; errors surface in existing results dialog + toast. ALLOWED_FIELDS += father_name, aadhaar_number.
+- Verified via curl xlsx uploads: all 3 guards fire; genuine new row still creates; genuine change still updates.
+

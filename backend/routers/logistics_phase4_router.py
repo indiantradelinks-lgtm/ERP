@@ -450,9 +450,9 @@ async def transport_vendors(user: dict = Depends(require_permission("dispatch_re
     prof_ids = await db.logistics_vendor_profiles.distinct(
         "vendor_id", {"vendor_kind": "transporter", "active": {"$ne": False}})
     q = {"status": "approved",
-         "$or": [{"categories": {"$regex": "transport", "$options": "i"}},
-                 {"category": {"$regex": "transport", "$options": "i"}},
-                 {"vendor_type": {"$regex": "transport", "$options": "i"}},
+         "$or": [{"categories": {"$regex": "trans", "$options": "i"}},
+                 {"category": {"$regex": "trans", "$options": "i"}},
+                 {"vendor_type": {"$regex": "trans", "$options": "i"}},
                  {"id": {"$in": prof_ids}}]}
     return await db.vendors.find(q, {"_id": 0, "id": 1, "name": 1, "vendor_code": 1, "categories": 1}).sort("name", 1).to_list(1000)
 

@@ -31,9 +31,10 @@ router = APIRouter(prefix="/employees/bulk", tags=["employees-bulk"])
 # Fields the user is allowed to bulk-edit. Anything else in the xlsx is ignored.
 ALLOWED_FIELDS = [
     "name", "employee_id", "master_category", "department", "designation", "skill_name",
+    "father_name",
     "phone", "email", "status", "role", "employment_type",
     "date_of_joining", "date_of_birth", "gender",
-    "pan", "aadhaar", "pf_uan", "esic_no",
+    "pan", "aadhaar", "aadhaar_number", "pf_uan", "esic_no",
     "bank_name", "bank_account", "bank_ifsc",
     "address", "city", "state", "pincode",
     "contractor_name", "contractor_license_no",
@@ -138,7 +139,7 @@ async def import_bulk(file: UploadFile = File(...),
 
     summary = {
         "total_rows": 0, "updated": 0, "created": 0, "unchanged": 0,
-        "skipped": 0, "errors": [],
+        "already_updated": 0, "skipped": 0, "errors": [],
     }
     per_row = []
     snapshot_id = new_id()
@@ -205,8 +206,23 @@ async def import_bulk(file: UploadFile = File(...),
                     if cur_n != v_n:
                         diff_patch[k] = v
                 if not diff_patch:
-                    summary["unchanged"] += 1
-                    per_row.append({"row": ri, "id": existing["id"], "action": "unchanged"})
+                    summary["already_updated"] += 1
+                    msg = f"Employee already updated — data for '{existing.get('name')}' already matches, no changes applied"
+                    summary["errors"].append({"row": ri, "id": existing["id"], "error": msg})
+                    per_row.append({"row": ri, "id": existing["id"], "action": "already_updated", "error": msg})
+                    continue
+                if existing.get("bulk_update_snapshot_id"):
+                    prev = await db.employee_bulk_updates.find_one(
+                        {"id": existing["bulk_update_snapshot_id"]}, {"_id": 0, "at": 1, "by_name": 1})
+                    detail = ""
+                    if prev:
+                        when = (prev.get("at") or "")[:16].replace("T", " ")
+                        detail = f" on {when} by {prev.get('by_name')}"
+                    msg = (f"Employee already updated — '{existing.get('name')}' was modified by a previous bulk update{detail}. "
+                           "Edit the record individually if a change is really needed.")
+                    summary["already_updated"] += 1
+                    summary["errors"].append({"row": ri, "id": existing["id"], "error": msg})
+                    per_row.append({"row": ri, "id": existing["id"], "action": "already_updated", "error": msg})
                     continue
                 # Apply update
                 diff_patch["updated_at"] = now_iso()
@@ -223,6 +239,24 @@ async def import_bulk(file: UploadFile = File(...),
                     summary["skipped"] += 1
                     summary["errors"].append({"row": ri, "error": "blank id and blank name — row ignored"})
                     per_row.append({"row": ri, "action": "skipped", "error": "blank id+name"})
+                    continue
+                dup_q = []
+                if patch.get("employee_id"):
+                    dup_q.append({"employee_id": patch["employee_id"]})
+                aad = patch.get("aadhaar_number") or patch.get("aadhaar")
+                if aad:
+                    dup_q.append({"$or": [{"aadhaar_number": aad}, {"aadhaar": aad}]})
+                if patch.get("name") and patch.get("father_name"):
+                    import re as _re
+                    dup_q.append({"name": {"$regex": f"^{_re.escape(str(patch['name']).strip())}$", "$options": "i"},
+                                  "father_name": {"$regex": f"^{_re.escape(str(patch['father_name']).strip())}$", "$options": "i"}})
+                dup = await db.employees.find_one({"$or": dup_q}, {"_id": 0, "name": 1, "employee_id": 1}) if dup_q else None
+                if dup:
+                    msg = (f"Employee already updated — '{dup.get('name')}' (Emp ID {dup.get('employee_id') or '—'}) "
+                           "already exists in the master; duplicate row not created")
+                    summary["already_updated"] += 1
+                    summary["errors"].append({"row": ri, "error": msg})
+                    per_row.append({"row": ri, "action": "already_updated", "error": msg})
                     continue
                 new_doc = {
                     "id": new_id(),

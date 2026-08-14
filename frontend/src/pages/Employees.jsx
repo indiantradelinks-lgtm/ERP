@@ -302,7 +302,7 @@ export default function Employees({ master = "employee" }) {
       });
       const s = r.data.summary || {};
       setBulkResult(r.data);
-      toast.success(`Bulk import done — ${s.updated} updated, ${s.created} created, ${s.unchanged} unchanged, ${s.skipped} skipped`);
+      toast.success(`Bulk import done — ${s.updated} updated, ${s.created} created, ${s.already_updated || 0} already updated, ${s.unchanged} unchanged, ${s.skipped} skipped`);
       // Force the table to refetch
       if (typeof r.fetchAll === "function") r.fetchAll();
       else if (typeof r.reload === "function") r.reload();
