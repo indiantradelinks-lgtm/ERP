@@ -5252,3 +5252,11 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 ### Iteration 175 (Aug 2026) — "Other" request routing type ✅
 - REQUEST_TYPES += `other` (label "Other", dept admin, payment=True, expense_type misc → account 5900). All existing options untouched. Frontend Amount field condition extended to include "other". Flows through approval chain → accounts payment queue like any payment type; Expense Type dropdown can still override. Curl-verified: /types lists Other; created REQ-2026-0079 correctly.
 
+
+### Iteration 176 (Aug 2026) — URGENT 4-point batch ✅ (test report iteration_170.json)
+1. **Request Center**: EXPENSE_TYPES += "other"; Settlement dropdowns (+ Daily Expenses) gained "Other". Detail dialog now has Attachments button (`req-detail-attachments`, RowAttachments parent_type=project_requests) so approvers/accounts see docs at every stage.
+2. **HR Worker/Employee Master**: `_employee_duplicate_guard` in crud_router — 409 on duplicate Employee ID, Aadhaar, or Name+Father's Name (case-insensitive), applied on create + update (self-excluded). Edit dialog fetches FULL record via new `editFetch` prop on DataTableShell (GET /employees/{id}) so all saved fields prefill.
+3. **Transport Vendor Bills**: new GET /api/logistics/transport-vendors (approved + transportation category/profile); VendorBillIn += cost_center fields with `_auto_cost_center` (prefers vehicle/transport/freight cost center of the project); ListPage gained `attachments` prop (paperclip + RowAttachments, folder vendor_bills whitelisted) and `labelRender`; ALL logistics project dropdowns now show "CODE · Name".
+4. **Auto-sync**: new `hooks/useAutoSync.js` — 3s background refresh, pauses when tab hidden/dialog open/user typing, in-flight guard. Wired into ProjectRequests, ProjectExpenses, PaymentProcessingCenter, all logistics ListPages. Verified: 3s cadence, no form data loss, no console errors.
+- NOTE: testing agent git ops occasionally revert recent edits (happened twice: PEX_TYPES import iter-169, labelRender iter-170) — ALWAYS re-verify your last edits still exist after a testing_agent run.
+

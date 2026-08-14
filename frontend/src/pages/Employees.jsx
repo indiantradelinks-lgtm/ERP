@@ -386,7 +386,7 @@ export default function Employees({ master = "employee" }) {
         ) : undefined}
         canWrite={r.canWrite}
         canDelete={r.canDelete}
-        attachmentsParentType="employees"
+        editFetch={(row) => api.get(`/employees/${row.id}`)}
         formHeader={formHeader}
         onAfterCreate={attachPendingDocs}
         extraActions={extraActions}

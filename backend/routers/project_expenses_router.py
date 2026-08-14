@@ -40,6 +40,7 @@ EXPENSE_TYPES: Dict[str, Dict[str, str]] = {
     "vehicle":              {"label": "Vehicle Expense", "account": "5142"},
     "office_admin":         {"label": "Office / Admin", "account": "5400"},
     "misc":                 {"label": "Miscellaneous", "account": "5900"},
+    "other":                {"label": "Other", "account": "5900"},
 }
 
 RAISE_ROLES = {"project_coordinator", "project_manager", "super_admin"}

@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProjectSelect } from "@/components/MasterSelect";
 import { EmployeeSearchSelect } from "@/components/EmployeeSearchSelect";
+import useAutoSync from "@/hooks/useAutoSync";
 import FileUploader from "@/components/FileUploader";
 import RowAttachments from "@/components/RowAttachments";
 
@@ -66,6 +67,7 @@ export default function ProjectExpenses({ embedded = false }) {
     api.get("/advances/eligible-employees").then((r) => setEmployees(r.data || [])).catch(() => {});
   }, []);
   useEffect(() => { load(); }, [filters]); // eslint-disable-line
+  useAutoSync(load);
 
   const onProjectPicked = async (code, row) => {
     setForm((f) => ({ ...f, project_code: code, project_id: row?.id || "", cost_center_id: "" }));
@@ -349,6 +351,7 @@ export default function ProjectExpenses({ embedded = false }) {
                 <option value="petty_cash">Petty Cash</option>
                 <option value="employee_reimbursement">Employee Reimbursement</option>
                 <option value="vendor_payable">Vendor Payable</option>
+                <option value="other">Other</option>
               </select>
             </div>
             <div className="col-span-2">

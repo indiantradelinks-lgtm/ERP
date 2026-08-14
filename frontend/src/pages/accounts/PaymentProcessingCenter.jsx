@@ -14,6 +14,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import RowAttachments from "@/components/RowAttachments";
+import useAutoSync from "@/hooks/useAutoSync";
 
 const inr = (v) => `₹ ${Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
@@ -101,6 +102,14 @@ export default function PaymentProcessingCenter() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useAutoSync(async () => {
+    const [q, bf] = await Promise.all([
+      api.get("/accounts/payment-queue"),
+      api.get("/accounts/payment-queue/bank-files"),
+    ]);
+    setRows(q.data || []);
+    setBankFiles(bf.data || []);
+  });
   useEffect(() => {
     api.get("/accounts/chart-of-accounts").then((r) => setCoa(r.data || [])).catch(() => {});
   }, []);

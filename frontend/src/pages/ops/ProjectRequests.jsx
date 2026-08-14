@@ -15,6 +15,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { ProjectSelect, SiteLocationSelect } from "@/components/MasterSelect";
 import { EmployeeSearchSelect } from "@/components/EmployeeSearchSelect";
 import FileUploader from "@/components/FileUploader";
+import RowAttachments from "@/components/RowAttachments";
+import useAutoSync from "@/hooks/useAutoSync";
 import ProjectExpenses from "./ProjectExpenses";
 
 const inr = (v) => `₹ ${Number(v || 0).toLocaleString("en-IN")}`;
@@ -63,6 +65,7 @@ export default function ProjectRequests() {
   const [attFiles, setAttFiles] = useState([]);
   const [stock, setStock] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [attachFor, setAttachFor] = useState(null);
   const [ccList, setCcList] = useState([]);
   const [employees, setEmployees] = useState([]);
 
@@ -110,8 +113,7 @@ export default function ProjectRequests() {
     api.get("/vendors").then((r) => setVendors((r.data || []).filter((v) => v.status === "approved"))).catch(() => {});
   }, []);
   useEffect(() => { load(); }, [filters]); // eslint-disable-line
-
-  // Quick shortcut: /app/ops/requests?new=service auto-opens the Service/Payment form
+  useAutoSync(load);
   useEffect(() => {
     if (searchParams.get("new") === "service" && canRaise) {
       openDialog("service");
@@ -509,6 +511,7 @@ export default function ProjectRequests() {
                         <option value="vendor_payable">Vendor Payable</option>
                         <option value="petty_cash">Petty Cash</option>
                         <option value="employee_reimbursement">Employee Reimbursement</option>
+                        <option value="other">Other</option>
                       </select>
                     </div>
                   </>
@@ -717,6 +720,11 @@ export default function ProjectRequests() {
                 <DialogTitle className="font-display flex items-center gap-2">{detail.request_no} · {detail.request_type_label}</DialogTitle>
                 <DialogDescription>{detail.project_code} — {detail.project_name} · routed to <b>{detail.owning_dept}</b></DialogDescription>
               </DialogHeader>
+              <div className="flex justify-end -mt-2">
+                <Button size="sm" variant="outline" className="rounded-sm h-7" onClick={() => setAttachFor(detail)} data-testid="req-detail-attachments">
+                  Attachments{detail.attachment_count ? ` (${detail.attachment_count})` : ""}
+                </Button>
+              </div>
               <div className="space-y-3 text-sm">
                 <div className="grid grid-cols-3 gap-2">
                   {[["Status", (STATUS[detail.status] || [detail.status])[0]], ["Est. Value", inr(detail.est_value)],
@@ -829,6 +837,10 @@ export default function ProjectRequests() {
           )}
         </DialogContent>
       </Dialog>
+
+      <RowAttachments open={!!attachFor} onOpenChange={() => setAttachFor(null)}
+        parentType="project_requests" parentId={attachFor?.id}
+        recordTitle={`Attachments — ${attachFor?.request_no || ""}`} />
     </div>
   );
 }

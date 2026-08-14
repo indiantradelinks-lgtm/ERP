@@ -1,0 +1,40 @@
+{
+  "summary": "Iter 170 — 4-point batch (Project Request Center 'Other' + attachments; HR duplicate guards + edit-prefill; Transport Vendor Bills approved-only vendor + row attach; global 3s auto-sync). BACKEND 4/4 PASS (test_iter170_batch4.py): (a) GET /api/logistics/transport-vendors returns only approved transportation vendors incl. 'FastTrack Transporters'; (b) POST /api/employees dup-guard 409 on name+father match (using field key 'name' not 'employee_name') and 409/400 on aadhaar dup; (c) PUT /api/employees/{id} with unchanged payload returns 200 (no false-positive); (d) POST /api/project-requests works (PEX_TYPES NameError from iter 169 is fixed) — both minimal fuel body and expense_type='other'+settlement_mode='other' accepted. FRONTEND (admin@erp.com): (1) /app/ops/requests?new=service dialog — req-form-type includes 'Other'; after picking Accommodation/Other the conditional req-form-expense-type (includes 'Other') and req-form-settlement (Vendor Payable, Petty Cash, Employee Reimbursement, Other) render; Paid-To toggle (Vendor/Person) works; req-form-vendor-select lists ONLY approved vendors — FastTrack Transporters, PaintMaster Co, SafetyFirst Equip, SteelTech Supplies. (2) Row detail dialog opens on req-open-*; req-detail-attachments button present and opens the RowAttachments upload dialog (parent_type=project_requests, headline 'Attachments — REQ-2026-0079'). (3) Auto-sync verified: on /app/ops/requests over ~8s idle, 6 GET /api/project-requests fired silently (≈3s cadence), no console errors, no row flicker. With New Request dialog open + typed 'AUTO_SYNC_KEEP_TEST_TEXT' in Description, value UNCHANGED after 7s (dialog pause behaviour of useAutoSync works). (4) /app/workers — existing 'Dup Test Worker' Edit dialog prefills ALL saved DB fields (EMP-2026-0131, name, father Ram Singh, phone 9990001111, employment_type daily_wages, aadhaar 123412341234, master worker). (5) /app/logistics/vendor-bills — New dialog: Vendor dropdown shows ONLY 'FastTrack Transporters' (approved+transportation); per-row 'vendor-bill-page-attach-{id}' buttons present on all rows; existing rows already show cost center auto-filled 'Vehicle/Logistics Items'. FINDINGS: One MINOR mismatch — Vendor Bills Project dropdown shows only project CODE (e.g. 'PRJ-2026-0036') without the '· Name' suffix required by spec.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "LogisticsPhase34Pages · VendorBills New/Edit dialog", "issue": "Project dropdown shows only project code (e.g. 'PRJ-2026-0036') instead of the required 'CODE · Name' format. Field config at LogisticsPhase34Pages.jsx:515 uses `labelField: 'code'` with no `labelRender` — need `labelRender: (p) => `${p.code} · ${p.name || p.project_name || ''}`` (like the Project Request dialog uses).", "selector": "[role='dialog'] select (project select in Transport Vendor Bills)", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "New Worker / Labour Master dialog", "issues": ["<label> elements have no `htmlFor`/`for` attribute so screen-readers and Playwright get_by_label don't associate labels with inputs. Consider adding id/for pairs."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter170_batch4.py",
+    "/app/test_reports/pytest/iter170.xml"
+  ],
+  "action_items": [
+    "MEDIUM: Add `labelRender: (p) => `${p.code} · ${p.name || p.project_name || '—'}`` to the Project field in the VendorBills page config (LogisticsPhase34Pages.jsx line 515) so the Transport Vendor Bills project dropdown matches the 'CODE · Name' spec — currently shows codes only. Consider also applying to other logistics pages (LR bills, Dispatch etc.) that use the same `labelField:'code'` pattern.",
+    "MINOR: Add `htmlFor` on <label> and matching `id` on the paired <input> in the Employee/Worker Master form so clicking labels focuses inputs and get_by_label-style tests work."
+  ],
+  "critical_code_review_comments": [
+    "crud_router._employee_duplicate_guard uses `doc.get('name')` for the name+father check, but the frontend Worker New form was observed to POST both `name` (real value) and `employee_name` in some legacy paths. Verified with a `name='Dup Test Worker'` payload the guard returns 409 — good. Ensure any legacy code that only sets `employee_name` also mirrors into `name` before persisting to keep the guard reliable.",
+    "LogisticsPhase34Pages.jsx has 7+ ListPage entries each hand-rolling nearly-identical `project_id` preload configs with `labelField:'code'`. Centralize this as `LABEL_PROJECT` constant that includes labelRender=CODE · Name; will kill the 'CODE · Name' bug across all logistics pages in one shot.",
+    "useAutoSync verified to pause while dialog open + preserve form input — good. No duplicate in-flight calls observed. Cadence looks correct (~3s). No console errors while polling.",
+    "PaymentProcessingCenter.jsx should also visibly show 'Cost Center' from the auto-linking for parity with vendor bills; not a bug — spec-adjacent nit."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter170_batch4.py (new)"
+  ],
+  "success_rate": {"backend": "100% (4/4 in test_iter170_batch4.py; PEX_TYPES fix confirmed)", "frontend": "~95% — all core batch items work; one MEDIUM spec deviation on VendorBills project label format"},
+  "test_credentials": "admin@erp.com / Admin@123 used throughout.",
+  "seed_data_creation": "None — reused existing 'Dup Test Worker' (EMP-2026-0131, aadhaar 123412341234) for duplicate + edit-prefill test. No new persisted rows.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Batch is largely GREEN. The only outstanding item is the Vendor Bills project dropdown label format (`CODE · Name`) — currently shows just `CODE`. All other testids used in this iteration: req-form-type / req-form-expense-type / req-form-settlement / req-form-paidto-type / req-form-vendor-select / req-detail-attachments / vendor-bill-page-attach-{id} / workers-edit-{id} / workers-attach-{id}. Note: the Employee/Worker New dialog labels lack `htmlFor`, so use direct input positional selectors or setNativeValue via evaluate to fill fields.",
+  "rca of the issue": "Vendor Bills project label format miss: field config in /app/frontend/src/pages/logistics/LogisticsPhase34Pages.jsx:515 sets `labelField:'code'` with no `labelRender` fallback; DataTableShell's option renderer therefore emits only `o.code`. Fix: add `labelRender: (p) => `${p.code || p.project_code} · ${p.name || p.project_name || '—'}``. Reproduction: /app/logistics/vendor-bills → New → open Project dropdown → observe options are code-only (e.g. 'PRJ-2026-0036') without ' · Auto Project Test'."
+}

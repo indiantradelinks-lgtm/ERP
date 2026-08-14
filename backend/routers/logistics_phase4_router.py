@@ -422,6 +422,8 @@ class VendorBillIn(BaseModel):
     gst_amount: Optional[float] = None
     tds_amount: Optional[float] = None
     net_payable: Optional[float] = None
+    cost_center_id: Optional[str] = None
+    cost_center_label: Optional[str] = None
     supporting_urls: Optional[List[str]] = None
     remarks: Optional[str] = None
     status: str = "pending"  # pending | verified | approved | posted | paid | rejected
@@ -439,6 +441,33 @@ async def vb_list(
     if status:
         q["status"] = status
     return await db.logistics_vendor_bills.find(q, {"_id": 0}).sort("bill_date", -1).to_list(2000)
+
+
+@router.get("/transport-vendors")
+async def transport_vendors(user: dict = Depends(require_permission("dispatch_requests", "read"))):
+    """Approved vendors in the Transportation category (or with a transporter profile)."""
+    prof_ids = await db.logistics_vendor_profiles.distinct(
+        "vendor_id", {"vendor_kind": "transporter", "active": {"$ne": False}})
+    q = {"status": "approved",
+         "$or": [{"categories": {"$regex": "transport", "$options": "i"}},
+                 {"category": {"$regex": "transport", "$options": "i"}},
+                 {"vendor_type": {"$regex": "transport", "$options": "i"}},
+                 {"id": {"$in": prof_ids}}]}
+    return await db.vendors.find(q, {"_id": 0, "id": 1, "name": 1, "vendor_code": 1, "categories": 1}).sort("name", 1).to_list(1000)
+
+
+async def _auto_cost_center(doc: Dict[str, Any]) -> None:
+    """Link the project's cost center (freight/vehicle preferred, else project default)."""
+    if not doc.get("project_id") or doc.get("cost_center_id"):
+        return
+    ccs = await db.cost_centers.find({"project_id": doc["project_id"], "active": {"$ne": False}}, {"_id": 0}).to_list(50)
+    if not ccs:
+        return
+    cc = next((c for c in ccs if "transport" in (c.get("category_code") or "").lower()
+               or "vehicle" in (c.get("category_code") or "").lower()
+               or "freight" in (c.get("name") or "").lower()), ccs[0])
+    doc["cost_center_id"] = cc["id"]
+    doc["cost_center_label"] = cc.get("name") or cc.get("code")
 
 
 @router.post("/vendor-bills")
@@ -461,6 +490,7 @@ async def vb_create(
                  payload.gst_amount or 0]
         net = sum(parts) - (payload.tds_amount or 0)
     doc = payload.model_dump()
+    await _auto_cost_center(doc)
     doc.update({
         "id": new_id(),
         "vb_no": f"VB-{_yr()}-{seq:04d}",
@@ -485,6 +515,7 @@ async def vb_update(
     if not ex:
         raise HTTPException(404, "Not found")
     updates = payload.model_dump()
+    await _auto_cost_center(updates)
     updates["updated_at"] = now_iso()
     await db.logistics_vendor_bills.update_one({"id": bid}, {"$set": updates})
 

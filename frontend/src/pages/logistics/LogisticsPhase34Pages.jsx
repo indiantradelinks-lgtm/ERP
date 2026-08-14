@@ -11,19 +11,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Users, Plane, Hotel, MapPin, LogOut, Fuel, Wrench, DollarSign, FileText, Plus, RefreshCcw, Pencil } from "lucide-react";
+import { Users, Plane, Hotel, MapPin, LogOut, Fuel, Wrench, DollarSign, FileText, Plus, RefreshCcw, Pencil, Paperclip } from "lucide-react";
+import RowAttachments from "@/components/RowAttachments";
+import useAutoSync from "@/hooks/useAutoSync";
 
 // ------------------------------------------------------------
 // Generic list + dialog shell
 // ------------------------------------------------------------
 function ListPage({ testId, title, subtitle, icon, endpoint, columns, formFields, empty,
-                    tone = "blue", extraLoads = [], onEnrich }) {
+                    tone = "blue", extraLoads = [], onEnrich, attachments }) {
   const [rows, setRows] = useState([]);
   const [preloads, setPreloads] = useState({});
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(empty);
+  const [attachFor, setAttachFor] = useState(null);
 
-  const load = async () => {
+  const load = async (silent = false) => {
     try {
       const [main, ...rest] = await Promise.all([
         api.get(endpoint),
@@ -35,9 +38,10 @@ function ListPage({ testId, title, subtitle, icon, endpoint, columns, formFields
       const pmap = {};
       extraLoads.forEach((l, i) => { pmap[l.key] = rest[i].data || []; });
       setPreloads(pmap);
-    } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
+    } catch (e) { if (!silent) toast.error(e.response?.data?.detail || "Load failed"); }
   };
   useEffect(() => { load(); }, []);
+  useAutoSync(() => load(true));
 
   const save = async () => {
     try {
@@ -94,7 +98,12 @@ function ListPage({ testId, title, subtitle, icon, endpoint, columns, formFields
                       {c.render ? c.render(r) : (r[c.key] ?? "—")}
                     </td>
                   ))}
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                    {attachments && (
+                      <Button size="sm" variant="ghost" onClick={() => setAttachFor(r)} data-testid={`${testId}-attach-${r.id}`}>
+                        <Paperclip className="h-3 w-3" />
+                      </Button>
+                    )}
                     <Button size="sm" variant="ghost" onClick={() => { setEditing(r); setForm({ ...empty, ...r }); }} data-testid={`${testId}-edit-${r.id}`}>
                       <Pencil className="h-3 w-3" />
                     </Button>
@@ -127,7 +136,7 @@ function ListPage({ testId, title, subtitle, icon, endpoint, columns, formFields
                     setForm({ ...form, ...patch });
                   }}>
                     <option value="">—</option>
-                    {(preloads[f.preloadKey] || []).map((o) => <option key={o.id} value={o.id}>{o[f.labelField] || o.name || o.driver_name || o.code || o.id}</option>)}
+                    {(preloads[f.preloadKey] || []).map((o) => <option key={o.id} value={o.id}>{f.labelRender ? f.labelRender(o) : (o[f.labelField] || o.name || o.driver_name || o.code || o.id)}</option>)}
                   </select>
                 ) : f.type === "checkbox" ? (
                   <label className="flex items-center gap-2 text-sm h-10"><input type="checkbox" checked={!!form[f.key]} onChange={(e) => setForm({ ...form, [f.key]: e.target.checked })} /><span>{f.hint || f.label}</span></label>
@@ -143,6 +152,12 @@ function ListPage({ testId, title, subtitle, icon, endpoint, columns, formFields
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {attachments && (
+        <RowAttachments open={!!attachFor} onOpenChange={() => setAttachFor(null)}
+          parentType={attachments} parentId={attachFor?.id}
+          recordTitle={`Documents — ${attachFor?.vb_no || attachFor?.id || ""}`} />
+      )}
     </div>
   );
 }
@@ -174,7 +189,7 @@ export function ManpowerMobilization() {
         { key: "status", label: "Status", render: (r) => <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-slate-100">{r.status}</span> },
       ]}
       formFields={[
-        { key: "project_id", label: "Project", type: "preload", preloadKey: "projects", labelField: "code", mirrorTo: "project_code", mirrorField: "code" },
+        { key: "project_id", label: "Project (ID · Name)", type: "preload", preloadKey: "projects", labelField: "code", labelRender: (o) => `${o.code || o.project_code} · ${o.name || o.project_name || "—"}`, mirrorTo: "project_code", mirrorField: "code" },
         { key: "client", label: "Client" },
         { key: "site_location", label: "Site Location", full: true },
         { key: "reporting_date", label: "Reporting Date", type: "date" },
@@ -223,7 +238,7 @@ export function TravelArrangement() {
         { key: "ticket_ref", label: "Ticket / Booking Ref" },
         { key: "cost", label: "Cost (₹)", type: "number" },
         { key: "paid_by", label: "Paid By" },
-        { key: "project_id", label: "Project", type: "preload", preloadKey: "projects", labelField: "code", mirrorTo: "project_code", mirrorField: "code" },
+        { key: "project_id", label: "Project (ID · Name)", type: "preload", preloadKey: "projects", labelField: "code", labelRender: (o) => `${o.code || o.project_code} · ${o.name || o.project_name || "—"}`, mirrorTo: "project_code", mirrorField: "code" },
         { key: "status", label: "Status", type: "select", options: ["planned", "confirmed", "cancelled", "completed"] },
         { key: "remarks", label: "Remarks", type: "textarea", full: true },
       ]}
@@ -260,7 +275,7 @@ export function AccommodationArrangement() {
         { key: "check_in", label: "Check-in", type: "date" },
         { key: "check_out", label: "Check-out", type: "date" },
         { key: "cost", label: "Cost (₹)", type: "number" },
-        { key: "project_id", label: "Project", type: "preload", preloadKey: "projects", labelField: "code", mirrorTo: "project_code", mirrorField: "code" },
+        { key: "project_id", label: "Project (ID · Name)", type: "preload", preloadKey: "projects", labelField: "code", labelRender: (o) => `${o.code || o.project_code} · ${o.name || o.project_name || "—"}`, mirrorTo: "project_code", mirrorField: "code" },
         { key: "site_location", label: "Site Location" },
         { key: "status", label: "Status", type: "select", options: ["planned", "confirmed", "active", "closed", "cancelled"] },
         { key: "remarks", label: "Remarks", type: "textarea", full: true },
@@ -385,7 +400,7 @@ export function FuelEntries() {
         { key: "fuel_station", label: "Fuel Station / Vendor" },
         { key: "bill_no", label: "Bill No." },
         { key: "payment_mode", label: "Payment Mode", type: "select", options: ["cash", "bank", "card", "credit", "advance"] },
-        { key: "project_id", label: "Project", type: "preload", preloadKey: "projects", labelField: "code", mirrorTo: "project_code", mirrorField: "code" },
+        { key: "project_id", label: "Project (ID · Name)", type: "preload", preloadKey: "projects", labelField: "code", labelRender: (o) => `${o.code || o.project_code} · ${o.name || o.project_name || "—"}`, mirrorTo: "project_code", mirrorField: "code" },
         { key: "status", label: "Status", type: "select", options: ["pending", "approved", "rejected"] },
         { key: "remarks", label: "Remarks", type: "textarea", full: true },
       ]}
@@ -420,7 +435,7 @@ export function VehicleExpenses() {
         { key: "amount", label: "Amount (₹) *", type: "number" },
         { key: "vendor_id", label: "Vendor", type: "preload", preloadKey: "vendors", labelField: "name" },
         { key: "bill_no", label: "Bill No." },
-        { key: "project_id", label: "Project", type: "preload", preloadKey: "projects", labelField: "code", mirrorTo: "project_code", mirrorField: "code" },
+        { key: "project_id", label: "Project (ID · Name)", type: "preload", preloadKey: "projects", labelField: "code", labelRender: (o) => `${o.code || o.project_code} · ${o.name || o.project_name || "—"}`, mirrorTo: "project_code", mirrorField: "code" },
         { key: "status", label: "Status", type: "select", options: ["pending", "approved", "rejected"] },
         { key: "remarks", label: "Remarks", type: "textarea", full: true },
       ]}
@@ -474,7 +489,8 @@ export function VendorBills() {
       icon={<FileText className="h-6 w-6 text-amber-600" />}
       tone="amber"
       endpoint="/logistics/vendor-bills"
-      extraLoads={[{ key: "vendors", path: "/vendors" }, { key: "projects", path: "/projects" }, { key: "drs", path: "/logistics/dispatch-requests" }]}
+      attachments="vendor_bills"
+      extraLoads={[{ key: "vendors", path: "/logistics/transport-vendors" }, { key: "projects", path: "/projects" }, { key: "drs", path: "/logistics/dispatch-requests" }]}
       empty={{ vendor_id: "", vendor_name: "", bill_no: "", bill_date: "", dispatch_id: "",
                dispatch_no: "", project_id: "", project_code: "",
                freight_amount: "", loading_cost: "", unloading_cost: "", detention_amount: "",
@@ -485,6 +501,8 @@ export function VendorBills() {
         { key: "bill_no", label: "Bill #" },
         { key: "bill_date", label: "Date" },
         { key: "vendor_name", label: "Vendor" },
+        { key: "project_code", label: "Project" },
+        { key: "cost_center_label", label: "Cost Center", render: (r) => r.cost_center_label || "—" },
         { key: "freight_amount", label: "Freight", align: "right", render: (r) => r.freight_amount ? `₹${r.freight_amount}` : "—" },
         { key: "net_payable", label: "Net Payable", align: "right", render: (r) => r.net_payable ? `₹${r.net_payable}` : "—" },
         { key: "status", label: "Status" },
@@ -494,7 +512,7 @@ export function VendorBills() {
         { key: "bill_no", label: "Bill No. *" },
         { key: "bill_date", label: "Bill Date", type: "date" },
         { key: "dispatch_id", label: "Dispatch (optional)", type: "preload", preloadKey: "drs", labelField: "dr_no", mirrorTo: "dispatch_no", mirrorField: "dr_no" },
-        { key: "project_id", label: "Project", type: "preload", preloadKey: "projects", labelField: "code", mirrorTo: "project_code", mirrorField: "code" },
+        { key: "project_id", label: "Project (ID · Name)", type: "preload", preloadKey: "projects", labelField: "code", labelRender: (o) => `${o.code || o.project_code} · ${o.name || o.project_name || "—"}`, mirrorTo: "project_code", mirrorField: "code" },
         { key: "freight_amount", label: "Freight (₹)", type: "number" },
         { key: "loading_cost", label: "Loading (₹)", type: "number" },
         { key: "unloading_cost", label: "Unloading (₹)", type: "number" },

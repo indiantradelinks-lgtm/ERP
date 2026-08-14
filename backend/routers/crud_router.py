@@ -121,6 +121,27 @@ MODULES = [
 def make_crud(resource: str, collection: str, perm_key: str | None = None) -> None:
     perm = perm_key or collection
 
+    async def _employee_duplicate_guard(doc: Dict[str, Any], exclude_id: str | None = None) -> None:
+        """Block duplicate employees/workers by Employee ID, Aadhaar No. and Name+Father's Name."""
+        base_ex = {"id": {"$ne": exclude_id}} if exclude_id else {}
+        emp_id = (doc.get("employee_id") or "").strip()
+        if emp_id and await db.employees.find_one({**base_ex, "$or": [{"employee_id": emp_id}, {"emp_code": emp_id}]}, {"_id": 0, "id": 1}):
+            raise HTTPException(409, f"Duplicate record: Employee ID '{emp_id}' already exists in the master")
+        aadhaar = str(doc.get("aadhaar_number") or "").replace(" ", "").strip()
+        if aadhaar and await db.employees.find_one({**base_ex, "aadhaar_number": {"$in": [aadhaar, doc.get("aadhaar_number")]}}, {"_id": 0, "id": 1}):
+            raise HTTPException(409, f"Duplicate record: Aadhaar No. ending {aadhaar[-4:]} is already registered to another employee/worker")
+        name = (doc.get("name") or "").strip()
+        father = (doc.get("father_name") or "").strip()
+        if name and father:
+            import re as _re
+            dup = await db.employees.find_one({**base_ex,
+                                               "name": {"$regex": f"^{_re.escape(name)}$", "$options": "i"},
+                                               "father_name": {"$regex": f"^{_re.escape(father)}$", "$options": "i"}},
+                                              {"_id": 0, "employee_id": 1, "emp_code": 1})
+            if dup:
+                raise HTTPException(409, f"Duplicate record: '{name}' s/o '{father}' already exists "
+                                         f"(Emp ID {dup.get('employee_id') or dup.get('emp_code') or '—'})")
+
     @router.get(f"/{resource}")
     async def list_items(user: dict = Depends(require_permission(perm, "read"))):
         q = await _list_filter(collection, user)
@@ -150,6 +171,7 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
             errs = validate_employee_compliance(doc)
             if errs:
                 raise HTTPException(status_code=400, detail=" · ".join(errs))
+            await _employee_duplicate_guard(doc)
         # Phase 3 — gate deployments behind approval for non-HR / non-Ops roles.
         deployment_needs_approval = (
             collection == "deployments"
@@ -275,6 +297,7 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
                 raise HTTPException(status_code=400, detail=" · ".join(errs))
             if "master_category" in payload and payload["master_category"] not in ("employee", "worker"):
                 raise HTTPException(status_code=400, detail="master_category must be 'employee' or 'worker'")
+            await _employee_duplicate_guard(payload, exclude_id=item_id)
         before = await db[collection].find_one({"id": item_id}, {"_id": 0})
         if collection == "employees" and before is not None:
             new_depts = payload.get("departments")

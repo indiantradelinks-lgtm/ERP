@@ -165,6 +165,7 @@ export default function DataTableShell({
   formHeader,           // (mode: 'create'|'edit', form, setForm) => ReactNode — slot above the form
   onAfterCreate,        // async (createdRow, form) => void — fires after a successful create
   createDefaults,       // object — initial form values when creating a new record
+  editFetch,            // async (row) => axios response — fetch full record before edit (all DB fields)
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -183,9 +184,13 @@ export default function DataTableShell({
     setForm({ ...(createDefaults || {}) });
     setOpen(true);
   };
-  const startEdit = (row) => {
-    setEditing(row);
-    setForm({ ...row });
+  const startEdit = async (row) => {
+    let full = row;
+    if (editFetch) {
+      try { full = { ...row, ...(await editFetch(row)).data }; } catch { /* fall back to row */ }
+    }
+    setEditing(full);
+    setForm({ ...full });
     setOpen(true);
   };
 
