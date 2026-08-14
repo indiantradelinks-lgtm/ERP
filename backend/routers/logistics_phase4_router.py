@@ -406,6 +406,7 @@ async def maint_update(
 # ═══════════════════════════════════════════════════════════════════════════
 
 class VendorBillIn(BaseModel):
+    id: Optional[str] = None
     vendor_id: str
     vendor_name: Optional[str] = None
     bill_no: str
@@ -492,7 +493,7 @@ async def vb_create(
     doc = payload.model_dump()
     await _auto_cost_center(doc)
     doc.update({
-        "id": new_id(),
+        "id": payload.id or new_id(),
         "vb_no": f"VB-{_yr()}-{seq:04d}",
         "net_payable": net,
         "bill_date": payload.bill_date or datetime.now(timezone.utc).date().isoformat(),
@@ -515,6 +516,7 @@ async def vb_update(
     if not ex:
         raise HTTPException(404, "Not found")
     updates = payload.model_dump()
+    updates.pop("id", None)
     await _auto_cost_center(updates)
     updates["updated_at"] = now_iso()
     await db.logistics_vendor_bills.update_one({"id": bid}, {"$set": updates})

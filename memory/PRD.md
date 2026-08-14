@@ -5260,3 +5260,10 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 4. **Auto-sync**: new `hooks/useAutoSync.js` — 3s background refresh, pauses when tab hidden/dialog open/user typing, in-flight guard. Wired into ProjectRequests, ProjectExpenses, PaymentProcessingCenter, all logistics ListPages. Verified: 3s cadence, no form data loss, no console errors.
 - NOTE: testing agent git ops occasionally revert recent edits (happened twice: PEX_TYPES import iter-169, labelRender iter-170) — ALWAYS re-verify your last edits still exist after a testing_agent run.
 
+
+### Iteration 177 (Aug 2026) — Transport Vendor Bill form: in-form attachments + Cost Center field ✅
+- ListPage gained generic field types: `attachments` (FileUploader inside the dialog; New pre-generates client `id` so uploads link before save; `_files` stripped from payload) and preload `afterChange` hook; preload selects now have testids `{testId}-f-{key}`.
+- VendorBills form: Cost Center (project-wise) select filtered by selected project (filterBy), auto-picks vehicle/transport/freight CC via project afterChange; "Bill / Invoice / Supporting Documents" uploader (folder/parent_type vendor_bills).
+- Backend: VendorBillIn += optional `id` (vb_create honors client id: `payload.id or new_id()`); vb_update pops `id` to avoid clobbering. Explicit cost_center_id respected (auto-link only fills blanks).
+- Verified: curl (client id + explicit CC saved on VB-2026-0005) + UI screenshot (auto CC selection on project pick, uploader visible).
+

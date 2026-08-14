@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Users, Plane, Hotel, MapPin, LogOut, Fuel, Wrench, DollarSign, FileText, Plus, RefreshCcw, Pencil, Paperclip } from "lucide-react";
 import RowAttachments from "@/components/RowAttachments";
+import FileUploader from "@/components/FileUploader";
 import useAutoSync from "@/hooks/useAutoSync";
 
 // ------------------------------------------------------------
@@ -60,6 +61,8 @@ function ListPage({ testId, title, subtitle, icon, endpoint, columns, formFields
     } catch (e) { toast.error(e.response?.data?.detail || "Save failed"); }
   };
 
+  const editRow = (r) => { setEditing(r); setForm({ ...empty, ...r, _files: [] }); };
+
   return (
     <div className="p-6 space-y-4" data-testid={testId}>
       <div className="flex items-start justify-between flex-wrap gap-3">
@@ -70,7 +73,7 @@ function ListPage({ testId, title, subtitle, icon, endpoint, columns, formFields
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={load}><RefreshCcw className="h-3.5 w-3.5" /></Button>
-          <Button onClick={() => { setEditing({}); setForm(empty); }} data-testid={`${testId}-new`}>
+          <Button onClick={() => { setEditing({}); setForm({ ...empty, id: (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`), _files: [] }); }} data-testid={`${testId}-new`}>
             <Plus className="h-4 w-4 mr-1" /> New
           </Button>
         </div>
@@ -104,7 +107,7 @@ function ListPage({ testId, title, subtitle, icon, endpoint, columns, formFields
                         <Paperclip className="h-3 w-3" />
                       </Button>
                     )}
-                    <Button size="sm" variant="ghost" onClick={() => { setEditing(r); setForm({ ...empty, ...r }); }} data-testid={`${testId}-edit-${r.id}`}>
+                    <Button size="sm" variant="ghost" onClick={() => editRow(r)} data-testid={`${testId}-edit-${r.id}`}>
                       <Pencil className="h-3 w-3" />
                     </Button>
                   </td>
@@ -129,15 +132,22 @@ function ListPage({ testId, title, subtitle, icon, endpoint, columns, formFields
                     {(f.options || []).map((o) => <option key={o} value={o}>{o.replace(/_/g, " ")}</option>)}
                   </select>
                 ) : f.type === "preload" ? (
-                  <select className="w-full border rounded h-10 px-2 text-sm" value={form[f.key] || ""} onChange={(e) => {
+                  <select className="w-full border rounded h-10 px-2 text-sm" value={form[f.key] || ""} data-testid={`${testId}-f-${f.key}`} onChange={(e) => {
                     const sel = (preloads[f.preloadKey] || []).find((x) => x.id === e.target.value);
                     const patch = { [f.key]: e.target.value };
                     if (f.mirrorTo && sel) patch[f.mirrorTo] = sel[f.mirrorField] || sel.name || sel.driver_name || sel.code || "";
+                    if (f.afterChange) Object.assign(patch, f.afterChange(sel, preloads) || {});
                     setForm({ ...form, ...patch });
                   }}>
                     <option value="">—</option>
-                    {(preloads[f.preloadKey] || []).map((o) => <option key={o.id} value={o.id}>{f.labelRender ? f.labelRender(o) : (o[f.labelField] || o.name || o.driver_name || o.code || o.id)}</option>)}
+                    {(preloads[f.preloadKey] || []).filter((o) => !f.filterBy || f.filterBy(o, form)).map((o) => <option key={o.id} value={o.id}>{f.labelRender ? f.labelRender(o) : (o[f.labelField] || o.name || o.driver_name || o.code || o.id)}</option>)}
                   </select>
+                ) : f.type === "attachments" ? (
+                  <FileUploader folder={f.parentType} parent_type={f.parentType} parent_id={form.id}
+                    files={form._files || []}
+                    onUploaded={(fl) => setForm((prev) => ({ ...prev, _files: [...(prev._files || []), fl] }))}
+                    onDeleted={(fid) => setForm((prev) => ({ ...prev, _files: (prev._files || []).filter((x) => x.id !== fid) }))}
+                    compact testidPrefix={`${testId}-attach-uploader`} />
                 ) : f.type === "checkbox" ? (
                   <label className="flex items-center gap-2 text-sm h-10"><input type="checkbox" checked={!!form[f.key]} onChange={(e) => setForm({ ...form, [f.key]: e.target.checked })} /><span>{f.hint || f.label}</span></label>
                 ) : (
@@ -490,7 +500,7 @@ export function VendorBills() {
       tone="amber"
       endpoint="/logistics/vendor-bills"
       attachments="vendor_bills"
-      extraLoads={[{ key: "vendors", path: "/logistics/transport-vendors" }, { key: "projects", path: "/projects" }, { key: "drs", path: "/logistics/dispatch-requests" }]}
+      extraLoads={[{ key: "vendors", path: "/logistics/transport-vendors" }, { key: "projects", path: "/projects" }, { key: "drs", path: "/logistics/dispatch-requests" }, { key: "cost_centers", path: "/procurement/master/cost-centers" }]}
       empty={{ vendor_id: "", vendor_name: "", bill_no: "", bill_date: "", dispatch_id: "",
                dispatch_no: "", project_id: "", project_code: "",
                freight_amount: "", loading_cost: "", unloading_cost: "", detention_amount: "",
@@ -512,7 +522,15 @@ export function VendorBills() {
         { key: "bill_no", label: "Bill No. *" },
         { key: "bill_date", label: "Bill Date", type: "date" },
         { key: "dispatch_id", label: "Dispatch (optional)", type: "preload", preloadKey: "drs", labelField: "dr_no", mirrorTo: "dispatch_no", mirrorField: "dr_no" },
-        { key: "project_id", label: "Project (ID · Name)", type: "preload", preloadKey: "projects", labelField: "code", labelRender: (o) => `${o.code || o.project_code} · ${o.name || o.project_name || "—"}`, mirrorTo: "project_code", mirrorField: "code" },
+        { key: "project_id", label: "Project (ID · Name)", type: "preload", preloadKey: "projects", labelField: "code", labelRender: (o) => `${o.code || o.project_code} · ${o.name || o.project_name || "—"}`, mirrorTo: "project_code", mirrorField: "code",
+          afterChange: (sel, preloads) => {
+            if (!sel) return { cost_center_id: "", cost_center_label: "" };
+            const ccs = (preloads.cost_centers || []).filter((c) => c.project_id === sel.id && c.active !== false);
+            const cc = ccs.find((c) => /transport|vehicle|freight/i.test(`${c.category_code || ""} ${c.name || ""}`)) || ccs[0];
+            return cc ? { cost_center_id: cc.id, cost_center_label: cc.name || cc.code } : { cost_center_id: "", cost_center_label: "" };
+          } },
+        { key: "cost_center_id", label: "Cost Center (project-wise)", type: "preload", preloadKey: "cost_centers", labelField: "name", labelRender: (o) => `${o.name || o.code}${o.project_code ? ` · ${o.project_code}` : ""}`, mirrorTo: "cost_center_label", mirrorField: "name", filterBy: (o, fm) => !fm.project_id || o.project_id === fm.project_id },
+        { key: "attachments", label: "Bill / Invoice / Supporting Documents", type: "attachments", parentType: "vendor_bills", full: true },
         { key: "freight_amount", label: "Freight (₹)", type: "number" },
         { key: "loading_cost", label: "Loading (₹)", type: "number" },
         { key: "unloading_cost", label: "Unloading (₹)", type: "number" },
