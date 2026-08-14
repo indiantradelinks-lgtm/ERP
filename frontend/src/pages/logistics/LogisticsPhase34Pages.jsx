@@ -530,7 +530,6 @@ export function VendorBills() {
             return cc ? { cost_center_id: cc.id, cost_center_label: cc.name || cc.code } : { cost_center_id: "", cost_center_label: "" };
           } },
         { key: "cost_center_id", label: "Cost Center (project-wise)", type: "preload", preloadKey: "cost_centers", labelField: "name", labelRender: (o) => `${o.name || o.code}${o.project_code ? ` · ${o.project_code}` : ""}`, mirrorTo: "cost_center_label", mirrorField: "name", filterBy: (o, fm) => !fm.project_id || o.project_id === fm.project_id },
-        { key: "attachments", label: "Bill / Invoice / Supporting Documents", type: "attachments", parentType: "vendor_bills", full: true },
         { key: "freight_amount", label: "Freight (₹)", type: "number" },
         { key: "loading_cost", label: "Loading (₹)", type: "number" },
         { key: "unloading_cost", label: "Unloading (₹)", type: "number" },
@@ -541,6 +540,7 @@ export function VendorBills() {
         { key: "net_payable", label: "Net Payable (₹) — auto if blank", type: "number" },
         { key: "status", label: "Status", type: "select", options: ["pending", "verified", "approved", "posted", "paid", "rejected"] },
         { key: "remarks", label: "Remarks", type: "textarea", full: true },
+        { key: "attachments", label: "Bill / Invoice / Supporting Documents", type: "attachments", parentType: "vendor_bills", full: true },
       ]}
     />
   );
