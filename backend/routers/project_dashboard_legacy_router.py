@@ -114,30 +114,57 @@ async def _financials(project_id: str, project: Dict[str, Any]) -> Dict[str, Any
 
     # PO commitment (linked to project)
     po_rows = await db.purchase_orders.find(link, {"_id": 0}).to_list(2000)
-    po_value = sum(_num(p.get("total") or p.get("amount") or p.get("grand_total")) for p in po_rows)
+    po_value = sum(_num(p.get("total") or p.get("amount") or p.get("grand_total")
+                        or sum(_num(i.get("line_value")) for i in (p.get("items") or []))) for p in po_rows)
     po_received = sum(_num(p.get("received_value") or 0) for p in po_rows)
 
-    # GRN — value received against POs
-    grn_rows = await db.grn.find(link, {"_id": 0}).to_list(2000)
-    grn_value = sum(_num(g.get("total") or g.get("amount") or 0) for g in grn_rows)
+    # GRN — value received against this project's POs (GRN docs carry only po_id)
+    po_ids = [p.get("id") for p in po_rows if p.get("id")]
+    grn_q = {"$or": [link, {"po_id": {"$in": po_ids}}]} if po_ids else link
+    grn_rows = await db.grn.find(grn_q, {"_id": 0}).to_list(2000)
+    po_by_id = {p.get("id"): p for p in po_rows}
+    grn_value = 0.0
+    for g in grn_rows:
+        direct = _num(g.get("total") or g.get("amount") or 0)
+        if direct:
+            grn_value += direct
+            continue
+        po_items = (po_by_id.get(g.get("po_id")) or {}).get("items") or []
+        for it in (g.get("items") or []):
+            idx = it.get("po_item_index")
+            rate = _num(po_items[idx].get("rate")) if isinstance(idx, int) and idx < len(po_items) else 0.0
+            grn_value += _num(it.get("accepted_qty") or it.get("received_qty") or 0) * rate
 
-    # RA Bills raised
+    # RA Bills raised (accounts store subtotal/gross_value/net_payable)
     ra_rows = await db.ra_bills.find(link, {"_id": 0}).to_list(2000)
-    bills_raised = sum(_num(r.get("gross_amount") or r.get("amount") or 0) for r in ra_rows)
-    bills_net_due = sum(_num(r.get("net_due") or 0) for r in ra_rows)
+    bills_raised = sum(_num(r.get("gross_value") or r.get("gross_amount") or r.get("subtotal") or r.get("amount") or 0) for r in ra_rows)
+    bills_net_due = sum(_num(r.get("net_payable") or r.get("net_due") or 0) for r in ra_rows)
     retention_held = sum(_num(r.get("retention_amount") or 0) for r in ra_rows)
     tds_deducted = sum(_num(r.get("tds_amount") or 0) for r in ra_rows)
     gst_charged = sum(_num(r.get("gst_amount") or 0) for r in ra_rows)
 
-    # Payments received
+    # Payments received — payments_in link via allocations → this project's RA bills
+    ra_ids = {r.get("id") for r in ra_rows}
     pay_rows = await db.payments_in.find(link, {"_id": 0}).to_list(2000)
     payments_received = sum(_num(p.get("amount") or 0) for p in pay_rows)
+    matched_pay_ids = {p.get("id") for p in pay_rows}
+    if ra_ids:
+        async for p in db.payments_in.find({"allocations": {"$elemMatch": {
+                "$or": [{"ra_bill_id": {"$in": list(ra_ids)}}, {"bill_id": {"$in": list(ra_ids)}}]}}}, {"_id": 0}):
+            if p.get("id") in matched_pay_ids:
+                continue
+            matched_pay_ids.add(p.get("id"))
+            alloc = sum(_num(a.get("amount") or 0) for a in (p.get("allocations") or [])
+                        if (a.get("ra_bill_id") in ra_ids or a.get("bill_id") in ra_ids))
+            payments_received += alloc or _num(p.get("amount") or 0)
+            pay_rows.append(p)
     outstanding = max(bills_net_due - payments_received, 0)
 
     # Measurements certified vs claimed (advisory)
     m_rows = await db.measurements.find(link, {"_id": 0}).to_list(2000)
-    certified_value = sum(_num(m.get("certified_amount") or 0) for m in m_rows)
-    claimed_value = sum(_num(m.get("claimed_amount") or 0) for m in m_rows)
+    certified_value = sum(_num(m.get("certified_amount") or m.get("billable_value") or 0) for m in m_rows
+                          if m.get("certified_amount") or m.get("certified_at") or m.get("status") in ("certified", "billed"))
+    claimed_value = sum(_num(m.get("claimed_amount") or m.get("billable_value") or 0) for m in m_rows)
 
     revenue_recognised = bills_raised or certified_value
     cost_incurred = grn_value  # crude proxy until we have a true cost rollup
@@ -305,7 +332,7 @@ async def _recent_activity(project_id: str, project: Dict[str, Any], limit: int 
             })
 
     await push(db.dprs, "dpr", lambda r: f"DPR · {_ymd(r.get('date'))} · {int(_num(r.get('manpower_count')))} manpower")
-    await push(db.ra_bills, "ra_bill", lambda r: f"RA Bill · {r.get('bill_number') or r.get('id', '')[:8]} · ₹{int(_num(r.get('net_due'))):,}")
+    await push(db.ra_bills, "ra_bill", lambda r: f"RA Bill · {r.get('bill_number') or r.get('id', '')[:8]} · ₹{int(_num(r.get('gross_value') or r.get('net_payable') or r.get('net_due'))):,}")
     await push(db.payments_in, "payment", lambda r: f"Payment · ₹{int(_num(r.get('amount'))):,} · {r.get('mode') or ''}")
     await push(db.grn, "grn", lambda r: f"GRN · {r.get('grn_number') or ''} · ₹{int(_num(r.get('total'))):,}")
     await push(db.measurements, "measurement", lambda r: f"Measurement · {r.get('status') or 'draft'} · ₹{int(_num(r.get('certified_amount'))):,}")

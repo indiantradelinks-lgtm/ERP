@@ -5301,3 +5301,9 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - PPC attachments dialog resolves parentType dynamically (vendor_bills for bill rows) so bill documents are visible to Accounts.
 - E2E curl-verified: VB-2026-0004 approved → queue pending_verification → verified → bank file BPF-2026-0008 → mark paid UTRVB004 → JE-2026-0124 posted → bill synced to paid.
 
+
+### Iteration 183 (Aug 2026) — Project Dashboard ₹0 financials bug FIXED ✅ (iteration_171.json — frontend 100%)
+- Root cause: `_financials()` in project_dashboard_legacy_router summed wrong fields. Fixes: RA bills use gross_value/subtotal + net_payable fallbacks; payments_in matched via allocations→project RA bill ids (docs have no project link); measurements use billable_value gated by certified_at/status; GRN valued via project PO items rate × accepted qty (GRN docs carry only po_id); recent-activity RA label uses gross_value/net_payable.
+- Verified: testing agent curl (bills_raised 342200, RA-2026-0024 ₹200,600), 5/5 pytest `tests/test_iter171_project_dashboard_financials.py` (fresh-bill delta, payment allocation, empty-project regression), frontend UI 100% (Financial Snapshot + Recent Activity non-zero). Also fixed Recharts empty-container warning (manpower trend conditional render).
+- Dashboard route: /app/project-dashboard/:id. NOTE for pytest: export REACT_APP_BACKEND_URL before running the suite.
+

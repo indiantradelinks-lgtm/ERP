@@ -1,0 +1,22 @@
+{
+  "summary": "Frontend-only UI verification of Project Dashboard financials regression fix for project 8c88da27-1cf4-482c-bc15-cb81b658fad0 (code E2E-TEST-178532-P1). Logged in as admin@erp.com, navigated to /app/project-dashboard/{id}. All required assertions PASSED: Financial Snapshot RA BILLS RAISED=₹3,42,200 (3 bills), OUTSTANDING=₹3,21,900, GST CHARGED=₹52,200, REVENUE RECOGNISED=₹3,42,200, RETENTION HELD=₹14,500, TDS DEDUCTED=₹5,800, GROSS PROFIT=₹3,42,200, BILLING PROGRESS=68.4%. Recent Activity shows RA Bill · RA-2026-0024 · ₹200,600, RA-2026-0023 · ₹70,800, RA-2026-0022 · ₹70,800 — the ₹0 regression is gone. KPI header tiles (CONTRACT VALUE ₹5,00,000, BILLED 68.4%, GP % 100.0%) and Site Execution/Safety sections render correctly. No console errors (only benign Recharts empty-container width warnings for a manpower trend with no data).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "ProjectDashboard – Manpower Trend chart", "issues": ["Recharts logs warning 'width(-1) and height(-1)' when there are no DPRs in last 30 days; the container renders with 0 size. Non-blocking, but consider rendering an explicit empty state instead of mounting the ResponsiveContainer to silence warnings."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": ["Recharts ResponsiveContainer is mounted even when data array is empty causing width/height(-1) console warnings on the Project Dashboard – guard with a conditional render when trend data is empty."],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100%"},
+  "test_credentials": "admin@erp.com / Admin@123 (worked as expected)",
+  "seed_data_creation": "None – used existing project 8c88da27-1cf4-482c-bc15-cb81b658fad0.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Project Dashboard route is /app/project-dashboard/:id. Financials regression is fully fixed on the UI. Recharts empty-container warning remains as a minor cosmetic console warning.",
+  "rca of the issue": "N/A – backend fix already applied and verified in iteration 170; UI now reads the corrected GET /api/project-dashboard/{id} response and renders non-zero values in both Financial Snapshot tiles and Recent Activity list."
+}

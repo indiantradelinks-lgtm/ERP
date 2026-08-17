@@ -203,24 +203,25 @@ function ChartsCard({ execution, financials }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <div>
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Manpower trend (last 30 days)</div>
-          <div className="h-48">
-            <ResponsiveContainer>
-              <AreaChart data={execution.manpower_trend_30d}>
-                <defs>
-                  <linearGradient id="manp" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#2563eb" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="#2563eb" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="date" tick={{ fontSize: 10 }} hide={execution.manpower_trend_30d?.length > 14} />
-                <YAxis tick={{ fontSize: 10 }} width={28} />
-                <Tooltip contentStyle={{ fontSize: 11 }} />
-                <Area type="monotone" dataKey="manpower" stroke="#2563eb" strokeWidth={2} fill="url(#manp)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          {execution.manpower_trend_30d?.length === 0 && (
-            <div className="text-[11px] text-muted-foreground text-center py-3">No DPRs in the last 30 days.</div>
+          {execution.manpower_trend_30d?.length > 0 ? (
+            <div className="h-48">
+              <ResponsiveContainer>
+                <AreaChart data={execution.manpower_trend_30d}>
+                  <defs>
+                    <linearGradient id="manp" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#2563eb" stopOpacity={0.4} />
+                      <stop offset="100%" stopColor="#2563eb" stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="date" tick={{ fontSize: 10 }} hide={execution.manpower_trend_30d?.length > 14} />
+                  <YAxis tick={{ fontSize: 10 }} width={28} />
+                  <Tooltip contentStyle={{ fontSize: 11 }} />
+                  <Area type="monotone" dataKey="manpower" stroke="#2563eb" strokeWidth={2} fill="url(#manp)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="h-48 flex items-center justify-center text-[11px] text-muted-foreground border border-dashed rounded-sm">No DPRs in the last 30 days.</div>
           )}
         </div>
         <div>
