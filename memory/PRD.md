@@ -5274,3 +5274,8 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 3. Bulk employee/worker import (`employees_bulk_router`): NEW guards — (a) row data already matches → "Employee already updated — data already matches"; (b) record modified by a previous bulk update (has bulk_update_snapshot_id) → blocked with date/user in message; (c) blank-id rows duplicating existing Employee ID / Aadhaar / Name+Father's Name → "already exists in the master; duplicate row not created". `already_updated` counter in summary; errors surface in existing results dialog + toast. ALLOWED_FIELDS += father_name, aadhaar_number.
 - Verified via curl xlsx uploads: all 3 guards fire; genuine new row still creates; genuine change still updates.
 
+
+### Iteration 179 (Aug 2026) — Transport vendor dropdown: strict TRANS-only ✅
+- `/api/logistics/transport-vendors` tightened: ONLY status=approved AND category/categories starting with "TRANS" (case-insensitive). Removed vendor_type + transporter-profile branches so no other categories can leak in. Dynamic sync: ListPage auto-sync re-fetches vendor preload every 3s.
+- Verified with negative controls: approved material vendor excluded, draft TRANS vendor excluded; only approved TRANS vendors returned.
+

@@ -446,14 +446,10 @@ async def vb_list(
 
 @router.get("/transport-vendors")
 async def transport_vendors(user: dict = Depends(require_permission("dispatch_requests", "read"))):
-    """Approved vendors in the Transportation category (or with a transporter profile)."""
-    prof_ids = await db.logistics_vendor_profiles.distinct(
-        "vendor_id", {"vendor_kind": "transporter", "active": {"$ne": False}})
+    """Approved Vendor Master records with Category = TRANS (transportation) ONLY."""
     q = {"status": "approved",
-         "$or": [{"categories": {"$regex": "trans", "$options": "i"}},
-                 {"category": {"$regex": "trans", "$options": "i"}},
-                 {"vendor_type": {"$regex": "trans", "$options": "i"}},
-                 {"id": {"$in": prof_ids}}]}
+         "$or": [{"categories": {"$regex": "^trans", "$options": "i"}},
+                 {"category": {"$regex": "^trans", "$options": "i"}}]}
     return await db.vendors.find(q, {"_id": 0, "id": 1, "name": 1, "vendor_code": 1, "categories": 1}).sort("name", 1).to_list(1000)
 
 
