@@ -213,6 +213,7 @@ export default function ProjectRequests() {
     if (isManpower && !form.items.some((i) => i.name && Number(i.quantity) > 0)) { toast.error("Add at least one manpower line"); return; }
     if (isStockable && !form.items.some((i) => (i.name || "").trim() && Number(i.quantity) > 0)) { toast.error("Add at least one item"); return; }
     if (estValue <= 0 && !isStockable && !isManpower) { toast.error("Enter amount / rate"); return; }
+    if (!form.cost_center_id) { toast.error("Cost Center is mandatory — select a valid Cost Center before submitting"); return; }
     if (isPayment && mode === "service") {
       if (form.paid_to_type === "vendor" && !form.vendor) { toast.error("Select the approved vendor to be paid"); return; }
       if (form.paid_to_type === "person" && !form.employee_id) { toast.error("Select the employee (Emp ID) to be paid"); return; }
@@ -529,10 +530,10 @@ export default function ProjectRequests() {
               </div>
             )}
             <div>
-              <Label className="text-[10px] uppercase tracking-wider">Cost Center</Label>
+              <Label className="text-[10px] uppercase tracking-wider">Cost Center *</Label>
               <select value={form.cost_center_id} onChange={(e) => setForm({ ...form, cost_center_id: e.target.value })}
                 className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-costcenter">
-                <option value="">— auto (project default) —</option>
+                <option value="">— select cost center —</option>
                 {ccList.map((cc) => <option key={cc.id} value={cc.id}>{cc.category_code} · {cc.category_name}{cc.budget ? ` (budget ${inr(cc.budget)})` : ""}</option>)}
               </select>
             </div>

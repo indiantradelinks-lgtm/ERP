@@ -5286,3 +5286,11 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - Data fix (per environment): grant manager_log → Projects: View in Role × Permission Matrix (done in preview; PRODUCTION admin must do the same in their matrix — no redeploy needed for the permission itself, but redeploy needed for the allSettled hardening).
 - Verified: manager_log user (test_log@erp.com) loads Transport Vendor Bills without errors pre-grant; /projects 200 post-grant.
 
+
+### Iteration 181 (Aug 2026) — A) OneDrive centralized docs + B) Cost Center mandatory ✅
+**A. OneDrive default document storage** (builds on existing onedrive_service/onedrive_router — prefix `/api/admin/onedrive`):
+- Already existed: every upload auto-enqueued → 2-min scheduler push (5-attempt retry), Year/Month/Module folder structure, migrate-historical, settings/test UI, daily backup job.
+- NEW: sha256 dedupe at upload (identical file + same parent → returns existing record, `duplicate:true`); push-level dedupe (identical content links to existing driveItem); collision-safe OneDrive filenames (`{id8}_name`); `db.files` stamped with onedrive_item_id/url/path on push; download endpoint falls back to OneDrive (`ods.download_item`) if object storage fails; new POST `/retry-failed` (bulk re-queue). All ERP links unchanged (still `/api/files/{id}/download`).
+- Preview: 248 queued (auth fails in preview — placeholder Azure creds; production creds valid). PRODUCTION steps after redeploy: OneDrive Settings → Test Connection → Migrate Historical → Retry Failed.
+**B. Cost Center mandatory**: backend 400 + frontend toast on Project Requests (all types; select relabelled "Cost Center *", auto-derive from material category still works), Daily Expenses, Transport Vendor Bills (auto-link from project still fills; error if none). Curl-verified all 400s + happy paths (PEX-2026-0028, REQ-2026-0088).
+

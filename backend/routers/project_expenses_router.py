@@ -161,6 +161,8 @@ async def create_expense(p: ExpenseIn, request: Request,
         cc = await db.cost_centers.find_one({"id": p.cost_center_id}, {"_id": 0})
         if not cc or cc.get("project_id") != project["id"]:
             raise HTTPException(400, "Cost center does not belong to the selected project")
+    if not cc:
+        raise HTTPException(400, "Cost Center is mandatory — select a valid Cost Center before submitting this expense")
     threshold = await _large_threshold()
     steps = BASE_CHAIN + (LARGE_CHAIN_EXTRA if p.amount > threshold else []) + [ACCOUNTS_STEP]
     chain = [{"role": r, "label": l, "status": "pending", "by": None, "at": None, "remarks": None} for r, l in steps]

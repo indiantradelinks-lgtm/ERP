@@ -274,6 +274,8 @@ async def create_request(p: RequestIn, request: Request,
             {"project_id": project["id"],
              "$or": [{"category_id": mcat["id"]}, {"category_code": mcat.get("code")}]},
             {"_id": 0, "id": 1, "category_code": 1, "category_name": 1, "project_id": 1})
+    if not cc:
+        raise HTTPException(400, "Cost Center is mandatory — select a valid Cost Center before submitting this request")
     steps = [("dept_head", "Project Head")]
     if est > threshold:
         steps += [("general_manager", "GM"), ("director", "Director")]

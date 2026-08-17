@@ -137,6 +137,22 @@ async def _push_queued_item(item: dict) -> dict:
     segments = item.get("folder_segments") or [year, month, module_label]
 
     fname = f.get("original_filename") or f.get("title") or f["id"]
+    fname = f"{f['id'][:8]}_{fname}"  # collision-safe: distinct files with same name never overwrite
+    # Dedupe: identical content already pushed → link to the existing drive item
+    if f.get("sha256"):
+        prior = await db.onedrive_queue.find_one(
+            {"status": "pushed", "sha256": f["sha256"]}, {"_id": 0, "drive_item_id": 1, "web_url": 1, "remote_path": 1})
+        if prior and prior.get("drive_item_id"):
+            await db.onedrive_queue.update_one(
+                {"id": item["id"]},
+                {"$set": {"status": "pushed", "pushed_at": now_iso(), "deduped": True,
+                          "sha256": f["sha256"], "drive_item_id": prior["drive_item_id"],
+                          "web_url": prior.get("web_url"), "remote_path": prior.get("remote_path"),
+                          "updated_at": now_iso()}, "$inc": {"attempts": 1}})
+            await db.files.update_one({"id": f["id"]}, {"$set": {
+                "onedrive_item_id": prior["drive_item_id"], "onedrive_url": prior.get("web_url"),
+                "onedrive_pushed_at": now_iso()}})
+            return {"ok": True, "drive_item_id": prior["drive_item_id"], "deduped": True}
     try:
         result = await ods.upload_to_folder(segments, fname, data, content_type=ct or f.get("content_type"))
         await db.onedrive_queue.update_one(
@@ -144,6 +160,7 @@ async def _push_queued_item(item: dict) -> dict:
             {"$set": {
                 "status": "pushed",
                 "pushed_at": now_iso(),
+                "sha256": f.get("sha256"),
                 "drive_item_id": result.get("id"),
                 "web_url": result.get("webUrl"),
                 "remote_path": "/".join(segments) + "/" + fname,
@@ -151,6 +168,9 @@ async def _push_queued_item(item: dict) -> dict:
                 "updated_at": now_iso(),
             }, "$inc": {"attempts": 1}},
         )
+        await db.files.update_one({"id": f["id"]}, {"$set": {
+            "onedrive_item_id": result.get("id"), "onedrive_url": result.get("webUrl"),
+            "onedrive_path": "/".join(segments) + "/" + fname, "onedrive_pushed_at": now_iso()}})
         return {"ok": True, "drive_item_id": result.get("id")}
     except Exception as e:
         err = str(e)
@@ -310,6 +330,16 @@ async def list_backups(user: dict = Depends(get_current_user)):
 # ────────────────────────────────────────────────────────────────────────
 # Historical migration job
 # ────────────────────────────────────────────────────────────────────────
+@router.post("/retry-failed")
+async def retry_failed(user: dict = Depends(get_current_user)):
+    """Re-queues ALL failed pushes (resets attempts) — use after fixing credentials."""
+    _require_admin(user)
+    r = await db.onedrive_queue.update_many(
+        {"status": "failed"},
+        {"$set": {"status": "pending", "attempts": 0, "error": None, "updated_at": now_iso()}})
+    return {"ok": True, "requeued": r.modified_count}
+
+
 @router.post("/migrate-historical")
 async def migrate_historical(user: dict = Depends(get_current_user)):
     """Queues every existing non-deleted file for OneDrive push."""

@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, Depends, Upload
 import jwt as pyjwt
 
 from core import db, get_current_user, now_iso, new_id, JWT_SECRET, JWT_ALGORITHM, logger
+import hashlib
 from storage import put_object, get_object, MAX_BYTES
 
 router = APIRouter(tags=["files"])
@@ -50,6 +51,12 @@ async def upload_file(
     data = await file.read()
     if len(data) > MAX_BYTES:
         raise HTTPException(status_code=413, detail=f"File too large (max {MAX_BYTES // (1024 * 1024)} MB)")
+    sha256 = hashlib.sha256(data).hexdigest()
+    dup = await db.files.find_one(
+        {"sha256": sha256, "parent_type": parent_type or None, "parent_id": parent_id or None, "is_deleted": False},
+        {"_id": 0})
+    if dup:
+        return {**dup, "duplicate": True}
     try:
         result = put_object(folder=folder, filename=file.filename or "file.bin", data=data, content_type=file.content_type)
     except RuntimeError as e:
@@ -60,6 +67,7 @@ async def upload_file(
     record = {
         "id": new_id(),
         "storage_path": result["path"],
+        "sha256": sha256,
         "original_filename": file.filename,
         "content_type": result.get("content_type") or file.content_type,
         "size": result.get("size") or len(data),
@@ -116,8 +124,17 @@ async def download_file(file_id: str, request: Request, auth: str = Query(None))
     try:
         data, ct = get_object(record["storage_path"])
     except Exception as e:
-        logger.exception(f"download failed: {e}")
-        raise HTTPException(status_code=500, detail="Download failed") from e
+        # Fallback: fetch from OneDrive (centralized store) if this file was pushed
+        if record.get("onedrive_item_id"):
+            try:
+                import onedrive_service as ods
+                data, ct = await ods.download_item(record["onedrive_item_id"])
+            except Exception as e2:
+                logger.exception(f"onedrive fallback failed: {e2}")
+                raise HTTPException(status_code=500, detail="Download failed") from e2
+        else:
+            logger.exception(f"download failed: {e}")
+            raise HTTPException(status_code=500, detail="Download failed") from e
     headers = {"Content-Disposition": f'inline; filename="{record.get("original_filename", "file")}"'}
     return Response(content=data, media_type=record.get("content_type") or ct, headers=headers)
 

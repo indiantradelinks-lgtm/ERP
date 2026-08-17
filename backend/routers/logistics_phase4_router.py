@@ -488,6 +488,8 @@ async def vb_create(
         net = sum(parts) - (payload.tds_amount or 0)
     doc = payload.model_dump()
     await _auto_cost_center(doc)
+    if not doc.get("cost_center_id"):
+        raise HTTPException(400, "Cost Center is mandatory — select a valid Cost Center (or a project that has one) before saving this bill")
     doc.update({
         "id": payload.id or new_id(),
         "vb_no": f"VB-{_yr()}-{seq:04d}",

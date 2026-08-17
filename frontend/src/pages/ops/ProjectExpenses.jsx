@@ -83,6 +83,7 @@ export default function ProjectExpenses({ embedded = false }) {
     if (!form.project_code) { toast.error("Select a project"); return; }
     if (!form.expense_type) { toast.error("Select expense type"); return; }
     if (!Number(form.amount)) { toast.error("Enter amount"); return; }
+    if (!form.cost_center_id) { toast.error("Cost Center is mandatory — select a valid Cost Center before submitting"); return; }
     if (form.paid_to_type === "vendor" && !form.paid_to) { toast.error("Select the approved vendor"); return; }
     if (form.paid_to_type === "person" && !form.employee_id) { toast.error("Select the employee (Emp ID)"); return; }
     try {
@@ -281,7 +282,7 @@ export default function ProjectExpenses({ embedded = false }) {
           <div className="grid grid-cols-2 gap-3 py-1">
             <ProjectSelect label="Project *" value={form.project_code} onChange={onProjectPicked} testid="pex-form-project" />
             <div>
-              <Label className="text-[10px] uppercase tracking-wider">Cost Center</Label>
+              <Label className="text-[10px] uppercase tracking-wider">Cost Center *</Label>
               <select value={form.cost_center_id} onChange={(e) => setForm({ ...form, cost_center_id: e.target.value })}
                 className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="pex-form-cc">
                 <option value="">— select cost center —</option>

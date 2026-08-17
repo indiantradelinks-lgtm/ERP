@@ -533,7 +533,7 @@ export function VendorBills() {
             const cc = ccs.find((c) => /transport|vehicle|freight/i.test(`${c.category_code || ""} ${c.name || ""}`)) || ccs[0];
             return cc ? { cost_center_id: cc.id, cost_center_label: cc.name || cc.code } : { cost_center_id: "", cost_center_label: "" };
           } },
-        { key: "cost_center_id", label: "Cost Center (project-wise)", type: "preload", preloadKey: "cost_centers", labelField: "name", labelRender: (o) => `${o.name || o.code}${o.project_code ? ` · ${o.project_code}` : ""}`, mirrorTo: "cost_center_label", mirrorField: "name", filterBy: (o, fm) => !fm.project_id || o.project_id === fm.project_id },
+        { key: "cost_center_id", label: "Cost Center (project-wise) *", required: true, type: "preload", preloadKey: "cost_centers", labelField: "name", labelRender: (o) => `${o.name || o.code}${o.project_code ? ` · ${o.project_code}` : ""}`, mirrorTo: "cost_center_label", mirrorField: "name", filterBy: (o, fm) => !fm.project_id || o.project_id === fm.project_id },
         { key: "freight_amount", label: "Freight (₹)", type: "number" },
         { key: "loading_cost", label: "Loading (₹)", type: "number" },
         { key: "unloading_cost", label: "Unloading (₹)", type: "number" },

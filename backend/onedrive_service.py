@@ -314,6 +314,15 @@ async def test_connection() -> dict:
         return {"ok": False, "error": err}
 
 
+async def download_item(item_id: str) -> tuple[bytes, str]:
+    """Fetch a driveItem's content from the backup drive (fallback reads)."""
+    drive = await _get_backup_drive()
+    async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+        r = await client.get(f"{GRAPH_BASE}/drives/{drive['id']}/items/{item_id}/content", headers=await _headers())
+        r.raise_for_status()
+        return r.content, r.headers.get("content-type", "application/octet-stream")
+
+
 async def upload_to_folder(
     folder_segments: list[str],
     filename: str,
