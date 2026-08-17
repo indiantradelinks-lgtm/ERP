@@ -200,6 +200,7 @@ async def list_requests(project_code: Optional[str] = None, request_type: Option
     if dept:
         q["owning_dept"] = dept
     q = await apply_project_scope(user, q, "project_id")
+    q["source"] = {"$ne": "vendor_bill"}  # vendor-bill shadow rows live only in the Accounts queue
     rows = await db.project_requests.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
     pay_ids = [r["id"] for r in rows if r.get("is_payment")]
     vmap: Dict[str, Any] = {}

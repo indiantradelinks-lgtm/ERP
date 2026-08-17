@@ -582,7 +582,8 @@ export default function PaymentProcessingCenter() {
       </Dialog>
 
       <RowAttachments open={!!attachFor} onOpenChange={() => setAttachFor(null)}
-        parentType="project_requests" parentId={attachFor?.id}
+        parentType={attachFor?.source === "vendor_bill" ? "vendor_bills" : "project_requests"}
+        parentId={attachFor?.source === "vendor_bill" ? attachFor?.source_id : attachFor?.id}
         recordTitle={`Documents — ${attachFor?.request_no || ""}`} />
     </div>
   );

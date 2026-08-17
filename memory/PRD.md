@@ -5294,3 +5294,10 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - Preview: 248 queued (auth fails in preview — placeholder Azure creds; production creds valid). PRODUCTION steps after redeploy: OneDrive Settings → Test Connection → Migrate Historical → Retry Failed.
 **B. Cost Center mandatory**: backend 400 + frontend toast on Project Requests (all types; select relabelled "Cost Center *", auto-derive from material category still works), Daily Expenses, Transport Vendor Bills (auto-link from project still fills; error if none). Curl-verified all 400s + happy paths (PEX-2026-0028, REQ-2026-0088).
 
+
+### Iteration 182 (Aug 2026) — Vendor Bill → Accounts payment queue ✅
+- `_push_bill_to_accounts()` in logistics_phase4_router: when a transport vendor bill turns "approved" (vb_create or vb_update transition), a shadow row is inserted into project_requests (is_payment, status with_dept, request_no=vb_no, type transport_vendor_bill, source=vendor_bill/source_id, est_value=net_payable, vendor/cost-center/project carried). Idempotent per source_id.
+- mark-paid syncs back: bill status→paid + UTR + paid_date. Shadow rows hidden from Request Center (`source != vendor_bill` filter in list_requests) — they exist only in the Accounts queue.
+- PPC attachments dialog resolves parentType dynamically (vendor_bills for bill rows) so bill documents are visible to Accounts.
+- E2E curl-verified: VB-2026-0004 approved → queue pending_verification → verified → bank file BPF-2026-0008 → mark paid UTRVB004 → JE-2026-0124 posted → bill synced to paid.
+

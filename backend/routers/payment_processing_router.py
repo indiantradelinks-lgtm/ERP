@@ -307,6 +307,9 @@ async def mark_paid(rid: str, p: MarkPaidIn, request: Request,
     await db.payment_verifications.update_one({"request_id": rid}, {"$set": advice})
     await db.project_requests.update_one({"id": rid}, {"$set": {
         "payment_status": "paid", "payment_utr": p.utr_no, "payment_date": p.paid_date}})
+    if row.get("source") == "vendor_bill" and row.get("source_id"):
+        await db.logistics_vendor_bills.update_one({"id": row["source_id"]}, {"$set": {
+            "status": "paid", "utr_no": p.utr_no, "paid_date": p.paid_date, "updated_at": now_iso()}})
     await audit(user=user, action="payment_paid", resource="payment_queue", record_id=rid,
                 after={"utr": p.utr_no, "amount": amt, "je": (je or {}).get("voucher_number")}, ip=_ip(request))
     return await db.payment_verifications.find_one({"request_id": rid}, {"_id": 0})

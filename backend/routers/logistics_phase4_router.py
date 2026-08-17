@@ -500,8 +500,39 @@ async def vb_create(
     })
     await db.logistics_vendor_bills.insert_one(doc)
     doc.pop("_id", None)
+    if doc.get("status") == "approved":
+        await _push_bill_to_accounts(doc, user)
     await _audit("vendor_bill", doc["id"], "create", user, doc["vb_no"], {"net": net})
     return doc
+
+
+async def _push_bill_to_accounts(bill: dict, user: dict) -> None:
+    """Puts an approved transport vendor bill into the Accounts payment queue
+    (shadow row in project_requests, is_payment=True) — same flow as payment requests."""
+    if await db.project_requests.find_one({"source": "vendor_bill", "source_id": bill["id"]}, {"_id": 0, "id": 1}):
+        return
+    proj = await db.projects.find_one({"id": bill.get("project_id")}, {"_id": 0, "name": 1}) if bill.get("project_id") else None
+    await db.project_requests.insert_one({
+        "id": new_id(),
+        "request_no": bill.get("vb_no"),
+        "request_type": "transport_vendor_bill",
+        "request_type_label": "Transport Vendor Bill",
+        "is_payment": True, "is_stockable": False,
+        "owning_dept": "logistics",
+        "expense_type": "transport_freight",
+        "status": "with_dept",
+        "payment_status": "payment_pending",
+        "source": "vendor_bill", "source_id": bill["id"],
+        "project_id": bill.get("project_id"), "project_code": bill.get("project_code"),
+        "project_name": (proj or {}).get("name"),
+        "cost_center_id": bill.get("cost_center_id"), "cost_center_label": bill.get("cost_center_label"),
+        "vendor": bill.get("vendor_name"),
+        "est_value": float(bill.get("net_payable") or 0),
+        "description": f"Transport vendor bill {bill.get('bill_no')} — {bill.get('vendor_name')}",
+        "items": [], "chain": [], "current_step": None,
+        "created_by": user.get("name") or user.get("email"), "created_by_id": user.get("id"),
+        "created_at": now_iso(),
+    })
 
 
 @router.put("/vendor-bills/{bid}")
@@ -521,6 +552,7 @@ async def vb_update(
 
     # Emit cost + accounts event when approved
     if updates.get("status") == "approved" and ex.get("status") != "approved":
+        await _push_bill_to_accounts({**ex, **updates, "id": bid}, user)
         await _emit_cost("vendor_bill", bid, ex.get("vb_no", ""), updates.get("net_payable") or 0,
                          "freight", updates.get("project_id"), updates.get("project_code"),
                          None, updates.get("dispatch_id"), user)
