@@ -5307,3 +5307,9 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - Verified: testing agent curl (bills_raised 342200, RA-2026-0024 ₹200,600), 5/5 pytest `tests/test_iter171_project_dashboard_financials.py` (fresh-bill delta, payment allocation, empty-project regression), frontend UI 100% (Financial Snapshot + Recent Activity non-zero). Also fixed Recharts empty-container warning (manpower trend conditional render).
 - Dashboard route: /app/project-dashboard/:id. NOTE for pytest: export REACT_APP_BACKEND_URL before running the suite.
 
+
+### Iteration 184 (Aug 2026) — Approved Employee Advances → Accounts Payment Queue ✅
+- `_push_advance_to_accounts()` in advance_router: when the approval chain fully approves an advance, a shadow payment row (source=advance, request_no=advance_no, paid_to person + employee fields, est_value=approved_amount) is inserted into project_requests → appears in Accounts Payment Processing Center as Pending Verification. Idempotent per source_id.
+- Two-way sync: (a) Accounts mark-paid → employee_advances flips to paid with payment doc (mode "Bank (Accounts Payment Queue)", UTR, voucher) + outstanding set + status_history entry; HR "Record Payment" then blocked (status guard). (b) HR-page Record Payment → shadow row + payment_verifications upserted to stage "paid" with UTR so the Accounts queue shows Paid (no double-pay possible either direction).
+- Curl E2E verified both paths: ADV-TEST-001 via accounts queue (verify→mark-paid UTRADV001, JE-2026-0125, advance paid); ADV-TEST-002 via HR Record Payment (queue row synced to paid UTRADV002).
+

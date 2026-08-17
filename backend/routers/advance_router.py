@@ -492,6 +492,7 @@ async def on_advance_approval_action(approval: dict) -> None:
              "$push": {"status_history": {**history_entry, "from": adv["status"], "to": "approved",
                                            "comment": "All chain steps approved"}}},
         )
+        await _push_advance_to_accounts(advance_id)
     elif approval.get("status") in ("rejected", "rejected_revision_required"):
         last = (approval.get("history") or [])[-1] if approval.get("history") else {}
         # Iter 50: advance bounces back to draft so the originator can resubmit
@@ -551,6 +552,36 @@ async def amend_advance_terms(advance_id: str, payload: ApprovalAmendIn, user: d
 # ────────────────────────────────────────────────────────────────────────
 # Phase B — Payment processing
 # ────────────────────────────────────────────────────────────────────────
+async def _push_advance_to_accounts(advance_id: str) -> None:
+    """Approved advance → shadow payment row in the Accounts Payment Processing queue."""
+    adv = await db.employee_advances.find_one({"id": advance_id}, {"_id": 0})
+    if not adv:
+        return
+    if await db.project_requests.find_one({"source": "advance", "source_id": advance_id}, {"_id": 0, "id": 1}):
+        return
+    await db.project_requests.insert_one({
+        "id": new_id(),
+        "request_no": adv.get("advance_no"),
+        "request_type": "employee_advance",
+        "request_type_label": f"Employee Advance ({(adv.get('advance_type_label') or adv.get('advance_type') or 'advance')})",
+        "is_payment": True, "is_stockable": False,
+        "owning_dept": "hr",
+        "expense_type": "misc",
+        "status": "with_dept",
+        "payment_status": "payment_pending",
+        "source": "advance", "source_id": advance_id,
+        "project_id": None, "project_code": adv.get("department") or "HR",
+        "paid_to_type": "person",
+        "employee_id": adv.get("employee_id"), "employee_code": adv.get("employee_code"),
+        "employee_name": adv.get("employee_name"),
+        "est_value": float(adv.get("approved_amount") or 0),
+        "description": f"Approved employee advance {adv.get('advance_no')} — {adv.get('employee_name')} "
+                       f"({adv.get('installments') or 0} EMIs)",
+        "items": [], "chain": [], "current_step": None,
+        "created_by": adv.get("requested_by") or "approval_engine", "created_at": now_iso(),
+    })
+
+
 @router.post("/advances/{advance_id}/payment")
 async def record_payment(advance_id: str, payload: AdvancePaymentIn, user: dict = Depends(get_current_user)):
     if user.get("role") not in PAYMENT_ROLES:
@@ -601,6 +632,20 @@ async def record_payment(advance_id: str, payload: AdvancePaymentIn, user: dict 
         "created_at": now_iso(),
     }
     await db.journal_entries.insert_one(je)
+    # Sync the Accounts Payment Processing queue shadow row (if this advance was queued there)
+    shadow = await db.project_requests.find_one({"source": "advance", "source_id": advance_id}, {"_id": 0, "id": 1})
+    if shadow:
+        await db.project_requests.update_one({"id": shadow["id"]}, {"$set": {
+            "payment_status": "paid", "payment_utr": payload.txn_no, "payment_date": payload.payment_date}})
+        await db.payment_verifications.update_one(
+            {"request_id": shadow["id"]},
+            {"$set": {"request_id": shadow["id"], "request_no": adv["advance_no"], "stage": "paid",
+                      "vendor_name": adv.get("employee_name"), "verified_amount": payload.paid_amount,
+                      "net_payable": payload.paid_amount, "utr_no": payload.txn_no or payload.voucher_no or "",
+                      "paid_date": payload.payment_date, "paid_by": user.get("name") or user.get("email"),
+                      "paid_at": now_iso(), "voucher_number": je["je_number"],
+                      "remarks": f"Paid from HR Advances page via {payload.mode}"},
+             "$setOnInsert": {"id": new_id()}}, upsert=True)
     return {"ok": True, "status": new_status, "outstanding": outstanding, "voucher_no": je["je_number"]}
 
 

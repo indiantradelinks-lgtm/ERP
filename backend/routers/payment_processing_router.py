@@ -310,6 +310,20 @@ async def mark_paid(rid: str, p: MarkPaidIn, request: Request,
     if row.get("source") == "vendor_bill" and row.get("source_id"):
         await db.logistics_vendor_bills.update_one({"id": row["source_id"]}, {"$set": {
             "status": "paid", "utr_no": p.utr_no, "paid_date": p.paid_date, "updated_at": now_iso()}})
+    if row.get("source") == "advance" and row.get("source_id"):
+        adv = await db.employee_advances.find_one({"id": row["source_id"]}, {"_id": 0})
+        if adv and adv.get("status") == "approved":
+            paid_amt = float(v.get("net_payable") if v.get("net_payable") is not None else v.get("verified_amount") or 0)
+            await db.employee_advances.update_one({"id": row["source_id"]}, {"$set": {
+                "status": "paid",
+                "payment": {"mode": "Bank (Accounts Payment Queue)", "paid_amount": paid_amt,
+                            "payment_date": p.paid_date, "txn_no": p.utr_no,
+                            "voucher_no": (je or {}).get("voucher_number"),
+                            "paid_by": user.get("name") or user.get("email"), "paid_at": now_iso()},
+                "paid_amount": paid_amt, "outstanding": paid_amt, "paid_at": now_iso()},
+                "$push": {"status_history": {"at": now_iso(), "by": user.get("name") or user.get("email"),
+                                             "by_role": user.get("role"), "from": "approved", "to": "paid",
+                                             "comment": f"Paid via Accounts Payment Queue · UTR {p.utr_no}"}}})
     await audit(user=user, action="payment_paid", resource="payment_queue", record_id=rid,
                 after={"utr": p.utr_no, "amount": amt, "je": (je or {}).get("voucher_number")}, ip=_ip(request))
     return await db.payment_verifications.find_one({"request_id": rid}, {"_id": 0})
