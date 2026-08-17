@@ -223,6 +223,17 @@ async def approval_action(approval_id: str, payload: ApprovalAction, user: dict 
                 await apply_department_move(updated)
             elif updated.get("type") == "deployment":
                 await apply_deployment(updated)
+            elif updated.get("type") == "vendor_bill" and updated.get("record_id"):
+                vb = await db.logistics_vendor_bills.find_one({"id": updated["record_id"]}, {"_id": 0})
+                if vb and vb.get("status") not in ("paid", "approved"):
+                    await db.logistics_vendor_bills.update_one(
+                        {"id": vb["id"]},
+                        {"$set": {"status": "approved", "approved_at": now_iso(),
+                                  "approval_id": updated["id"], "updated_at": now_iso()}})
+                    from routers.logistics_phase4_router import _push_bill_to_accounts, _audit as _vb_audit
+                    await _push_bill_to_accounts({**vb, "status": "approved"}, user)
+                    await _vb_audit("vendor_bill", vb["id"], "approved_2level", user, vb.get("vb_no") or "",
+                                    {"approval_id": updated["id"]})
             elif updated.get("type") == "client_onboarding" and updated.get("record_id"):
                 await db.clients.update_one(
                     {"id": updated["record_id"]},
@@ -278,6 +289,10 @@ async def approval_action(approval_id: str, payload: ApprovalAction, user: dict 
         # _mirror_downstream_record so we skip the duplicate update here).
         if updated.get("type") == "deployment":
             await reject_deployment(updated)
+        if updated.get("type") == "vendor_bill" and updated.get("record_id"):
+            await db.logistics_vendor_bills.update_one(
+                {"id": updated["record_id"]},
+                {"$set": {"status": "rejected", "reject_reason": payload.comment or "", "updated_at": now_iso()}})
         await _mirror_downstream_record(updated, status="pending_revision",
                                        reason=payload.comment)
         await _push_inapp_to_originator(updated, {

@@ -502,6 +502,8 @@ async def vb_create(
     doc.pop("_id", None)
     if doc.get("status") == "approved":
         await _push_bill_to_accounts(doc, user)
+    if doc.get("status") == "submitted":
+        await _start_bill_approval(doc, user)
     await _audit("vendor_bill", doc["id"], "create", user, doc["vb_no"], {"net": net})
     return doc
 
@@ -535,6 +537,28 @@ async def _push_bill_to_accounts(bill: dict, user: dict) -> None:
     })
 
 
+async def _start_bill_approval(bill: dict, user: dict) -> None:
+    """Submitted bill → 2-level approval: Dept Head → General Manager."""
+    if await db.approvals.find_one({"type": "vendor_bill", "record_id": bill["id"],
+                                    "status": {"$in": ["pending", "in_progress"]}}, {"_id": 0, "id": 1}):
+        return
+    await insert_approval({
+        "id": new_id(), "type": "vendor_bill", "module": "logistics",
+        "record_id": bill["id"], "record_no": bill.get("vb_no"),
+        "title": f"Transport Vendor Bill {bill.get('vb_no')} — {bill.get('vendor_name')} ₹{float(bill.get('net_payable') or 0):,.0f}",
+        "summary": f"Project {bill.get('project_code') or '—'} · Bill {bill.get('bill_no')} · 2-level: Dept Head → GM",
+        "requested_by": user.get("name") or user.get("email"),
+        "requested_by_id": user.get("id"),
+        "status": "pending", "current_step": 0,
+        "chain": [
+            {"role": "dept_head", "label": "Department Head", "status": "pending", "approver": None, "at": None, "comment": None},
+            {"role": "general_manager", "label": "General Manager", "status": "pending", "approver": None, "at": None, "comment": None},
+        ],
+        "history": [], "created_at": now_iso(), "updated_at": now_iso(),
+    }, skip_gate=True)
+    await _audit("vendor_bill", bill["id"], "submitted_for_approval", user, bill.get("vb_no") or "")
+
+
 @router.put("/vendor-bills/{bid}")
 async def vb_update(
     bid: str,
@@ -553,6 +577,8 @@ async def vb_update(
     # Emit cost + accounts event when approved
     if updates.get("status") == "approved" and ex.get("status") != "approved":
         await _push_bill_to_accounts({**ex, **updates, "id": bid}, user)
+    if updates.get("status") == "submitted" and ex.get("status") != "submitted":
+        await _start_bill_approval({**ex, **updates, "id": bid}, user)
         await _emit_cost("vendor_bill", bid, ex.get("vb_no", ""), updates.get("net_payable") or 0,
                          "freight", updates.get("project_id"), updates.get("project_code"),
                          None, updates.get("dispatch_id"), user)

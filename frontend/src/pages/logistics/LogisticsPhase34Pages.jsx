@@ -46,7 +46,14 @@ function ListPage({ testId, title, subtitle, icon, endpoint, columns, formFields
     } catch (e) { if (!silent) toast.error(e.response?.data?.detail || "Load failed"); }
   };
   useEffect(() => { load(); }, []);
-  useAutoSync(() => load(true));
+  // Perf: background sync refreshes ONLY the main list (preloads rarely change)
+  const refreshMain = async () => {
+    const r = await api.get(endpoint);
+    let data = r.data || [];
+    if (onEnrich) data = await onEnrich(data);
+    setRows(data);
+  };
+  useAutoSync(refreshMain, { interval: 5000 });
 
   const save = async () => {
     try {
@@ -542,7 +549,7 @@ export function VendorBills() {
         { key: "gst_amount", label: "GST (₹)", type: "number" },
         { key: "tds_amount", label: "TDS (₹)", type: "number" },
         { key: "net_payable", label: "Net Payable (₹) — auto if blank", type: "number" },
-        { key: "status", label: "Status", type: "select", options: ["pending", "verified", "approved", "posted", "paid", "rejected"] },
+        { key: "status", label: "Status", type: "select", options: ["pending", "submitted", "verified", "approved", "posted", "paid", "rejected"] },
         { key: "remarks", label: "Remarks", type: "textarea", full: true },
         { key: "attachments", label: "Bill / Invoice / Supporting Documents", type: "attachments", parentType: "vendor_bills", full: true },
       ]}

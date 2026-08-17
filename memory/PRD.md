@@ -5313,3 +5313,11 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - Two-way sync: (a) Accounts mark-paid → employee_advances flips to paid with payment doc (mode "Bank (Accounts Payment Queue)", UTR, voucher) + outstanding set + status_history entry; HR "Record Payment" then blocked (status guard). (b) HR-page Record Payment → shadow row + payment_verifications upserted to stage "paid" with UTR so the Accounts queue shows Paid (no double-pay possible either direction).
 - Curl E2E verified both paths: ADV-TEST-001 via accounts queue (verify→mark-paid UTRADV001, JE-2026-0125, advance paid); ADV-TEST-002 via HR Record Payment (queue row synced to paid UTRADV002).
 
+
+### Iteration 185 (Aug 2026) — Transport Vendor Bills: perf + Submitted status + 2-level approval ✅ (iteration_172.json — backend 8/8, frontend 100%)
+1. **Perf**: ListPage auto-sync now refreshes ONLY the main list every 5s (`refreshMain`); the 4 preloads (vendors/projects/drs/cost_centers) load once on mount. Verified ~4-5s cadence, zero syncs while a dialog is open.
+2. **Status**: "submitted" added to VendorBills status dropdown.
+3. **Workflow**: status→submitted triggers `_start_bill_approval()` (approvals doc, type=vendor_bill, chain Dept Head → General Manager, insert_approval skip_gate). approvals_router approved-branch effect flips bill to approved (+approval_id/approved_at), calls `_push_bill_to_accounts` → Accounts Payment queue, audits `approved_2level`; reject branch sets bill rejected + reject_reason. Audit: submitted_for_approval + approved_2level in logistics_audit_log. Notifications via existing engine.
+- Design note: `_auto_cost_center` auto-links a CC when project has one, so the 400 only fires when neither explicit CC nor project CC exists (intended).
+- Test suite: /app/backend/tests/test_vb_2level_approval_iter172.py.
+
