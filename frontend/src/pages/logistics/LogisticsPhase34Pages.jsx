@@ -29,15 +29,19 @@ function ListPage({ testId, title, subtitle, icon, endpoint, columns, formFields
 
   const load = async (silent = false) => {
     try {
-      const [main, ...rest] = await Promise.all([
+      const results = await Promise.allSettled([
         api.get(endpoint),
         ...extraLoads.map((l) => api.get(l.path)),
       ]);
-      let data = main.data || [];
+      const [main, ...rest] = results;
+      if (main.status === "rejected") throw main.reason;
+      let data = main.value.data || [];
       if (onEnrich) data = await onEnrich(data);
       setRows(data);
       const pmap = {};
-      extraLoads.forEach((l, i) => { pmap[l.key] = rest[i].data || []; });
+      extraLoads.forEach((l, i) => {
+        pmap[l.key] = rest[i].status === "fulfilled" ? (rest[i].value.data || []) : [];
+      });
       setPreloads(pmap);
     } catch (e) { if (!silent) toast.error(e.response?.data?.detail || "Load failed"); }
   };

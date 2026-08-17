@@ -5279,3 +5279,10 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - `/api/logistics/transport-vendors` tightened: ONLY status=approved AND category/categories starting with "TRANS" (case-insensitive). Removed vendor_type + transporter-profile branches so no other categories can leak in. Dynamic sync: ListPage auto-sync re-fetches vendor preload every 3s.
 - Verified with negative controls: approved material vendor excluded, draft TRANS vendor excluded; only approved TRANS vendors returned.
 
+
+### Iteration 180 (Aug 2026) — "manager_log cannot read projects" fix ✅
+- Root cause: manager_log role lacks `projects` read in Role Register AND ListPage's Promise.all aborted the whole page when one preload 403'd.
+- Code fix: ListPage extraLoads now use Promise.allSettled — a forbidden preload yields an empty dropdown instead of breaking the page.
+- Data fix (per environment): grant manager_log → Projects: View in Role × Permission Matrix (done in preview; PRODUCTION admin must do the same in their matrix — no redeploy needed for the permission itself, but redeploy needed for the allSettled hardening).
+- Verified: manager_log user (test_log@erp.com) loads Transport Vendor Bills without errors pre-grant; /projects 200 post-grant.
+
