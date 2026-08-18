@@ -19,7 +19,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from core import db, require_permission, now_iso, new_id
+from core import db, require_permission, get_current_user, now_iso, new_id
 from audit import audit
 from sequences import next_sequence
 from accounting_service import post_vendor_invoice_verify, post_vendor_payment
@@ -317,8 +317,11 @@ async def create_vendor_bill(payload: VendorBillIn, request: Request,
         "attachments": payload.attachments or [],
         "notes": payload.notes,
         "match_flags": deps,
-        "status": "draft",          # v2: draft → verified_l1 → verified → approved_l1 → approved → (due date) → payment queue
-        "workflow_version": 2,
+        "status": "draft",          # v3: draft → dept_approved → accounts_approved → admin_approved → approved → (due date) → payment queue
+        "workflow_version": 3,
+        "workflow_log": [],
+        "payment_hold": False,
+        "control_log": [],
         "verify_level": 0, "approve_level": 0,
         "verified_l1_by": None, "verified_l1_at": None,
         "approved_l1_by": None, "approved_l1_at": None,
@@ -362,13 +365,13 @@ async def list_vendor_bills(status: Optional[str] = None,
 
 
 async def release_due_bills_to_queue() -> int:
-    """Push v2-workflow approved bills whose due date has arrived into the payment queue."""
+    """Push v2/v3-workflow approved (not held) bills whose due date has arrived into the payment queue."""
     from datetime import date as _date
     today = _date.today().isoformat()
     n = 0
     async for b in db.vendor_bills.find(
-            {"workflow_version": 2, "status": "approved", "outstanding": {"$gt": 0},
-             "due_date": {"$lte": today}}, {"_id": 0}):
+            {"workflow_version": {"$in": [2, 3]}, "status": "approved", "outstanding": {"$gt": 0},
+             "payment_hold": {"$ne": True}, "due_date": {"$lte": today}}, {"_id": 0}):
         await _push_bill_to_payment_queue(b, {"name": "system (due-date release)", "id": None})
         n += 1
     return n
@@ -380,7 +383,8 @@ async def reject_vendor_bill(bill_id: str, payload: dict, request: Request,
     b = await db.vendor_bills.find_one({"id": bill_id}, {"_id": 0})
     if not b:
         raise HTTPException(status_code=404, detail="Bill not found")
-    if b.get("status") not in ("draft", "verified_l1", "verified", "approved_l1"):
+    if b.get("status") not in ("draft", "verified_l1", "verified", "approved_l1",
+                               "dept_approved", "accounts_approved", "admin_approved"):
         raise HTTPException(status_code=400,
                             detail=f"Cannot reject bill in status {b.get('status')} — use Cancel for approved bills")
     await db.vendor_bills.update_one({"id": bill_id}, {"$set": {
@@ -465,6 +469,71 @@ async def vendor_bills_report_pdf(status: Optional[str] = None, payment_priority
                     headers={"Content-Disposition": 'inline; filename="vendor-bills-report.pdf"'})
 
 
+PAYMENT_CONTROL_ROLES = {"accounts_executive", "general_manager", "director", "super_admin"}
+
+
+@router.post("/vendor-bills/{bill_id}/payment-control")
+async def vendor_bill_payment_control(bill_id: str, payload: dict, request: Request,
+                                      user: dict = Depends(get_current_user)):
+    """Authorized: hold/release payment or change due days AFTER approval. Fully audited."""
+    if user.get("role") not in PAYMENT_CONTROL_ROLES:
+        raise HTTPException(status_code=403,
+                            detail=f"Payment control requires one of: {', '.join(sorted(PAYMENT_CONTROL_ROLES))}")
+    b = await db.vendor_bills.find_one({"id": bill_id}, {"_id": 0})
+    if not b:
+        raise HTTPException(status_code=404, detail="Bill not found")
+    if b.get("status") not in ("approved", "partially_paid"):
+        raise HTTPException(status_code=400, detail=f"Payment control only for approved bills (current: {b.get('status')})")
+    action = payload.get("action")
+    remarks = (payload.get("remarks") or "").strip()
+    actor = user.get("name") or user.get("email")
+    entry = {"action": action, "by": actor, "role": user.get("role"), "at": now_iso(), "remarks": remarks or None}
+    upd: Dict[str, Any] = {}
+    if action == "hold":
+        upd = {"payment_hold": True, "hold_reason": remarks or None}
+        # pull unprocessed queue row back (only if Accounts hasn't started verification)
+        qrow = await db.project_requests.find_one({"source": "accounts_vendor_bill", "source_id": bill_id}, {"_id": 0, "id": 1})
+        if qrow and not await db.payment_verifications.find_one({"request_id": qrow["id"]}, {"_id": 0, "id": 1}):
+            await db.project_requests.delete_one({"id": qrow["id"]})
+            entry["queue_row_removed"] = True
+    elif action == "release":
+        upd = {"payment_hold": False, "hold_reason": None}
+    elif action == "set_due_days":
+        try:
+            dd = int(payload.get("due_days"))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="due_days must be a number")
+        if not 0 <= dd <= 365:
+            raise HTTPException(status_code=400, detail="due_days must be between 0 and 365")
+        base = (b.get("approved_at") or now_iso())[:10]
+        new_due = (datetime.fromisoformat(base) + timedelta(days=dd)).date().isoformat()
+        entry["from_due"] = b.get("due_date")
+        entry["to_due"] = new_due
+        upd = {"due_days": dd, "due_date": new_due, "payment_release_date": new_due}
+    else:
+        raise HTTPException(status_code=400, detail="action must be hold | release | set_due_days")
+    await db.vendor_bills.update_one({"id": bill_id}, {"$set": upd, "$push": {"control_log": entry}})
+    await audit(user=user, action=f"vendor_bill_payment_{action}", resource="vendor_bills",
+                record_id=bill_id, after={"bill_no": b["bill_no"], **entry},
+                ip=request.client.host if request.client else "")
+    if action == "release":
+        await release_due_bills_to_queue()
+    return await db.vendor_bills.find_one({"id": bill_id}, {"_id": 0})
+
+
+@router.get("/vendor-bills/{bill_id}/pdf")
+async def vendor_bill_pdf(bill_id: str,
+                          user: dict = Depends(require_permission("accounting", "read"))):
+    b = await db.vendor_bills.find_one({"id": bill_id}, {"_id": 0})
+    if not b:
+        raise HTTPException(status_code=404, detail="Bill not found")
+    from pdf_generator import render_vendor_bill_pdf
+    pdf = render_vendor_bill_pdf(b)
+    from fastapi import Response
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{b.get("bill_no") or bill_id}.pdf"'})
+
+
 @router.get("/vendor-bills/{bill_id}")
 async def get_vendor_bill(bill_id: str, user: dict = Depends(require_permission("accounting", "read"))):
     b = await db.vendor_bills.find_one({"id": bill_id}, {"_id": 0})
@@ -510,29 +579,72 @@ async def verify_vendor_bill(bill_id: str, request: Request,
     return await db.vendor_bills.find_one({"id": bill_id}, {"_id": 0})
 
 
+# v3 workflow stage map: current status → (next status, stage label, allowed roles)
+WF3_STAGES = {
+    "draft": ("dept_approved", "Department Approval",
+              {"purchase_officer", "project_manager", "dept_head", "manager_pnv", "manager_o_p",
+               "manager_log", "general_manager", "super_admin"}),
+    "dept_approved": ("accounts_approved", "Accounts Approval",
+                      {"accounts_executive", "super_admin"}),
+    "accounts_approved": ("admin_approved", "Admin Approval",
+                          {"general_manager", "director", "super_admin"}),
+    "admin_approved": ("approved", "Final Approval",
+                       {"director", "super_admin"}),
+}
+
+
 @router.post("/vendor-bills/{bill_id}/approve")
 async def approve_vendor_bill(bill_id: str, request: Request,
-                              user: dict = Depends(require_permission("accounting", "write"))):
+                              user: dict = Depends(get_current_user)):
     """Approve → auto-post JE (DR Expense + DR GST Input / CR AP + CR TDS Payable + CR Vendor Advance)."""
     b = await db.vendor_bills.find_one({"id": bill_id}, {"_id": 0})
     if not b:
         raise HTTPException(status_code=404, detail="Bill not found")
-    wf2 = b.get("workflow_version") == 2
-    allowed = ("verified", "approved_l1") if wf2 else ("draft", "verified")
-    if b.get("status") not in allowed:
-        extra = " — complete 2-level verification first" if wf2 else ""
-        raise HTTPException(status_code=400, detail=f"Cannot approve bill in status {b.get('status')}{extra}")
-
     actor = user.get("name") or user.get("email")
-    if wf2 and b.get("status") == "verified":
-        # Approval Level 1 — no JE yet
-        await db.vendor_bills.update_one({"id": bill_id}, {"$set": {
-            "status": "approved_l1", "approve_level": 1,
-            "approved_l1_by": actor, "approved_l1_at": now_iso()}})
-        await audit(user=user, action="vendor_bill_approve_l1", resource="vendor_bills",
-                    record_id=bill_id, after={"bill_no": b["bill_no"]},
-                    ip=request.client.host if request.client else "")
-        return await db.vendor_bills.find_one({"id": bill_id}, {"_id": 0})
+    role = user.get("role")
+    wf3 = b.get("workflow_version") == 3
+    wf2 = b.get("workflow_version") == 2
+
+    if wf3:
+        st = b.get("status")
+        if st not in WF3_STAGES:
+            raise HTTPException(status_code=400, detail=f"Cannot approve bill in status {st}")
+        next_status, stage_label, roles = WF3_STAGES[st]
+        if role not in roles:
+            raise HTTPException(status_code=403,
+                                detail=f"{stage_label} requires one of: {', '.join(sorted(roles))} (you are {role})")
+        log_entry = {"stage": stage_label, "from": st, "to": next_status,
+                     "by": actor, "role": role, "at": now_iso()}
+        if next_status != "approved":
+            await db.vendor_bills.update_one({"id": bill_id}, {
+                "$set": {"status": next_status},
+                "$push": {"workflow_log": log_entry}})
+            await audit(user=user, action=f"vendor_bill_{next_status}", resource="vendor_bills",
+                        record_id=bill_id, after={"bill_no": b["bill_no"], "stage": stage_label},
+                        ip=request.client.host if request.client else "")
+            return await db.vendor_bills.find_one({"id": bill_id}, {"_id": 0})
+        # Final approval falls through to JE posting below
+        await db.vendor_bills.update_one({"id": bill_id}, {"$push": {"workflow_log": log_entry}})
+    elif wf2:
+        if b.get("status") not in ("verified", "approved_l1"):
+            raise HTTPException(status_code=400,
+                                detail=f"Cannot approve bill in status {b.get('status')} — complete 2-level verification first")
+        if role not in ("accounts_executive", "general_manager", "director", "super_admin"):
+            raise HTTPException(status_code=403, detail="Approval requires accounts/admin role")
+        if b.get("status") == "verified":
+            # Approval Level 1 — no JE yet
+            await db.vendor_bills.update_one({"id": bill_id}, {"$set": {
+                "status": "approved_l1", "approve_level": 1,
+                "approved_l1_by": actor, "approved_l1_at": now_iso()}})
+            await audit(user=user, action="vendor_bill_approve_l1", resource="vendor_bills",
+                        record_id=bill_id, after={"bill_no": b["bill_no"]},
+                        ip=request.client.host if request.client else "")
+            return await db.vendor_bills.find_one({"id": bill_id}, {"_id": 0})
+    else:
+        if b.get("status") not in ("draft", "verified"):
+            raise HTTPException(status_code=400, detail=f"Cannot approve bill in status {b.get('status')}")
+        if role not in ("accounts_executive", "general_manager", "director", "super_admin"):
+            raise HTTPException(status_code=403, detail="Approval requires accounts/admin role")
 
     # Validation: attachments required for expenses without PO/GRN
     if not b.get("attachments") and not (b.get("po_number") or b.get("grn_number")):
@@ -562,7 +674,7 @@ async def approve_vendor_bill(bill_id: str, request: Request,
         "je_id": je["id"] if je else None,
         "je_voucher_number": (je or {}).get("voucher_number"),
     }
-    if wf2:
+    if wf2 or wf3:
         # Due days count from FINAL APPROVAL date; bill becomes payment-eligible only on/after due date
         dd = int(b.get("due_days") or 30)
         release = (datetime.now(timezone.utc).date() + timedelta(days=dd)).isoformat()
@@ -579,7 +691,7 @@ async def approve_vendor_bill(bill_id: str, request: Request,
                 after={"bill_no": b["bill_no"], "je": (je or {}).get("voucher_number")},
                 ip=request.client.host if request.client else "")
     updated = await db.vendor_bills.find_one({"id": bill_id}, {"_id": 0})
-    if not wf2:
+    if not (wf2 or wf3):
         await _push_bill_to_payment_queue(updated, user)
     return updated
 

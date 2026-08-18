@@ -202,6 +202,27 @@ async def _vendor_payment_due_job():
                     })
                 await _db.notification_markers.insert_one({"id": marker, "at": now_iso()})
             n += 1
+        # Daily digest to Executive Accounts: all due + pending payments
+        digest_marker = f"acc-digest-{today}"
+        if not await _db.notification_markers.find_one({"id": digest_marker}):
+            pending_reqs = [r async for r in _db.project_requests.find(
+                {"is_payment": True, "status": {"$nin": ["rejected", "cancelled"]}}, {"_id": 0, "id": 1})]
+            paid_ids = {v["request_id"] async for v in _db.payment_verifications.find(
+                {"request_id": {"$in": [r["id"] for r in pending_reqs]}, "stage": "paid"}, {"_id": 0, "request_id": 1})}
+            pending_count = len([r for r in pending_reqs if r["id"] not in paid_ids])
+            held = await _db.vendor_bills.count_documents({"payment_hold": True, "status": "approved"})
+            if pending_count or n or held:
+                body_txt = f"{pending_count} payment(s) pending processing · {n} vendor bill(s) due/overdue"
+                if held:
+                    body_txt += f" · {held} on hold"
+                for role in ("accounts_executive", "super_admin"):
+                    await _push_inapp_for_role(role, {
+                        "type": "accounts_payments_digest",
+                        "title": "Payments digest — due & pending",
+                        "body": body_txt,
+                        "link": "/app/accounts/payment-processing",
+                    })
+                await _db.notification_markers.insert_one({"id": digest_marker, "at": now_iso()})
         if n:
             logger.info(f"[vendor_payment_due] flagged {n} bill(s)")
         _last_results["vendor_payment_due"] = {"flagged": n, "ts": datetime.utcnow().isoformat()}

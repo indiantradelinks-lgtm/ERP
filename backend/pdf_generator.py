@@ -499,6 +499,60 @@ def render_vendor_bills_report(rows: list, status_label: str = "All") -> bytes:
     return _render(_wrap("Vendor Bills Register", body))
 
 
+# ─────────────────────────── Single Vendor Bill ─────────────────────────────
+def render_vendor_bill_pdf(b: Dict[str, Any]) -> bytes:
+    t = b.get("totals") or {}
+    lines_html = ""
+    for i, ln in enumerate(b.get("lines") or [], 1):
+        qty = float(ln.get("quantity") or 0)
+        rate = float(ln.get("rate") or 0)
+        lines_html += f"""<tr><td>{i}</td><td>{_esc(ln.get('description'))}</td>
+<td class="num">{_money(qty)}</td><td>{_esc(ln.get('unit') or 'Nos')}</td>
+<td class="num">{_money(rate)}</td><td class="num">{_money(qty * rate)}</td></tr>"""
+    wf_html = ""
+    for e in b.get("workflow_log") or []:
+        wf_html += f"<div class='note'>✓ <b>{_esc(e.get('stage'))}</b> — {_esc(e.get('by'))} ({_esc(e.get('role'))}) · {_esc((e.get('at') or '')[:16].replace('T', ' '))}</div>"
+    for e in b.get("control_log") or []:
+        wf_html += f"<div class='note'>⚙ <b>{_esc((e.get('action') or '').replace('_', ' ').upper())}</b> — {_esc(e.get('by'))} · {_esc((e.get('at') or '')[:16].replace('T', ' '))}{(' · ' + _esc(e.get('remarks'))) if e.get('remarks') else ''}</div>"
+    hold_tag = '<span class="tag red">PAYMENT ON HOLD</span>' if b.get("payment_hold") else ""
+    body = f"""
+<div class="kv">
+  <div><b>Bill No</b></div><div>{_esc(b.get('bill_no'))} {hold_tag}</div>
+  <div><b>Status</b></div><div><span class="tag slate">{_esc((b.get('status') or '').replace('_', ' ').upper())}</span></div>
+  <div><b>Vendor</b></div><div>{_esc(b.get('vendor_name'))}</div>
+  <div><b>GSTIN / PAN</b></div><div>{_esc(b.get('vendor_gstin') or '—')} / {_esc(b.get('vendor_pan') or '—')}</div>
+  <div><b>Invoice</b></div><div>{_esc(b.get('invoice_no'))} · {_esc(b.get('invoice_date'))}</div>
+  <div><b>PO / GRN</b></div><div>{_esc(b.get('po_number') or '—')} / {_esc(b.get('grn_number') or b.get('service_confirmation_no') or '—')}</div>
+  <div><b>Project</b></div><div>{_esc(b.get('project_code') or '—')}</div>
+  <div><b>Due / Payment Date</b></div><div>{_esc(b.get('payment_release_date') or b.get('due_date') or '—')} ({b.get('due_days') or 30} days)</div>
+  <div><b>TDS</b></div><div>{_esc(b.get('tds_section') or '—')} @ {b.get('tds_rate') or 0}%</div>
+</div>
+<div class="section-title">Bill Lines</div>
+<table><thead><tr><th>#</th><th>Description</th><th class="num">Qty</th><th>Unit</th>
+<th class="num">Rate (₹)</th><th class="num">Amount (₹)</th></tr></thead>
+<tbody>{lines_html or '<tr><td colspan=6>No lines</td></tr>'}</tbody></table>
+<div class="section-title">Totals</div>
+<table><tbody>
+<tr><td>Taxable</td><td class="num">{_money(t.get('taxable') or 0)}</td></tr>
+<tr><td>GST ({b.get('gst_rate') or 0}%)</td><td class="num">{_money(t.get('gst') or 0)}</td></tr>
+<tr><td><b>Gross</b></td><td class="num"><b>{_money(t.get('gross') or b.get('amount') or 0)}</b></td></tr>
+<tr><td>TDS</td><td class="num">−{_money(t.get('tds') or 0)}</td></tr>
+<tr><td>Advance Adjusted</td><td class="num">−{_money(b.get('advance_adjusted') or 0)}</td></tr>
+<tr><td>Retention</td><td class="num">−{_money(b.get('retention_amount') or 0)}</td></tr>
+<tr><td><b>Net Payable</b></td><td class="num"><b>{_money(t.get('net_payable') or b.get('outstanding') or 0)}</b></td></tr>
+<tr><td>Outstanding</td><td class="num">{_money(b.get('outstanding') or 0)}</td></tr>
+</tbody></table>
+<div class="section-title">Approval & Payment Control Trail</div>
+{wf_html or '<div class="note">No workflow entries.</div>'}
+<div class="signs">
+  <div class="box">Department</div>
+  <div class="box">Accounts</div>
+  <div class="box">Admin / Final</div>
+</div>
+"""
+    return _render(_wrap(f"Vendor Bill — {b.get('bill_no') or ''}", body))
+
+
 # ─────────────────────────── MATERIAL ISSUE SLIP ──────────────────────────
 def render_material_issue_pdf(slip: Dict[str, Any]) -> bytes:
     items_html = ""

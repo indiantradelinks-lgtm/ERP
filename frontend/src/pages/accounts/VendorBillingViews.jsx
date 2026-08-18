@@ -18,6 +18,9 @@ import { ProjectSelect } from "@/components/MasterSelect";
 
 const STATUS_COLORS = {
   draft: "bg-slate-100 text-slate-700",
+  dept_approved: "bg-indigo-100 text-indigo-800",
+  accounts_approved: "bg-blue-100 text-blue-800",
+  admin_approved: "bg-teal-100 text-teal-800",
   verified_l1: "bg-indigo-100 text-indigo-800",
   verified: "bg-blue-100 text-blue-800",
   approved_l1: "bg-teal-100 text-teal-800",
@@ -26,6 +29,13 @@ const STATUS_COLORS = {
   partially_paid: "bg-amber-100 text-amber-800",
   paid: "bg-green-100 text-green-800",
   cancelled: "bg-rose-100 text-rose-800",
+};
+
+const TDS_RATES = { "194C": 2, "194J": 10, "194I": 10, "194H": 2, "194Q": 0.1, "194A": 10, "195": 20 };
+
+const gstinToPan = (g) => {
+  const s = (g || "").trim().toUpperCase();
+  return s.length >= 12 ? s.slice(2, 12) : "";
 };
 
 const PRIORITY_COLORS = {
@@ -167,17 +177,21 @@ export function VendorBillsView() {
   };
 
   const approve = async (r) => {
+    const wf3 = r.workflow_version === 3;
     const wf2 = r.workflow_version === 2;
-    const finalStep = !wf2 || r.status === "approved_l1";
+    const finalStep = wf3 ? r.status === "admin_approved" : wf2 ? r.status === "approved_l1" : true;
+    const stageLabel = wf3
+      ? { draft: "Department Approval", dept_approved: "Accounts Approval", accounts_approved: "Admin Approval", admin_approved: "Final Approval" }[r.status]
+      : null;
     const msg = finalStep
       ? `Final approve ${r.bill_no}? This posts the JE, locks the bill and schedules payment after ${r.due_days || 30} due days.`
-      : `Approve (Level 1) ${r.bill_no}?`;
+      : `${stageLabel || "Approve"} for ${r.bill_no}?`;
     if (!window.confirm(msg)) return;
     try {
       const { data } = await api.post(`/payables/vendor-bills/${r.id}/approve`);
       toast.success(data.status === "approved"
         ? `Approved + JE posted — payment eligible from ${data.payment_release_date || data.due_date}`
-        : "Approval Level 1 recorded");
+        : `${stageLabel || "Approval"} recorded`);
       load();
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
@@ -224,6 +238,33 @@ export function VendorBillsView() {
     setOpen(true);
   };
 
+  const paymentControl = async (r, action) => {
+    let payload = { action };
+    if (action === "set_due_days") {
+      const dd = window.prompt(`New Due Days for ${r.bill_no} (counted from approval date ${(r.approved_at || "").slice(0, 10)}):`, r.due_days || 30);
+      if (dd === null) return;
+      payload.due_days = Number(dd);
+    }
+    const remarks = window.prompt(`Remarks for ${action.replace("_", " ")} of ${r.bill_no} (recorded in audit trail):`, "");
+    if (remarks === null) return;
+    payload.remarks = remarks;
+    try {
+      const { data } = await api.post(`/payables/vendor-bills/${r.id}/payment-control`, payload);
+      toast.success(action === "hold" ? "Payment held" : action === "release" ? "Hold released" : `Due date → ${data.payment_release_date}`);
+      load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+  };
+
+  const downloadBillPdf = async (r) => {
+    try {
+      const res = await api.get(`/payables/vendor-bills/${r.id}/pdf`, { responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = `${r.bill_no}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+    } catch { toast.error("PDF download failed"); }
+  };
+
   const downloadReport = async () => {
     try {
       const params = new URLSearchParams();
@@ -244,8 +285,10 @@ export function VendorBillsView() {
         <div className="flex gap-2">
           <select className="h-8 rounded-sm border bg-background px-2 text-sm" value={filter.status} onChange={e => setFilter({ ...filter, status: e.target.value })}>
             <option value="">All statuses</option>
-            <option value="draft">Draft</option><option value="verified_l1">Verified L1</option>
-            <option value="verified">Verified</option><option value="approved_l1">Approved L1</option>
+            <option value="draft">Draft</option>
+            <option value="dept_approved">Dept Approved</option>
+            <option value="accounts_approved">Accounts Approved</option>
+            <option value="admin_approved">Admin Approved</option>
             <option value="approved">Approved</option><option value="rejected">Rejected</option>
             <option value="partially_paid">Partially Paid</option>
             <option value="paid">Paid</option><option value="cancelled">Cancelled</option>
@@ -300,23 +343,32 @@ export function VendorBillsView() {
                   <td className="px-3 py-1.5 text-center"><span className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${STATUS_COLORS[r.status] || ""}`}>{r.status}</span></td>
                   <td className="px-3 py-1.5 text-right whitespace-nowrap">
                     {(() => {
+                      const wf3 = r.workflow_version === 3;
                       const wf2 = r.workflow_version === 2;
-                      const canReject = ["draft", "verified_l1", "verified", "approved_l1"].includes(r.status);
+                      const canReject = ["draft", "dept_approved", "accounts_approved", "admin_approved", "verified_l1", "verified", "approved_l1"].includes(r.status);
                       const canEdit = ["draft", "rejected"].includes(r.status);
-                      const verifyLabel = wf2 ? (r.status === "draft" ? "Verify L1" : r.status === "verified_l1" ? "Verify L2" : null) : (r.status === "draft" ? "Verify" : null);
-                      const approveLabel = wf2
-                        ? (r.status === "verified" ? "Approve L1" : r.status === "approved_l1" ? "Final Approve" : null)
-                        : (["draft", "verified"].includes(r.status) ? "Approve" : null);
+                      const verifyLabel = wf2 ? (r.status === "draft" ? "Verify L1" : r.status === "verified_l1" ? "Verify L2" : null) : null;
+                      const approveLabel = wf3
+                        ? ({ draft: "Dept Approve", dept_approved: "Accounts Approve", accounts_approved: "Admin Approve", admin_approved: "Final Approve" }[r.status] || null)
+                        : wf2
+                          ? (r.status === "verified" ? "Approve L1" : r.status === "approved_l1" ? "Final Approve" : null)
+                          : (["draft", "verified"].includes(r.status) ? "Approve" : null);
+                      const controllable = ["approved", "partially_paid"].includes(r.status);
                       return (
                         <>
                           {canEdit && <Button size="sm" variant="ghost" onClick={() => openEdit(r)} data-testid={`pay-vb-edit-${r.bill_no}`}><Pencil className="h-3 w-3 mr-1" />Edit</Button>}
                           {verifyLabel && <Button size="sm" variant="outline" onClick={() => verify(r)} data-testid={`pay-vb-verify-${r.bill_no}`} className="ml-1"><CheckCircle2 className="h-3 w-3 mr-1" />{verifyLabel}</Button>}
                           {approveLabel && <Button size="sm" onClick={() => approve(r)} data-testid={`pay-vb-approve-${r.bill_no}`} className="ml-1"><CheckCircle2 className="h-3 w-3 mr-1" />{approveLabel}</Button>}
                           {canReject && <Button size="sm" variant="ghost" className="ml-1 text-rose-600" onClick={() => reject(r)} data-testid={`pay-vb-reject-${r.bill_no}`}><X className="h-3 w-3 mr-1" />Reject</Button>}
-                          {wf2 && r.status === "approved" && r.payment_release_date && (
+                          {controllable && (r.payment_hold
+                            ? <Button size="sm" variant="outline" className="ml-1 border-emerald-300 text-emerald-700" onClick={() => paymentControl(r, "release")} data-testid={`pay-vb-release-${r.bill_no}`}>Release</Button>
+                            : <Button size="sm" variant="outline" className="ml-1 border-rose-300 text-rose-700" onClick={() => paymentControl(r, "hold")} data-testid={`pay-vb-hold-${r.bill_no}`}>Hold</Button>)}
+                          {controllable && <Button size="sm" variant="ghost" className="ml-1" onClick={() => paymentControl(r, "set_due_days")} data-testid={`pay-vb-duedays-${r.bill_no}`} title="Change due days (from approval date)">Due±</Button>}
+                          <Button size="sm" variant="ghost" className="ml-1" onClick={() => downloadBillPdf(r)} data-testid={`pay-vb-pdf-${r.bill_no}`} title="Bill PDF"><FileDown className="h-3 w-3" /></Button>
+                          {r.payment_hold && <span className="inline-block px-1.5 py-0.5 rounded text-[10px] bg-rose-100 text-rose-700 font-semibold ml-1">HELD</span>}
+                          {(wf2 || wf3) && r.status === "approved" && r.payment_release_date && !r.payment_hold && (
                             <span className="text-[10px] text-slate-500 ml-1" title="Eligible for Payment Processing from this date">Pay from {r.payment_release_date}</span>
                           )}
-                          {r.je_voucher_number && <span className="text-[10px] text-slate-500 font-mono ml-1">{r.je_voucher_number}</span>}
                         </>
                       );
                     })()}
@@ -334,7 +386,10 @@ export function VendorBillsView() {
           <DialogHeader><DialogTitle>{editId ? "Edit Vendor Bill" : "New Vendor Bill"}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-4 gap-2">
             <Field label="Vendor *"><Input value={form.vendor_name} onChange={e => setForm({ ...form, vendor_name: e.target.value })} data-testid="pay-vb-vendor" /></Field>
-            <Field label="GSTIN"><Input value={form.vendor_gstin} onChange={e => setForm({ ...form, vendor_gstin: e.target.value })} /></Field>
+            <Field label="GSTIN"><Input value={form.vendor_gstin} onChange={e => {
+              const v = e.target.value.toUpperCase();
+              setForm({ ...form, vendor_gstin: v, vendor_pan: gstinToPan(v) || form.vendor_pan });
+            }} data-testid="pay-vb-gstin" /></Field>
             <Field label="PAN"><Input value={form.vendor_pan} onChange={e => setForm({ ...form, vendor_pan: e.target.value })} /></Field>
             <Field label="MSME">
               <select className="h-9 w-full rounded-sm border bg-background px-2" value={form.msme_status} onChange={e => setForm({ ...form, msme_status: e.target.value })}>
@@ -431,8 +486,13 @@ export function VendorBillsView() {
               </select>
             </Field>
             <Field label="TDS Section">
-              <select className="h-9 w-full rounded-sm border bg-background px-2" value={form.tds_section} onChange={e => setForm({ ...form, tds_section: e.target.value })}>
-                <option value="">—</option><option>194C</option><option>194J</option><option>194I</option><option>194H</option>
+              <select className="h-9 w-full rounded-sm border bg-background px-2" value={form.tds_section}
+                onChange={e => {
+                  const sec = e.target.value;
+                  setForm({ ...form, tds_section: sec, tds_rate: TDS_RATES[sec] ?? (sec ? form.tds_rate : 0) });
+                }} data-testid="pay-vb-tds-section">
+                <option value="">—</option>
+                {Object.entries(TDS_RATES).map(([s, r]) => <option key={s} value={s}>{s} ({r}%)</option>)}
               </select>
             </Field>
             <Field label="TDS %"><Input type="number" value={form.tds_rate} onChange={e => setForm({ ...form, tds_rate: Number(e.target.value) })} /></Field>
