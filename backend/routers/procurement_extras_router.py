@@ -481,6 +481,73 @@ async def list_srns(so_id: Optional[str] = None, project_id: Optional[str] = Non
     return rows
 
 
+TERMS_SEED = [
+    {"category": "payment", "title": "Payment 30 Days", "body": "Payment within 30 days from date of GRN acceptance and receipt of correct tax invoice.", "is_default": True, "sort_order": 1},
+    {"category": "payment", "title": "Payment 45 Days", "body": "Payment within 45 days from date of GRN acceptance and receipt of correct tax invoice.", "is_default": False, "sort_order": 2},
+    {"category": "advance", "title": "No Advance", "body": "No advance payment. 100% against delivery and acceptance.", "is_default": True, "sort_order": 1},
+    {"category": "advance", "title": "Advance Against PI", "body": "Advance released only against Proforma Invoice and approved advance request; adjusted in first bill.", "is_default": False, "sort_order": 2},
+    {"category": "tds", "title": "TDS As Applicable", "body": "TDS shall be deducted at applicable rates under the Income Tax Act (194C/194J etc.) at the time of payment.", "is_default": True, "sort_order": 1},
+    {"category": "delivery", "title": "Delivery Schedule", "body": "Material/services to be delivered as per delivery schedule mentioned in the PO. Delays to be intimated in writing in advance.", "is_default": True, "sort_order": 1},
+    {"category": "inclusions", "title": "Freight & Packing Included", "body": "Rates are inclusive of freight, packing, forwarding and unloading at site unless stated otherwise.", "is_default": True, "sort_order": 1},
+    {"category": "exclusions", "title": "GST Extra", "body": "GST extra as applicable at actuals against valid tax invoice.", "is_default": True, "sort_order": 1},
+    {"category": "warranty", "title": "Replacement Warranty", "body": "Defective/damaged material to be replaced free of cost within 7 days of intimation.", "is_default": True, "sort_order": 1},
+    {"category": "penalty", "title": "LD Clause", "body": "Liquidated damages @0.5% per week of delay subject to a maximum of 5% of PO value.", "is_default": False, "sort_order": 1},
+    {"category": "general", "title": "Quality & Spec", "body": "Supply strictly as per agreed specifications/approved samples. Rejections to be lifted back at vendor's cost.", "is_default": True, "sort_order": 1},
+]
+
+
+@router.get("/terms-templates")
+async def list_terms_templates(user: dict = Depends(require_permission("purchase_orders", "read"))):
+    if await db.po_terms_templates.count_documents({}) == 0:
+        for t in TERMS_SEED:
+            await db.po_terms_templates.insert_one({**t, "id": new_id(), "created_at": now_iso(), "created_by": "system"})
+    return [t async for t in db.po_terms_templates.find({}, {"_id": 0}).sort([("category", 1), ("sort_order", 1), ("title", 1)])]
+
+
+@router.post("/terms-templates")
+async def create_terms_template(payload: dict, user: dict = Depends(require_permission("purchase_orders", "write"))):
+    if not payload.get("title") or not payload.get("body"):
+        raise HTTPException(400, "title and body required")
+    doc = {"id": new_id(), "category": payload.get("category") or "general",
+           "title": payload["title"], "body": payload["body"],
+           "is_default": bool(payload.get("is_default")), "sort_order": int(payload.get("sort_order") or 99),
+           "created_at": now_iso(), "created_by": user.get("name") or user.get("email")}
+    await db.po_terms_templates.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@router.put("/terms-templates/{tid}")
+async def update_terms_template(tid: str, payload: dict, user: dict = Depends(require_permission("purchase_orders", "write"))):
+    upd = {k: payload[k] for k in ("category", "title", "body", "is_default", "sort_order") if k in payload}
+    upd["updated_at"] = now_iso()
+    r = await db.po_terms_templates.update_one({"id": tid}, {"$set": upd})
+    if not r.matched_count:
+        raise HTTPException(404, "Template not found")
+    return await db.po_terms_templates.find_one({"id": tid}, {"_id": 0})
+
+
+@router.delete("/terms-templates/{tid}")
+async def delete_terms_template(tid: str, user: dict = Depends(require_permission("purchase_orders", "write"))):
+    r = await db.po_terms_templates.delete_one({"id": tid})
+    if not r.deleted_count:
+        raise HTTPException(404, "Template not found")
+    return {"ok": True}
+
+
+@router.put("/pos/{po_id}/terms")
+async def set_po_terms(po_id: str, payload: dict, user: dict = Depends(require_permission("purchase_orders", "write"))):
+    po = await db.purchase_orders.find_one({"id": po_id}, {"_id": 0, "id": 1})
+    if not po:
+        raise HTTPException(404, "PO not found")
+    terms_structured = payload.get("terms_structured") or []
+    text = "  ".join(f"{i + 1}. {t.get('title')}: {t.get('body')}" for i, t in enumerate(terms_structured))
+    await db.purchase_orders.update_one({"id": po_id}, {"$set": {
+        "terms_structured": terms_structured, "terms": text or payload.get("terms"),
+        "updated_at": now_iso()}})
+    return await db.purchase_orders.find_one({"id": po_id}, {"_id": 0})
+
+
 @router.get("/srns/{srn_id}/pdf")
 async def srn_pdf(srn_id: str, user: dict = Depends(require_permission("purchase_orders", "read"))):
     srn = await db.service_receipt_notes.find_one({"id": srn_id}, {"_id": 0})

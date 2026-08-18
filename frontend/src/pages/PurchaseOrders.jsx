@@ -3,11 +3,12 @@ import DataTableShell from "@/components/DataTableShell";
 import useResource from "@/hooks/useResource";
 import { toneFor } from "@/lib/statusTone";
 import { Button } from "@/components/ui/button";
-import { Mail, Network, FileDown, History } from "lucide-react";
+import { Mail, Network, FileDown, History, ListChecks } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import SendEmailDialog from "@/components/SendEmailDialog";
 import EmailHistoryDialog from "@/components/EmailHistoryDialog";
 import LineageTrail from "@/components/LineageTrail";
+import POTermsDialog from "@/components/POTermsDialog";
 import { downloadPdf } from "@/lib/exports";
 
 const PO_STATUS_TONE = { approved: "success", rejected: "danger", received: "info", partially_received: "warning" };
@@ -17,6 +18,7 @@ export default function PurchaseOrders() {
   const [emailFor, setEmailFor] = useState(null);
   const [historyFor, setHistoryFor] = useState(null);
   const [lineageFor, setLineageFor] = useState(null);
+  const [termsFor, setTermsFor] = useState(null);
   const columns = [
     { key: "po_number", label: "PO #" },
     { key: "vendor", label: "Vendor" },
@@ -32,6 +34,9 @@ export default function PurchaseOrders() {
         <div className="inline-flex gap-1">
           <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setLineageFor(row)} data-testid={`po-lineage-${row.id}`} title="View end-to-end procurement lineage">
             <Network className="h-3 w-3 mr-1" /> Lineage
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setTermsFor(row)} data-testid={`po-terms-${row.id}`} title="Terms & Conditions (printed on PO PDF, fetched into vendor bill)">
+            <ListChecks className="h-3 w-3 mr-1" /> Terms
           </Button>
           <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => downloadPdf(`/procurement/pos/${row.id}/pdf`, `${row.po_number || row.id}.pdf`)} data-testid={`po-pdf-${row.id}`} title="Download PO PDF">
             <FileDown className="h-3 w-3 mr-1" /> PDF
@@ -72,6 +77,7 @@ export default function PurchaseOrders() {
           onClose={() => setHistoryFor(null)}
         />
       )}
+      {termsFor && <POTermsDialog po={termsFor} onClose={(saved) => { setTermsFor(null); if (saved) r.refresh?.(); }} />}
       <Dialog open={!!lineageFor} onOpenChange={(o) => !o && setLineageFor(null)}>
         <DialogContent className="max-w-5xl rounded-sm">
           <DialogHeader>

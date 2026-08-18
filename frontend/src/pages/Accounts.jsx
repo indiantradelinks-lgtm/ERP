@@ -4,7 +4,7 @@
  * Left sidebar with 17 submenus → right content area renders the selected view.
  * All views imported from /pages/accounts/AccountsViews.jsx.
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   BookOpen, LayoutDashboard, FileText, Receipt, ArrowRightLeft, FileMinus,
   FilePlus, Scale, FileBarChart2, ListChecks, Inbox, ShieldCheck, Settings,
@@ -107,6 +107,12 @@ const NAV = [
 export default function Accounts() {
   const [active, setActive] = useState("dashboard");
   const groups = [...new Set(NAV.map(n => n.group))];
+
+  useEffect(() => {
+    const h = (e) => setActive(e.detail);
+    window.addEventListener("accounts:set-tab", h);
+    return () => window.removeEventListener("accounts:set-tab", h);
+  }, []);
 
   const View = (() => {
     const item = NAV.find(n => n.key === active);

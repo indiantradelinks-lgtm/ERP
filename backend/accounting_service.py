@@ -592,10 +592,10 @@ async def trial_balance(start: Optional[str] = None, end: Optional[str] = None,
         return []
     tb: Dict[str, Dict[str, Any]] = {
         a["code"]: {
-            "code": a["code"], "name": a["name"], "type": a["type"],
-            "debit_total":  float(a.get("opening_balance") or 0) if a["type"] in {"asset", "expense"} else 0.0,
-            "credit_total": float(a.get("opening_balance") or 0) if a["type"] in {"liability", "equity", "revenue"} else 0.0,
-        } for a in coa
+            "code": a["code"], "name": a.get("name") or a["code"], "type": a.get("type") or "expense",
+            "debit_total":  float(a.get("opening_balance") or 0) if (a.get("type") or "expense") in {"asset", "expense"} else 0.0,
+            "credit_total": float(a.get("opening_balance") or 0) if (a.get("type") or "expense") in {"liability", "equity", "revenue"} else 0.0,
+        } for a in coa if a.get("code")
     }
     # Filter
     je_filter: Dict[str, Any] = {}

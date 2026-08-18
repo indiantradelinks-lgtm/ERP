@@ -14,7 +14,9 @@ from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+import re
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from core import db, require_permission, now_iso, new_id
@@ -89,6 +91,7 @@ class VendorBillIn(BaseModel):
     notes: Optional[str] = None
     force_no_po: bool = False                  # if true, allow bills without PO (needs admin)
     force_no_grn: bool = False                 # if true, allow bills without GRN (services)
+    po_terms: Optional[List[Dict[str, Any]]] = None  # snapshot of PO T&C at bill entry
 
 
 class VendorPaymentIn(BaseModel):
@@ -183,6 +186,75 @@ async def list_expense_categories(user: dict = Depends(require_permission("accou
     return [{"key": k, "account_code": v} for k, v in EXPENSE_CATEGORY_MAP.items()]
 
 
+@router.get("/grn-prefill")
+async def grn_prefill(grn_number: str = Query(...),
+                      user: dict = Depends(require_permission("accounting", "read"))):
+    """Auto-fetch vendor, PO rates, GST/PAN/MSME/bank, project & PO terms from an accepted GRN."""
+    grn = await db.grn.find_one({"grn_number": grn_number}, {"_id": 0})
+    if not grn:
+        raise HTTPException(404, f"GRN '{grn_number}' not found")
+    po = await db.purchase_orders.find_one({"po_number": grn.get("po_number")}, {"_id": 0}) if grn.get("po_number") else None
+    vendor = None
+    if grn.get("vendor_id"):
+        vendor = await db.vendors.find_one({"id": grn["vendor_id"]}, {"_id": 0})
+    if not vendor:
+        vname = grn.get("vendor_name") or (po or {}).get("vendor")
+        if vname:
+            vendor = await db.vendors.find_one({"name": vname}, {"_id": 0})
+    po_items = (po or {}).get("items") or []
+    lines = []
+    for it in grn.get("items") or []:
+        acc = float(it.get("accepted_qty") or 0)
+        if acc <= 0:
+            continue
+        rate = 0.0
+        idx = it.get("po_item_index")
+        if idx is not None and 0 <= int(idx) < len(po_items):
+            rate = float(po_items[int(idx)].get("rate") or 0)
+        if not rate and it.get("item_id"):
+            for p_it in po_items:
+                if p_it.get("item_id") == it.get("item_id"):
+                    rate = float(p_it.get("rate") or 0)
+                    break
+        if not rate and po and len(po_items) <= 1:
+            rate = float(po.get("rate") or 0)
+        lines.append({"description": it.get("item_name") or "", "quantity": acc,
+                      "unit": it.get("unit") or "Nos", "rate": rate})
+    bank = None
+    for acct in (vendor or {}).get("bank_accounts") or []:
+        if acct.get("is_default"):
+            bank = acct
+            break
+    if bank is None and (vendor or {}).get("bank_accounts"):
+        bank = vendor["bank_accounts"][0]
+    msme = (vendor or {}).get("msme") or {}
+    due_days = 30
+    pt = str((po or {}).get("payment_terms") or "").strip()
+    m = re.search(r"\b(\d{1,3})\b", pt)
+    if m and 1 <= int(m.group(1)) <= 120:
+        due_days = int(m.group(1))
+    project_code = grn.get("project_code") or (po or {}).get("project")
+    proj = await db.projects.find_one({"code": project_code}, {"_id": 0, "id": 1}) if project_code else None
+    return {
+        "vendor_id": (vendor or {}).get("id"),
+        "vendor_name": (vendor or {}).get("name") or grn.get("vendor_name"),
+        "vendor_gstin": (vendor or {}).get("gst") or "",
+        "vendor_pan": (vendor or {}).get("pan") or "",
+        "msme_status": msme.get("status"),
+        "bank_verified": bool(bank and bank.get("account_no") and bank.get("ifsc")),
+        "bank": bank,
+        "po_number": grn.get("po_number"), "po_id": (po or {}).get("id"),
+        "grn_number": grn_number, "grn_id": grn.get("id"),
+        "project_code": project_code, "project_id": (proj or {}).get("id"),
+        "lines": lines,
+        "due_days": due_days,
+        "payment_terms": pt or None,
+        "delivery_days": (po or {}).get("delivery_days"),
+        "po_terms_text": (po or {}).get("terms"),
+        "po_terms": (po or {}).get("terms_structured") or [],
+    }
+
+
 @router.post("/vendor-bills")
 async def create_vendor_bill(payload: VendorBillIn, request: Request,
                              user: dict = Depends(require_permission("accounting", "write"))):
@@ -234,6 +306,7 @@ async def create_vendor_bill(payload: VendorBillIn, request: Request,
         "advance_adjusted": payload.advance_adjusted,
         "retention_amount": payload.retention_amount,
         "payment_terms": payload.payment_terms,
+        "po_terms": payload.po_terms,
         "payment_priority": payload.payment_priority,
         "totals": totals,
         "amount": totals["gross"],

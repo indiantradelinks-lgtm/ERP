@@ -63,6 +63,8 @@ export function VendorBillsView() {
   const [filter, setFilter] = useState({ status: "", payment_priority: "" });
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(newFormState());
+  const [pendingGrns, setPendingGrns] = useState([]);
+  const [poTerms, setPoTerms] = useState(null);
 
   function newFormState() {
     return {
@@ -87,6 +89,48 @@ export function VendorBillsView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [filter.status, filter.payment_priority]);
 
+  useEffect(() => {
+    if (open) api.get("/payables/reports/grn-pending-invoice").then(r => setPendingGrns(r.data?.rows || [])).catch(() => {});
+  }, [open]);
+
+  const fetchFromGrn = async (grnNo) => {
+    if (!grnNo) { toast.error("Enter / select a GRN number first"); return; }
+    try {
+      const { data } = await api.get(`/payables/grn-prefill?grn_number=${encodeURIComponent(grnNo)}`);
+      setForm(f => ({
+        ...f,
+        vendor_id: data.vendor_id || null,
+        vendor_name: data.vendor_name || f.vendor_name,
+        vendor_gstin: data.vendor_gstin || "",
+        vendor_pan: data.vendor_pan || "",
+        msme_status: data.msme_status || "",
+        bank_verified: !!data.bank_verified,
+        po_number: data.po_number || "",
+        po_id: data.po_id || null,
+        grn_number: grnNo,
+        grn_id: data.grn_id || null,
+        project_code: data.project_code || f.project_code,
+        project_id: data.project_id || null,
+        due_days: data.due_days || f.due_days,
+        lines: data.lines?.length ? data.lines : f.lines,
+      }));
+      setPoTerms(data);
+      toast.success(`Fetched vendor, ${data.lines?.length || 0} line(s) @ PO rates & terms from ${data.po_number || "PO"}`);
+    } catch (e) { toast.error(e.response?.data?.detail || "GRN not found"); }
+  };
+
+  // Cross-tab prefill: "Create Bill" from GRN Pending Invoice view
+  useEffect(() => {
+    const g = sessionStorage.getItem("vb_prefill_grn");
+    if (g) {
+      sessionStorage.removeItem("vb_prefill_grn");
+      setForm(newFormState());
+      setOpen(true);
+      setTimeout(() => fetchFromGrn(g), 400);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const totals = useMemo(() => {
     const taxable = form.lines.reduce((a, l) => a + Number(l.quantity || 0) * Number(l.rate || 0), 0);
     const gst = taxable * (form.gst_rate || 0) / 100;
@@ -106,7 +150,7 @@ export function VendorBillsView() {
       toast.error("GRN required (or tick 'No GRN – override' / supply Service Confirmation #)"); return;
     }
     try {
-      await api.post("/payables/vendor-bills", { ...form, attachments: form.attachments?.length ? form.attachments : [{ name: "manual-entry" }] });
+      await api.post("/payables/vendor-bills", { ...form, po_terms: poTerms?.po_terms?.length ? poTerms.po_terms : null, payment_terms: poTerms?.payment_terms || null, attachments: form.attachments?.length ? form.attachments : [{ name: "manual-entry" }] });
       toast.success("Vendor bill created"); setOpen(false); setForm(newFormState()); load();
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
@@ -195,7 +239,7 @@ export function VendorBillsView() {
         </div>
       </CardContent>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setPoTerms(null); }}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>New Vendor Bill</DialogTitle></DialogHeader>
           <div className="grid grid-cols-4 gap-2">
@@ -216,7 +260,17 @@ export function VendorBillsView() {
           </div>
           <div className="grid grid-cols-4 gap-2 mt-2">
             <Field label="PO Number"><Input value={form.po_number} onChange={e => setForm({ ...form, po_number: e.target.value })} data-testid="pay-vb-po" /></Field>
-            <Field label="GRN Number"><Input value={form.grn_number} onChange={e => setForm({ ...form, grn_number: e.target.value })} data-testid="pay-vb-grn" /></Field>
+            <Field label="GRN Number">
+              <div className="flex gap-1">
+                <Input list="vb-pending-grns" value={form.grn_number} onChange={e => setForm({ ...form, grn_number: e.target.value })} data-testid="pay-vb-grn" placeholder="Select accepted GRN…" />
+                <Button size="sm" variant="outline" className="h-9 px-2 shrink-0" onClick={() => fetchFromGrn(form.grn_number)} data-testid="pay-vb-fetch-grn" title="Auto-fetch vendor, PO rates, GST/PAN/bank & terms">
+                  <RefreshCcw className="h-3.5 w-3.5" />
+                </Button>
+                <datalist id="vb-pending-grns">
+                  {pendingGrns.map(g => <option key={g.grn_number} value={g.grn_number} label={`${g.po_number || ""} · ${g.vendor_name || ""}`} />)}
+                </datalist>
+              </div>
+            </Field>
             <Field label="Service Conf #"><Input value={form.service_confirmation_no} onChange={e => setForm({ ...form, service_confirmation_no: e.target.value })} /></Field>
             <Field label="Project Code"><ProjectSelect value={form.project_code} valueKey="code" label={null} testid={null} onChange={(v) => setForm({ ...form, project_code: v })} /></Field>
             <Field label="Expense Category">
@@ -238,6 +292,24 @@ export function VendorBillsView() {
             </Field>
             <Field label="Due Days"><Input type="number" value={form.due_days} onChange={e => setForm({ ...form, due_days: Number(e.target.value) })} /></Field>
           </div>
+
+          {poTerms && (poTerms.po_terms?.length > 0 || poTerms.po_terms_text || poTerms.payment_terms || poTerms.delivery_days) && (
+            <div className="border border-amber-200 bg-amber-50 rounded-md p-3 mt-2" data-testid="pay-vb-po-terms">
+              <div className="text-[10px] uppercase tracking-wider font-semibold text-amber-800 mb-1">PO Terms & Conditions — {poTerms.po_number || "PO"} (auto-fetched, actions against PO terms)</div>
+              <div className="grid grid-cols-3 gap-2 text-xs text-amber-900 mb-1">
+                <div><b>PO Payment Terms:</b> {poTerms.payment_terms || "—"}</div>
+                <div><b>Delivery:</b> {poTerms.delivery_days ? `${poTerms.delivery_days} days` : "—"}</div>
+                <div><b>Due Days Applied:</b> {form.due_days}</div>
+              </div>
+              {poTerms.po_terms?.length > 0 ? (
+                <ul className="text-xs text-amber-900 space-y-0.5 list-disc pl-4">
+                  {poTerms.po_terms.map((t, i) => <li key={i}><b>{t.title}</b> <span className="uppercase text-[9px]">[{t.category}]</span> — {t.body}</li>)}
+                </ul>
+              ) : poTerms.po_terms_text ? (
+                <div className="text-xs text-amber-900 whitespace-pre-wrap">{poTerms.po_terms_text}</div>
+              ) : null}
+            </div>
+          )}
 
           <div className="mt-3">
             <Label className="text-[10px] uppercase tracking-wider mb-1 block">Lines</Label>
@@ -630,6 +702,10 @@ export function GRNPendingInvoiceView() {
   const [data, setData] = useState({ rows: [], total_value: 0, count: 0 });
   const load = () => api.get("/payables/reports/grn-pending-invoice").then(r => setData(r.data));
   useEffect(() => { load(); }, []);
+  const createBill = (r) => {
+    sessionStorage.setItem("vb_prefill_grn", r.grn_number);
+    window.dispatchEvent(new CustomEvent("accounts:set-tab", { detail: "vendor_bills" }));
+  };
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -640,7 +716,7 @@ export function GRNPendingInvoiceView() {
         <div className="border rounded-md overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-600">
-              <tr><th className="text-left px-3 py-2">GRN #</th><th className="text-left px-3 py-2">PO #</th><th className="text-left px-3 py-2">Vendor</th><th className="text-left px-3 py-2">Received</th><th className="text-right px-3 py-2">Value</th></tr>
+              <tr><th className="text-left px-3 py-2">GRN #</th><th className="text-left px-3 py-2">PO #</th><th className="text-left px-3 py-2">Vendor</th><th className="text-left px-3 py-2">Received</th><th className="text-right px-3 py-2">Value</th><th className="text-right px-3 py-2">Action</th></tr>
             </thead>
             <tbody>
               {(data.rows || []).map(r => (
@@ -650,9 +726,14 @@ export function GRNPendingInvoiceView() {
                   <td className="px-3 py-1.5">{r.vendor_name}</td>
                   <td className="px-3 py-1.5 font-mono text-xs">{r.received_at?.slice(0, 10)}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums">{fmt(r.total_accepted)}</td>
+                  <td className="px-3 py-1.5 text-right">
+                    <Button size="sm" variant="outline" className="h-7" onClick={() => createBill(r)} data-testid={`grn-create-bill-${r.grn_number}`}>
+                      <Plus className="h-3 w-3 mr-1" />Create Bill
+                    </Button>
+                  </td>
                 </tr>
               ))}
-              {(data.rows || []).length === 0 && <tr><td colSpan={5} className="text-center py-6 text-xs text-slate-400">All GRNs invoiced.</td></tr>}
+              {(data.rows || []).length === 0 && <tr><td colSpan={6} className="text-center py-6 text-xs text-slate-400">All GRNs invoiced.</td></tr>}
             </tbody>
           </table>
         </div>

@@ -16,6 +16,7 @@ import Projects from "@/pages/Projects";
 import Inventory from "@/pages/Inventory";
 import StoreInventory from "@/pages/StoreInventory";
 import PurchaseOrders from "@/pages/PurchaseOrders";
+import POTermsMaster from "@/pages/procurement/POTermsMaster";
 import Quotations from "@/pages/Quotations";
 import Accounts from "@/pages/Accounts";
 import Safety from "@/pages/Safety";
@@ -304,6 +305,7 @@ export default function App() {
             <Route path="/app/inventory" element={<ProtectedShell><Inventory /></ProtectedShell>} />
             <Route path="/app/store-inventory" element={<ProtectedShell><StoreInventory /></ProtectedShell>} />
             <Route path="/app/purchase-orders" element={<ProtectedShell><PurchaseOrders /></ProtectedShell>} />
+            <Route path="/app/procurement/po-terms" element={<ProtectedShell><POTermsMaster /></ProtectedShell>} />
             <Route path="/app/quotations" element={<ProtectedShell><Quotations /></ProtectedShell>} />
             <Route path="/app/quotations/:id/builder" element={<ProtectedShell><QuotationBuilder /></ProtectedShell>} />
             <Route path="/app/admin/company-profile" element={<ProtectedShell><CompanyProfile /></ProtectedShell>} />

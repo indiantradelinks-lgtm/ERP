@@ -358,7 +358,7 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
 <tr class="grand"><td>Grand Total</td><td class="num">₹ {_money(grand)}</td></tr>
 </table>
 <div class="section-title" style="clear:both;">Terms & Conditions</div>
-<div class="note">{_esc(po.get('terms') or '1. Goods to be delivered as per delivery schedule.  2. Payment 30 days after GRN acceptance.  3. Quality as per agreed spec — defects to be replaced free of cost.')}</div>
+{"".join(f"<div class='note'><b>{i + 1}. {_esc(t.get('title'))}</b> <span style='color:#888'>[{_esc((t.get('category') or 'general').upper())}]</span> — {_esc(t.get('body'))}</div>" for i, t in enumerate(po.get('terms_structured') or [])) or f"<div class='note'>{_esc(po.get('terms') or '1. Goods to be delivered as per delivery schedule.  2. Payment 30 days after GRN acceptance.  3. Quality as per agreed spec — defects to be replaced free of cost.')}</div>"}
 <div class="signs">
   <div class="box">For {_esc(BRAND)}</div>
   <div class="box">Vendor Acknowledgement</div>
