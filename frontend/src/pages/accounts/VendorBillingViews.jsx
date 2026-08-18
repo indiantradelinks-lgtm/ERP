@@ -12,14 +12,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, RefreshCcw, CheckCircle2, X, AlertCircle, Shield, ShieldOff } from "lucide-react";
+import { Plus, RefreshCcw, CheckCircle2, X, AlertCircle, Shield, ShieldOff, Pencil, FileDown } from "lucide-react";
 import { fmt } from "./AccountsViews";
 import { ProjectSelect } from "@/components/MasterSelect";
 
 const STATUS_COLORS = {
   draft: "bg-slate-100 text-slate-700",
+  verified_l1: "bg-indigo-100 text-indigo-800",
   verified: "bg-blue-100 text-blue-800",
+  approved_l1: "bg-teal-100 text-teal-800",
   approved: "bg-emerald-100 text-emerald-800",
+  rejected: "bg-rose-100 text-rose-800",
   partially_paid: "bg-amber-100 text-amber-800",
   paid: "bg-green-100 text-green-800",
   cancelled: "bg-rose-100 text-rose-800",
@@ -65,6 +68,7 @@ export function VendorBillsView() {
   const [form, setForm] = useState(newFormState());
   const [pendingGrns, setPendingGrns] = useState([]);
   const [poTerms, setPoTerms] = useState(null);
+  const [editId, setEditId] = useState(null);
 
   function newFormState() {
     return {
@@ -150,22 +154,87 @@ export function VendorBillsView() {
       toast.error("GRN required (or tick 'No GRN – override' / supply Service Confirmation #)"); return;
     }
     try {
-      await api.post("/payables/vendor-bills", { ...form, po_terms: poTerms?.po_terms?.length ? poTerms.po_terms : null, payment_terms: poTerms?.payment_terms || null, attachments: form.attachments?.length ? form.attachments : [{ name: "manual-entry" }] });
-      toast.success("Vendor bill created"); setOpen(false); setForm(newFormState()); load();
+      const body = { ...form, po_terms: poTerms?.po_terms?.length ? poTerms.po_terms : null, payment_terms: poTerms?.payment_terms || null, attachments: form.attachments?.length ? form.attachments : [{ name: "manual-entry" }] };
+      if (editId) {
+        await api.put(`/payables/vendor-bills/${editId}`, body);
+        toast.success("Vendor bill updated — back to Draft for re-verification");
+      } else {
+        await api.post("/payables/vendor-bills", body);
+        toast.success("Vendor bill created");
+      }
+      setOpen(false); setEditId(null); setForm(newFormState()); load();
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
 
   const approve = async (r) => {
-    if (!window.confirm(`Approve ${r.bill_no}? This posts the JE and locks the bill.`)) return;
+    const wf2 = r.workflow_version === 2;
+    const finalStep = !wf2 || r.status === "approved_l1";
+    const msg = finalStep
+      ? `Final approve ${r.bill_no}? This posts the JE, locks the bill and schedules payment after ${r.due_days || 30} due days.`
+      : `Approve (Level 1) ${r.bill_no}?`;
+    if (!window.confirm(msg)) return;
     try {
-      await api.post(`/payables/vendor-bills/${r.id}/approve`);
-      toast.success("Bill approved + JE posted"); load();
+      const { data } = await api.post(`/payables/vendor-bills/${r.id}/approve`);
+      toast.success(data.status === "approved"
+        ? `Approved + JE posted — payment eligible from ${data.payment_release_date || data.due_date}`
+        : "Approval Level 1 recorded");
+      load();
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
 
   const verify = async (r) => {
-    try { await api.post(`/payables/vendor-bills/${r.id}/verify`); toast.success("Verified"); load(); }
+    try {
+      const { data } = await api.post(`/payables/vendor-bills/${r.id}/verify`);
+      toast.success(data.status === "verified_l1" ? "Verification Level 1 recorded" : "Verified (Level 2)");
+      load();
+    }
     catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+  };
+
+  const reject = async (r) => {
+    const reason = window.prompt(`Reject ${r.bill_no} — enter reason:`);
+    if (reason === null) return;
+    try {
+      await api.post(`/payables/vendor-bills/${r.id}/reject`, { reason });
+      toast.success("Bill rejected"); load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+  };
+
+  const openEdit = (r) => {
+    setEditId(r.id);
+    setForm({
+      ...newFormState(),
+      vendor_id: r.vendor_id || null, vendor_name: r.vendor_name || "",
+      vendor_gstin: r.vendor_gstin || "", vendor_pan: r.vendor_pan || "",
+      msme_status: r.msme_status || "", bank_verified: !!r.bank_verified,
+      invoice_no: r.invoice_no || "", invoice_date: r.invoice_date || "",
+      invoice_received_date: r.invoice_received_date || "",
+      po_number: r.po_number || "", po_id: r.po_id || null,
+      grn_number: r.grn_number || "", grn_id: r.grn_id || null,
+      service_confirmation_no: r.service_confirmation_no || "",
+      project_code: r.project_code || "", project_id: r.project_id || null,
+      due_days: r.due_days || 30, expense_category: r.expense_category || newFormState().expense_category,
+      lines: r.lines?.length ? r.lines.map(l => ({ ...l })) : newFormState().lines,
+      gst_rate: r.gst_rate ?? 18, is_intra_state: r.is_intra_state ?? true,
+      tds_section: r.tds_section || "", tds_rate: r.tds_rate || 0,
+      advance_adjusted: r.advance_adjusted || 0, retention_amount: r.retention_amount || 0,
+      payment_priority: r.payment_priority || "normal", notes: r.notes || "",
+      attachments: r.attachments || [],
+    });
+    setOpen(true);
+  };
+
+  const downloadReport = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (filter.status) params.set("status", filter.status);
+      if (filter.payment_priority) params.set("payment_priority", filter.payment_priority);
+      const res = await api.get(`/payables/vendor-bills/report/pdf?${params.toString()}`, { responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = "vendor-bills-report.pdf"; a.click();
+      URL.revokeObjectURL(url);
+    } catch { toast.error("Report download failed"); }
   };
 
   return (
@@ -175,8 +244,10 @@ export function VendorBillsView() {
         <div className="flex gap-2">
           <select className="h-8 rounded-sm border bg-background px-2 text-sm" value={filter.status} onChange={e => setFilter({ ...filter, status: e.target.value })}>
             <option value="">All statuses</option>
-            <option value="draft">Draft</option><option value="verified">Verified</option>
-            <option value="approved">Approved</option><option value="partially_paid">Partially Paid</option>
+            <option value="draft">Draft</option><option value="verified_l1">Verified L1</option>
+            <option value="verified">Verified</option><option value="approved_l1">Approved L1</option>
+            <option value="approved">Approved</option><option value="rejected">Rejected</option>
+            <option value="partially_paid">Partially Paid</option>
             <option value="paid">Paid</option><option value="cancelled">Cancelled</option>
           </select>
           <select className="h-8 rounded-sm border bg-background px-2 text-sm" value={filter.payment_priority} onChange={e => setFilter({ ...filter, payment_priority: e.target.value })}>
@@ -184,6 +255,7 @@ export function VendorBillsView() {
             <option value="high">High</option><option value="normal">Normal</option>
             <option value="low">Low</option><option value="hold">Hold</option>
           </select>
+          <Button size="sm" variant="outline" onClick={downloadReport} data-testid="pay-vb-report-pdf"><FileDown className="h-3.5 w-3.5 mr-1" />PDF Report</Button>
           <Button size="sm" variant="outline" onClick={load}><RefreshCcw className="h-3.5 w-3.5 mr-1" />Refresh</Button>
           <Button size="sm" onClick={() => setOpen(true)} data-testid="pay-vb-add"><Plus className="h-3.5 w-3.5 mr-1" />New Bill</Button>
         </div>
@@ -226,10 +298,28 @@ export function VendorBillsView() {
                   <td className="px-3 py-1.5">{dueBadge(r)}</td>
                   <td className="px-3 py-1.5 text-center"><span className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${PRIORITY_COLORS[r.payment_priority] || ""}`}>{r.payment_priority}</span></td>
                   <td className="px-3 py-1.5 text-center"><span className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${STATUS_COLORS[r.status] || ""}`}>{r.status}</span></td>
-                  <td className="px-3 py-1.5 text-right">
-                    {r.status === "draft" && <Button size="sm" variant="outline" onClick={() => verify(r)} data-testid={`pay-vb-verify-${r.bill_no}`}><CheckCircle2 className="h-3 w-3 mr-1" />Verify</Button>}
-                    {(r.status === "draft" || r.status === "verified") && <Button size="sm" onClick={() => approve(r)} data-testid={`pay-vb-approve-${r.bill_no}`} className="ml-1"><CheckCircle2 className="h-3 w-3 mr-1" />Approve</Button>}
-                    {r.je_voucher_number && <span className="text-[10px] text-slate-500 font-mono ml-1">{r.je_voucher_number}</span>}
+                  <td className="px-3 py-1.5 text-right whitespace-nowrap">
+                    {(() => {
+                      const wf2 = r.workflow_version === 2;
+                      const canReject = ["draft", "verified_l1", "verified", "approved_l1"].includes(r.status);
+                      const canEdit = ["draft", "rejected"].includes(r.status);
+                      const verifyLabel = wf2 ? (r.status === "draft" ? "Verify L1" : r.status === "verified_l1" ? "Verify L2" : null) : (r.status === "draft" ? "Verify" : null);
+                      const approveLabel = wf2
+                        ? (r.status === "verified" ? "Approve L1" : r.status === "approved_l1" ? "Final Approve" : null)
+                        : (["draft", "verified"].includes(r.status) ? "Approve" : null);
+                      return (
+                        <>
+                          {canEdit && <Button size="sm" variant="ghost" onClick={() => openEdit(r)} data-testid={`pay-vb-edit-${r.bill_no}`}><Pencil className="h-3 w-3 mr-1" />Edit</Button>}
+                          {verifyLabel && <Button size="sm" variant="outline" onClick={() => verify(r)} data-testid={`pay-vb-verify-${r.bill_no}`} className="ml-1"><CheckCircle2 className="h-3 w-3 mr-1" />{verifyLabel}</Button>}
+                          {approveLabel && <Button size="sm" onClick={() => approve(r)} data-testid={`pay-vb-approve-${r.bill_no}`} className="ml-1"><CheckCircle2 className="h-3 w-3 mr-1" />{approveLabel}</Button>}
+                          {canReject && <Button size="sm" variant="ghost" className="ml-1 text-rose-600" onClick={() => reject(r)} data-testid={`pay-vb-reject-${r.bill_no}`}><X className="h-3 w-3 mr-1" />Reject</Button>}
+                          {wf2 && r.status === "approved" && r.payment_release_date && (
+                            <span className="text-[10px] text-slate-500 ml-1" title="Eligible for Payment Processing from this date">Pay from {r.payment_release_date}</span>
+                          )}
+                          {r.je_voucher_number && <span className="text-[10px] text-slate-500 font-mono ml-1">{r.je_voucher_number}</span>}
+                        </>
+                      );
+                    })()}
                   </td>
                 </tr>
               ))}
@@ -239,9 +329,9 @@ export function VendorBillsView() {
         </div>
       </CardContent>
 
-      <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setPoTerms(null); }}>
+      <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setPoTerms(null); setEditId(null); setForm(newFormState()); } }}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>New Vendor Bill</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editId ? "Edit Vendor Bill" : "New Vendor Bill"}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-4 gap-2">
             <Field label="Vendor *"><Input value={form.vendor_name} onChange={e => setForm({ ...form, vendor_name: e.target.value })} data-testid="pay-vb-vendor" /></Field>
             <Field label="GSTIN"><Input value={form.vendor_gstin} onChange={e => setForm({ ...form, vendor_gstin: e.target.value })} /></Field>

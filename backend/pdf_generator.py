@@ -461,6 +461,44 @@ def render_srn_pdf(srn: Dict[str, Any], so: Optional[Dict[str, Any]] = None,
     return _render(_wrap(f"Service Receipt Note — {srn.get('srn_number') or ''}", body))
 
 
+# ─────────────────────────── Vendor Bills Register ──────────────────────────
+def render_vendor_bills_report(rows: list, status_label: str = "All") -> bytes:
+    body_rows = ""
+    tot_gross = tot_out = 0.0
+    for i, r in enumerate(rows, 1):
+        t = r.get("totals") or {}
+        gross = float(t.get("gross") or r.get("amount") or 0)
+        out = float(r.get("outstanding") or 0)
+        tot_gross += gross
+        tot_out += out
+        st = (r.get("status") or "").replace("_", " ").upper()
+        body_rows += f"""<tr>
+<td>{i}</td>
+<td><b>{_esc(r.get('bill_no'))}</b><div class="note">{_esc(r.get('invoice_no') or '')}</div></td>
+<td>{_esc((r.get('invoice_date') or '')[:10])}</td>
+<td>{_esc(r.get('vendor_name'))}</td>
+<td>{_esc(r.get('po_number') or '—')}<div class="note">{_esc(r.get('grn_number') or r.get('service_confirmation_no') or '')}</div></td>
+<td class="num">{_money(gross)}</td>
+<td class="num">{_money(out)}</td>
+<td>{_esc(r.get('due_date') or '—')}</td>
+<td><span class="tag slate">{_esc(st)}</span></td>
+</tr>"""
+    body = f"""
+<div class="kv">
+  <div><b>Filter</b></div><div>{_esc(status_label)}</div>
+  <div><b>Bills</b></div><div>{len(rows)}</div>
+  <div><b>Total Gross</b></div><div>₹ {_money(tot_gross)}</div>
+  <div><b>Total Outstanding</b></div><div>₹ {_money(tot_out)}</div>
+</div>
+<div class="section-title">Vendor Bills Register</div>
+<table><thead><tr>
+<th>#</th><th>Bill / Inv</th><th>Inv Date</th><th>Vendor</th><th>PO / GRN</th>
+<th class="num">Gross (₹)</th><th class="num">Outstanding (₹)</th><th>Due Date</th><th>Status</th>
+</tr></thead><tbody>{body_rows or '<tr><td colspan=9>No bills</td></tr>'}</tbody></table>
+"""
+    return _render(_wrap("Vendor Bills Register", body))
+
+
 # ─────────────────────────── MATERIAL ISSUE SLIP ──────────────────────────
 def render_material_issue_pdf(slip: Dict[str, Any]) -> bytes:
     items_html = ""

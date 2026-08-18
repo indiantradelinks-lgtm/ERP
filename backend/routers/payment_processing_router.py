@@ -36,6 +36,11 @@ def _stage(v: Optional[dict]) -> str:
 @router.get("")
 async def payment_queue(stage: str = "", project_code: str = "",
                         user: dict = Depends(require_permission("accounting", "read"))):
+    try:
+        from routers.vendor_billing_router import release_due_bills_to_queue
+        await release_due_bills_to_queue()
+    except Exception:
+        pass
     reqs = await db.project_requests.find(
         {"is_payment": True, "status": {"$in": QUEUE_STATUSES},
          **({"project_code": project_code} if project_code else {})},

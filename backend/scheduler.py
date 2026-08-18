@@ -163,6 +163,13 @@ async def _vendor_payment_due_job():
     try:
         from core import db as _db, now_iso
         from datetime import date as _date, timedelta as _td
+        try:
+            from routers.vendor_billing_router import release_due_bills_to_queue
+            released = await release_due_bills_to_queue()
+            if released:
+                logger.info(f"[vendor_payment_due] released {released} due bill(s) to payment queue")
+        except Exception:
+            logger.exception("due-bill release failed")
         today = _date.today().isoformat()
         horizon = (_date.today() + _td(days=7)).isoformat()
         cur = _db.vendor_bills.find(

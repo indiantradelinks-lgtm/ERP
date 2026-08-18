@@ -5359,3 +5359,12 @@ E2E tested via curl: VB-2026-0012 created→approved (JE-2026-0126: expense/AP)�
 5. Per-PO terms: Terms button on /app/purchase-orders → POTermsDialog checkboxes → PUT /api/procurement-extras/pos/{id}/terms (stores terms_structured + terms text) → prints on PO PDF (structured section) → reflects in vendor bill entry panel.
 6. Bonus fix: accounting_service trial balance KeyError when chart_of_accounts doc missing 'type'/'name'.
 All verified by testing agent: backend 4/4 pass, all frontend flows pass, regression OK. Test file: /app/backend/tests/test_iter172_grn_terms.py
+
+### Iteration 177 (Aug 2026) — Vendor Bill 2L Verify + 2L Approve workflow, Edit/Reject, PDF Report, Due-Date payment release ✅
+1. **Workflow v2** (new bills get `workflow_version: 2`; existing bills keep old flow untouched): draft → verified_l1 → verified → approved_l1 → approved. Verify endpoint levels up; approve endpoint blocks until 2-level verification done, L1 approve records approver, FINAL approve posts JE and sets `due_date`/`payment_release_date` = approval date + due_days. Final approval does NOT push to payment queue.
+2. **Due-date release**: `release_due_bills_to_queue()` in vendor_billing_router — pushes approved v2 bills with due_date <= today into Payment Processing queue. Called lazily on payment-queue GET + daily in `_vendor_payment_due_job` scheduler.
+3. **Reject**: POST /vendor-bills/{id}/reject {reason} — allowed draft/verified_l1/verified/approved_l1 → status `rejected` (approved bills must use Cancel).
+4. **Edit**: PUT /vendor-bills/{id} — draft/rejected only; recomputes totals/due_date, resets to draft + clears verify/approve levels; duplicate invoice check excludes self.
+5. **PDF Report**: GET /payables/vendor-bills/report/pdf?status=&payment_priority= → register PDF (render_vendor_bills_report). Frontend "PDF Report" button (testid pay-vb-report-pdf) respects filters.
+6. UI: level-aware buttons (Verify L1/L2, Approve L1, Final Approve), Edit (pay-vb-edit-*), Reject (pay-vb-reject-*), new status badges verified_l1/approved_l1/rejected + filter options, "Pay from {date}" hint on approved v2 bills, Edit reuses the New Bill dialog (PUT).
+E2E curl-tested full chain incl. premature-approve block, due-date release into queue, reject→edit→draft, report PDF content. Test bills cleaned up. UI smoke-verified.
