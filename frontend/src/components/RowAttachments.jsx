@@ -20,6 +20,9 @@ export default function RowAttachments({
   const [files, setFiles] = useState([]);
   const [loaded, setLoaded] = useState(false);
 
+  // Strict per-record isolation: reset cached list whenever the target record changes
+  useEffect(() => { setFiles([]); setLoaded(false); }, [parentId, parentType]);
+
   useEffect(() => {
     if (!open || loaded || !parentId) return;
     let active = true;

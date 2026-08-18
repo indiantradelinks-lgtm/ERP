@@ -5321,3 +5321,15 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 - Design note: `_auto_cost_center` auto-links a CC when project has one, so the 400 only fires when neither explicit CC nor project CC exists (intended).
 - Test suite: /app/backend/tests/test_vb_2level_approval_iter172.py.
 
+
+### Iteration 186 (Aug 2026) — Advance verify auto-fills employee bank details ✅
+- payment_queue GET now batch-joins db.employees for rows with employee_id → attaches `employee_bank {account_no, ifsc, bank_name, branch}` (only when bank_account_no present).
+- PPC `blankVerify()` prefills Beneficiary Name (employee), Account No, IFSC (uppercased), Bank Name from `row.employee_bank`; green hint "Auto-filled from HR employee master" under the account field. Works for any payment row with a linked employee (advances, person-paid requests).
+- Verified via screenshot: ADV-TEST-BANK verify dialog prefilled 50100223344556 / HDFC0000123 / HDFC Bank.
+
+
+### Iteration 173 (Aug 2026) — PPC Cost Center column + strict attachment isolation ✅
+1. Payment Queue API (`payment_processing_router.py`): enriches each row with `cost_center_name` (uses stored `cost_center_label`, falls back to `cost_centers` lookup by `cost_center_id`).
+2. PPC list (`PaymentProcessingCenter.jsx`): "CC: <name>" shown under Payment Type in all 4 tabs (testid `ppc-cc-<request_no>`).
+3. **Attachment isolation bug fixed** in shared `RowAttachments.jsx`: `loaded`/`files` state was cached across records (dialog for record B showed record A's docs). Now resets on `parentId`/`parentType` change. Fix applies to ALL consumers: Payment Processing Center, Bill Generation Requests, Project Requests, Expenses, Grn, Enquiries, Logistics vendor bills.
+Verified via screenshot automation: ADV-TEST-BANK showed its own doc; REQ-2026-0078 & VB-2026-0018 showed no leak.

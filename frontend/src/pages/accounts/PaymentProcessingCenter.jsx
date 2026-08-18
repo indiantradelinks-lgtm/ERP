@@ -27,7 +27,10 @@ const STAGE_BADGE = {
 };
 
 const blankVerify = (row) => ({
-  decision: "verified", vendor_name: row?.vendor || row?.employee_name || "", vendor_account_no: "", ifsc: "", bank_name: "",
+  decision: "verified", vendor_name: row?.vendor || row?.employee_name || "",
+  vendor_account_no: row?.employee_bank?.account_no || "",
+  ifsc: (row?.employee_bank?.ifsc || "").toUpperCase(),
+  bank_name: row?.employee_bank?.bank_name || "",
   vendor_email: "",
   gst_applicable: false, gstin: "", gst_amount: 0,
   invoice_type: "bill", invoice_no: "", invoice_date: "",
@@ -221,7 +224,13 @@ export default function PaymentProcessingCenter() {
   const baseCells = (r) => (
     <>
       <TableCell className="font-mono text-xs whitespace-nowrap">{r.request_no}</TableCell>
-      <TableCell className="text-xs">{r.request_type_label}</TableCell>
+      <TableCell className="text-xs">
+        <div>{r.request_type_label}</div>
+        {r.cost_center_name && (
+          <div className="text-[10px] text-slate-500 max-w-[160px] truncate" title={r.cost_center_name}
+            data-testid={`ppc-cc-${r.request_no}`}>CC: {r.cost_center_name}</div>
+        )}
+      </TableCell>
       <TableCell className="text-xs">
         <div className="whitespace-nowrap font-medium">{r.project_code}</div>
         <div className="text-[10px] text-slate-500 max-w-[180px] truncate" title={r.project_name}>{r.project_name}</div>
@@ -424,6 +433,7 @@ export default function PaymentProcessingCenter() {
                 <Label className="text-[10px] uppercase tracking-wider">Account Number *</Label>
                 <Input value={vform.vendor_account_no} onChange={(e) => setVform({ ...vform, vendor_account_no: e.target.value })}
                   className="rounded-sm mt-1" data-testid="ppc-v-account" />
+                {verifyFor?.employee_bank && <p className="text-[10px] text-emerald-700 mt-0.5">Auto-filled from HR employee master</p>}
               </div>
               <div>
                 <Label className="text-[10px] uppercase tracking-wider">IFSC *</Label>

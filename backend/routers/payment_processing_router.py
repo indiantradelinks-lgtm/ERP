@@ -45,6 +45,14 @@ async def payment_queue(stage: str = "", project_code: str = "",
     proj_ids = list({r.get("project_id") for r in reqs if r.get("project_id")})
     pmap = {p["id"]: p async for p in db.projects.find(
         {"id": {"$in": proj_ids}}, {"_id": 0, "id": 1, "project_manager_name": 1, "manager": 1})}
+    emp_ids = list({r.get("employee_id") for r in reqs if r.get("employee_id")})
+    emap = {e["id"]: e async for e in db.employees.find(
+        {"id": {"$in": emp_ids}},
+        {"_id": 0, "id": 1, "bank_account_no": 1, "bank_ifsc": 1, "bank_name": 1, "bank_branch": 1})} if emp_ids else {}
+    cc_ids = list({r.get("cost_center_id") for r in reqs if r.get("cost_center_id")})
+    ccmap = {c["id"]: c async for c in db.cost_centers.find(
+        {"id": {"$in": cc_ids}},
+        {"_id": 0, "id": 1, "name": 1, "code": 1, "category_code": 1, "category_name": 1})} if cc_ids else {}
     out = []
     for r in reqs:
         v = ver.get(r["id"])
@@ -52,8 +60,16 @@ async def payment_queue(stage: str = "", project_code: str = "",
         if stage and st != stage:
             continue
         proj = pmap.get(r.get("project_id")) or {}
-        out.append({**r, "verification": v, "pay_stage": st,
-                    "project_manager": proj.get("project_manager_name") or proj.get("manager")})
+        emp = emap.get(r.get("employee_id"))
+        cc = ccmap.get(r.get("cost_center_id"))
+        cc_name = r.get("cost_center_label") or (
+            (f"{cc.get('category_code') or ''} · {cc.get('category_name') or ''}".strip(" ·") or cc.get("name"))
+            if cc else None)
+        out.append({**r, "verification": v, "pay_stage": st, "cost_center_name": cc_name,
+                    "project_manager": proj.get("project_manager_name") or proj.get("manager"),
+                    "employee_bank": ({"account_no": emp.get("bank_account_no"), "ifsc": emp.get("bank_ifsc"),
+                                       "bank_name": emp.get("bank_name"), "branch": emp.get("bank_branch")}
+                                      if emp and emp.get("bank_account_no") else None)})
     return out
 
 
