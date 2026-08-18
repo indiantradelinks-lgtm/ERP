@@ -233,6 +233,42 @@ async def process_now(background: BackgroundTasks, user: dict = Depends(get_curr
     return {"ok": True, "scheduled": True}
 
 
+@router.post("/retry-failed")
+async def retry_all_failed(background: BackgroundTasks, user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    r = await db.onedrive_queue.update_many(
+        {"status": "failed"},
+        {"$set": {"status": "pending", "error": None, "attempts": 0, "updated_at": now_iso()}},
+    )
+    background.add_task(run_push_queue, 50)
+    return {"ok": True, "requeued": r.modified_count}
+
+
+@router.get("/health")
+async def onedrive_health(user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    s = await ods.get_settings()
+    pipeline = [{"$group": {"_id": "$status", "n": {"$sum": 1}}}]
+    stats = {r["_id"]: r["n"] async for r in db.onedrive_queue.aggregate(pipeline)}
+    last_pushed = await db.onedrive_queue.find_one(
+        {"status": "pushed"}, {"_id": 0, "pushed_at": 1}, sort=[("pushed_at", -1)])
+    last_fail = await db.onedrive_queue.find_one(
+        {"status": "failed"}, {"_id": 0, "error": 1, "updated_at": 1}, sort=[("updated_at", -1)])
+    files_total = await db.files.count_documents({"is_deleted": False})
+    return {
+        "enabled": s.get("enabled", False),
+        "configured": s.get("configured", False),
+        "last_test_ok": s.get("last_test_ok"),
+        "pending": stats.get("pending", 0),
+        "pushed": stats.get("pushed", 0),
+        "failed": stats.get("failed", 0),
+        "files_total": files_total,
+        "last_pushed_at": (last_pushed or {}).get("pushed_at"),
+        "last_error": (last_fail or {}).get("error"),
+        "last_error_at": (last_fail or {}).get("updated_at"),
+    }
+
+
 @router.post("/retry/{queue_id}")
 async def retry_item(queue_id: str, user: dict = Depends(get_current_user)):
     _require_admin(user)

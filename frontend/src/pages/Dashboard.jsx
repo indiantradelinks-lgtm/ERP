@@ -3,6 +3,7 @@ import { useNavigate, Navigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import KPICard from "@/components/KPICard";
 import MyActionItemsWidget from "@/components/MyActionItemsWidget";
+import OneDriveHealthTile from "@/components/OneDriveHealthTile";
 import OperationsPulse from "@/components/OperationsPulse";
 import { StatusBadge } from "@/components/DataTableShell";
 import { useAuth } from "@/contexts/AuthContext";
@@ -54,6 +55,9 @@ export default function Dashboard() {
 
       {/* Operations Pulse — live cross-module heartbeat */}
       <OperationsPulse />
+
+      {/* OneDrive document sync health (super_admin only page) */}
+      <OneDriveHealthTile />
 
       {/* Top KPI strip */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 stagger">

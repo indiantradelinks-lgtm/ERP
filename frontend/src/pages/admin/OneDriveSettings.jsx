@@ -153,6 +153,15 @@ export default function OneDriveSettings() {
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
 
+  const retryAllFailed = async () => {
+    try {
+      const { data } = await api.post("/admin/onedrive/retry-failed");
+      toast.success(`${data.requeued} failed item(s) re-queued — push started`);
+      setAutoRefresh(true);
+      await load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+  };
+
   const retryItem = async (id) => {
     try {
       await api.post(`/admin/onedrive/retry/${id}`);
@@ -280,6 +289,11 @@ export default function OneDriveSettings() {
                 <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} data-testid="onedrive-autorefresh" />
                 Live (5s)
               </label>
+              {stats.failed > 0 && (
+                <Button size="sm" variant="outline" className="border-rose-300 text-rose-700 hover:bg-rose-50" onClick={retryAllFailed} data-testid="onedrive-retry-all-btn">
+                  <RefreshCw className="h-4 w-4 mr-1" /> Retry All Failed ({stats.failed})
+                </Button>
+              )}
               <Button size="sm" variant="outline" onClick={migrateAll} data-testid="onedrive-migrate-btn"><History className="h-4 w-4 mr-1" /> Migrate Historical Files</Button>
               <Button size="sm" onClick={processNow} data-testid="onedrive-process-btn"><Play className="h-4 w-4 mr-1" /> Process Now</Button>
             </div>

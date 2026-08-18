@@ -5333,3 +5333,13 @@ New files: /app/frontend/src/components/EmployeeSearchSelect.jsx. Test report: /
 2. PPC list (`PaymentProcessingCenter.jsx`): "CC: <name>" shown under Payment Type in all 4 tabs (testid `ppc-cc-<request_no>`).
 3. **Attachment isolation bug fixed** in shared `RowAttachments.jsx`: `loaded`/`files` state was cached across records (dialog for record B showed record A's docs). Now resets on `parentId`/`parentType` change. Fix applies to ALL consumers: Payment Processing Center, Bill Generation Requests, Project Requests, Expenses, Grn, Enquiries, Logistics vendor bills.
 Verified via screenshot automation: ADV-TEST-BANK showed its own doc; REQ-2026-0078 & VB-2026-0018 showed no leak.
+
+### Iteration 174 (Aug 2026) — OneDrive Sync Health Tile + Retry All Failed ✅
+Context: User asked which docs are on OneDrive vs server. Audit found: all 90+ docs live in persistent object storage (primary); OneDrive push has been FAILING since 30 May 2026 — invalid Azure Tenant ID (`a399706e-...` rejected by MSAL authority lookup). 62 pushed historically, 190 failed. AWAITING correct Tenant ID + secret validity confirmation from user.
+Built:
+1. `GET /api/admin/onedrive/health` — enabled/configured/last_test_ok + pushed/pending/failed/files_total + last_error + last_pushed_at (super_admin).
+2. `POST /api/admin/onedrive/retry-failed` — bulk re-queue all failed items + triggers push in background.
+3. `OneDriveHealthTile.jsx` on Executive Dashboard (testid `onedrive-health-tile`) — status pill (Healthy/Sync Failing/Disabled), 4 counters, last error, click → /app/admin/onedrive.
+4. "Retry All Failed (n)" button on OneDriveSettings Push Queue tab (testid `onedrive-retry-all-btn`).
+Verified via screenshot automation on dashboard + queue tab.
+Note: automated browser client-side redirect after login can stall; use page.goto('/app') after login in tests.
