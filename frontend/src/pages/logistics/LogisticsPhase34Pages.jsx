@@ -183,6 +183,53 @@ function ListPage({ testId, title, subtitle, icon, endpoint, columns, formFields
   );
 }
 
+// Compact approval-chain cell with a "view full chain" dialog (per row, self-contained)
+const CHAIN_TONE = {
+  approved: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  pending: "bg-amber-100 text-amber-700 border-amber-200",
+  rejected: "bg-rose-100 text-rose-700 border-rose-200",
+  skipped: "bg-slate-100 text-slate-500 border-slate-200",
+};
+
+function ApprovalChainCell({ row }) {
+  const [open, setOpen] = useState(false);
+  const chain = row.approval_chain || [];
+  if (!chain.length) return <span className="text-slate-400 text-xs">—</span>;
+  return (
+    <>
+      <button className="flex items-center gap-1 cursor-pointer" onClick={() => setOpen(true)}
+        title="View complete approval chain" data-testid={`vb-chain-${row.vb_no || row.id}`}>
+        {chain.map((s, i) => (
+          <span key={i} className={`inline-block px-1.5 py-0.5 rounded border text-[9px] font-semibold whitespace-nowrap ${CHAIN_TONE[s.status] || CHAIN_TONE.pending}`}>
+            {s.status === "approved" ? "✓" : s.status === "rejected" ? "✗" : "⏳"} {s.label || s.role}
+          </span>
+        ))}
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-lg" data-testid="vb-chain-dialog">
+          <DialogHeader><DialogTitle>Approval Chain — {row.vb_no || row.bill_no}</DialogTitle></DialogHeader>
+          <div className="space-y-2">
+            {chain.map((s, i) => (
+              <div key={i} className={`border rounded-md p-3 ${CHAIN_TONE[s.status] || CHAIN_TONE.pending}`}>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold">Level {i + 1} · {s.label || s.role}</div>
+                  <span className="text-[10px] font-bold uppercase">{s.status || "pending"}</span>
+                </div>
+                <div className="text-xs mt-1">
+                  <div><b>Approver:</b> {s.approver || "— awaiting action —"}</div>
+                  {s.at && <div><b>On:</b> {new Date(s.at).toLocaleString()}</div>}
+                  <div><b>Remarks:</b> {s.comment || "—"}</div>
+                </div>
+              </div>
+            ))}
+            {row.remarks && <div className="text-xs text-slate-600 border-t pt-2"><b>Bill Remarks:</b> {row.remarks}</div>}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Phase 3 pages
 // ═══════════════════════════════════════════════════════════════════════════
@@ -527,6 +574,7 @@ export function VendorBills() {
         { key: "freight_amount", label: "Freight", align: "right", render: (r) => r.freight_amount ? `₹${r.freight_amount}` : "—" },
         { key: "net_payable", label: "Net Payable", align: "right", render: (r) => r.net_payable ? `₹${r.net_payable}` : "—" },
         { key: "status", label: "Status" },
+        { key: "approval_chain", label: "Approval Chain", render: (r) => <ApprovalChainCell row={r} /> },
       ]}
       formFields={[
         { key: "vendor_id", label: "Vendor *", type: "preload", preloadKey: "vendors", labelField: "name", mirrorTo: "vendor_name", mirrorField: "name" },
@@ -534,12 +582,7 @@ export function VendorBills() {
         { key: "bill_date", label: "Bill Date", type: "date" },
         { key: "dispatch_id", label: "Dispatch (optional)", type: "preload", preloadKey: "drs", labelField: "dr_no", mirrorTo: "dispatch_no", mirrorField: "dr_no" },
         { key: "project_id", label: "Project (ID · Name)", type: "preload", preloadKey: "projects", labelField: "code", labelRender: (o) => `${o.code || o.project_code} · ${o.name || o.project_name || "—"}`, mirrorTo: "project_code", mirrorField: "code",
-          afterChange: (sel, preloads) => {
-            if (!sel) return { cost_center_id: "", cost_center_label: "" };
-            const ccs = (preloads.cost_centers || []).filter((c) => c.project_id === sel.id && c.active !== false);
-            const cc = ccs.find((c) => /transport|vehicle|freight/i.test(`${c.category_code || ""} ${c.name || ""}`)) || ccs[0];
-            return cc ? { cost_center_id: cc.id, cost_center_label: cc.name || cc.code } : { cost_center_id: "", cost_center_label: "" };
-          } },
+          afterChange: () => ({ cost_center_id: "", cost_center_label: "" }) },
         { key: "cost_center_id", label: "Cost Center (project-wise) *", required: true, type: "preload", preloadKey: "cost_centers", labelField: "name", labelRender: (o) => `${o.name || o.code}${o.project_code ? ` · ${o.project_code}` : ""}`, mirrorTo: "cost_center_label", mirrorField: "name", filterBy: (o, fm) => !fm.project_id || o.project_id === fm.project_id },
         { key: "freight_amount", label: "Freight (₹)", type: "number" },
         { key: "loading_cost", label: "Loading (₹)", type: "number" },

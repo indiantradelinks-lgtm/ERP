@@ -5377,3 +5377,9 @@ E2E curl-tested full chain incl. premature-approve block, due-date release into 
 5. **Payment control**: POST /vendor-bills/{id}/payment-control {action: hold|release|set_due_days, due_days, remarks} — roles accounts_executive/GM/director/SA; hold pulls unverified queue row; release re-pushes if due; set_due_days recomputes from approved_at; all logged to control_log + audit. UI: Hold/Release/Due± buttons + HELD badge. release_due_bills_to_queue now filters payment_hold≠true, wf ∈ {2,3}.
 6. **Executive ACC digest**: daily scheduler pushes 'Payments digest — due & pending' in-app notification to accounts_executive & super_admin (pending queue count via payment_verifications stage≠paid, due/overdue bills, held count; daily marker dedupe).
 E2E curl-tested: role 403s at each stage, 4-stage chain, JE at final, hold blocks queue release, release re-queues, due_days=0 immediate eligibility, bill PDF trail content, digest notification. Test data cleaned. UI verified via screenshot (PAN auto, TDS auto, buttons).
+
+### Iteration 179 (Aug 2026) — Transport Vendor Bills: CC no auto-default + Approval Chain column ✅
+1. Cost Center no longer auto-defaults (was picking first project CC e.g. "Scaffolding Material"): frontend afterChange on project now just clears CC (user must select); backend `_auto_cost_center` rewritten to only resolve the label of the USER-selected cost_center_id (no auto-pick/fallback).
+2. GET /logistics/vendor-bills enriched with `approval_chain` + `approval_status` (batch-fetched from db.approvals by approval_id — 2-level Dept Head → GM chain).
+3. New "Approval Chain" column next to Status (compact ✓/⏳/✗ chips per level, testid vb-chain-{vb_no}); click opens dialog (vb-chain-dialog) with Level n, role label, status, approver, timestamp, remarks — displayed automatically from workflow, nothing to select.
+Verified via curl (chain payload) + screenshots (chips, dialog with L1/L2 approvers+remarks, empty CC after project pick).
