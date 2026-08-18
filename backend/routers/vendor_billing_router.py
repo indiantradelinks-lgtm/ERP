@@ -359,7 +359,44 @@ async def approve_vendor_bill(bill_id: str, request: Request,
                 record_id=bill_id,
                 after={"bill_no": b["bill_no"], "je": (je or {}).get("voucher_number")},
                 ip=request.client.host if request.client else "")
-    return await db.vendor_bills.find_one({"id": bill_id}, {"_id": 0})
+    updated = await db.vendor_bills.find_one({"id": bill_id}, {"_id": 0})
+    await _push_bill_to_payment_queue(updated, user)
+    return updated
+
+
+async def _push_bill_to_payment_queue(b: dict, user: dict) -> None:
+    """Approved vendor bill → shadow row in the unified Accounts Payment Processing
+    queue (same flow as logistics vendor bills & employee advances). Payment JE
+    debits Accounts Payable (2100) since expense was booked at approval."""
+    if await db.project_requests.find_one(
+            {"source": "accounts_vendor_bill", "source_id": b["id"]}, {"_id": 0, "id": 1}):
+        return
+    proj = await db.projects.find_one({"id": b.get("project_id")}, {"_id": 0, "name": 1}) if b.get("project_id") else None
+    is_service = bool(b.get("service_confirmation_no")) and not b.get("grn_number")
+    await db.project_requests.insert_one({
+        "id": new_id(),
+        "request_no": b.get("bill_no"),
+        "request_type": "service_vendor_bill" if is_service else "material_vendor_bill",
+        "request_type_label": "Service Vendor Bill (SRN)" if is_service else "Material Vendor Bill (PO/GRN)",
+        "is_payment": True, "is_stockable": False,
+        "owning_dept": "accounts",
+        "expense_type": b.get("expense_category"),
+        "status": "with_dept",
+        "payment_status": "payment_pending",
+        "source": "accounts_vendor_bill", "source_id": b["id"],
+        "project_id": b.get("project_id"), "project_code": b.get("project_code"),
+        "project_name": (proj or {}).get("name"),
+        "vendor": b.get("vendor_name"),
+        "invoice_no": b.get("invoice_no"), "invoice_date": b.get("invoice_date"),
+        "due_date": b.get("due_date"),
+        "est_value": float(b.get("outstanding") or 0),
+        "pay_debit_account_code": "2100",
+        "description": (f"Vendor bill {b.get('bill_no')} · Inv {b.get('invoice_no')} — {b.get('vendor_name')} "
+                        f"(PO {b.get('po_number') or '—'} / {'SC ' + b.get('service_confirmation_no') if is_service else 'GRN ' + (b.get('grn_number') or '—')})"),
+        "items": [], "chain": [], "current_step": None,
+        "created_by": user.get("name") or user.get("email"), "created_by_id": user.get("id"),
+        "created_at": now_iso(),
+    })
 
 
 @router.post("/vendor-bills/{bill_id}/cancel")

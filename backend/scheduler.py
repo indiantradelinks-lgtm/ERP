@@ -158,6 +158,50 @@ async def _gmc_weekly_job():
         logger.exception(f"GMC weekly review job failed: {e}")
 
 
+async def _vendor_payment_due_job():
+    """Daily: intimate Accounts when vendor bills fall due within 7 days or are overdue."""
+    try:
+        from core import db as _db, now_iso
+        from datetime import date as _date, timedelta as _td
+        today = _date.today().isoformat()
+        horizon = (_date.today() + _td(days=7)).isoformat()
+        cur = _db.vendor_bills.find(
+            {"status": {"$in": ["approved", "partially_paid"]}, "outstanding": {"$gt": 0},
+             "due_date": {"$lte": horizon, "$ne": None}},
+            {"_id": 0, "id": 1, "bill_no": 1, "invoice_no": 1, "vendor_name": 1,
+             "due_date": 1, "outstanding": 1})
+        n = 0
+        async for b in cur:
+            overdue = b["due_date"] < today
+            out = float(b.get("outstanding") or 0)
+            await _db.alerts.update_one(
+                {"id": f"vpd-{b['id']}"},
+                {"$set": {
+                    "kind": "vendor_payment_due",
+                    "severity": "critical" if overdue else "warning",
+                    "title": (f"Vendor payment {'OVERDUE' if overdue else 'due'}: {b.get('vendor_name')} · "
+                              f"{b.get('bill_no')} (Inv {b.get('invoice_no')}) — ₹{out:,.0f} due {b['due_date']}"),
+                    "link": "/app/accounts/payment-processing",
+                    "created_at": now_iso(), "read": False}},
+                upsert=True)
+            marker = f"vpd-{b['id']}-{'od' if overdue else 'due'}"
+            if not await _db.notification_markers.find_one({"id": marker}):
+                for role in ("accounts_executive", "super_admin"):
+                    await _push_inapp_for_role(role, {
+                        "type": "vendor_payment_due",
+                        "title": f"Vendor payment {'OVERDUE' if overdue else 'due soon'}",
+                        "body": f"{b.get('vendor_name')} · {b.get('bill_no')} — ₹{out:,.0f} due {b['due_date']}",
+                        "link": "/app/accounts/payment-processing",
+                    })
+                await _db.notification_markers.insert_one({"id": marker, "at": now_iso()})
+            n += 1
+        if n:
+            logger.info(f"[vendor_payment_due] flagged {n} bill(s)")
+        _last_results["vendor_payment_due"] = {"flagged": n, "ts": datetime.utcnow().isoformat()}
+    except Exception as e:
+        logger.exception(f"Vendor payment due job failed: {e}")
+
+
 def start_scheduler() -> None:
     global _scheduler
     if _scheduler is not None:
@@ -172,6 +216,9 @@ def start_scheduler() -> None:
     _scheduler.add_job(_gmc_weekly_job, CronTrigger(day_of_week="mon", hour=9, minute=15), id="gmc_weekly_review", replace_existing=True)
     # Daily manpower shortage scan @ 07:30 UTC (1.5h before standup)
     _scheduler.add_job(_shortage_job, CronTrigger(hour=7, minute=30), id="shortage_scan", replace_existing=True)
+
+    _scheduler.add_job(_vendor_payment_due_job, CronTrigger(hour=8, minute=15),
+                       id="vendor_payment_due", replace_existing=True)
     # Email outbox retry — every 10 minutes
     _scheduler.add_job(_email_retry_job, IntervalTrigger(minutes=10), id="email_retry", replace_existing=True)
     # OneDrive push queue worker — every 2 minutes

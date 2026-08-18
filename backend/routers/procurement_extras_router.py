@@ -45,7 +45,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from core import db, require_permission, get_current_user, now_iso, new_id
@@ -479,6 +479,19 @@ async def list_srns(so_id: Optional[str] = None, project_id: Optional[str] = Non
         q["project_id"] = project_id
     rows = await db.service_receipt_notes.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return rows
+
+
+@router.get("/srns/{srn_id}/pdf")
+async def srn_pdf(srn_id: str, user: dict = Depends(require_permission("purchase_orders", "read"))):
+    srn = await db.service_receipt_notes.find_one({"id": srn_id}, {"_id": 0})
+    if not srn:
+        raise HTTPException(404, "SRN not found")
+    so = await db.service_orders.find_one({"id": srn.get("so_id")}, {"_id": 0})
+    vendor = await db.vendors.find_one({"id": srn.get("vendor_id")}, {"_id": 0}) if srn.get("vendor_id") else None
+    from pdf_generator import render_srn_pdf
+    pdf = render_srn_pdf(srn, so, vendor)
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{srn.get("srn_number") or srn_id}.pdf"'})
 
 
 @router.post("/srns")

@@ -5343,3 +5343,10 @@ Built:
 4. "Retry All Failed (n)" button on OneDriveSettings Push Queue tab (testid `onedrive-retry-all-btn`).
 Verified via screenshot automation on dashboard + queue tab.
 Note: automated browser client-side redirect after login can stall; use page.goto('/app') after login in tests.
+
+### Iteration 175 (Aug 2026) — GRN/SRN PDF fix + SRN PDF + Vendor Payment Due Alerts + Unified Vendor Bill Payment Flow ✅
+1. **GRN PDF fixed** (`pdf_generator.py render_grn_pdf`): items were read with wrong keys (`received/accepted/name`) vs stored (`received_qty/accepted_qty/item_name`) → qty/status were blank. Now maps both variants, adds Ordered column, per-item inspection_status tag, overall GRN status + total accepted/rejected row.
+2. **SRN PDF added**: `render_srn_pdf` + `GET /api/procurement-extras/srns/{id}/pdf`. Frontend: "SRNs" button per SO in ServiceOrders.jsx opens `SRNListDialog` (testid `so-view-srns-*`, `srn-pdf-*`) with per-SRN PDF download.
+3. **Vendor Payment Due intimation**: scheduler job `_vendor_payment_due_job` (daily 08:15 UTC) — vendor_bills approved/partially_paid with outstanding>0 due within 7d/overdue → upserts `db.alerts` (id `vpd-{bill_id}`) + one-time in-app notifications to accounts_executive & super_admin (dedupe via `db.notification_markers`). Frontend: "Due" column with OVERDUE/due-in-Nd badges in VendorBillsView (testid `vb-due-*`).
+4. **Unified vendor payment flow**: `approve_vendor_bill` now pushes shadow row into Payment Processing queue (`source=accounts_vendor_bill`, `pay_debit_account_code=2100`, prefills invoice_no/date/est_value=outstanding). PPC verify dialog prefills these. `mark_paid`: debit account honors `pay_debit_account_code` (AP 2100 → no expense double-count since approval JE booked expense), syncs bill → paid/partially_paid with paid_amount/outstanding/UTR, clears due alert.
+E2E tested via curl: VB-2026-0012 created→approved (JE-2026-0126: expense/AP)→queue→verified→paid (JE-2026-0127: DR 2100/CR 1100)→bill paid, outstanding 0, alert cleared. UI verified via screenshots.

@@ -19,7 +19,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Briefcase, Plus, RefreshCcw, CheckCircle2, FileCheck2, X } from "lucide-react";
+import { Briefcase, Plus, RefreshCcw, CheckCircle2, FileCheck2, X, FileDown } from "lucide-react";
 
 const STATUS_TONE = {
   draft: "bg-slate-100 text-slate-700",
@@ -44,6 +44,7 @@ export default function ServiceOrders() {
   const [loading, setLoading] = useState(false);
   const [openCreate, setOpenCreate] = useState(false);
   const [openSRN, setOpenSRN] = useState(null);
+  const [viewSRNs, setViewSRNs] = useState(null);
 
   const loadAll = async () => {
     setLoading(true);
@@ -149,6 +150,11 @@ export default function ServiceOrders() {
                             <FileCheck2 className="h-3.5 w-3.5 mr-1" />Record SRN
                           </Button>
                         )}
+                        {(r.received_value || 0) > 0 && (
+                          <Button size="sm" variant="ghost" onClick={() => setViewSRNs(r)} data-testid={`so-view-srns-${r.id}`}>
+                            <FileDown className="h-3.5 w-3.5 mr-1" />SRNs
+                          </Button>
+                        )}
                         {r.status !== "closed" && r.status !== "cancelled" && (
                           <Button size="sm" variant="ghost" onClick={() => cancel(r.id)} data-testid={`so-cancel-${r.id}`}>
                             <X className="h-3.5 w-3.5" />
@@ -167,6 +173,11 @@ export default function ServiceOrders() {
       {openSRN && (
         <Dialog open={!!openSRN} onOpenChange={() => setOpenSRN(null)}>
           <CreateSRNDialog so={openSRN} onClose={() => { setOpenSRN(null); loadAll(); }} />
+        </Dialog>
+      )}
+      {viewSRNs && (
+        <Dialog open={!!viewSRNs} onOpenChange={() => setViewSRNs(null)}>
+          <SRNListDialog so={viewSRNs} />
         </Dialog>
       )}
     </div>
@@ -259,6 +270,58 @@ function CreateSODialog({ vendors, projects, onClose }) {
         <Button variant="outline" onClick={onClose}>Cancel</Button>
         <Button onClick={submit} disabled={submitting} data-testid="so-submit">{submitting ? "Saving…" : "Create"}</Button>
       </DialogFooter>
+    </DialogContent>
+  );
+}
+
+function SRNListDialog({ so }) {
+  const [srns, setSrns] = useState([]);
+  useEffect(() => {
+    api.get(`/procurement-extras/srns?so_id=${so.id}`).then(r => setSrns(r.data || [])).catch(() => {});
+  }, [so.id]);
+
+  const downloadPdf = async (s) => {
+    try {
+      const res = await api.get(`/procurement-extras/srns/${s.id}/pdf`, { responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = `${s.srn_number}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+    } catch { toast.error("PDF download failed"); }
+  };
+
+  return (
+    <DialogContent className="max-w-2xl" data-testid="srn-list-dialog">
+      <DialogHeader><DialogTitle>SRNs — {so.so_number} · {so.vendor_name}</DialogTitle></DialogHeader>
+      <table className="w-full text-sm">
+        <thead className="bg-slate-50 text-xs uppercase text-slate-600">
+          <tr>
+            <th className="px-3 py-2 text-left">SRN #</th>
+            <th className="px-3 py-2 text-left">Period</th>
+            <th className="px-3 py-2 text-right">Certified Qty</th>
+            <th className="px-3 py-2 text-right">Certified Value</th>
+            <th className="px-3 py-2 text-left">Status</th>
+            <th className="px-3 py-2 text-right">PDF</th>
+          </tr>
+        </thead>
+        <tbody>
+          {srns.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-slate-400">No SRNs recorded</td></tr>}
+          {srns.map((s) => (
+            <tr key={s.id} className="border-t" data-testid={`srn-row-${s.srn_number}`}>
+              <td className="px-3 py-2 font-mono text-xs">{s.srn_number}</td>
+              <td className="px-3 py-2 text-xs">{s.service_period_from} → {s.service_period_to}</td>
+              <td className="px-3 py-2 text-right">{s.certified_quantity}</td>
+              <td className="px-3 py-2 text-right">₹{(s.certified_value || 0).toLocaleString("en-IN")}</td>
+              <td className="px-3 py-2"><Badge className={STATUS_TONE[s.status] || "bg-emerald-100 text-emerald-700"}>{s.status || "approved"}</Badge></td>
+              <td className="px-3 py-2 text-right">
+                <Button size="sm" variant="outline" onClick={() => downloadPdf(s)} data-testid={`srn-pdf-${s.srn_number}`}>
+                  <FileDown className="h-3.5 w-3.5" />
+                </Button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </DialogContent>
   );
 }

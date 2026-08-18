@@ -38,6 +38,16 @@ const EXPENSE_CATS = [
   "bank_charges", "repair", "misc", "inventory", "project_material",
 ];
 
+const dueBadge = (r) => {
+  if (!r.due_date) return <span className="text-slate-400">—</span>;
+  const payable = ["approved", "partially_paid"].includes(r.status) && Number(r.outstanding) > 0;
+  if (!payable) return <span className="text-slate-400 font-mono text-[11px]">{r.due_date}</span>;
+  const days = Math.ceil((new Date(r.due_date) - new Date(new Date().toDateString())) / 86400000);
+  if (days < 0) return <span className="inline-block px-1.5 py-0.5 rounded text-[10px] bg-rose-100 text-rose-700 font-semibold whitespace-nowrap" data-testid={`vb-due-${r.bill_no}`}>{-days}d OVERDUE</span>;
+  if (days <= 7) return <span className="inline-block px-1.5 py-0.5 rounded text-[10px] bg-amber-100 text-amber-700 font-semibold whitespace-nowrap" data-testid={`vb-due-${r.bill_no}`}>due in {days}d</span>;
+  return <span className="text-slate-500 font-mono text-[11px]" data-testid={`vb-due-${r.bill_no}`}>{r.due_date}</span>;
+};
+
 function Field({ label, children, className = "" }) {
   return (
     <div className={className}>
@@ -146,6 +156,7 @@ export function VendorBillsView() {
                 <th className="text-left px-3 py-2">PO/GRN</th>
                 <th className="text-right px-3 py-2">Gross</th>
                 <th className="text-right px-3 py-2">Outstanding</th>
+                <th className="text-left px-3 py-2">Due</th>
                 <th className="text-center px-3 py-2">Priority</th>
                 <th className="text-center px-3 py-2">Status</th>
                 <th></th>
@@ -168,6 +179,7 @@ export function VendorBillsView() {
                   </td>
                   <td className="px-3 py-1.5 text-right tabular-nums">{fmt(r.totals?.gross)}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums font-semibold">{fmt(r.outstanding)}</td>
+                  <td className="px-3 py-1.5">{dueBadge(r)}</td>
                   <td className="px-3 py-1.5 text-center"><span className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${PRIORITY_COLORS[r.payment_priority] || ""}`}>{r.payment_priority}</span></td>
                   <td className="px-3 py-1.5 text-center"><span className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${STATUS_COLORS[r.status] || ""}`}>{r.status}</span></td>
                   <td className="px-3 py-1.5 text-right">
@@ -177,7 +189,7 @@ export function VendorBillsView() {
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={10} className="text-center py-6 text-xs text-slate-400">No bills.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={11} className="text-center py-6 text-xs text-slate-400">No bills.</td></tr>}
             </tbody>
           </table>
         </div>

@@ -372,14 +372,23 @@ def render_grn_pdf(grn: Dict[str, Any], po: Optional[Dict[str, Any]] = None,
                     vendor: Optional[Dict[str, Any]] = None) -> bytes:
     items_html = ""
     for i, it in enumerate(grn.get("items") or [], 1):
-        rec = float(it.get("received") or it.get("quantity") or 0)
-        acc = float(it.get("accepted") or 0)
-        rej = float(it.get("rejected") or 0)
-        tag = '<span class="tag green">ACCEPTED</span>' if rej == 0 else (
-              '<span class="tag amber">PARTIAL</span>' if acc > 0 else '<span class="tag red">REJECTED</span>')
+        rec = float(it.get("received_qty") or it.get("received") or it.get("quantity") or 0)
+        acc = float(it.get("accepted_qty") or it.get("accepted") or 0)
+        rej = float(it.get("rejected_qty") or it.get("rejected") or 0)
+        item_st = (it.get("inspection_status") or "").lower()
+        if item_st in ("approved", "accepted"):
+            tag = '<span class="tag green">ACCEPTED</span>'
+        elif item_st in ("rejected",):
+            tag = '<span class="tag red">REJECTED</span>'
+        elif item_st in ("partial", "partially_accepted"):
+            tag = '<span class="tag amber">PARTIAL</span>'
+        else:
+            tag = '<span class="tag green">ACCEPTED</span>' if rej == 0 and acc > 0 else (
+                  '<span class="tag amber">PARTIAL</span>' if acc > 0 else '<span class="tag red">REJECTED</span>')
         items_html += f"""<tr>
 <td>{i}</td>
-<td><b>{_esc(it.get('name'))}</b><div class="note">{_esc(it.get('description') or '')}</div></td>
+<td><b>{_esc(it.get('item_name') or it.get('name'))}</b><div class="note">{_esc(it.get('description') or '')}</div></td>
+<td class="num">{_money(it.get('ordered_qty') or 0)}</td>
 <td class="num">{_money(rec)}</td>
 <td class="num">{_money(acc)}</td>
 <td class="num">{_money(rej)}</td>
@@ -393,14 +402,16 @@ def render_grn_pdf(grn: Dict[str, Any], po: Optional[Dict[str, Any]] = None,
   <div><b>GRN Date</b></div><div>{_esc(grn.get('grn_date') or grn.get('created_at','')[:10])}</div>
   <div><b>PO Reference</b></div><div>{_esc(grn.get('po_number') or (po or {}).get('po_number') or '—')}</div>
   <div><b>Vendor</b></div><div>{_esc(v.get('name') or grn.get('vendor_name') or '—')}</div>
-  <div><b>Vehicle / Challan</b></div><div>{_esc(grn.get('vehicle_no') or '—')} · {_esc(grn.get('challan_no') or '—')}</div>
+  <div><b>Vehicle / Challan</b></div><div>{_esc(grn.get('vehicle_no') or grn.get('vehicle_number') or '—')} · {_esc(grn.get('challan_no') or grn.get('transporter_lr_no') or '—')}</div>
+  <div><b>GRN Status</b></div><div><span class="tag slate">{_esc(grn.get('status') or 'pending').upper()}</span></div>
   <div><b>Inspection Status</b></div><div><span class="tag slate">{_esc(grn.get('inspection_status') or 'pending').upper()}</span></div>
+  <div><b>Total Accepted / Rejected</b></div><div>{_money(grn.get('total_accepted') or 0)} / {_money(grn.get('total_rejected') or 0)}</div>
 </div>
 <div class="section-title">Items Received</div>
 <table><thead><tr>
-<th>#</th><th>Item</th><th class="num">Received</th><th class="num">Accepted</th>
+<th>#</th><th>Item</th><th class="num">Ordered</th><th class="num">Received</th><th class="num">Accepted</th>
 <th class="num">Rejected</th><th>Unit</th><th>Status</th>
-</tr></thead><tbody>{items_html or '<tr><td colspan=7>No items</td></tr>'}</tbody></table>
+</tr></thead><tbody>{items_html or '<tr><td colspan=8>No items</td></tr>'}</tbody></table>
 <div class="section-title">Inspection Remarks</div>
 <div class="note">{_esc(grn.get('inspection_remarks') or grn.get('remarks') or '—')}</div>
 <div class="signs">
@@ -410,6 +421,44 @@ def render_grn_pdf(grn: Dict[str, Any], po: Optional[Dict[str, Any]] = None,
 </div>
 """
     return _render(_wrap(f"Goods Receipt Note — {grn.get('grn_number') or grn.get('grn_no','')}", body))
+
+
+# ─────────────────────────────────── SRN ───────────────────────────────────
+def render_srn_pdf(srn: Dict[str, Any], so: Optional[Dict[str, Any]] = None,
+                   vendor: Optional[Dict[str, Any]] = None) -> bytes:
+    v = vendor or {}
+    s = so or {}
+    st = (srn.get("status") or "approved").upper()
+    tag_cls = "green" if st in ("APPROVED", "ACCEPTED") else "amber"
+    body = f"""
+<div class="kv">
+  <div><b>SRN Number</b></div><div>{_esc(srn.get('srn_number'))}</div>
+  <div><b>SRN Date</b></div><div>{_esc((srn.get('created_at') or '')[:10])}</div>
+  <div><b>Service Order</b></div><div>{_esc(srn.get('so_number') or s.get('so_number') or '—')}</div>
+  <div><b>Vendor</b></div><div>{_esc(v.get('name') or srn.get('vendor_name') or '—')}</div>
+  <div><b>Project</b></div><div>{_esc(srn.get('project_code') or s.get('project_code') or '—')}</div>
+  <div><b>Service Period</b></div><div>{_esc(srn.get('service_period_from') or '—')} → {_esc(srn.get('service_period_to') or '—')}</div>
+  <div><b>Status</b></div><div><span class="tag {tag_cls}">{_esc(st)}</span></div>
+</div>
+<div class="section-title">Certified Work</div>
+<table><thead><tr>
+<th>Work Completed</th><th class="num">Certified Quantity</th><th class="num">Certified Value (₹)</th>
+</tr></thead><tbody><tr>
+<td>{_esc(srn.get('work_completed') or '—')}</td>
+<td class="num">{_money(srn.get('certified_quantity') or 0)}</td>
+<td class="num">{_money(srn.get('certified_value') or 0)}</td>
+</tr></tbody></table>
+<div class="section-title">SO Progress</div>
+<div class="note">SO Total: ₹ {_money(s.get('total_amount') or 0)} · Cumulative Received: ₹ {_money(s.get('received_value') or 0)} · SO Status: {_esc((s.get('status') or '—').replace('_',' ').title())}</div>
+<div class="section-title">Notes</div>
+<div class="note">{_esc(srn.get('notes') or '—')}</div>
+<div class="signs">
+  <div class="box">Certified by (PM / Site)</div>
+  <div class="box">Vendor Acknowledgement</div>
+  <div class="box">Approved by Accounts</div>
+</div>
+"""
+    return _render(_wrap(f"Service Receipt Note — {srn.get('srn_number') or ''}", body))
 
 
 # ─────────────────────────── MATERIAL ISSUE SLIP ──────────────────────────

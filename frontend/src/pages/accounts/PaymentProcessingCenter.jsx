@@ -33,10 +33,10 @@ const blankVerify = (row) => ({
   bank_name: row?.employee_bank?.bank_name || "",
   vendor_email: "",
   gst_applicable: false, gstin: "", gst_amount: 0,
-  invoice_type: "bill", invoice_no: "", invoice_date: "",
+  invoice_type: "bill", invoice_no: row?.invoice_no || "", invoice_date: row?.invoice_date || "",
   verified_amount: Number(row?.est_value || 0),
   tds_applicable: false, tds_pct: 0, tds_amount: 0, advance_adjusted: 0,
-  expense_account_code: "5150", remarks: "",
+  expense_account_code: row?.pay_debit_account_code || "5150", remarks: "",
 });
 
 function Kpi({ label, value, sub, icon: Icon, testid }) {

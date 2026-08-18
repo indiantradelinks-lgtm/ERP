@@ -299,7 +299,8 @@ async def mark_paid(rid: str, p: MarkPaidIn, request: Request,
     tds = float(v.get("tds_amount") or 0)
     advance = float(v.get("advance_adjusted") or 0)
     net = round(amt - tds - advance, 2)
-    lines = [{"account_code": v.get("expense_account_code") or "5150", "debit": amt, "credit": 0,
+    lines = [{"account_code": row.get("pay_debit_account_code") or v.get("expense_account_code") or "5150",
+              "debit": amt, "credit": 0,
               "narration": row.get("description") or row.get("request_type_label")}]
     if net > 0:
         lines.append({"account_code": "1100", "debit": 0, "credit": net, "narration": f"UTR {p.utr_no}"})
@@ -326,6 +327,19 @@ async def mark_paid(rid: str, p: MarkPaidIn, request: Request,
     if row.get("source") == "vendor_bill" and row.get("source_id"):
         await db.logistics_vendor_bills.update_one({"id": row["source_id"]}, {"$set": {
             "status": "paid", "utr_no": p.utr_no, "paid_date": p.paid_date, "updated_at": now_iso()}})
+    if row.get("source") == "accounts_vendor_bill" and row.get("source_id"):
+        paid_amt = float(v.get("net_payable") if v.get("net_payable") is not None else net)
+        bill = await db.vendor_bills.find_one({"id": row["source_id"]},
+                                              {"_id": 0, "paid_amount": 1, "outstanding": 1})
+        if bill:
+            new_paid = round(float(bill.get("paid_amount") or 0) + paid_amt, 2)
+            new_out = max(round(float(bill.get("outstanding") or 0) - paid_amt, 2), 0.0)
+            await db.vendor_bills.update_one({"id": row["source_id"]}, {"$set": {
+                "paid_amount": new_paid, "outstanding": new_out,
+                "status": "paid" if new_out <= 0 else "partially_paid",
+                "last_payment_utr": p.utr_no, "last_payment_date": p.paid_date,
+                "updated_at": now_iso()}})
+            await db.alerts.delete_one({"id": f"vpd-{row['source_id']}"})
     if row.get("source") == "advance" and row.get("source_id"):
         adv = await db.employee_advances.find_one({"id": row["source_id"]}, {"_id": 0})
         if adv and adv.get("status") == "approved":
