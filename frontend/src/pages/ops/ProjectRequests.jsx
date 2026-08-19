@@ -93,6 +93,13 @@ export default function ProjectRequests() {
   const isManpower = form.request_type === "manpower";
   const isVehicle = form.request_type?.startsWith("vehicle") || form.request_type === "one_time_vehicle";
   const isSelf = form.request_type === "self_expense";
+  const [hoCCs, setHoCCs] = useState([]);
+  useEffect(() => {
+    if (isSelf && hoCCs.length === 0) {
+      api.get("/head-office-cost-centers").then((r) => setHoCCs(r.data || [])).catch(() => {});
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSelf]);
   const isPayment = meta?.payment;
 
   const load = async () => {
@@ -214,7 +221,7 @@ export default function ProjectRequests() {
     if (isManpower && !form.items.some((i) => i.name && Number(i.quantity) > 0)) { toast.error("Add at least one manpower line"); return; }
     if (isStockable && !form.items.some((i) => (i.name || "").trim() && Number(i.quantity) > 0)) { toast.error("Add at least one item"); return; }
     if (estValue <= 0 && !isStockable && !isManpower) { toast.error("Enter amount / rate"); return; }
-    if (!form.cost_center_id && !isSelf) { toast.error("Cost Center is mandatory — select a valid Cost Center before submitting"); return; }
+    if (!form.cost_center_id) { toast.error(isSelf ? "Select a Head Office Cost Center before submitting" : "Cost Center is mandatory — select a valid Cost Center before submitting"); return; }
     if (isPayment && mode === "service" && !isSelf) {
       if (form.paid_to_type === "vendor" && !form.vendor) { toast.error("Select the approved vendor to be paid"); return; }
       if (form.paid_to_type === "person" && !form.employee_id) { toast.error("Select the employee (Emp ID) to be paid"); return; }
@@ -442,7 +449,7 @@ export default function ProjectRequests() {
               <ProjectSelect label="Project *" value={form.project_code} onChange={(code, row) => { setForm({ ...form, project_code: code, project_id: row?.id || "", cost_center_id: "", employee_id: "" }); loadCostCenters(row?.id); }} testid="req-form-project" />
             ) : (
               <div className="border border-amber-200 bg-amber-50 rounded-sm p-2 text-xs text-amber-800 self-end" data-testid="req-self-banner">
-                <b>Self Expense</b> — booked under <b>Head Office Expense</b>, payable to you. No project / cost center selection needed.
+                <b>Self Expense</b> — payable to you, booked & tracked against the <b>Head Office Cost Center</b> you select below.
               </div>
             )}
             {mode === "service" && (
@@ -546,13 +553,22 @@ export default function ProjectRequests() {
                 </select>
               </div>
             )}
-            {!isSelf && (
+            {!isSelf ? (
             <div>
               <Label className="text-[10px] uppercase tracking-wider">Cost Center *</Label>
               <select value={form.cost_center_id} onChange={(e) => setForm({ ...form, cost_center_id: e.target.value })}
                 className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-costcenter">
                 <option value="">— select cost center —</option>
                 {ccList.map((cc) => <option key={cc.id} value={cc.id}>{cc.category_code} · {cc.category_name}{cc.budget ? ` (budget ${inr(cc.budget)})` : ""}</option>)}
+              </select>
+            </div>
+            ) : (
+            <div>
+              <Label className="text-[10px] uppercase tracking-wider">Head Office Cost Center *</Label>
+              <select value={form.cost_center_id} onChange={(e) => setForm({ ...form, cost_center_id: e.target.value })}
+                className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-ho-costcenter">
+                <option value="">— select head office cost center —</option>
+                {hoCCs.map((cc) => <option key={cc.id} value={cc.id}>{cc.category_name || cc.name}</option>)}
               </select>
             </div>
             )}

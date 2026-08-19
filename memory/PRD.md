@@ -5401,3 +5401,9 @@ Transport VB "Cost Center (auto from project)" now displays clean `category_name
 3. Frontend (ProjectRequests.jsx, /app/ops/requests → Service/Payment): "User Expense / Self Expense" in routing dropdown; when selected hides Project/CC/Category/Paid-To selectors, shows amber banner (req-self-banner) + "Paid To: Yourself" (req-self-paidto) + Amount field; validation skips project/CC/vendor checks for self only.
 4. Existing project/vendor payment workflow untouched (regression: fuel without project still 400). After Project Head approval → status with_dept → appears in Accounts Payment Processing queue with "HEADOFF · Head Office Expense" CC.
 E2E curl-tested (raise as accounts_executive → approve → payment queue) + UI screenshot. Test data cleaned.
+
+### Iteration 183 (Aug 2026) — Self Expense: mandatory Head Office Cost Center ✅
+1. GET /api/head-office-cost-centers — lists non-project (project_id null) CCs; idempotently seeds 6 standard HO CCs (HEADOFF, HO-RENT, HO-ADMIN, HO-TRAVEL, HO-WELFARE, HO-IT).
+2. self_expense create: cost_center_id now MANDATORY, must be an HO (non-project) cost center (400 otherwise; project CCs rejected). Booking/tracking against the selected HO CC (cost_center_label e.g. "HO-TRAVEL · Travel & Conveyance").
+3. Frontend: "Head Office Cost Center *" dropdown (testid req-form-ho-costcenter) shown for self expense (only HO CCs); submit validation requires selection; project-wise CC logic unchanged.
+Verified via curl (list+seed, no-CC 400, HO CC booking, project-CC rejection) + UI screenshot.

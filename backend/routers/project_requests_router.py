@@ -66,6 +66,37 @@ FULFIL_ROLES = {
 }
 
 
+HO_CC_SEED = [
+    ("HEADOFF", "Head Office Expense"),
+    ("HO-RENT", "Office Rent & Utilities"),
+    ("HO-ADMIN", "Office Supplies & Admin"),
+    ("HO-TRAVEL", "Travel & Conveyance"),
+    ("HO-WELFARE", "Staff Welfare"),
+    ("HO-IT", "IT & Communication"),
+]
+
+
+@router.get("/head-office-cost-centers")
+async def head_office_cost_centers(user: dict = Depends(require_permission("project_requests", "read"))):
+    """Head Office (non-project) cost centers for self/HO expenses. Seeds standard set once."""
+    q = {"project_id": None, "active": {"$ne": False}}
+    proj = {"_id": 0, "id": 1, "code": 1, "name": 1, "category_code": 1, "category_name": 1}
+    rows = [c async for c in db.cost_centers.find(q, proj)]
+    existing = {c.get("category_code") for c in rows}
+    seeded = False
+    for code, name in HO_CC_SEED:
+        if code not in existing:
+            await db.cost_centers.insert_one({
+                "id": new_id(), "code": f"CC-{code}", "name": name,
+                "category_code": code, "category_name": name,
+                "project_id": None, "project_code": None, "head_office": True,
+                "active": True, "created_at": now_iso(), "created_by": "system (HO seed)"})
+            seeded = True
+    if seeded:
+        rows = [c async for c in db.cost_centers.find(q, proj)]
+    return sorted(rows, key=lambda c: c.get("category_name") or "")
+
+
 def _ip(request: Request) -> str:
     return request.client.host if request.client else ""
 
@@ -281,17 +312,12 @@ async def create_request(p: RequestIn, request: Request,
             {"project_id": project["id"],
              "$or": [{"category_id": mcat["id"]}, {"category_code": mcat.get("code")}]},
             {"_id": 0, "id": 1, "category_code": 1, "category_name": 1, "project_id": 1})
-    if not cc and p.request_type == "self_expense":
-        # Head Office Expense cost center (global, auto-provisioned once)
-        cc = await db.cost_centers.find_one({"category_code": "HEADOFF"},
-                                            {"_id": 0, "id": 1, "category_code": 1, "category_name": 1, "project_id": 1})
-        if not cc:
-            cc = {"id": new_id(), "code": "CC-HEAD-OFFICE", "name": "Head Office Expense",
-                  "category_code": "HEADOFF", "category_name": "Head Office Expense",
-                  "project_id": None, "project_code": None, "active": True,
-                  "created_at": now_iso(), "created_by": "system (self expense)"}
-            await db.cost_centers.insert_one(dict(cc))
-            cc.pop("_id", None)
+    if p.request_type == "self_expense":
+        # Mandatory HEAD OFFICE cost center selection (non-project CC)
+        if not p.cost_center_id or not cc:
+            raise HTTPException(400, "Select a Head Office Cost Center before submitting this self expense")
+        if cc.get("project_id"):
+            raise HTTPException(400, "Self expense must be booked against a Head Office cost center (not a project cost center)")
     if not cc:
         raise HTTPException(400, "Cost Center is mandatory — select a valid Cost Center before submitting this request")
     steps = [("dept_head", "Project Head")]
