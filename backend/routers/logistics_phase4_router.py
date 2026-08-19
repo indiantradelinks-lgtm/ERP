@@ -471,17 +471,24 @@ async def _auto_cost_center(doc: Dict[str, Any]) -> None:
     if doc.get("cost_center_id"):
         cc = await db.cost_centers.find_one({"id": doc["cost_center_id"]},
                                             {"_id": 0, "name": 1, "code": 1, "category_name": 1})
-        if cc:
-            doc["cost_center_label"] = cc.get("category_name") or cc.get("name") or cc.get("code")
+        if not cc:
+            raise HTTPException(400, "Selected Cost Center not found — pick a valid Cost Center")
+        doc["cost_center_label"] = cc.get("category_name") or cc.get("name") or cc.get("code")
         return
     if not doc.get("project_id"):
         return
     ccs = await db.cost_centers.find({"project_id": doc["project_id"], "active": {"$ne": False}}, {"_id": 0}).to_list(50)
     if not ccs:
         return
+    # Auto-pick ONLY a transport/vehicle/freight cost center — never default to an unrelated CC
     cc = next((c for c in ccs if "transport" in (c.get("category_code") or "").lower()
                or "vehicle" in (c.get("category_code") or "").lower()
-               or "freight" in (c.get("name") or "").lower()), ccs[0])
+               or "vehicle" in (c.get("category_name") or "").lower()
+               or "freight" in (c.get("name") or "").lower()), None)
+    if len(ccs) == 1 and cc is None:
+        cc = ccs[0]  # single CC on the project → unambiguous
+    if cc is None:
+        return  # ambiguous — user must select explicitly
     doc["cost_center_id"] = cc["id"]
     doc["cost_center_label"] = cc.get("category_name") or cc.get("name") or cc.get("code")
 

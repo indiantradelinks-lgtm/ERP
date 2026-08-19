@@ -585,7 +585,9 @@ export function VendorBills() {
           afterChange: (sel, preloads) => {
             if (!sel) return { cost_center_id: "", cost_center_label: "" };
             const ccs = (preloads.cost_centers || []).filter((c) => c.project_id === sel.id && c.active !== false);
-            const cc = ccs.find((c) => /transport|vehicle|freight/i.test(`${c.category_code || ""} ${c.name || ""}`)) || ccs[0];
+            // Auto-pick ONLY a transport/vehicle/freight CC (or the single unambiguous one) — never default to unrelated CCs like Scaffolding
+            let cc = ccs.find((c) => /transport|vehicle|freight/i.test(`${c.category_code || ""} ${c.category_name || ""} ${c.name || ""}`));
+            if (!cc && ccs.length === 1) cc = ccs[0];
             return cc ? { cost_center_id: cc.id, cost_center_label: cc.category_name || cc.name || cc.code } : { cost_center_id: "", cost_center_label: "" };
           } },
         { key: "cost_center_id", label: "Cost Center (auto from project)", type: "preload", preloadKey: "cost_centers", labelField: "category_name", labelRender: (o) => o.category_name || o.name || o.code, mirrorTo: "cost_center_label", mirrorField: "category_name", filterBy: (o, fm) => !fm.project_id || o.project_id === fm.project_id },

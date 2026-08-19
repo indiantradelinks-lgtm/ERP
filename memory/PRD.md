@@ -5407,3 +5407,10 @@ E2E curl-tested (raise as accounts_executive → approve → payment queue) + UI
 2. self_expense create: cost_center_id now MANDATORY, must be an HO (non-project) cost center (400 otherwise; project CCs rejected). Booking/tracking against the selected HO CC (cost_center_label e.g. "HO-TRAVEL · Travel & Conveyance").
 3. Frontend: "Head Office Cost Center *" dropdown (testid req-form-ho-costcenter) shown for self expense (only HO CCs); submit validation requires selection; project-wise CC logic unchanged.
 Verified via curl (list+seed, no-CC 400, HO CC booking, project-CC rejection) + UI screenshot.
+
+### Iteration 184 (Aug 2026) — Transport VB Cost Center: no wrong default, exact save ✅
+User reported "Scaffolding Material" default (screenshot was PRODUCTION — old build; needs redeploy). Real remaining bug fixed in preview: auto-pick fell back to project's FIRST CC when no transport CC existed.
+1. Backend `_auto_cost_center` + frontend afterChange: auto-pick ONLY transport/vehicle/freight-matched CC (or the single unambiguous CC); otherwise leave blank → mandatory error forces explicit user selection.
+2. Provided cost_center_id now validated (400 if not found) and label saved exactly (category_name).
+3. Queue push `_push_bill_to_accounts` confirmed carrying cost_center_id/label for booking/payment processing.
+Curl-verified: no-transport project without CC → 400; user-selected CONSUM CC saved exactly as "Consumables"; transport project auto-picks "Vehicle/Logistics Items"; bogus CC id → 400. Test bills cleaned.
