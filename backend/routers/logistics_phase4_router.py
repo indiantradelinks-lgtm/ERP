@@ -442,15 +442,15 @@ async def vb_list(
     if status:
         q["status"] = status
     rows = await db.logistics_vendor_bills.find(q, {"_id": 0}).sort("bill_date", -1).to_list(2000)
-    # Enrich with approval chain (2-level Dept Head → GM workflow)
-    ap_ids = [r["approval_id"] for r in rows if r.get("approval_id")]
-    amap = {}
-    if ap_ids:
-        async for a in db.approvals.find({"id": {"$in": ap_ids}},
-                                         {"_id": 0, "id": 1, "chain": 1, "status": 1, "current_step": 1}):
-            amap[a["id"]] = a
+    # Enrich with approval chain (2-level Dept Head → GM workflow) — match by record_id (covers pending + completed)
+    ids = [r["id"] for r in rows]
+    amap: Dict[str, Any] = {}
+    if ids:
+        async for a in db.approvals.find({"type": "vendor_bill", "record_id": {"$in": ids}},
+                                         {"_id": 0, "record_id": 1, "chain": 1, "status": 1, "created_at": 1}).sort("created_at", 1):
+            amap[a["record_id"]] = a  # latest wins
     for r in rows:
-        a = amap.get(r.get("approval_id"))
+        a = amap.get(r["id"])
         r["approval_chain"] = (a or {}).get("chain") or []
         r["approval_status"] = (a or {}).get("status")
     return rows
@@ -466,12 +466,23 @@ async def transport_vendors(user: dict = Depends(require_permission("dispatch_re
 
 
 async def _auto_cost_center(doc: Dict[str, Any]) -> None:
-    """Resolve the label for the USER-SELECTED cost center only (no auto-pick)."""
-    if not doc.get("cost_center_id"):
+    """Resolve CC label for user-selected CC; else auto-populate the project's cost center
+    (transport/vehicle/freight-categorized preferred, else the project's default)."""
+    if doc.get("cost_center_id"):
+        cc = await db.cost_centers.find_one({"id": doc["cost_center_id"]}, {"_id": 0, "name": 1, "code": 1})
+        if cc:
+            doc["cost_center_label"] = cc.get("name") or cc.get("code")
         return
-    cc = await db.cost_centers.find_one({"id": doc["cost_center_id"]}, {"_id": 0, "name": 1, "code": 1})
-    if cc:
-        doc["cost_center_label"] = cc.get("name") or cc.get("code")
+    if not doc.get("project_id"):
+        return
+    ccs = await db.cost_centers.find({"project_id": doc["project_id"], "active": {"$ne": False}}, {"_id": 0}).to_list(50)
+    if not ccs:
+        return
+    cc = next((c for c in ccs if "transport" in (c.get("category_code") or "").lower()
+               or "vehicle" in (c.get("category_code") or "").lower()
+               or "freight" in (c.get("name") or "").lower()), ccs[0])
+    doc["cost_center_id"] = cc["id"]
+    doc["cost_center_label"] = cc.get("name") or cc.get("code")
 
 
 @router.post("/vendor-bills")
@@ -497,6 +508,8 @@ async def vb_create(
     await _auto_cost_center(doc)
     if not doc.get("cost_center_id"):
         raise HTTPException(400, "Cost Center is mandatory — select a valid Cost Center (or a project that has one) before saving this bill")
+    if doc.get("status") in (None, "", "pending"):
+        doc["status"] = "submitted"  # save directly into Pending Approval
     doc.update({
         "id": payload.id or new_id(),
         "vb_no": f"VB-{_yr()}-{seq:04d}",

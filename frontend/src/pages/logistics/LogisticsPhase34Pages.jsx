@@ -563,7 +563,7 @@ export function VendorBills() {
                dispatch_no: "", project_id: "", project_code: "",
                freight_amount: "", loading_cost: "", unloading_cost: "", detention_amount: "",
                other_charges: "", gst_amount: "", tds_amount: "", net_payable: "",
-               remarks: "", status: "pending" }}
+               remarks: "", status: "submitted" }}
       columns={[
         { key: "vb_no", label: "VB #", className: "font-mono text-xs" },
         { key: "bill_no", label: "Bill #" },
@@ -581,9 +581,14 @@ export function VendorBills() {
         { key: "bill_no", label: "Bill No. *" },
         { key: "bill_date", label: "Bill Date", type: "date" },
         { key: "dispatch_id", label: "Dispatch (optional)", type: "preload", preloadKey: "drs", labelField: "dr_no", mirrorTo: "dispatch_no", mirrorField: "dr_no" },
-        { key: "project_id", label: "Project (ID · Name)", type: "preload", preloadKey: "projects", labelField: "code", labelRender: (o) => `${o.code || o.project_code} · ${o.name || o.project_name || "—"}`, mirrorTo: "project_code", mirrorField: "code",
-          afterChange: () => ({ cost_center_id: "", cost_center_label: "" }) },
-        { key: "cost_center_id", label: "Cost Center (project-wise) *", required: true, type: "preload", preloadKey: "cost_centers", labelField: "name", labelRender: (o) => `${o.name || o.code}${o.project_code ? ` · ${o.project_code}` : ""}`, mirrorTo: "cost_center_label", mirrorField: "name", filterBy: (o, fm) => !fm.project_id || o.project_id === fm.project_id },
+        { key: "project_id", label: "Project (ID · Name) *", type: "preload", preloadKey: "projects", labelField: "code", labelRender: (o) => `${o.code || o.project_code} · ${o.name || o.project_name || "—"}`, mirrorTo: "project_code", mirrorField: "code",
+          afterChange: (sel, preloads) => {
+            if (!sel) return { cost_center_id: "", cost_center_label: "" };
+            const ccs = (preloads.cost_centers || []).filter((c) => c.project_id === sel.id && c.active !== false);
+            const cc = ccs.find((c) => /transport|vehicle|freight/i.test(`${c.category_code || ""} ${c.name || ""}`)) || ccs[0];
+            return cc ? { cost_center_id: cc.id, cost_center_label: cc.name || cc.code } : { cost_center_id: "", cost_center_label: "" };
+          } },
+        { key: "cost_center_id", label: "Cost Center (auto from project)", type: "preload", preloadKey: "cost_centers", labelField: "name", labelRender: (o) => `${o.name || o.code}${o.project_code ? ` · ${o.project_code}` : ""}`, mirrorTo: "cost_center_label", mirrorField: "name", filterBy: (o, fm) => !fm.project_id || o.project_id === fm.project_id },
         { key: "freight_amount", label: "Freight (₹)", type: "number" },
         { key: "loading_cost", label: "Loading (₹)", type: "number" },
         { key: "unloading_cost", label: "Unloading (₹)", type: "number" },
@@ -592,7 +597,6 @@ export function VendorBills() {
         { key: "gst_amount", label: "GST (₹)", type: "number" },
         { key: "tds_amount", label: "TDS (₹)", type: "number" },
         { key: "net_payable", label: "Net Payable (₹) — auto if blank", type: "number" },
-        { key: "status", label: "Status", type: "select", options: ["pending", "submitted", "verified", "approved", "posted", "paid", "rejected"] },
         { key: "remarks", label: "Remarks", type: "textarea", full: true },
         { key: "attachments", label: "Bill / Invoice / Supporting Documents", type: "attachments", parentType: "vendor_bills", full: true },
       ]}

@@ -5383,3 +5383,11 @@ E2E curl-tested: role 403s at each stage, 4-stage chain, JE at final, hold block
 2. GET /logistics/vendor-bills enriched with `approval_chain` + `approval_status` (batch-fetched from db.approvals by approval_id — 2-level Dept Head → GM chain).
 3. New "Approval Chain" column next to Status (compact ✓/⏳/✗ chips per level, testid vb-chain-{vb_no}); click opens dialog (vb-chain-dialog) with Level n, role label, status, approver, timestamp, remarks — displayed automatically from workflow, nothing to select.
 Verified via curl (chain payload) + screenshots (chips, dialog with L1/L2 approvers+remarks, empty CC after project pick).
+
+### Iteration 180 (Aug 2026) — Transport VB: CC auto-populate from project, no Status question, direct Pending Approval ✅
+(User reversal of iter 179 pt-1: now WANTS auto CC.) 
+1. Project = primary selection; frontend afterChange auto-populates the project's CC (transport/vehicle/freight-categorized preferred, else project default); CC dropdown stays editable, labeled "auto from project".
+2. Backend `_auto_cost_center` restored auto-resolution (user-selected CC → label resolve; else pick from project). Fixes "Cost Center is mandatory" save error when project has a valid CC.
+3. Status field REMOVED from the form; vb_create forces status pending/blank → "submitted" (direct Pending Approval, `_start_bill_approval` fires 2-level Dept Head → GM chain).
+4. Chain enrichment in vb_list now matches approvals by record_id (covers PENDING approvals too — was missing since approval_id set only post-completion).
+5. Verified E2E: create (no CC sent) → auto CC + submitted + chain pending → L1/L2 approve with remarks → approved → payment queue row carries project_code + cost_center. Test data cleaned.
