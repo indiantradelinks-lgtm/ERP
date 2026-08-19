@@ -5391,3 +5391,6 @@ Verified via curl (chain payload) + screenshots (chips, dialog with L1/L2 approv
 3. Status field REMOVED from the form; vb_create forces status pending/blank → "submitted" (direct Pending Approval, `_start_bill_approval` fires 2-level Dept Head → GM chain).
 4. Chain enrichment in vb_list now matches approvals by record_id (covers PENDING approvals too — was missing since approval_id set only post-completion).
 5. Verified E2E: create (no CC sent) → auto CC + submitted + chain pending → L1/L2 approve with remarks → approved → payment queue row carries project_code + cost_center. Test data cleaned.
+
+### Iteration 181 (Aug 2026) — CC dropdown shows exact Cost Center Name ✅
+Transport VB "Cost Center (auto from project)" now displays clean `category_name` only (e.g. "Vehicle/Logistics Items") instead of the long "<client project> · <category> · <code>" string — dropdown options, auto-selected value, mirror label, and backend `_auto_cost_center` label all use category_name || name || code. Verified via screenshot.

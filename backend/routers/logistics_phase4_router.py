@@ -469,9 +469,10 @@ async def _auto_cost_center(doc: Dict[str, Any]) -> None:
     """Resolve CC label for user-selected CC; else auto-populate the project's cost center
     (transport/vehicle/freight-categorized preferred, else the project's default)."""
     if doc.get("cost_center_id"):
-        cc = await db.cost_centers.find_one({"id": doc["cost_center_id"]}, {"_id": 0, "name": 1, "code": 1})
+        cc = await db.cost_centers.find_one({"id": doc["cost_center_id"]},
+                                            {"_id": 0, "name": 1, "code": 1, "category_name": 1})
         if cc:
-            doc["cost_center_label"] = cc.get("name") or cc.get("code")
+            doc["cost_center_label"] = cc.get("category_name") or cc.get("name") or cc.get("code")
         return
     if not doc.get("project_id"):
         return
@@ -482,7 +483,7 @@ async def _auto_cost_center(doc: Dict[str, Any]) -> None:
                or "vehicle" in (c.get("category_code") or "").lower()
                or "freight" in (c.get("name") or "").lower()), ccs[0])
     doc["cost_center_id"] = cc["id"]
-    doc["cost_center_label"] = cc.get("name") or cc.get("code")
+    doc["cost_center_label"] = cc.get("category_name") or cc.get("name") or cc.get("code")
 
 
 @router.post("/vendor-bills")
