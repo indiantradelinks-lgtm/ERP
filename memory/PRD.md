@@ -5394,3 +5394,10 @@ Verified via curl (chain payload) + screenshots (chips, dialog with L1/L2 approv
 
 ### Iteration 181 (Aug 2026) — CC dropdown shows exact Cost Center Name ✅
 Transport VB "Cost Center (auto from project)" now displays clean `category_name` only (e.g. "Vehicle/Logistics Items") instead of the long "<client project> · <category> · <code>" string — dropdown options, auto-selected value, mirror label, and backend `_auto_cost_center` label all use category_name || name || code. Verified via screenshot.
+
+### Iteration 182 (Aug 2026) — "User Expense / Self Expense" request type ✅
+1. New REQUEST_TYPES `self_expense` (dept admin, payment=True, expense_type `head_office`); EXPENSE_TYPES adds `head_office` → account 5400.
+2. Any authenticated user can raise it (RAISE_ROLES gate bypassed for self_expense only); project optional → virtual HEAD-OFFICE project; global "Head Office Expense" cost center (category_code HEADOFF) auto-provisioned once and attached; payee auto = requester (HR employee matched by email; paid_to_type=person; name falls back to user).
+3. Frontend (ProjectRequests.jsx, /app/ops/requests → Service/Payment): "User Expense / Self Expense" in routing dropdown; when selected hides Project/CC/Category/Paid-To selectors, shows amber banner (req-self-banner) + "Paid To: Yourself" (req-self-paidto) + Amount field; validation skips project/CC/vendor checks for self only.
+4. Existing project/vendor payment workflow untouched (regression: fuel without project still 400). After Project Head approval → status with_dept → appears in Accounts Payment Processing queue with "HEADOFF · Head Office Expense" CC.
+E2E curl-tested (raise as accounts_executive → approve → payment queue) + UI screenshot. Test data cleaned.

@@ -92,6 +92,7 @@ export default function ProjectRequests() {
   const isStockable = form.request_type && STOCKABLE.has(form.request_type);
   const isManpower = form.request_type === "manpower";
   const isVehicle = form.request_type?.startsWith("vehicle") || form.request_type === "one_time_vehicle";
+  const isSelf = form.request_type === "self_expense";
   const isPayment = meta?.payment;
 
   const load = async () => {
@@ -208,13 +209,13 @@ export default function ProjectRequests() {
   };
 
   const create = async () => {
-    if (!form.project_code) { toast.error("Select a project"); return; }
+    if (!form.project_code && !isSelf) { toast.error("Select a project"); return; }
     if (!form.request_type) { toast.error("Select request type"); return; }
     if (isManpower && !form.items.some((i) => i.name && Number(i.quantity) > 0)) { toast.error("Add at least one manpower line"); return; }
     if (isStockable && !form.items.some((i) => (i.name || "").trim() && Number(i.quantity) > 0)) { toast.error("Add at least one item"); return; }
     if (estValue <= 0 && !isStockable && !isManpower) { toast.error("Enter amount / rate"); return; }
-    if (!form.cost_center_id) { toast.error("Cost Center is mandatory — select a valid Cost Center before submitting"); return; }
-    if (isPayment && mode === "service") {
+    if (!form.cost_center_id && !isSelf) { toast.error("Cost Center is mandatory — select a valid Cost Center before submitting"); return; }
+    if (isPayment && mode === "service" && !isSelf) {
       if (form.paid_to_type === "vendor" && !form.vendor) { toast.error("Select the approved vendor to be paid"); return; }
       if (form.paid_to_type === "person" && !form.employee_id) { toast.error("Select the employee (Emp ID) to be paid"); return; }
       if (!form.expense_date) { toast.error("Select expense date"); return; }
@@ -437,9 +438,16 @@ export default function ProjectRequests() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-1">
-            <ProjectSelect label="Project *" value={form.project_code} onChange={(code, row) => { setForm({ ...form, project_code: code, project_id: row?.id || "", cost_center_id: "", employee_id: "" }); loadCostCenters(row?.id); }} testid="req-form-project" />
+            {!isSelf ? (
+              <ProjectSelect label="Project *" value={form.project_code} onChange={(code, row) => { setForm({ ...form, project_code: code, project_id: row?.id || "", cost_center_id: "", employee_id: "" }); loadCostCenters(row?.id); }} testid="req-form-project" />
+            ) : (
+              <div className="border border-amber-200 bg-amber-50 rounded-sm p-2 text-xs text-amber-800 self-end" data-testid="req-self-banner">
+                <b>Self Expense</b> — booked under <b>Head Office Expense</b>, payable to you. No project / cost center selection needed.
+              </div>
+            )}
             {mode === "service" && (
               <>
+                {!isSelf && (
                 <div>
                   <Label className="text-[10px] uppercase tracking-wider">Category (Item Master) *</Label>
                   <select value={form.material_category_id} onChange={(e) => onServiceCategoryChange(e.target.value)}
@@ -448,6 +456,7 @@ export default function ProjectRequests() {
                     {categories.map((c) => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}
                   </select>
                 </div>
+                )}
                 <div>
                   <Label className="text-[10px] uppercase tracking-wider">Request Type (Routing) *</Label>
                   <select value={form.request_type} onChange={(e) => { setForm({ ...form, request_type: e.target.value, items: [blankItem()] }); setStock(null); }}
@@ -456,6 +465,12 @@ export default function ProjectRequests() {
                     {types.filter((t) => !STOCKABLE.has(t.key) && t.key !== "manpower").map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
                   </select>
                 </div>
+                {isSelf ? (
+                  <div className="text-xs text-muted-foreground self-end pb-2" data-testid="req-self-paidto">
+                    <b>Paid To:</b> Yourself (auto — from your HR record)
+                  </div>
+                ) : (
+                <>
                 <div>
                   <Label className="text-[10px] uppercase tracking-wider">Paid To *</Label>
                   <select value={form.paid_to_type} onChange={(e) => setForm({ ...form, paid_to_type: e.target.value, vendor: "", employee_id: "" })}
@@ -490,6 +505,8 @@ export default function ProjectRequests() {
                   <Input value={selectedEmp?.name || ""} readOnly disabled placeholder="Auto-filled from Emp ID"
                     className="h-9 rounded-sm mt-1 bg-muted/40" data-testid="req-form-employee-name" />
                 </div>
+                </>
+                )}
                 {isPayment && (
                   <>
                     <div>
@@ -529,6 +546,7 @@ export default function ProjectRequests() {
                 </select>
               </div>
             )}
+            {!isSelf && (
             <div>
               <Label className="text-[10px] uppercase tracking-wider">Cost Center *</Label>
               <select value={form.cost_center_id} onChange={(e) => setForm({ ...form, cost_center_id: e.target.value })}
@@ -537,6 +555,7 @@ export default function ProjectRequests() {
                 {ccList.map((cc) => <option key={cc.id} value={cc.id}>{cc.category_code} · {cc.category_name}{cc.budget ? ` (budget ${inr(cc.budget)})` : ""}</option>)}
               </select>
             </div>
+            )}
             <SiteLocationSelect label="Site Location" value={form.site_location}
               onChange={(v) => setForm({ ...form, site_location: v })} testid="req-form-location" />
             <div>
@@ -688,7 +707,7 @@ export default function ProjectRequests() {
                   <Input type="number" value={form.months} onChange={(e) => setForm({ ...form, months: e.target.value })} className="h-9 rounded-sm mt-1 tabular" data-testid="req-form-months" /></div>
               </>
             )}
-            {(form.request_type === "fuel" || form.request_type === "insurance" || form.request_type === "one_time_vehicle" || form.request_type === "accommodation" || form.request_type === "other") && (
+            {(form.request_type === "fuel" || form.request_type === "insurance" || form.request_type === "one_time_vehicle" || form.request_type === "accommodation" || form.request_type === "other" || form.request_type === "self_expense") && (
               <div><Label className="text-[10px] uppercase tracking-wider">{form.request_type === "accommodation" ? "One-time / Deposit Amount (₹)" : "Amount (₹)"}</Label>
                 <Input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="h-9 rounded-sm mt-1 tabular" data-testid="req-form-amount" /></div>
             )}

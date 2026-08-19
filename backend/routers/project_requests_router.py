@@ -55,6 +55,7 @@ REQUEST_TYPES: Dict[str, Dict[str, Any]] = {
     "one_time_vehicle": {"label": "One-Time Vehicle (Site-to-Site / Godown)", "dept": "logistics", "stockable": False, "payment": True, "expense_type": "vehicle"},
     "manpower":         {"label": "Manpower / Site Staff", "dept": "hr", "stockable": False, "payment": False, "expense_type": None},
     "other":            {"label": "Other", "dept": "admin", "stockable": False, "payment": True, "expense_type": "misc"},
+    "self_expense":     {"label": "User Expense / Self Expense", "dept": "admin", "stockable": False, "payment": True, "expense_type": "head_office"},
 }
 RAISE_ROLES = {"project_coordinator", "project_manager", "super_admin"}
 FULFIL_ROLES = {
@@ -238,7 +239,8 @@ async def summary(project_code: Optional[str] = None,
 async def create_request(p: RequestIn, request: Request,
                          user: dict = Depends(require_permission("project_requests", "write"))):
     from pm_scope import is_pm_scoped
-    if user.get("role") not in RAISE_ROLES and not is_pm_scoped(user):
+    if (p.request_type != "self_expense"
+            and user.get("role") not in RAISE_ROLES and not is_pm_scoped(user)):
         raise HTTPException(403, "Only Project Coordinator / Project Manager can raise project requests")
     if p.request_type not in REQUEST_TYPES:
         raise HTTPException(400, f"request_type must be one of {sorted(REQUEST_TYPES)}")
@@ -249,8 +251,12 @@ async def create_request(p: RequestIn, request: Request,
     elif p.project_code:
         project = await db.projects.find_one({"code": p.project_code}, {"_id": 0})
     if not project:
-        raise HTTPException(400, "Select a valid project")
-    await ensure_project_access(user, project["id"])
+        if p.request_type == "self_expense":
+            project = {"id": None, "code": "HEAD-OFFICE", "name": "Head Office", "client": None}
+        else:
+            raise HTTPException(400, "Select a valid project")
+    if project.get("id"):
+        await ensure_project_access(user, project["id"])
     est = _estimate_value(p)
 
     stock_lines: List[Dict[str, Any]] = []
@@ -275,6 +281,17 @@ async def create_request(p: RequestIn, request: Request,
             {"project_id": project["id"],
              "$or": [{"category_id": mcat["id"]}, {"category_code": mcat.get("code")}]},
             {"_id": 0, "id": 1, "category_code": 1, "category_name": 1, "project_id": 1})
+    if not cc and p.request_type == "self_expense":
+        # Head Office Expense cost center (global, auto-provisioned once)
+        cc = await db.cost_centers.find_one({"category_code": "HEADOFF"},
+                                            {"_id": 0, "id": 1, "category_code": 1, "category_name": 1, "project_id": 1})
+        if not cc:
+            cc = {"id": new_id(), "code": "CC-HEAD-OFFICE", "name": "Head Office Expense",
+                  "category_code": "HEADOFF", "category_name": "Head Office Expense",
+                  "project_id": None, "project_code": None, "active": True,
+                  "created_at": now_iso(), "created_by": "system (self expense)"}
+            await db.cost_centers.insert_one(dict(cc))
+            cc.pop("_id", None)
     if not cc:
         raise HTTPException(400, "Cost Center is mandatory — select a valid Cost Center before submitting this request")
     steps = [("dept_head", "Project Head")]
@@ -288,6 +305,10 @@ async def create_request(p: RequestIn, request: Request,
                                           {"_id": 0, "id": 1, "name": 1, "employee_id": 1, "emp_code": 1})
         if not emp:
             raise HTTPException(404, "Employee not found in HR master")
+    if p.request_type == "self_expense" and not emp and user.get("email"):
+        # Self expense — payee is the requester (auto-link HR record by email)
+        emp = await db.employees.find_one({"email": user.get("email")},
+                                          {"_id": 0, "id": 1, "name": 1, "employee_id": 1, "emp_code": 1})
     doc = {
         "id": p.id or new_id(),
         "request_no": await next_sequence("REQ"),
@@ -298,11 +319,11 @@ async def create_request(p: RequestIn, request: Request,
         "expense_type": (p.expense_type if p.expense_type in PEX_TYPES else None) or meta["expense_type"],
         "expense_date": p.expense_date,
         "settlement_mode": p.settlement_mode,
-        "paid_to_type": p.paid_to_type,
+        "paid_to_type": ("person" if p.request_type == "self_expense" else p.paid_to_type),
         "need_by": p.need_by, "priority": p.priority, "description": p.description or "",
         "employee_id": (emp or {}).get("id"),
         "employee_code": (emp or {}).get("employee_id") or (emp or {}).get("emp_code"),
-        "employee_name": (emp or {}).get("name"),
+        "employee_name": (emp or {}).get("name") or ((user.get("name") or user.get("email")) if p.request_type == "self_expense" else None),
         "cost_center_id": (cc or {}).get("id"),
         "cost_center_label": f"{(cc or {}).get('category_code') or ''} · {(cc or {}).get('category_name') or ''}".strip(" ·") if cc else None,
         "site_location": p.site_location,

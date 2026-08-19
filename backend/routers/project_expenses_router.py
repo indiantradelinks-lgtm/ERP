@@ -39,6 +39,7 @@ EXPENSE_TYPES: Dict[str, Dict[str, str]] = {
     "local_purchase":       {"label": "Local Purchase / Consumables", "account": "5105"},
     "vehicle":              {"label": "Vehicle Expense", "account": "5142"},
     "office_admin":         {"label": "Office / Admin", "account": "5400"},
+    "head_office":          {"label": "Head Office Expense", "account": "5400"},
     "misc":                 {"label": "Miscellaneous", "account": "5900"},
     "other":                {"label": "Other", "account": "5900"},
 }
