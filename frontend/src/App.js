@@ -7,6 +7,7 @@ import Layout from "@/components/Layout";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
+import PoAck from "@/pages/PoAck";
 import Dashboard from "@/pages/Dashboard";
 import Clients from "@/pages/Clients";
 import Vendors from "@/pages/Vendors";
@@ -239,6 +240,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/po-ack/:token" element={<PoAck />} />
             <Route path="/app" element={<ProtectedShell><Dashboard /></ProtectedShell>} />
             <Route path="/app/clients" element={<ProtectedShell><Clients /></ProtectedShell>} />
             <Route path="/app/vendors" element={<ProtectedShell><Vendors /></ProtectedShell>} />

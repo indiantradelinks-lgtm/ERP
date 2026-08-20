@@ -4,13 +4,14 @@ import useResource from "@/hooks/useResource";
 import { toneFor } from "@/lib/statusTone";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Mail, Network, FileDown, History, ListChecks, Table2, Send, FilePen, Loader2 } from "lucide-react";
+import { Mail, Network, FileDown, History, ListChecks, Table2, Send, FilePen, Loader2, GitCompareArrows, MailCheck, MailOpen } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import SendEmailDialog from "@/components/SendEmailDialog";
 import EmailHistoryDialog from "@/components/EmailHistoryDialog";
 import LineageTrail from "@/components/LineageTrail";
 import POTermsDialog from "@/components/POTermsDialog";
 import POItemsDialog from "@/components/POItemsDialog";
+import AmendmentCompareDialog from "@/components/AmendmentCompareDialog";
 import { downloadPdf } from "@/lib/exports";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
@@ -32,6 +33,7 @@ export default function PurchaseOrders() {
   const [termsFor, setTermsFor] = useState(null);
   const [itemsFor, setItemsFor] = useState(null);
   const [amendFor, setAmendFor] = useState(null);
+  const [compareFor, setCompareFor] = useState(null);
   const [amendReason, setAmendReason] = useState("");
   const [busyId, setBusyId] = useState(null);
 
@@ -78,6 +80,16 @@ export default function PurchaseOrders() {
     { key: "total", label: "Total", render: (row) => "₹ " + Number(row.total || row.amount || 0).toLocaleString("en-IN") },
     { key: "paid", label: "Paid", render: (row) => (row.paid ? "Yes" : "No") },
     {
+      key: "_vendor_ack", label: "Vendor Ack",
+      render: (row) => {
+        const a = row.vendor_ack || {};
+        if (a.acknowledged_at) return <span className="inline-flex items-center gap-1 text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded-sm bg-emerald-100 text-emerald-700" title={`Acknowledged by ${a.acknowledged_by || "vendor"} on ${String(a.acknowledged_at).slice(0, 10)}`} data-testid={`po-ack-status-${row.id}`}><MailCheck className="h-3 w-3" /> Acked</span>;
+        if (a.opened_at) return <span className="inline-flex items-center gap-1 text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded-sm bg-sky-100 text-sky-700" title={`Email opened ${String(a.opened_at).slice(0, 10)} — not yet acknowledged`} data-testid={`po-ack-status-${row.id}`}><MailOpen className="h-3 w-3" /> Opened</span>;
+        if (a.sent_at) return <span className="inline-flex items-center gap-1 text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded-sm bg-slate-100 text-slate-600" title={`Sent ${String(a.sent_at).slice(0, 10)} — not opened yet`} data-testid={`po-ack-status-${row.id}`}><Mail className="h-3 w-3" /> Sent</span>;
+        return <span className="text-muted-foreground" data-testid={`po-ack-status-${row.id}`}>—</span>;
+      },
+    },
+    {
       key: "status", label: "Status",
       render: (row) => (
         <div>
@@ -104,6 +116,11 @@ export default function PurchaseOrders() {
             {AMENDABLE.includes(row.status) && row.amendment_status !== "requested" && (
               <Button size="sm" variant="outline" className="h-7 px-2 rounded-sm" onClick={() => { setAmendFor(row); setAmendReason(""); }} data-testid={`po-amend-${row.id}`} title="Request amendment (requires approval before editing unlocks)">
                 <FilePen className="h-3 w-3 mr-1" /> Amend
+              </Button>
+            )}
+            {((row.amendments || []).some((a) => a.before) || (row.status === "amendment_in_progress" && row.pre_amendment_snapshot)) && (
+              <Button size="sm" variant="ghost" className="h-7 px-2 text-amber-700" onClick={() => setCompareFor(row)} data-testid={`po-compare-${row.id}`} title="Compare old vs new values across amendments">
+                <GitCompareArrows className="h-3 w-3 mr-1" /> Compare
               </Button>
             )}
             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setItemsFor(row)} data-testid={`po-items-${row.id}`} title="Preview / edit line items, GST, terms">
@@ -156,6 +173,7 @@ export default function PurchaseOrders() {
       )}
       {termsFor && <POTermsDialog po={termsFor} onClose={(saved) => { setTermsFor(null); if (saved) r.reload?.(); }} />}
       {itemsFor && <POItemsDialog po={itemsFor} canWrite={r.canWrite} onClose={(saved) => { setItemsFor(null); if (saved) r.reload?.(); }} />}
+      {compareFor && <AmendmentCompareDialog po={compareFor} onClose={() => setCompareFor(null)} />}
       <Dialog open={!!amendFor} onOpenChange={(o) => !o && setAmendFor(null)}>
         <DialogContent className="max-w-md rounded-sm" data-testid="po-amend-dialog">
           <DialogHeader>

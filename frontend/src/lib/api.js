@@ -32,7 +32,9 @@ api.interceptors.response.use(
       if (!_redirected && typeof window !== "undefined") {
         _redirected = true;
         const here = window.location.pathname + window.location.search;
-        if (!here.startsWith("/login")) {
+        // Public token pages (e.g. vendor PO acknowledgement) must never bounce to /login.
+        const isPublicPage = here.startsWith("/login") || here.startsWith("/po-ack");
+        if (!isPublicPage) {
           window.location.href = `/login?next=${encodeURIComponent(here)}`;
         }
       }

@@ -524,6 +524,28 @@ async def send_entity(
         if att:
             attachments_inline.append(att)
 
+    # PO vendor-acknowledgement tracking: inject one-click ack button + open pixel
+    body_text = payload.body_text
+    body_html = payload.body_html
+    ack_token = None
+    if module == "purchase_order":
+        ack_token = (rec.get("vendor_ack") or {}).get("token") or new_id()
+        frontend = os.environ.get("FRONTEND_URL", "").rstrip("/")
+        ack_url = f"{frontend}/po-ack/{ack_token}"
+        pixel_url = f"{frontend}/api/public/po-track/{ack_token}/open.gif"
+        ack_html = (
+            f'<div style="margin-top:18px;padding:14px;border:1px solid #e2e8f0;background:#f8fafc;">'
+            f'<a href="{ack_url}" style="display:inline-block;background:#1d4ed8;color:#ffffff;'
+            f'padding:10px 20px;text-decoration:none;font-weight:bold;border-radius:4px;">'
+            f'Acknowledge PO {rec.get("po_number") or ""}</a>'
+            f'<p style="font-size:12px;color:#64748b;margin:8px 0 0;">One click confirms you have received '
+            f'and accepted this Purchase Order. Or open: {ack_url}</p></div>'
+            f'<img src="{pixel_url}" width="1" height="1" alt="" style="display:none;"/>'
+        )
+        base_html = body_html or (f"<div style='white-space:pre-wrap;font-family:Arial,sans-serif;font-size:14px;'>{body_text or ''}</div>")
+        body_html = base_html + ack_html
+        body_text = (body_text or "") + f"\n\n— Acknowledge this PO in one click: {ack_url}"
+
     outbox_id = await _queue_outbox(
         sender_type=sender_type,
         sender_user_id=user["id"],
@@ -533,14 +555,20 @@ async def send_entity(
         cc=[str(e) for e in (payload.cc or [])],
         bcc=[str(e) for e in (payload.bcc or [])],
         subject=payload.subject,
-        body_text=payload.body_text,
-        body_html=payload.body_html,
+        body_text=body_text,
+        body_html=body_html,
         reply_to=str(payload.reply_to) if payload.reply_to else None,
         attachments_inline=attachments_inline,
         file_ids=[],
         related={"entity_type": module, "entity_id": record_id, "entity_ref": recip.get("party_id")},
         queued_by=user["id"],
     )
+    if module == "purchase_order" and ack_token:
+        set_doc = {"vendor_ack.token": ack_token, "vendor_ack.sent_at": now_iso(),
+                   "vendor_ack.last_outbox_id": outbox_id, "updated_at": now_iso()}
+        if rec.get("status") == "approved":
+            set_doc["status"] = "sent_to_vendor"
+        await db.purchase_orders.update_one({"id": record_id}, {"$set": set_doc})
     background_tasks.add_task(_send_and_log, outbox_id)
     return {
         "outbox_id": outbox_id,

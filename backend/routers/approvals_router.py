@@ -254,10 +254,14 @@ async def approval_action(approval_id: str, payload: ApprovalAction, user: dict 
                               "updated_at": now_iso()}},
                 )
             elif updated.get("type") == "po_amendment" and updated.get("record_id"):
-                # Amendment request approved → unlock the PO for editing.
+                # Amendment request approved → snapshot current values + unlock editing.
+                from routers.procurement_router import AMEND_SNAPSHOT_FIELDS
+                po_doc = await db.purchase_orders.find_one({"id": updated["record_id"]}, {"_id": 0}) or {}
+                snap = {k: po_doc.get(k) for k in AMEND_SNAPSHOT_FIELDS}
                 await db.purchase_orders.update_one(
                     {"id": updated["record_id"]},
                     {"$set": {"amendment_status": "unlocked", "status": "amendment_in_progress",
+                              "pre_amendment_snapshot": snap,
                               "amendment_unlocked_at": now_iso(), "updated_at": now_iso()}},
                 )
             elif updated.get("type") == "rfq" and updated.get("record_id"):

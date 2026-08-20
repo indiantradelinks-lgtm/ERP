@@ -67,9 +67,54 @@ def recalc_po_items(items: List[Dict[str, Any]], gst_type: str = "cgst_sgst") ->
     return out
 
 
+AMEND_SNAPSHOT_FIELDS = ("items", "amount", "gst_amount", "cgst_amount", "sgst_amount",
+                         "igst_amount", "total", "gst_type", "delivery_terms",
+                         "special_terms", "other_terms", "payment_terms")
+
+_ITEM_DIFF_FIELDS = (("name", "Item name"), ("quantity", "Qty"), ("rate", "Rate"),
+                     ("gst_pct", "GST %"), ("unit", "Unit"), ("make", "Make"),
+                     ("technical_specs", "Specs"))
+_HEADER_DIFF_FIELDS = (("gst_type", "GST Type"), ("delivery_terms", "Delivery Terms"),
+                       ("special_terms", "Special Terms"), ("other_terms", "Other Terms"),
+                       ("amount", "Sub-total"), ("gst_amount", "Total GST"), ("total", "Grand Total"))
+
+
+def _diff_eq(a, b) -> bool:
+    try:
+        return abs(float(a) - float(b)) < 1e-6
+    except (TypeError, ValueError):
+        return (a or "") == (b or "")
+
+
+def po_amendment_changes(before: Dict[str, Any], after: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Structured old→new diff between two PO snapshots (items + header)."""
+    changes: List[Dict[str, Any]] = []
+    b_items = before.get("items") or []
+    a_items = after.get("items") or []
+    for i in range(max(len(b_items), len(a_items))):
+        b = b_items[i] if i < len(b_items) else None
+        a = a_items[i] if i < len(a_items) else None
+        if b is None:
+            changes.append({"kind": "item_added", "index": i, "item": (a or {}).get("name")})
+            continue
+        if a is None:
+            changes.append({"kind": "item_removed", "index": i, "item": b.get("name")})
+            continue
+        for f, label in _ITEM_DIFF_FIELDS:
+            if not _diff_eq(b.get(f), a.get(f)):
+                changes.append({"kind": "item_field", "index": i, "item": a.get("name") or b.get("name"),
+                                "field": label, "old": b.get(f), "new": a.get(f)})
+    for f, label in _HEADER_DIFF_FIELDS:
+        if not _diff_eq(before.get(f), after.get(f)):
+            changes.append({"kind": "header", "field": label, "old": before.get(f), "new": after.get(f)})
+    return changes
+
+
 async def create_po_approval(po: Dict[str, Any], user: dict) -> str:
     chain = await build_chain("purchase_order")
     rev = int(po.get("revision") or 0)
+    last_amend = (po.get("amendments") or [])[-1] if po.get("amendments") else {}
+    n_changes = len(last_amend.get("changes") or [])
     approval = {
         "id": new_id(),
         "type": "purchase_order",
@@ -78,7 +123,8 @@ async def create_po_approval(po: Dict[str, Any], user: dict) -> str:
         "reference": po.get("po_number"),
         "title": f"PO {po.get('po_number')}{f' (Rev {rev})' if rev else ''} · {po.get('vendor') or ''}",
         "summary": f"{len(po.get('items') or [])} item(s) · ₹ {float(po.get('total') or po.get('amount') or 0):,.2f}"
-                   + (" · AMENDED" if rev else ""),
+                   + (f" · AMENDED — {n_changes} change(s)" if rev else ""),
+        "amendment_changes": (last_amend.get("changes") or [])[:30] if rev else [],
         "requested_by": user.get("name") or user.get("email"),
         "requested_by_id": user.get("id"),
         "status": "pending",
@@ -667,10 +713,15 @@ async def submit_po(po_id: str, request: Request,
         rev = int(po.get("revision") or 0) + 1
         upd["revision"] = rev
         upd["amendment_status"] = "completed"
+        before = po.get("pre_amendment_snapshot")
+        after = {k: po.get(k) for k in AMEND_SNAPSHOT_FIELDS}
         amendments = list(po.get("amendments") or [])
         amendments.append({"revision": rev, "reason": po.get("amendment_reason") or "",
-                           "amended_by": user.get("name") or user.get("email"), "at": now_iso()})
+                           "amended_by": user.get("name") or user.get("email"), "at": now_iso(),
+                           "before": before, "after": after,
+                           "changes": po_amendment_changes(before or {}, after) if before else []})
         upd["amendments"] = amendments
+        upd["pre_amendment_snapshot"] = None
         po = {**po, **upd}
     await db.approvals.update_many(
         {"type": "purchase_order", "record_id": po_id,
@@ -1386,3 +1437,73 @@ async def grn_pdf(grn_id: str, user: dict = Depends(require_permission("grns", "
         vendor = await db.vendors.find_one({"id": vid}, {"_id": 0})
     pdf = render_grn_pdf(grn, po, vendor)
     return _pdf_response(pdf, f"{grn.get('grn_number') or grn_id}.pdf")
+
+
+# ─────────────────────────── Vendor Acknowledgement (public, token-based) ───────────────────────────
+import base64 as _b64
+
+_TRACK_GIF = _b64.b64decode("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
+
+
+async def _po_by_ack_token(token: str) -> Dict[str, Any]:
+    po = await db.purchase_orders.find_one({"vendor_ack.token": token}, {"_id": 0})
+    if not po:
+        raise HTTPException(status_code=404, detail="Invalid or expired acknowledgement link")
+    return po
+
+
+@router.get("/public/po-track/{token}/open.gif")
+async def po_track_open(token: str):
+    """1×1 tracking pixel embedded in the PO email — records first open."""
+    po = await db.purchase_orders.find_one({"vendor_ack.token": token}, {"_id": 0, "id": 1, "vendor_ack": 1})
+    if po and not (po.get("vendor_ack") or {}).get("opened_at"):
+        await db.purchase_orders.update_one({"id": po["id"]}, {"$set": {"vendor_ack.opened_at": now_iso()}})
+    return Response(content=_TRACK_GIF, media_type="image/gif",
+                    headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
+
+
+@router.get("/public/po-ack/{token}")
+async def po_ack_info(token: str):
+    po = await _po_by_ack_token(token)
+    if not (po.get("vendor_ack") or {}).get("opened_at"):
+        await db.purchase_orders.update_one({"id": po["id"]}, {"$set": {"vendor_ack.opened_at": now_iso()}})
+    ack = po.get("vendor_ack") or {}
+    return {
+        "po_number": po.get("po_number"),
+        "revision": int(po.get("revision") or 0),
+        "vendor": po.get("vendor"),
+        "project": po.get("project"),
+        "date": (po.get("date") or po.get("created_at") or "")[:10],
+        "total": po.get("total") or po.get("amount") or 0,
+        "items": [{"name": i.get("name"), "quantity": i.get("quantity"), "unit": i.get("unit"),
+                   "rate": i.get("rate"), "gst_pct": i.get("gst_pct"), "line_total": i.get("line_total")}
+                  for i in (po.get("items") or [])],
+        "delivery_terms": po.get("delivery_terms"),
+        "sent_at": ack.get("sent_at"),
+        "acknowledged_at": ack.get("acknowledged_at"),
+        "acknowledged_by": ack.get("acknowledged_by"),
+    }
+
+
+class POAckIn(BaseModel):
+    name: Optional[str] = None
+    remarks: Optional[str] = None
+
+
+@router.post("/public/po-ack/{token}")
+async def po_acknowledge(token: str, payload: POAckIn, request: Request):
+    po = await _po_by_ack_token(token)
+    ack = po.get("vendor_ack") or {}
+    if ack.get("acknowledged_at"):
+        return {"po_number": po.get("po_number"), "acknowledged_at": ack["acknowledged_at"],
+                "acknowledged_by": ack.get("acknowledged_by"), "already": True}
+    now = now_iso()
+    who = (payload.name or "").strip() or po.get("vendor") or "Vendor"
+    set_doc = {"vendor_ack.acknowledged_at": now, "vendor_ack.acknowledged_by": who,
+               "vendor_ack.ack_ip": _ip(request), "updated_at": now}
+    if payload.remarks:
+        set_doc["vendor_ack.remarks"] = payload.remarks.strip()[:500]
+    if not ack.get("opened_at"):
+        set_doc["vendor_ack.opened_at"] = now
+    await db.purchase_orders.update_one({"id": po["id"]}, {"$set": set_doc})
+    return {"po_number": po.get("po_number"), "acknowledged_at": now, "acknowledged_by": who, "already": False}
