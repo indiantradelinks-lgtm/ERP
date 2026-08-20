@@ -300,9 +300,22 @@ def apply_action(approval: dict, action: str, user: dict, comment: str | None = 
     step = chain[idx]
     now = datetime.now(timezone.utc).isoformat()
 
-    # Allow super_admin to act on any step, otherwise enforce role match
-    if user.get("role") != "super_admin" and user.get("role") != step.get("role"):
-        raise PermissionError(f"Only role '{step['role']}' can act on this step")
+    # Allow super_admin to act on any step; otherwise enforce role match.
+    # Finance/Accounts steps ('accounts_executive') additionally accept any role
+    # granted accounting write permission in the RBAC matrix (e.g. Executive ACC).
+    from rbac import can as _can
+    _role = user.get("role")
+    _step_role = step.get("role")
+    _authorized = (
+        _role == "super_admin"
+        or _role == _step_role
+        or (_step_role == "accounts_executive" and _can(_role, "accounting", "write"))
+    )
+    if not _authorized:
+        raise PermissionError(
+            f"Only role '{step['role']}'"
+            + (" (or a role with Accounts/Finance write permission)" if _step_role == "accounts_executive" else "")
+            + " can act on this step")
 
     # Mandatory comment for any "bounce-back" action (reject / request_info).
     if action in ("reject", "request_info"):

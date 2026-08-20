@@ -5422,3 +5422,8 @@ Fix (crud_router.py, collection employees):
 2. Write-time sync: create sets name ← employee_name; update mirrors name → employee_name (and vice versa).
 3. Preview DB migration: 2 docs backfilled (name ← employee_name), zero data loss (employee_name preserved).
 Verified via screenshot: EMP-2026-0134/0133 now show names in list and fully populate in Edit (name, father name, employment type).
+
+### Iteration 186 (Aug 2026) — Finance approval step role-permission fix ✅
+Issue: "Only role 'accounts_executive' can act on this step" blocked authorized Executive ACC/finance users whose role name differs from the step's exact role.
+Fix (approval_engine.py act()): steps with role 'accounts_executive' now also accept ANY role granted `accounting write` in the RBAC matrix (rbac.can) — e.g. director or custom Executive ACC roles from the Role Register. All other step roles keep strict matching; super_admin unchanged. Error message now mentions the permission alternative.
+Verified: director (accounting write, non-matching role) approved a synthetic finance step via POST /approvals/{id}/action; hr_executive/site_engineer remain blocked (logic test). Test approval cleaned up.
