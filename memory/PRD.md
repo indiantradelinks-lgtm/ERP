@@ -5414,3 +5414,11 @@ User reported "Scaffolding Material" default (screenshot was PRODUCTION — old 
 2. Provided cost_center_id now validated (400 if not found) and label saved exactly (category_name).
 3. Queue push `_push_bill_to_accounts` confirmed carrying cost_center_id/label for booking/payment processing.
 Curl-verified: no-transport project without CC → 400; user-selected CONSUM CC saved exactly as "Consumables"; transport project auto-picks "Vehicle/Logistics Items"; bogus CC id → 400. Test bills cleaned.
+
+### Iteration 185 (Aug 2026) — Employee Master records not displaying in View/Edit ✅
+Root cause: some employee docs (created via worker/test flows) stored the person's name under `employee_name` with no `name` key → Employee Master list showed "—" and Edit opened blank-looking.
+Fix (crud_router.py, collection employees):
+1. Read-time coalesce in list + detail: name ← employee_name when name missing (works for PRODUCTION data automatically after redeploy, no DB migration needed there).
+2. Write-time sync: create sets name ← employee_name; update mirrors name → employee_name (and vice versa).
+3. Preview DB migration: 2 docs backfilled (name ← employee_name), zero data loss (employee_name preserved).
+Verified via screenshot: EMP-2026-0134/0133 now show names in list and fully populate in Edit (name, father name, employment type).

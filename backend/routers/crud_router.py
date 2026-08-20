@@ -146,6 +146,10 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
     async def list_items(user: dict = Depends(require_permission(perm, "read"))):
         q = await _list_filter(collection, user)
         rows = await db[collection].find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
+        if collection == "employees":
+            for r in rows:
+                if not r.get("name") and r.get("employee_name"):
+                    r["name"] = r["employee_name"]
         return mask_list(rows, collection, user)
 
     @router.post(f"/{resource}")
@@ -165,6 +169,9 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
                 doc["allow_multi_dept"] = False
             # Master Category split — Employee Master vs Worker/Labour Master
             doc["master_category"] = doc.get("master_category") or "employee"
+            # Canonical name: some flows send `employee_name` — keep `name` populated
+            if not doc.get("name") and doc.get("employee_name"):
+                doc["name"] = doc["employee_name"]
             if doc["master_category"] not in ("employee", "worker"):
                 raise HTTPException(status_code=400, detail="master_category must be 'employee' or 'worker'")
             # Indian statutory ID + employment-type validation
@@ -267,6 +274,8 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
         row = await db[collection].find_one({"id": item_id}, {"_id": 0})
         if not row:
             raise HTTPException(status_code=404, detail="Not found")
+        if collection == "employees" and not row.get("name") and row.get("employee_name"):
+            row["name"] = row["employee_name"]
         if collection == "projects":
             pq = await projects_collection_filter(user)
             if pq is not None:
@@ -283,6 +292,11 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
             for f in SENSITIVE_FIELDS.get(collection, {}):
                 payload.pop(f, None)
         if collection == "employees":
+            # Canonical name sync (some flows use `employee_name`)
+            if payload.get("name"):
+                payload["employee_name"] = payload["name"]
+            elif payload.get("employee_name") and not payload.get("name"):
+                payload["name"] = payload["employee_name"]
             # Keep departments[] and legacy `department` in sync, and respect
             # allow_multi_dept on writes.
             depts = payload.get("departments")
