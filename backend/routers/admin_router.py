@@ -24,6 +24,44 @@ from pydantic import EmailStr, Field
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
+@router.get("/employee-deletions")
+async def employee_deletions(user: dict = Depends(require_permission("employees", "write"))):
+    """Who deleted which employee/worker, when — with restore capability."""
+    rows = []
+    async for a in db.audit_logs.find({"resource": {"$in": ["employees", "workers"]}, "action": "delete"},
+                                      {"_id": 0}).sort("ts", -1).limit(200):
+        b = a.get("before") or {}
+        already = await db.employees.find_one({"id": a.get("record_id")}, {"_id": 0, "id": 1})
+        rows.append({
+            "audit_id": a["id"], "ts": a.get("ts"),
+            "deleted_by": a.get("actor_name"), "deleted_by_role": a.get("actor_role"),
+            "employee_id": b.get("employee_id") or b.get("emp_code"),
+            "name": b.get("name") or b.get("employee_name"),
+            "department": b.get("department"),
+            "restorable": bool(b) and not already,
+        })
+    return rows
+
+
+@router.post("/employee-deletions/{audit_id}/restore")
+async def restore_deleted_employee(audit_id: str, request: Request,
+                                   user: dict = Depends(require_permission("employees", "write"))):
+    a = await db.audit_logs.find_one({"id": audit_id, "action": "delete"}, {"_id": 0})
+    if not a or not a.get("before"):
+        raise HTTPException(404, "Deletion record not found or has no snapshot to restore")
+    snap = dict(a["before"])
+    if await db.employees.find_one({"id": snap.get("id")}, {"_id": 0, "id": 1}):
+        raise HTTPException(400, "This employee already exists — nothing to restore")
+    snap["restored_at"] = now_iso()
+    snap["restored_by"] = user.get("name") or user.get("email")
+    await db.employees.insert_one(snap)
+    snap.pop("_id", None)
+    await audit(user=user, action="employee_restore", resource="employees",
+                record_id=snap.get("id"), after={"employee_id": snap.get("employee_id"), "name": snap.get("name")},
+                ip=request.client.host if request.client else "")
+    return {"ok": True, "restored": {"employee_id": snap.get("employee_id"), "name": snap.get("name")}}
+
+
 async def require_super_admin(user: dict = Depends(get_current_user)) -> dict:
     if user.get("role") != "super_admin":
         raise HTTPException(status_code=403, detail="Super admin only")

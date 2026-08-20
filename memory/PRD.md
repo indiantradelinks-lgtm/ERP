@@ -5427,3 +5427,11 @@ Verified via screenshot: EMP-2026-0134/0133 now show names in list and fully pop
 Issue: "Only role 'accounts_executive' can act on this step" blocked authorized Executive ACC/finance users whose role name differs from the step's exact role.
 Fix (approval_engine.py act()): steps with role 'accounts_executive' now also accept ANY role granted `accounting write` in the RBAC matrix (rbac.can) — e.g. director or custom Executive ACC roles from the Role Register. All other step roles keep strict matching; super_admin unchanged. Error message now mentions the permission alternative.
 Verified: director (accounting write, non-matching role) approved a synthetic finance step via POST /approvals/{id}/action; hr_executive/site_engineer remain blocked (logic test). Test approval cleaned up.
+
+### Iteration 187 (Aug 2026) — Employee Deletion Log & Restore (prod data-visibility complaint) ✅
+User reported Employee Master data "not visible" on PRODUCTION (no preview issue — 51 employees intact; likely old build without iter-185 name fix, or actual deletions).
+Built recovery tooling:
+1. GET /api/admin/employee-deletions — last 200 employee delete audit entries (name, emp id, dept, deleted_by + role, timestamp, restorable flag from `before` snapshot).
+2. POST /api/admin/employee-deletions/{audit_id}/restore — reinserts snapshot (blocked if id exists), stamps restored_by/at, audited as employee_restore.
+3. UI: "Deletion Log" button on Employee Master header (testid emp-deletion-log) → dialog (emp-deletion-dialog) with per-row Restore (del-restore-*).
+E2E verified: create → delete → appears in log with actor → restore → record back with restored_by. UI screenshot verified. NOTE: user must REDEPLOY for production; then they can see who deleted what and restore mistakes themselves.

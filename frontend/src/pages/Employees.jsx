@@ -314,8 +314,29 @@ export default function Employees({ master = "employee" }) {
     }
   };
 
+  const [showDelLog, setShowDelLog] = useState(false);
+  const [delLog, setDelLog] = useState(null);
+  const openDelLog = async () => {
+    setShowDelLog(true);
+    try { const { data } = await api.get("/admin/employee-deletions"); setDelLog(data || []); }
+    catch (e) { setDelLog([]); toast.error(e.response?.data?.detail || "Could not load deletion log"); }
+  };
+  const restoreDeleted = async (r) => {
+    if (!window.confirm(`Restore "${r.name}" (${r.employee_id || "—"})?`)) return;
+    try {
+      await api.post(`/admin/employee-deletions/${r.audit_id}/restore`);
+      toast.success(`Restored ${r.name}`);
+      openDelLog();
+      window.location.reload();
+    } catch (e) { toast.error(e.response?.data?.detail || "Restore failed"); }
+  };
+
   const extraActions = (
     <div className="flex items-center gap-2" data-testid="emp-bulk-actions">
+      <Button size="sm" variant="outline" onClick={openDelLog} data-testid="emp-deletion-log"
+        title="See who deleted employee records and restore them">
+        <History className="h-4 w-4 mr-1" /> Deletion Log
+      </Button>
       <Button
         size="sm" variant="outline"
         onClick={downloadBulkTemplate}
@@ -354,6 +375,36 @@ export default function Employees({ master = "employee" }) {
 
   return (
     <>
+      {showDelLog && (
+        <Dialog open onOpenChange={(o) => !o && setShowDelLog(false)}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto" data-testid="emp-deletion-dialog">
+            <DialogHeader><DialogTitle>Employee Deletion Log — audit trail & restore</DialogTitle></DialogHeader>
+            {delLog === null ? <div className="text-sm text-slate-400 py-4">Loading…</div> : delLog.length === 0 ? (
+              <div className="text-sm text-slate-500 py-4">No employee deletions recorded. If data looks missing, it was not deleted — check department visibility or redeploy the latest build.</div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="text-xs uppercase text-slate-500">
+                  <tr><th className="text-left py-1">Employee</th><th className="text-left py-1">Deleted By</th><th className="text-left py-1">When</th><th className="text-right py-1">Action</th></tr>
+                </thead>
+                <tbody>
+                  {delLog.map((r) => (
+                    <tr key={r.audit_id} className="border-t" data-testid={`del-row-${r.audit_id}`}>
+                      <td className="py-1.5"><b>{r.name || "—"}</b><div className="text-xs text-slate-500">{r.employee_id || "—"} · {r.department || "—"}</div></td>
+                      <td className="py-1.5 text-xs">{r.deleted_by}<div className="text-slate-500">{r.deleted_by_role}</div></td>
+                      <td className="py-1.5 text-xs">{r.ts ? new Date(r.ts).toLocaleString() : "—"}</td>
+                      <td className="py-1.5 text-right">
+                        {r.restorable
+                          ? <Button size="sm" variant="outline" onClick={() => restoreDeleted(r)} data-testid={`del-restore-${r.audit_id}`}>Restore</Button>
+                          : <span className="text-[10px] text-slate-400">exists / no snapshot</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </DialogContent>
+        </Dialog>
+      )}
       <DataTableShell
         key={master}
         title={meta.title}
