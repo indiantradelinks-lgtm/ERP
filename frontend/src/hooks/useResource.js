@@ -26,6 +26,7 @@ export default function useResource(resource) {
   const { can } = useAuth() || { can: () => true };
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
   const permKey = SLUG_TO_PERM[resource] || resource;
   const canRead = can(permKey, "read");
@@ -37,14 +38,19 @@ export default function useResource(resource) {
     try {
       const { data } = await api.get(`/${resource}`);
       setData(Array.isArray(data) ? data : []);
+      setLoadError(null);
     } catch (e) {
-      if (e.response?.status !== 403) {
+      if (e.response?.status === 403) {
+        setLoadError(`Permission needed: your role cannot view '${resource}' on screen. Ask your admin to grant '${permKey} read' in the Role Register.`);
+        toast.error(`No permission to view ${resource} — records exist but are hidden for your role. Ask admin for '${permKey} read'.`);
+      } else {
+        setLoadError(`Failed to load ${resource}${e.response?.status ? ` (HTTP ${e.response.status})` : ""}`);
         toast.error(`Failed to load ${resource}`);
       }
     } finally {
       setLoading(false);
     }
-  }, [resource]);
+  }, [resource, permKey]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -80,5 +86,5 @@ export default function useResource(resource) {
     }
   }, [resource]);
 
-  return { data, loading, reload: load, create, update, remove, canRead, canWrite, canDelete, exportResource: resource };
+  return { data, loading, loadError, reload: load, create, update, remove, canRead, canWrite, canDelete, exportResource: resource };
 }

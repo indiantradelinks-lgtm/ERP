@@ -153,6 +153,7 @@ export default function DataTableShell({
   onCreate,
   onUpdate,
   onDelete,
+  loadError,
   testidPrefix = "tbl",
   searchKeys,
   rightSlot,
@@ -317,7 +318,11 @@ export default function DataTableShell({
           <TableBody>
             {filtered.length === 0 && (
               <TableRow>
-                <TableCell colSpan={columns.length + 1} className="text-center text-sm text-muted-foreground py-10">No records.</TableCell>
+                <TableCell colSpan={columns.length + 1} className="text-center text-sm py-10">
+                  {loadError
+                    ? <span className="text-rose-600" data-testid="table-load-error">{loadError}</span>
+                    : <span className="text-muted-foreground">No records.</span>}
+                </TableCell>
               </TableRow>
             )}
             {filtered.map((row) => (

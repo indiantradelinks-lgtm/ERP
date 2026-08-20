@@ -24,6 +24,7 @@ projects):
     site_engineer, supervisor, safety_officer, store_incharge,
     purchase_officer (when not admin), project_manager (for site rows only)
 """
+import re
 from typing import Dict, List
 from datetime import datetime, timezone
 
@@ -234,5 +235,6 @@ def department_filter(user: dict, field: str = "departments") -> dict | None:
     depts = _user_departments(user)
     if not depts:
         return {"_no_match_sentinel_": True}
-    # Match either the new array OR the legacy single-dept string.
-    return {"$or": [{field: {"$in": depts}}, {"department": {"$in": depts}}]}
+    # Case-insensitive match either the new array OR the legacy single-dept string.
+    pats = [re.compile(f"^{re.escape(d)}$", re.IGNORECASE) for d in depts]
+    return {"$or": [{field: {"$in": pats}}, {"department": {"$in": pats}}]}

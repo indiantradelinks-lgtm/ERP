@@ -5435,3 +5435,11 @@ Built recovery tooling:
 2. POST /api/admin/employee-deletions/{audit_id}/restore — reinserts snapshot (blocked if id exists), stamps restored_by/at, audited as employee_restore.
 3. UI: "Deletion Log" button on Employee Master header (testid emp-deletion-log) → dialog (emp-deletion-dialog) with per-row Restore (del-restore-*).
 E2E verified: create → delete → appears in log with actor → restore → record back with restored_by. UI screenshot verified. NOTE: user must REDEPLOY for production; then they can see who deleted what and restore mistakes themselves.
+
+### Iteration 188 (Aug 2026) — "Exports have data but screen empty" fix ✅
+Diagnosis: exports bypass list scoping; on-screen list can be emptied by (a) dept_head department name case-mismatch in scope.department_filter, or (b) silently swallowed load errors (useResource ignored 403 → table showed plain "No records.").
+Fixes:
+1. scope.py department_filter: case-insensitive regex matching for departments (array + legacy single field). `import re` added properly (first attempt landed inside docstring — corrected).
+2. useResource: exposes `loadError`; 403 → clear toast + message naming the missing '{perm} read' permission; other failures show HTTP status.
+3. DataTableShell: new `loadError` prop — empty table now shows the exact failure reason in red (testid table-load-error) instead of "No records."; Employees page wired.
+Verified: admin list intact (51), dept_head filter produces case-insensitive query, RouteGuard confirmed blocking no-permission roles with Access Denied page.

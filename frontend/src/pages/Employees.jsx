@@ -417,6 +417,7 @@ export default function Employees({ master = "employee" }) {
         onCreate={r.create}
         onUpdate={r.update}
         onDelete={r.remove}
+        loadError={r.loadError}
         testidPrefix={meta.testidPrefix}
         attachmentsParentType="employees"
         createDefaults={{ master_category: master }}
