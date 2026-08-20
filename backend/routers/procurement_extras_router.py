@@ -330,6 +330,8 @@ async def cancel_rate_contract(rc_id: str, reason: str = Query(..., min_length=3
 # ─────────────────────────────────────────────────────────────────────────────
 class ServiceOrderIn(BaseModel):
     vendor_id: str
+    pr_id: Optional[str] = None
+    pr_number: Optional[str] = None
     project_id: Optional[str] = None
     project_code: Optional[str] = None
     site_id: Optional[str] = None
@@ -382,6 +384,16 @@ async def create_service_order(payload: ServiceOrderIn, request: Request,
                                user: dict = Depends(require_permission("purchase_orders", "write"))):
     if payload.rate_basis not in RATE_BASIS:
         raise HTTPException(400, f"rate_basis must be one of {RATE_BASIS}")
+    if not (payload.pr_id or payload.pr_number):
+        raise HTTPException(400, "No Service Order can be raised without a PR — enter a valid PR Number")
+    pr = await db.purchase_requisitions.find_one(
+        {"$or": [{"id": payload.pr_id or ""}, {"pr_number": payload.pr_number or ""}]}, {"_id": 0})
+    if not pr:
+        raise HTTPException(400, f"PR '{payload.pr_number or payload.pr_id}' not found — a valid PR is mandatory to raise an SO")
+    if float(payload.quantity or 0) <= 0:
+        raise HTTPException(400, "Data missing: quantity is zero — enter a valid quantity")
+    if float(payload.rate or 0) <= 0:
+        raise HTTPException(400, "Data missing: rate/price is zero — enter a valid rate")
     vendor = await db.vendors.find_one({"id": payload.vendor_id}, {"_id": 0})
     if not vendor:
         raise HTTPException(404, "Vendor not found")
@@ -397,6 +409,8 @@ async def create_service_order(payload: ServiceOrderIn, request: Request,
 
     doc = payload.model_dump()
     doc["id"] = new_id()
+    doc["pr_id"] = pr["id"]
+    doc["pr_number"] = pr.get("pr_number")
     doc["so_number"] = await next_sequence("SO")
     doc["vendor_name"] = vendor.get("name")
     doc["base_amount"] = round(base, 2)

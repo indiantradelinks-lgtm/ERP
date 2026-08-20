@@ -38,6 +38,9 @@ export function registerServiceWorker() {
     let reloaded = false;
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (reloaded) return;
+      // Never yank the page out from under a user who is typing (e.g. login form).
+      const el = document.activeElement;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
       reloaded = true;
       window.location.reload();
     });

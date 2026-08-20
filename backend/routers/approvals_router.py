@@ -26,6 +26,7 @@ APPROVAL_TYPE_DEPT = {
     "advance": "hr", "hr_letter": "hr", "onboarding": "hr",
     # Procurement
     "purchase_order": "procurement", "purchase_requisition": "procurement",
+    "po_amendment": "procurement",
     "rfq": "procurement", "vendor": "procurement",
     # Store / Inventory
     "grn": "store", "material_outward": "store",
@@ -245,6 +246,20 @@ async def approval_action(approval_id: str, payload: ApprovalAction, user: dict 
                     {"id": updated["record_id"]},
                     {"$set": {"status": "approved", "approved_at": now_iso(), "updated_at": now_iso()}},
                 )
+            elif updated.get("type") == "purchase_order" and updated.get("record_id"):
+                await db.purchase_orders.update_one(
+                    {"id": updated["record_id"]},
+                    {"$set": {"status": "approved", "approved_at": now_iso(),
+                              "approval_id": updated["id"], "reject_reason": None,
+                              "updated_at": now_iso()}},
+                )
+            elif updated.get("type") == "po_amendment" and updated.get("record_id"):
+                # Amendment request approved → unlock the PO for editing.
+                await db.purchase_orders.update_one(
+                    {"id": updated["record_id"]},
+                    {"$set": {"amendment_status": "unlocked", "status": "amendment_in_progress",
+                              "amendment_unlocked_at": now_iso(), "updated_at": now_iso()}},
+                )
             elif updated.get("type") == "rfq" and updated.get("record_id"):
                 await db.rfqs.update_one(
                     {"id": updated["record_id"]},
@@ -293,6 +308,11 @@ async def approval_action(approval_id: str, payload: ApprovalAction, user: dict 
             await db.logistics_vendor_bills.update_one(
                 {"id": updated["record_id"]},
                 {"$set": {"status": "rejected", "reject_reason": payload.comment or "", "updated_at": now_iso()}})
+        if updated.get("type") == "po_amendment" and updated.get("record_id"):
+            await db.purchase_orders.update_one(
+                {"id": updated["record_id"]},
+                {"$set": {"amendment_status": "rejected",
+                          "amendment_reject_reason": payload.comment or "", "updated_at": now_iso()}})
         await _mirror_downstream_record(updated, status="pending_revision",
                                        reason=payload.comment)
         await _push_inapp_to_originator(updated, {

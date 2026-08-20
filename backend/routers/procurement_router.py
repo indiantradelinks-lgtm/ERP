@@ -25,6 +25,74 @@ from audit import audit
 from sequences import next_sequence, stamp_dept_doc
 from approval_engine import build_chain, insert_approval, copy_approval_doc_fields
 
+# PO lifecycle: statuses where the PO is under approval or finalised — no edits allowed.
+PO_LOCKED_STATUSES = frozenset({"pending_approval", "submitted", "approved",
+                                "sent_to_vendor", "received", "partially_received"})
+
+
+def validate_po_items(items: List[Dict[str, Any]]) -> None:
+    if not items:
+        raise HTTPException(status_code=400, detail="Data missing: PO must have at least one line item")
+    for idx, it in enumerate(items, 1):
+        name = (it.get("name") or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail=f"Data missing: Item {idx} has no name/description")
+        if float(it.get("quantity") or 0) <= 0:
+            raise HTTPException(status_code=400, detail=f"Data missing: '{name}' has zero quantity — enter a valid quantity")
+        if float(it.get("rate") or 0) <= 0:
+            raise HTTPException(status_code=400, detail=f"Data missing: '{name}' has zero rate/price — enter a valid rate")
+
+
+def recalc_po_items(items: List[Dict[str, Any]], gst_type: str = "cgst_sgst") -> Dict[str, Any]:
+    """Recompute per-line GST + totals. Returns fields to $set on the PO."""
+    sub_total = gst_total = 0.0
+    for it in items:
+        qty = float(it.get("quantity") or 0)
+        rate = float(it.get("rate") or 0)
+        gst_pct = float(it.get("gst_pct") if it.get("gst_pct") is not None else 18)
+        line_value = round(qty * rate, 2)
+        gst_amount = round(line_value * gst_pct / 100, 2)
+        it.update({"quantity": qty, "rate": rate, "gst_pct": gst_pct,
+                   "line_value": line_value, "gst_amount": gst_amount,
+                   "line_total": round(line_value + gst_amount, 2)})
+        sub_total += line_value
+        gst_total += gst_amount
+    out = {"items": items, "amount": round(sub_total, 2), "gst_amount": round(gst_total, 2),
+           "total": round(sub_total + gst_total, 2), "gst_type": gst_type}
+    if gst_type == "igst":
+        out.update({"igst_amount": round(gst_total, 2), "cgst_amount": 0.0, "sgst_amount": 0.0})
+    else:
+        half = round(gst_total / 2, 2)
+        out.update({"igst_amount": 0.0, "cgst_amount": half, "sgst_amount": round(gst_total - half, 2)})
+    return out
+
+
+async def create_po_approval(po: Dict[str, Any], user: dict) -> str:
+    chain = await build_chain("purchase_order")
+    rev = int(po.get("revision") or 0)
+    approval = {
+        "id": new_id(),
+        "type": "purchase_order",
+        "module": "procurement",
+        "record_id": po["id"],
+        "reference": po.get("po_number"),
+        "title": f"PO {po.get('po_number')}{f' (Rev {rev})' if rev else ''} · {po.get('vendor') or ''}",
+        "summary": f"{len(po.get('items') or [])} item(s) · ₹ {float(po.get('total') or po.get('amount') or 0):,.2f}"
+                   + (" · AMENDED" if rev else ""),
+        "requested_by": user.get("name") or user.get("email"),
+        "requested_by_id": user.get("id"),
+        "status": "pending",
+        "current_step": 0,
+        "chain": chain,
+        "history": [],
+        "documents_not_required": True,
+        "documents_not_required_reason": "PO generated from approved PR/RFQ — source documents on record",
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    await insert_approval(approval)
+    return approval["id"]
+
 router = APIRouter(tags=["procurement"])
 
 
@@ -491,20 +559,13 @@ async def convert_rfq_to_po(rfq_id: str, request: Request,
     item_rates = vendor_row.get("item_rates") or {}
     fallback_rate = vendor_row.get("rate_quoted")
     po_items: List[Dict[str, Any]] = []
-    amount = 0.0
-    gst_total = 0.0
     for idx, it in enumerate(rfq.get("items") or []):
         qty = float(it.get("quantity") or 0)
         ir = item_rates.get(str(idx))
         r = float(ir) if ir is not None else (float(fallback_rate) if fallback_rate is not None else 0.0)
-        line_value = r * qty
-        gst_pct = float(it.get("gst_pct") if it.get("gst_pct") is not None else 18)
-        gst_amount = round(line_value * gst_pct / 100, 2)
-        amount += line_value
-        gst_total += gst_amount
-        po_items.append({**it, "rate": r, "line_value": round(line_value, 2),
-                         "gst_pct": gst_pct, "gst_amount": gst_amount,
-                         "line_total": round(line_value + gst_amount, 2)})
+        po_items.append({**it, "rate": r, "gst_pct": float(it.get("gst_pct") if it.get("gst_pct") is not None else 18)})
+    validate_po_items(po_items)
+    calc = recalc_po_items(po_items, "cgst_sgst")
 
     po = {
         "id": new_id(),
@@ -520,10 +581,9 @@ async def convert_rfq_to_po(rfq_id: str, request: Request,
         "item_rates": item_rates or None,
         "delivery_days": vendor_row.get("delivery_days"),
         "payment_terms": vendor_row.get("payment_terms"),
-        "amount": round(amount, 2),
-        "gst_amount": round(gst_total, 2),
-        "total": round(amount + gst_total, 2),
-        "status": "approved",     # already vetted via PR + RFQ
+        **calc,
+        "status": "pending_approval",   # every PO must pass the PO approval chain
+        "revision": 0,
         "project": pr.get("project_code"),
         "site": pr.get("site_code"),
         "department": pr.get("department"),
@@ -534,6 +594,8 @@ async def convert_rfq_to_po(rfq_id: str, request: Request,
     await stamp_dept_doc(po, "purchase_order")
     await db.purchase_orders.insert_one(po)
     po.pop("_id", None)
+    po["approval_id"] = await create_po_approval(po, user)
+    await db.purchase_orders.update_one({"id": po["id"]}, {"$set": {"approval_id": po["approval_id"]}})
     await db.rfqs.update_one({"id": rfq_id}, {"$set": {"status": "converted_to_po", "po_id": po["id"], "po_number": po["po_number"], "updated_at": now_iso()}})
     await db.purchase_requisitions.update_one({"id": rfq["pr_id"]}, {"$set": {"status": "po_generated", "po_id": po["id"], "po_number": po["po_number"], "updated_at": now_iso()}})
     await audit(user=user, action="create", resource="purchase_orders", record_id=po["id"], after=po, ip=_ip(request))
@@ -542,44 +604,133 @@ async def convert_rfq_to_po(rfq_id: str, request: Request,
 
 class POItemsUpdateIn(BaseModel):
     items: List[Dict[str, Any]]
+    gst_type: Optional[str] = None          # igst | cgst_sgst
+    delivery_terms: Optional[str] = None
+    special_terms: Optional[str] = None
+    other_terms: Optional[str] = None
 
 
 @router.put("/procurement/pos/{po_id}/items")
 async def update_po_items(po_id: str, payload: POItemsUpdateIn, request: Request,
                           user: dict = Depends(require_permission("purchase_orders", "write"))):
-    """Update PO line items (item-wise GST %, qty, rate). Recalculates every line's
-    GST amount + total and the PO's subtotal / total GST / grand total."""
+    """Edit PO line items (qty, rate, item-wise GST %, make, tech specs) + GST type
+    and delivery/special terms. Recalculates all totals. Blocked once the PO is
+    under approval or final-approved (use amendment flow)."""
     po = await db.purchase_orders.find_one({"id": po_id}, {"_id": 0})
     if not po:
         raise HTTPException(status_code=404, detail="PO not found")
+    if po.get("status") in PO_LOCKED_STATUSES:
+        raise HTTPException(status_code=400,
+                            detail=f"PO is {po.get('status')} — editing is locked. Raise an amendment request to modify an approved PO.")
+    gst_type = (payload.gst_type or po.get("gst_type") or "cgst_sgst").lower()
+    if gst_type not in ("igst", "cgst_sgst"):
+        raise HTTPException(status_code=400, detail="gst_type must be 'igst' or 'cgst_sgst'")
     existing = po.get("items") or []
     default_gst = float(po.get("gst_pct") or 18)
-    allowed = ("name", "description", "quantity", "unit", "rate", "gst_pct", "hsn_sac")
+    allowed = ("name", "description", "quantity", "unit", "rate", "gst_pct", "hsn_sac", "make", "technical_specs")
     new_items: List[Dict[str, Any]] = []
-    sub_total = gst_total = 0.0
     for idx, incoming in enumerate(payload.items):
         base = dict(existing[idx]) if idx < len(existing) else {}
         base.update({k: v for k, v in incoming.items() if k in allowed and v is not None})
-        qty = float(base.get("quantity") or 0)
-        rate = float(base.get("rate") or 0)
         gst_pct = float(base.get("gst_pct") if base.get("gst_pct") is not None else default_gst)
         if gst_pct < 0 or gst_pct > 100:
             raise HTTPException(status_code=400, detail=f"Item {idx + 1}: GST % must be between 0 and 100")
-        line_value = round(qty * rate, 2)
-        gst_amount = round(line_value * gst_pct / 100, 2)
-        base.update({"quantity": qty, "rate": rate, "gst_pct": gst_pct,
-                     "line_value": line_value, "gst_amount": gst_amount,
-                     "line_total": round(line_value + gst_amount, 2)})
-        sub_total += line_value
-        gst_total += gst_amount
         new_items.append(base)
-    upd = {"items": new_items, "amount": round(sub_total, 2),
-           "gst_amount": round(gst_total, 2), "total": round(sub_total + gst_total, 2),
-           "updated_at": now_iso(), "updated_by": user["id"]}
+    validate_po_items(new_items)
+    upd = recalc_po_items(new_items, gst_type)
+    for f in ("delivery_terms", "special_terms", "other_terms"):
+        v = getattr(payload, f)
+        if v is not None:
+            upd[f] = v
+    upd.update({"updated_at": now_iso(), "updated_by": user["id"]})
     await db.purchase_orders.update_one({"id": po_id}, {"$set": upd})
     await audit(user=user, action="update", resource="purchase_orders", record_id=po_id,
                 before=po, after={**po, **upd}, ip=_ip(request))
     return {**po, **upd}
+
+
+@router.post("/procurement/pos/{po_id}/submit")
+async def submit_po(po_id: str, request: Request,
+                    user: dict = Depends(require_permission("purchase_orders", "write"))):
+    """Submit a draft / revision-required / amendment-unlocked PO into the
+    multi-level PO approval chain. Amended POs get a bumped revision number."""
+    po = await db.purchase_orders.find_one({"id": po_id}, {"_id": 0})
+    if not po:
+        raise HTTPException(status_code=404, detail="PO not found")
+    if po.get("status") not in ("draft", "pending_revision", "amendment_in_progress", "rejected"):
+        raise HTTPException(status_code=400, detail=f"PO in '{po.get('status')}' cannot be submitted for approval")
+    if not (po.get("pr_id") or po.get("pr_number")):
+        raise HTTPException(status_code=400, detail="No PO can be raised without a PR — link a Purchase Requisition first")
+    validate_po_items(po.get("items") or [])
+    upd: Dict[str, Any] = {"status": "pending_approval", "updated_at": now_iso()}
+    if po.get("status") == "amendment_in_progress":
+        rev = int(po.get("revision") or 0) + 1
+        upd["revision"] = rev
+        upd["amendment_status"] = "completed"
+        amendments = list(po.get("amendments") or [])
+        amendments.append({"revision": rev, "reason": po.get("amendment_reason") or "",
+                           "amended_by": user.get("name") or user.get("email"), "at": now_iso()})
+        upd["amendments"] = amendments
+        po = {**po, **upd}
+    await db.approvals.update_many(
+        {"type": "purchase_order", "record_id": po_id,
+         "status": {"$in": ["rejected", "rejected_revision_required", "approved"]}},
+        {"$set": {"superseded": True, "superseded_at": now_iso()}})
+    upd["approval_id"] = await create_po_approval(po, user)
+    await db.purchase_orders.update_one({"id": po_id}, {"$set": upd})
+    await audit(user=user, action="submit_for_approval", resource="purchase_orders", record_id=po_id,
+                after={**po, **upd}, ip=_ip(request))
+    return {"po_id": po_id, "approval_id": upd["approval_id"], "status": "pending_approval",
+            "revision": upd.get("revision", po.get("revision") or 0)}
+
+
+class POAmendmentIn(BaseModel):
+    reason: str
+
+
+@router.post("/procurement/pos/{po_id}/request-amendment")
+async def request_po_amendment(po_id: str, payload: POAmendmentIn, request: Request,
+                               user: dict = Depends(require_permission("purchase_orders", "write"))):
+    """Purchase team raises an amendment request (with justification) on a
+    final-approved PO. Editing unlocks only after this request is approved."""
+    if len((payload.reason or "").strip()) < 5:
+        raise HTTPException(status_code=400, detail="Amendment reason / justification is required (min 5 characters)")
+    po = await db.purchase_orders.find_one({"id": po_id}, {"_id": 0})
+    if not po:
+        raise HTTPException(status_code=404, detail="PO not found")
+    if po.get("status") not in ("approved", "sent_to_vendor", "received", "partially_received"):
+        raise HTTPException(status_code=400, detail="Only final-approved POs can be amended — this PO is not approved yet")
+    if po.get("amendment_status") == "requested":
+        raise HTTPException(status_code=400, detail="An amendment request is already pending approval for this PO")
+    chain = await build_chain("po_amendment")
+    approval = {
+        "id": new_id(),
+        "type": "po_amendment",
+        "module": "procurement",
+        "record_id": po_id,
+        "reference": po.get("po_number"),
+        "title": f"PO Amendment — {po.get('po_number')} (Rev {int(po.get('revision') or 0)} → {int(po.get('revision') or 0) + 1})",
+        "summary": f"Reason: {payload.reason.strip()[:180]}",
+        "requested_by": user.get("name") or user.get("email"),
+        "requested_by_id": user.get("id"),
+        "status": "pending",
+        "current_step": 0,
+        "chain": chain,
+        "history": [],
+        "documents_not_required": True,
+        "documents_not_required_reason": "Amendment justification captured in request",
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    await insert_approval(approval)
+    await db.purchase_orders.update_one({"id": po_id}, {"$set": {
+        "amendment_status": "requested", "amendment_reason": payload.reason.strip(),
+        "amendment_requested_by": user.get("name") or user.get("email"),
+        "amendment_requested_at": now_iso(), "amendment_approval_id": approval["id"],
+        "updated_at": now_iso()}})
+    await audit(user=user, action="request_amendment", resource="purchase_orders", record_id=po_id,
+                after={"reason": payload.reason}, ip=_ip(request))
+    return {"po_id": po_id, "approval_id": approval["id"], "amendment_status": "requested"}
 
 
 # ──────────────────────────────────────────────────────────────────────────────

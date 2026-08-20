@@ -186,6 +186,7 @@ export default function ServiceOrders() {
 
 function CreateSODialog({ vendors, projects, onClose }) {
   const [vendorId, setVendorId] = useState("");
+  const [prNumber, setPrNumber] = useState("");
   const [projectId, setProjectId] = useState("");
   const [serviceType, setServiceType] = useState("manpower");
   const [scope, setScope] = useState("");
@@ -205,11 +206,20 @@ function CreateSODialog({ vendors, projects, onClose }) {
       toast.error("Vendor, scope of work, start/end dates required");
       return;
     }
+    if (!prNumber.trim()) {
+      toast.error("No Service Order can be raised without a PR — enter the PR Number");
+      return;
+    }
+    if (Number(qty) <= 0 || Number(rate) <= 0) {
+      toast.error("Data missing: quantity and rate must be greater than zero");
+      return;
+    }
     setSubmitting(true);
     try {
       const proj = projects.find(p => p.id === projectId);
       await api.post("/procurement-extras/service-orders", {
         vendor_id: vendorId,
+        pr_number: prNumber.trim(),
         project_id: projectId || null, project_code: proj?.code || null,
         service_type: serviceType, scope_of_work: scope,
         rate_basis: rateBasis, rate: Number(rate), quantity: Number(qty), unit,
@@ -236,6 +246,10 @@ function CreateSODialog({ vendors, projects, onClose }) {
             <SelectTrigger data-testid="so-vendor"><SelectValue placeholder="— select vendor —" /></SelectTrigger>
             <SelectContent>{vendors.map(v => <SelectItem key={v.id} value={v.id}>{v.vendor_code} · {v.name}</SelectItem>)}</SelectContent>
           </Select>
+        </div>
+        <div className="col-span-2">
+          <Label>PR Number * (no SO without PR)</Label>
+          <Input value={prNumber} onChange={e => setPrNumber(e.target.value)} placeholder="e.g. PR-2026-0012" data-testid="so-pr-number" />
         </div>
         <div className="col-span-2">
           <Label>Project</Label>

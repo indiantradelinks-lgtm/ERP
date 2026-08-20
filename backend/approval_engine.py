@@ -107,6 +107,10 @@ APPROVAL_CHAINS: Dict[str, List[Dict[str, str]]] = {
         {"role": "purchase_officer", "label": "Procurement Head"},
         {"role": "director", "label": "Director"},
     ],
+    "po_amendment": [
+        {"role": "purchase_officer", "label": "Purchase Manager"},
+        {"role": "director", "label": "Director"},
+    ],
     "grn": [
         {"role": "store_incharge", "label": "Store"},
         {"role": "purchase_officer", "label": "Procurement"},

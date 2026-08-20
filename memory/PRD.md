@@ -5464,3 +5464,12 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - RFQ→PO conversion now stamps gst_pct (default 18), gst_amount, line_total per item and total on PO.
 - PO PDF (pdf_generator.render_po_pdf) now prints GST %, GST Amt, Total per line; totals = Sub-total + Total GST (item-wise) + Grand Total.
 - Tested: curl (mixed 18%/5% → ₹2,242.50 correct), PDF text extraction verified, UI screenshot verified dialog + list total consistency.
+
+### Iteration 192 (Aug 2026) — PO/SO controlled workflow (5 user requirements) ✅
+1. **PO Preview & Edit** (`POItemsDialog.jsx` + `PUT /api/procurement/pos/{id}/items`): full line-item editor — add/remove rows, item name, qty, rate, item-wise GST % (presets 0/5/12/18/28 + free input), Make, Technical Specs, GST Type (IGST vs CGST+SGST at PO level with split totals), Delivery/Special/Other Terms. Live recalc + persisted cgst_amount/sgst_amount/igst_amount.
+2. **Zero qty/rate blocked**: `validate_po_items` (name/qty/rate mandatory) on PO items save, PO submit, RFQ→PO conversion; SO create validates qty/rate > 0. Errors read "Data missing: …".
+3. **No PO/SO without PR**: crud create for purchase_orders requires valid pr_number/pr_id (validated against purchase_requisitions, stamped); SO create likewise (frontend `so-pr-number` field added).
+4. **4-level PO approval before Send to Vendor**: every PO (incl. RFQ conversions, no longer auto-approved) → `POST /procurement/pos/{id}/submit` → approval chain dept_head→purchase_officer→accounts_executive→director (admin-configurable). Final approval hook in approvals_router sets PO approved. Email (Send to Vendor) button disabled until approved. Editing locked in PO_LOCKED_STATUSES (items endpoint + generic CRUD PUT guarded).
+5. **Amendments**: `POST /procurement/pos/{id}/request-amendment` (reason ≥5 chars) → `po_amendment` 2-level chain (purchase_officer→director) → approval unlocks editing (status amendment_in_progress) → resubmit bumps revision, logs amendments[], re-enters full chain. PDF shows "AMENDED PURCHASE ORDER — REVISION n" banner + reasons, Rev in title/PO number, GST split rows, Make/Specs, terms sections.
+- Bugfixes: AUTO_NUMBER purchase_orders po_no→po_number (blank PO # on manual create); service worker no longer reloads page while user is typing (login inputs were being wiped).
+- Tested: backend 15/15 pytest (`/app/backend/tests/test_iter173_po_workflow.py`, iteration_173.json), frontend 8/8 Playwright flows (iteration_174.json), plus manual e2e of add-item→submit flow. Test data cleaned.

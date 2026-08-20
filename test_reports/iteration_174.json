@@ -1,0 +1,32 @@
+{
+  "summary": "Frontend-only UI testing of PO/SO workflow (iteration 174) via Playwright on the public preview URL as admin@erp.com. All 8 requested UI flows executed and PASSED: (1) New PO created via '+ New' with PR-2026-0063 -> row appeared with auto-assigned PO number PO-2026-0075 (po_number AUTO_NUMBER fix verified), DRAFT badge, Submit button present, Email button disabled; (2) Submit on itemless draft -> toast 'Data missing: PO must have at least one line item'; (3) Items dialog on locked PO-2026-0047 (received) -> po-locked-badge shown, read-only rows, CGST 146.25 / SGST 146.25 / Grand Total 2,242.50, no Save button, no editable inputs; (4) Amend dialog on PO-2026-0047 -> Raise Request disabled at 0 and 3 chars, enabled at >=5, Cancel closed dialog without submitting; (6) After adding 1 item via API (qty2/rate100/gst18), editable Items dialog showed all expected testids (qty/rate/gst input+preset/make/specs/gst-type/3 terms textareas/save) and live recalculation on GST preset 28% (GST Amt 36.00 -> 56.00, Grand Total 236 -> 256), IGST row appeared on gst_type switch, 'Save & Recalculate' -> success toast and list Total updated to Rs 256; (7) Submit with items -> toast 'PO PO-2026-0075 submitted for multi-level approval', status became PENDING APPROVAL, Submit button disappeared, Email remained disabled, reopened Items dialog showed locked badge; (8) Service Orders page (/app/procurement/service-orders, testid page-service-orders) -> New SO dialog has 'PR Number *' (so-pr-number); submitting with vendor/scope/dates/rate but blank PR showed toast 'No Service Order can be raised without a PR - enter the PR Number' (no SO created). Cleanup done: test PO and its approval record deleted (verified absent from list).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Login page", "issue": "Login form inputs are cleared by a re-render shortly after mount (initial /api/auth/me auth check). Typing credentials immediately after page load results in an empty email field and native 'Please fill out this field' validation; had to re-fill after a ~4s wait. Real users typing fast (or password managers autofilling) can lose input.", "selector": "[data-testid=\"login-email\"], [data-testid=\"login-password\"]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Service Orders - New Service Order dialog", "issues": ["Start */End * use native browser date inputs (input[type=date], mm/dd/yyyy) instead of the shadcn calendar/date-picker used elsewhere; also shows US date format for an INR/India ERP"]},
+      {"screen": "PO Preview & Edit dialog (POItemsDialog)", "issues": ["During open animation the dialog content renders over the table with the underlying rows clearly visible through it (low-opacity background/overlay); readability is poor for ~0.3s. Settled state is fine, but a solid bg-background on DialogContent would remove the bleed-through."]}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_174.json"],
+  "action_items": [
+    "Login page: avoid resetting controlled email/password state on the initial auth-check re-render (guard state init or don't remount the form when /api/auth/me resolves 401).",
+    "Optional: replace native date inputs in ServiceOrders New SO dialog with the shadcn date picker (dd/mm/yyyy).",
+    "Optional: add solid bg to POItemsDialog DialogContent to avoid table bleed-through during dialog animation."
+  ],
+  "critical_code_review_comments": [
+    "POItemsDialog: 'Save & Recalculate' block is only rendered when rows.length > 0, so a draft PO with zero items cannot get its first line item from the UI at all (items had to be added via API in this run). Add an 'Add line item' action for draft POs.",
+    "POItemsDialog gst_pct default falls back to po.gst_pct ?? 18; on save this writes 18% onto items that legitimately had no GST configured. Consider defaulting to 0 or requiring explicit input."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (per request)", "frontend": "100% (8/8 requested flows passed)"},
+  "seed_data_creation": "Created and then deleted test PO PO-2026-0075 (vendor TEST_QA_VENDOR_174, PR-2026-0063) and its generated approval record. No other records were modified.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin@erp.com / Admin@123",
+  "context_for_next_testing_agent": "Playwright login must wait ~4s after /login loads and re-fill inputs (state gets cleared by the auth-check re-render), then use data-testid login-email / login-password / login-submit. PO page testids: purchase-add-btn, purchase-field-{key}, purchase-save-btn, po-submit-{id}, po-items-{id}, po-amend-{id}, purchase-email-{id}. Service Orders route: /app/procurement/service-orders, open dialog with data-testid 'so-new' (not so-new-btn); date fields are so-start / so-end. Draft PO items cannot be created from UI (no add-row button) - use PUT /api/procurement/pos/{id}/items. Untested this run: full amendment approve -> unlock -> edit -> re-approval cycle in UI, and Email send after 4-level approval.",
+  "rca_of_the_issue": "Login input clearing: the Login page renders while the AuthContext initial /api/auth/me request is in flight; when it resolves 401 the component tree re-renders/remounts and the controlled email/password state resets to empty. Reproduce: load /login and type within ~2s -> fields blank on submit."
+}

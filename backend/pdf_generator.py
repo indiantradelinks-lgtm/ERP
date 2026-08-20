@@ -321,9 +321,15 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
         line_total = float(it.get("line_total") if it.get("line_total") is not None else round(amt + item_gst_amt, 2))
         sub_total += amt
         gst_amt += item_gst_amt
+        meta = []
+        if it.get("make"):
+            meta.append(f"Make: {_esc(it['make'])}")
+        if it.get("technical_specs"):
+            meta.append(f"Specs: {_esc(it['technical_specs'])}")
+        meta.append(f"HSN/SAC: {_esc(it.get('hsn_sac') or '—')}")
         items_html += f"""<tr>
 <td>{i}</td>
-<td><b>{_esc(it.get('name'))}</b><div class="note">HSN/SAC: {_esc(it.get('hsn_sac') or '—')}</div></td>
+<td><b>{_esc(it.get('name'))}</b><div class="note">{' · '.join(meta)}</div></td>
 <td class="num">{_money(qty)}</td>
 <td>{_esc(it.get('unit') or 'Nos')}</td>
 <td class="num">{_money(rate)}</td>
@@ -333,14 +339,32 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
 <td class="num">{_money(line_total)}</td>
 </tr>"""
     grand = sub_total + gst_amt
+    gst_type = (po.get("gst_type") or "cgst_sgst").lower()
+    if gst_type == "igst":
+        gst_rows = f"<tr><td>IGST</td><td class='num'>₹ {_money(gst_amt)}</td></tr>"
+    else:
+        half = gst_amt / 2
+        gst_rows = (f"<tr><td>CGST</td><td class='num'>₹ {_money(half)}</td></tr>"
+                    f"<tr><td>SGST</td><td class='num'>₹ {_money(gst_amt - half)}</td></tr>")
+    revision = int(po.get("revision") or 0)
+    rev_banner = ""
+    amendments = po.get("amendments") or []
+    if revision > 0:
+        amend_rows = "".join(
+            f"<div class='note'><b>Rev {a.get('revision')}</b> — {_esc(a.get('reason') or '—')} "
+            f"<span style='color:#888'>(by {_esc(a.get('amended_by') or '—')} on {_esc(str(a.get('at') or '')[:10])})</span></div>"
+            for a in amendments)
+        rev_banner = f"""<div style="border:1.5px solid #b45309;background:#fef3c7;padding:6px 10px;margin:8px 0;">
+<b>AMENDED PURCHASE ORDER — REVISION {revision}</b>{amend_rows}</div>"""
     v = vendor or {}
     addr_lines: List[str] = []
     for a in (v.get("addresses") or [])[:1]:
         addr_lines += [a.get("line1"), a.get("line2"), f"{a.get('city','')} {a.get('pin','')}", a.get("state")]
     addr_html = "<br/>".join([_esc(x) for x in addr_lines if x]) or _esc(v.get("address") or "—")
     body = f"""
+{rev_banner}
 <div class="kv">
-  <div><b>PO Number</b></div><div>{_esc(po.get('po_number') or po.get('po_no'))}</div>
+  <div><b>PO Number</b></div><div>{_esc(po.get('po_number') or po.get('po_no'))}{f" — <b>Rev {revision}</b>" if revision else ""}</div>
   <div><b>PO Date</b></div><div>{_esc(po.get('po_date') or po.get('created_at','')[:10])}</div>
   <div><b>PR Reference</b></div><div>{_esc(po.get('pr_number') or '—')}</div>
   <div><b>RFQ Reference</b></div><div>{_esc(po.get('rfq_number') or '—')}</div>
@@ -361,9 +385,13 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
 <tbody>{items_html or '<tr><td colspan=9>No items</td></tr>'}</tbody></table>
 <table class="totals">
 <tr><td>Sub-total</td><td class="num">₹ {_money(sub_total)}</td></tr>
+{gst_rows}
 <tr><td>Total GST</td><td class="num">₹ {_money(gst_amt)}</td></tr>
 <tr class="grand"><td>Grand Total</td><td class="num">₹ {_money(grand)}</td></tr>
 </table>
+{f'<div class="section-title" style="clear:both;">Delivery Terms</div><div class="note">{_esc(po.get("delivery_terms"))}</div>' if po.get('delivery_terms') else ''}
+{f'<div class="section-title" style="clear:both;">Special Terms</div><div class="note">{_esc(po.get("special_terms"))}</div>' if po.get('special_terms') else ''}
+{f'<div class="section-title" style="clear:both;">Other Terms</div><div class="note">{_esc(po.get("other_terms"))}</div>' if po.get('other_terms') else ''}
 <div class="section-title" style="clear:both;">Terms & Conditions</div>
 {"".join(f"<div class='note'><b>{i + 1}. {_esc(t.get('title'))}</b> <span style='color:#888'>[{_esc((t.get('category') or 'general').upper())}]</span> — {_esc(t.get('body'))}</div>" for i, t in enumerate(po.get('terms_structured') or [])) or f"<div class='note'>{_esc(po.get('terms') or '1. Goods to be delivered as per delivery schedule.  2. Payment 30 days after GRN acceptance.  3. Quality as per agreed spec — defects to be replaced free of cost.')}</div>"}
 <div class="signs">
@@ -371,7 +399,7 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
   <div class="box">Vendor Acknowledgement</div>
 </div>
 """
-    return _render(_wrap(f"Purchase Order — {po.get('po_number') or po.get('po_no','')}", body))
+    return _render(_wrap(f"Purchase Order — {po.get('po_number') or po.get('po_no','')}{f' (Rev {revision})' if revision else ''}", body))
 
 
 # ─────────────────────────────────── GRN ───────────────────────────────────

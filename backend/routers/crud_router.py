@@ -28,7 +28,7 @@ AUTO_NUMBER = {
     "accommodations": ("ACC", "accom_no"),
     "overtime": ("OT", "ot_no"),
     "journal_entries": ("JV", "voucher_no"),
-    "purchase_orders": ("PO", "po_no"),
+    "purchase_orders": ("PO", "po_number"),
     "departments": ("DPT", "code"),
     "employees": ("EMP", "employee_id"),
 }
@@ -235,6 +235,19 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
             doc["history"] = []
             doc["status"] = doc.get("status") or "pending"
         # Route approval creates through the universal documents-gate insert.
+        if collection == "purchase_orders":
+            pr_ref = doc.get("pr_id") or doc.get("pr_number")
+            if not pr_ref:
+                raise HTTPException(status_code=400,
+                                    detail="No Purchase Order can be raised without a PR — enter a valid PR Number")
+            pr = await db.purchase_requisitions.find_one(
+                {"$or": [{"id": doc.get("pr_id") or ""}, {"pr_number": doc.get("pr_number") or ""}]}, {"_id": 0})
+            if not pr:
+                raise HTTPException(status_code=400, detail=f"PR '{pr_ref}' not found — a valid PR is mandatory to raise a PO")
+            doc["pr_id"] = pr["id"]
+            doc["pr_number"] = pr.get("pr_number")
+            doc["status"] = "draft"      # must pass the PO approval chain via submit
+            doc["revision"] = 0
         if collection == "approvals":
             copy_approval_doc_fields(doc, payload)
             await insert_approval(doc)
@@ -348,6 +361,13 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
                 raise HTTPException(status_code=400, detail="master_category must be 'employee' or 'worker'")
             await _employee_duplicate_guard(payload, exclude_id=item_id)
         before = await db[collection].find_one({"id": item_id}, {"_id": 0})
+        if collection == "purchase_orders" and before is not None:
+            from routers.procurement_router import PO_LOCKED_STATUSES
+            if before.get("status") in PO_LOCKED_STATUSES:
+                raise HTTPException(status_code=400,
+                                    detail=f"PO is {before.get('status')} — editing is locked. Raise an amendment request to modify an approved PO.")
+            payload.pop("status", None)
+            payload.pop("revision", None)
         if collection == "employees" and before is not None:
             new_depts = payload.get("departments")
             if new_depts is not None and not (payload.get("allow_multi_dept", before.get("allow_multi_dept"))) and len(new_depts) > 1:
