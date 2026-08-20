@@ -1,5 +1,6 @@
 """Generic CRUD factory + module registration."""
 import asyncio
+import re as _re_mod
 from typing import Dict, Any
 
 from fastapi import APIRouter, HTTPException, Depends, Request
@@ -143,8 +144,36 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
                                          f"(Emp ID {dup.get('employee_id') or dup.get('emp_code') or '—'})")
 
     @router.get(f"/{resource}")
-    async def list_items(user: dict = Depends(require_permission(perm, "read"))):
+    async def list_items(search: str = "", page: int = 0, page_size: int = 50, master: str = "",
+                         user: dict = Depends(require_permission(perm, "read"))):
         q = await _list_filter(collection, user)
+        extra = []
+        if search.strip():
+            rx = {"$regex": _re_mod.escape(search.strip()), "$options": "i"}
+            keys = (["name", "employee_name", "employee_id", "email", "phone", "department", "designation", "current_project_code"]
+                    if collection == "employees" else ["name", "code", "email", "phone"])
+            extra.append({"$or": [{k: rx} for k in keys]})
+        if collection == "employees" and master:
+            extra.append({"$or": [{"master_category": "employee"}, {"master_category": None},
+                                  {"master_category": {"$exists": False}}]}
+                         if master == "employee" else {"master_category": master})
+        if extra:
+            q = {"$and": [q, *extra]} if q else ({"$and": extra} if len(extra) > 1 else extra[0])
+        if page >= 1:
+            page_size = max(1, min(int(page_size or 50), 200))
+            total = await db[collection].count_documents(q)
+            try:
+                rows = await db[collection].find(q, {"_id": 0}).sort("created_at", -1)\
+                    .allow_disk_use(True).skip((page - 1) * page_size).limit(page_size).to_list(page_size)
+            except Exception:
+                rows = await db[collection].find(q, {"_id": 0})\
+                    .skip((page - 1) * page_size).limit(page_size).to_list(page_size)
+            if collection == "employees":
+                for r in rows:
+                    if not r.get("name") and r.get("employee_name"):
+                        r["name"] = r["employee_name"]
+            return {"rows": mask_list(rows, collection, user), "total": total,
+                    "page": page, "page_size": page_size}
         try:
             rows = await db[collection].find(q, {"_id": 0}).sort("created_at", -1)\
                 .allow_disk_use(True).to_list(5000)

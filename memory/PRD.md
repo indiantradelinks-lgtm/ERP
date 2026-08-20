@@ -5451,3 +5451,16 @@ Fixes:
 2. server startup: `created_at` DESC index auto-created for ALL crud MODULES collections (applies to production automatically on redeploy).
 3. Bulk update fix (user point 3): removed blanket "modified by a previous bulk update" block — rows with REAL new data now update; only true no-change rows skip. Verified: update→re-update with new value applies; identical value skips with clear message.
 All verified via curl; test phone restored. USER MUST REDEPLOY.
+
+### Iteration 190 (Aug 2026) — Server-side pagination + search for Employee Master ✅
+1. Generic crud list endpoint now accepts `search`, `page`, `page_size` (max 200), `master` (employees only). page>=1 → {rows,total,page,page_size} with count_documents + skip/limit + disk-sort + unsorted fallback; no params → legacy array (all other pages unaffected). Search: case-insensitive regex over name/employee_name/employee_id/email/phone/department/designation/current_project_code (employees) or name/code/email/phone (others). master filter server-side (employee includes missing/null master_category).
+2. DataTableShell new props: serverSearch/onServerSearch (controlled search box, bypasses client filter), serverTotal ("Showing X of TOTAL"), footerExtra (pagination controls slot).
+3. Employees.jsx: 50/page, debounced (400ms) server search, Prev/Next + "Page X / Y" (testids emp-pagination, emp-page-prev/next), master-tab switch resets page, CRUD mutations reload current page. Worker Master tab uses same mechanism.
+Verified: paginated API (10/49), search "manager" → 3 across all records, legacy array mode intact, UI screenshot (search + footer + disabled controls).
+
+### Iteration 191 (Aug 2026) — PO item-wise GST view/edit + recalculated totals ✅
+- New "Items" action on Purchase Orders → `POItemsDialog.jsx`: full line-item breakup (Item, Qty, Rate, Amount, GST %, GST Amt, Total) with per-item GST editing (input + 0/5/12/18/28 presets), live subtotal/GST/grand-total recalc.
+- Backend `PUT /api/procurement/pos/{id}/items` (procurement_router.py): merges edits, validates GST 0–100, recalculates line_value/gst_amount/line_total per item and amount/gst_amount/total on the PO; audited.
+- RFQ→PO conversion now stamps gst_pct (default 18), gst_amount, line_total per item and total on PO.
+- PO PDF (pdf_generator.render_po_pdf) now prints GST %, GST Amt, Total per line; totals = Sub-total + Total GST (item-wise) + Grand Total.
+- Tested: curl (mixed 18%/5% → ₹2,242.50 correct), PDF text extraction verified, UI screenshot verified dialog + list total consistency.

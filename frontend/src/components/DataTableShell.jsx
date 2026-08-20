@@ -154,6 +154,10 @@ export default function DataTableShell({
   onUpdate,
   onDelete,
   loadError,
+  serverSearch,
+  onServerSearch,
+  serverTotal,
+  footerExtra,
   testidPrefix = "tbl",
   searchKeys,
   rightSlot,
@@ -174,11 +178,12 @@ export default function DataTableShell({
   const [form, setForm] = useState({});
 
   const filtered = useMemo(() => {
+    if (onServerSearch) return data;
     if (!query) return data;
     const q = query.toLowerCase();
     const keys = searchKeys || columns.map((c) => c.key);
     return data.filter((row) => keys.some((k) => String(row?.[k] ?? "").toLowerCase().includes(q)));
-  }, [data, query, columns, searchKeys]);
+  }, [data, query, columns, searchKeys, onServerSearch]);
 
   const startCreate = () => {
     setEditing(null);
@@ -232,10 +237,10 @@ export default function DataTableShell({
           <div className="relative flex-1 md:w-72">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search…"
+              placeholder={onServerSearch ? "Search all records…" : "Search…"}
               className="pl-9 h-9 rounded-sm"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              value={onServerSearch ? serverSearch : query}
+              onChange={(e) => (onServerSearch ? onServerSearch(e.target.value) : setQuery(e.target.value))}
               data-testid={`${testidPrefix}-search`}
             />
           </div>
@@ -355,7 +360,8 @@ export default function DataTableShell({
         </Table>
       </div>
       <div className="px-4 py-2 border-t border-border text-xs text-muted-foreground">
-        Showing <span className="text-foreground font-semibold">{filtered.length}</span> of {data.length}
+        Showing <span className="text-foreground font-semibold">{filtered.length}</span> of {serverTotal ?? data.length}
+        {footerExtra}
       </div>
     </div>
   );

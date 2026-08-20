@@ -492,13 +492,19 @@ async def convert_rfq_to_po(rfq_id: str, request: Request,
     fallback_rate = vendor_row.get("rate_quoted")
     po_items: List[Dict[str, Any]] = []
     amount = 0.0
+    gst_total = 0.0
     for idx, it in enumerate(rfq.get("items") or []):
         qty = float(it.get("quantity") or 0)
         ir = item_rates.get(str(idx))
         r = float(ir) if ir is not None else (float(fallback_rate) if fallback_rate is not None else 0.0)
         line_value = r * qty
+        gst_pct = float(it.get("gst_pct") if it.get("gst_pct") is not None else 18)
+        gst_amount = round(line_value * gst_pct / 100, 2)
         amount += line_value
-        po_items.append({**it, "rate": r, "line_value": line_value})
+        gst_total += gst_amount
+        po_items.append({**it, "rate": r, "line_value": round(line_value, 2),
+                         "gst_pct": gst_pct, "gst_amount": gst_amount,
+                         "line_total": round(line_value + gst_amount, 2)})
 
     po = {
         "id": new_id(),
@@ -514,7 +520,9 @@ async def convert_rfq_to_po(rfq_id: str, request: Request,
         "item_rates": item_rates or None,
         "delivery_days": vendor_row.get("delivery_days"),
         "payment_terms": vendor_row.get("payment_terms"),
-        "amount": amount,
+        "amount": round(amount, 2),
+        "gst_amount": round(gst_total, 2),
+        "total": round(amount + gst_total, 2),
         "status": "approved",     # already vetted via PR + RFQ
         "project": pr.get("project_code"),
         "site": pr.get("site_code"),
@@ -530,6 +538,48 @@ async def convert_rfq_to_po(rfq_id: str, request: Request,
     await db.purchase_requisitions.update_one({"id": rfq["pr_id"]}, {"$set": {"status": "po_generated", "po_id": po["id"], "po_number": po["po_number"], "updated_at": now_iso()}})
     await audit(user=user, action="create", resource="purchase_orders", record_id=po["id"], after=po, ip=_ip(request))
     return po
+
+
+class POItemsUpdateIn(BaseModel):
+    items: List[Dict[str, Any]]
+
+
+@router.put("/procurement/pos/{po_id}/items")
+async def update_po_items(po_id: str, payload: POItemsUpdateIn, request: Request,
+                          user: dict = Depends(require_permission("purchase_orders", "write"))):
+    """Update PO line items (item-wise GST %, qty, rate). Recalculates every line's
+    GST amount + total and the PO's subtotal / total GST / grand total."""
+    po = await db.purchase_orders.find_one({"id": po_id}, {"_id": 0})
+    if not po:
+        raise HTTPException(status_code=404, detail="PO not found")
+    existing = po.get("items") or []
+    default_gst = float(po.get("gst_pct") or 18)
+    allowed = ("name", "description", "quantity", "unit", "rate", "gst_pct", "hsn_sac")
+    new_items: List[Dict[str, Any]] = []
+    sub_total = gst_total = 0.0
+    for idx, incoming in enumerate(payload.items):
+        base = dict(existing[idx]) if idx < len(existing) else {}
+        base.update({k: v for k, v in incoming.items() if k in allowed and v is not None})
+        qty = float(base.get("quantity") or 0)
+        rate = float(base.get("rate") or 0)
+        gst_pct = float(base.get("gst_pct") if base.get("gst_pct") is not None else default_gst)
+        if gst_pct < 0 or gst_pct > 100:
+            raise HTTPException(status_code=400, detail=f"Item {idx + 1}: GST % must be between 0 and 100")
+        line_value = round(qty * rate, 2)
+        gst_amount = round(line_value * gst_pct / 100, 2)
+        base.update({"quantity": qty, "rate": rate, "gst_pct": gst_pct,
+                     "line_value": line_value, "gst_amount": gst_amount,
+                     "line_total": round(line_value + gst_amount, 2)})
+        sub_total += line_value
+        gst_total += gst_amount
+        new_items.append(base)
+    upd = {"items": new_items, "amount": round(sub_total, 2),
+           "gst_amount": round(gst_total, 2), "total": round(sub_total + gst_total, 2),
+           "updated_at": now_iso(), "updated_by": user["id"]}
+    await db.purchase_orders.update_one({"id": po_id}, {"$set": upd})
+    await audit(user=user, action="update", resource="purchase_orders", record_id=po_id,
+                before=po, after={**po, **upd}, ip=_ip(request))
+    return {**po, **upd}
 
 
 # ──────────────────────────────────────────────────────────────────────────────

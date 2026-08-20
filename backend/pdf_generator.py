@@ -310,11 +310,17 @@ def render_comparative_pdf(rfq: Dict[str, Any], comparative: Dict[str, Any]) -> 
 def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -> bytes:
     items_html = ""
     sub_total = 0.0
+    gst_amt = 0.0
+    default_gst = float(po.get("gst_pct") or 18)
     for i, it in enumerate(po.get("items") or [], 1):
         qty = float(it.get("quantity") or 0)
         rate = float(it.get("rate") or 0)
-        amt = float(it.get("amount") or it.get("total") or (qty * rate))
+        amt = float(it.get("line_value") if it.get("line_value") is not None else (qty * rate))
+        item_gst_pct = float(it.get("gst_pct") if it.get("gst_pct") is not None else default_gst)
+        item_gst_amt = float(it.get("gst_amount") if it.get("gst_amount") is not None else round(amt * item_gst_pct / 100, 2))
+        line_total = float(it.get("line_total") if it.get("line_total") is not None else round(amt + item_gst_amt, 2))
         sub_total += amt
+        gst_amt += item_gst_amt
         items_html += f"""<tr>
 <td>{i}</td>
 <td><b>{_esc(it.get('name'))}</b><div class="note">HSN/SAC: {_esc(it.get('hsn_sac') or '—')}</div></td>
@@ -322,9 +328,10 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
 <td>{_esc(it.get('unit') or 'Nos')}</td>
 <td class="num">{_money(rate)}</td>
 <td class="num">{_money(amt)}</td>
+<td class="num">{item_gst_pct:g}%</td>
+<td class="num">{_money(item_gst_amt)}</td>
+<td class="num">{_money(line_total)}</td>
 </tr>"""
-    gst_pct = float(po.get("gst_pct") or 18)
-    gst_amt = sub_total * gst_pct / 100
     grand = sub_total + gst_amt
     v = vendor or {}
     addr_lines: List[str] = []
@@ -350,11 +357,11 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
   <div><b>Contact</b></div><div>{_esc(v.get('phone') or '—')} · {_esc(v.get('email') or '')}</div>
 </div>
 <div class="section-title">Items</div>
-<table><thead><tr><th>#</th><th>Item</th><th class="num">Qty</th><th>Unit</th><th class="num">Rate</th><th class="num">Amount</th></tr></thead>
-<tbody>{items_html or '<tr><td colspan=6>No items</td></tr>'}</tbody></table>
+<table><thead><tr><th>#</th><th>Item</th><th class="num">Qty</th><th>Unit</th><th class="num">Rate</th><th class="num">Amount</th><th class="num">GST %</th><th class="num">GST Amt</th><th class="num">Total</th></tr></thead>
+<tbody>{items_html or '<tr><td colspan=9>No items</td></tr>'}</tbody></table>
 <table class="totals">
 <tr><td>Sub-total</td><td class="num">₹ {_money(sub_total)}</td></tr>
-<tr><td>GST @ {gst_pct:.1f}%</td><td class="num">₹ {_money(gst_amt)}</td></tr>
+<tr><td>Total GST</td><td class="num">₹ {_money(gst_amt)}</td></tr>
 <tr class="grand"><td>Grand Total</td><td class="num">₹ {_money(grand)}</td></tr>
 </table>
 <div class="section-title" style="clear:both;">Terms & Conditions</div>

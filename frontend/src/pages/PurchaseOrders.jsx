@@ -3,12 +3,13 @@ import DataTableShell from "@/components/DataTableShell";
 import useResource from "@/hooks/useResource";
 import { toneFor } from "@/lib/statusTone";
 import { Button } from "@/components/ui/button";
-import { Mail, Network, FileDown, History, ListChecks } from "lucide-react";
+import { Mail, Network, FileDown, History, ListChecks, Table2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import SendEmailDialog from "@/components/SendEmailDialog";
 import EmailHistoryDialog from "@/components/EmailHistoryDialog";
 import LineageTrail from "@/components/LineageTrail";
 import POTermsDialog from "@/components/POTermsDialog";
+import POItemsDialog from "@/components/POItemsDialog";
 import { downloadPdf } from "@/lib/exports";
 
 const PO_STATUS_TONE = { approved: "success", rejected: "danger", received: "info", partially_received: "warning" };
@@ -19,6 +20,7 @@ export default function PurchaseOrders() {
   const [historyFor, setHistoryFor] = useState(null);
   const [lineageFor, setLineageFor] = useState(null);
   const [termsFor, setTermsFor] = useState(null);
+  const [itemsFor, setItemsFor] = useState(null);
   const columns = [
     { key: "po_number", label: "PO #" },
     { key: "vendor", label: "Vendor" },
@@ -32,6 +34,9 @@ export default function PurchaseOrders() {
       label: "Actions",
       render: (row) => (
         <div className="inline-flex gap-1">
+          <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setItemsFor(row)} data-testid={`po-items-${row.id}`} title="View / edit line items with item-wise GST">
+            <Table2 className="h-3 w-3 mr-1" /> Items
+          </Button>
           <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setLineageFor(row)} data-testid={`po-lineage-${row.id}`} title="View end-to-end procurement lineage">
             <Network className="h-3 w-3 mr-1" /> Lineage
           </Button>
@@ -78,6 +83,7 @@ export default function PurchaseOrders() {
         />
       )}
       {termsFor && <POTermsDialog po={termsFor} onClose={(saved) => { setTermsFor(null); if (saved) r.refresh?.(); }} />}
+      {itemsFor && <POItemsDialog po={itemsFor} canWrite={r.canWrite} onClose={(saved) => { setItemsFor(null); if (saved) r.reload?.(); }} />}
       <Dialog open={!!lineageFor} onOpenChange={(o) => !o && setLineageFor(null)}>
         <DialogContent className="max-w-5xl rounded-sm">
           <DialogHeader>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import DataTableShell, { StatusBadge } from "@/components/DataTableShell";
 import useResource from "@/hooks/useResource";
 import { Button } from "@/components/ui/button";
@@ -331,6 +331,31 @@ export default function Employees({ master = "employee" }) {
     } catch (e) { toast.error(e.response?.data?.detail || "Restore failed"); }
   };
 
+  // ── Server-side pagination + search (handles 1,000+ employees) ──
+  const PAGE_SIZE = 50;
+  const [page, setPage] = useState(1);
+  const [pgSearch, setPgSearch] = useState("");
+  const [pgRows, setPgRows] = useState([]);
+  const [pgTotal, setPgTotal] = useState(0);
+  const loadPage = useCallback(async (p = page, s = pgSearch) => {
+    try {
+      const params = new URLSearchParams({ page: String(p), page_size: String(PAGE_SIZE), master });
+      if (s.trim()) params.set("search", s.trim());
+      const { data } = await api.get(`/employees?${params.toString()}`);
+      setPgRows(data.rows || []);
+      setPgTotal(data.total || 0);
+    } catch (e) { /* loadError handled by useResource path */ }
+  }, [page, pgSearch, master]);
+  useEffect(() => { setPage(1); setPgSearch(""); }, [master]);
+  useEffect(() => { loadPage(page, pgSearch); /* eslint-disable-next-line */ }, [page, master]);
+  useEffect(() => {
+    const t = setTimeout(() => { setPage(1); loadPage(1, pgSearch); }, 400);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pgSearch]);
+  const totalPages = Math.max(1, Math.ceil(pgTotal / PAGE_SIZE));
+  const refreshAll = () => loadPage(page, pgSearch);
+
   const extraActions = (
     <div className="flex items-center gap-2" data-testid="emp-bulk-actions">
       <Button size="sm" variant="outline" onClick={openDelLog} data-testid="emp-deletion-log"
@@ -409,14 +434,24 @@ export default function Employees({ master = "employee" }) {
         key={master}
         title={meta.title}
         description={meta.description}
-        data={(r.data || [])
-          .filter((row) => (row.master_category || "employee") === master)
-          .filter((row) => !projectFilter || row.current_project_code === projectFilter)}
+        data={pgRows.filter((row) => !projectFilter || row.current_project_code === projectFilter)}
+        serverSearch={pgSearch}
+        onServerSearch={setPgSearch}
+        serverTotal={pgTotal}
+        footerExtra={
+          <span className="inline-flex items-center gap-2 ml-3" data-testid="emp-pagination">
+            <Button size="sm" variant="outline" className="h-7 px-2" disabled={page <= 1}
+              onClick={() => setPage(page - 1)} data-testid="emp-page-prev">‹ Prev</Button>
+            <span className="text-xs">Page {page} / {totalPages}</span>
+            <Button size="sm" variant="outline" className="h-7 px-2" disabled={page >= totalPages}
+              onClick={() => setPage(page + 1)} data-testid="emp-page-next">Next ›</Button>
+          </span>
+        }
         columns={columns}
         fields={fields}
-        onCreate={r.create}
-        onUpdate={r.update}
-        onDelete={r.remove}
+        onCreate={async (p) => { const res = await r.create(p); refreshAll(); return res; }}
+        onUpdate={async (id, p) => { const res = await r.update(id, p); refreshAll(); return res; }}
+        onDelete={async (id) => { const res = await r.remove(id); refreshAll(); return res; }}
         loadError={r.loadError}
         testidPrefix={meta.testidPrefix}
         attachmentsParentType="employees"
