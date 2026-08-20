@@ -88,6 +88,7 @@ async def on_startup():
         await db.login_attempts.create_index("identifier")
         for _, c in MODULES:
             await db[c].create_index("id", unique=True)
+            await db[c].create_index([("created_at", -1)])
         await db.files.create_index("id", unique=True)
         await db.files.create_index([("parent_type", 1), ("parent_id", 1)])
         await db.audit_logs.create_index("ts")

@@ -145,7 +145,13 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
     @router.get(f"/{resource}")
     async def list_items(user: dict = Depends(require_permission(perm, "read"))):
         q = await _list_filter(collection, user)
-        rows = await db[collection].find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
+        try:
+            rows = await db[collection].find(q, {"_id": 0}).sort("created_at", -1)\
+                .allow_disk_use(True).to_list(5000)
+        except Exception:
+            # Large collections without a created_at index can exceed Mongo's
+            # in-memory sort limit — never blank the screen, return unsorted.
+            rows = await db[collection].find(q, {"_id": 0}).to_list(5000)
         if collection == "employees":
             for r in rows:
                 if not r.get("name") and r.get("employee_name"):

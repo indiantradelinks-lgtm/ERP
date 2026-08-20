@@ -5443,3 +5443,11 @@ Fixes:
 2. useResource: exposes `loadError`; 403 → clear toast + message naming the missing '{perm} read' permission; other failures show HTTP status.
 3. DataTableShell: new `loadError` prop — empty table now shows the exact failure reason in red (testid table-load-error) instead of "No records."; Employees page wired.
 Verified: admin list intact (51), dept_head filter produces case-insensitive query, RouteGuard confirmed blocking no-permission roles with Access Denied page.
+
+### Iteration 189 (Aug 2026) — PRODUCTION Employee Master blank: root cause = 1,156 rows + unindexed sort ✅
+User's uploaded template revealed production has ~1,156 employees. List endpoint `.sort("created_at",-1).to_list(1000)` without an index hits Mongo's 32MB in-memory sort limit → 500 → UI silently showed "No records." (exports use a different path → data visible; bulk re-upload said "already updated").
+Fixes:
+1. crud list: `.allow_disk_use(True)`, limit raised 1000→5000, try/except fallback to unsorted (never blanks the screen).
+2. server startup: `created_at` DESC index auto-created for ALL crud MODULES collections (applies to production automatically on redeploy).
+3. Bulk update fix (user point 3): removed blanket "modified by a previous bulk update" block — rows with REAL new data now update; only true no-change rows skip. Verified: update→re-update with new value applies; identical value skips with clear message.
+All verified via curl; test phone restored. USER MUST REDEPLOY.

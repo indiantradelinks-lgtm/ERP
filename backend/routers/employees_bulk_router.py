@@ -211,19 +211,8 @@ async def import_bulk(file: UploadFile = File(...),
                     summary["errors"].append({"row": ri, "id": existing["id"], "error": msg})
                     per_row.append({"row": ri, "id": existing["id"], "action": "already_updated", "error": msg})
                     continue
-                if existing.get("bulk_update_snapshot_id"):
-                    prev = await db.employee_bulk_updates.find_one(
-                        {"id": existing["bulk_update_snapshot_id"]}, {"_id": 0, "at": 1, "by_name": 1})
-                    detail = ""
-                    if prev:
-                        when = (prev.get("at") or "")[:16].replace("T", " ")
-                        detail = f" on {when} by {prev.get('by_name')}"
-                    msg = (f"Employee already updated — '{existing.get('name')}' was modified by a previous bulk update{detail}. "
-                           "Edit the record individually if a change is really needed.")
-                    summary["already_updated"] += 1
-                    summary["errors"].append({"row": ri, "id": existing["id"], "error": msg})
-                    per_row.append({"row": ri, "id": existing["id"], "action": "already_updated", "error": msg})
-                    continue
+                # NOTE: rows with REAL changes are allowed even if a previous bulk
+                # update touched this employee — only no-change rows are skipped above.
                 # Apply update
                 diff_patch["updated_at"] = now_iso()
                 diff_patch["updated_by"] = user.get("name") or user.get("email")
