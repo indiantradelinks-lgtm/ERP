@@ -347,6 +347,7 @@ class RFQIn(BaseModel):
     vendors: List[RFQVendorIn]
     notes: Optional[str] = None
     response_due_date: Optional[str] = None
+    item_indexes: Optional[List[int]] = None   # subset of PR item indexes for this RFQ
 
 
 class RFQResponse(BaseModel):
@@ -379,10 +380,21 @@ async def create_rfq(payload: RFQIn, request: Request,
     pr = await db.purchase_requisitions.find_one({"id": payload.pr_id}, {"_id": 0})
     if not pr:
         raise HTTPException(status_code=404, detail="PR not found")
-    if pr.get("status") != "approved":
-        raise HTTPException(status_code=400, detail="Only approved PRs can be turned into an RFQ")
+    if pr.get("status") not in ("approved", "rfq_initiated", "partially_fulfilled"):
+        raise HTTPException(status_code=400, detail="Only approved PRs (or PRs with pending items) can be turned into an RFQ")
     if not payload.vendors:
         raise HTTPException(status_code=400, detail="Pick at least one vendor")
+    pr_items = pr.get("items") or []
+    if payload.item_indexes is not None:
+        idxs = sorted(set(int(i) for i in payload.item_indexes))
+        if not idxs:
+            raise HTTPException(status_code=400, detail="Select at least one item for this RFQ")
+        if any(i < 0 or i >= len(pr_items) for i in idxs):
+            raise HTTPException(status_code=400, detail="Invalid item selection for this PR")
+        rfq_items = [{**pr_items[i], "pr_item_index": i} for i in idxs]
+    else:
+        idxs = list(range(len(pr_items)))
+        rfq_items = [{**it, "pr_item_index": i} for i, it in enumerate(pr_items)]
 
     vendor_rows: List[Dict[str, Any]] = []
     for v in payload.vendors:
@@ -405,7 +417,8 @@ async def create_rfq(payload: RFQIn, request: Request,
         "rfq_number": await next_sequence("RFQ"),
         "pr_id": payload.pr_id,
         "pr_number": pr.get("pr_number"),
-        "items": pr.get("items") or [],
+        "items": rfq_items,
+        "item_indexes": idxs,
         "vendors": vendor_rows,
         "status": "response_pending",
         "notes": payload.notes,
@@ -417,7 +430,10 @@ async def create_rfq(payload: RFQIn, request: Request,
     await stamp_dept_doc(doc, "rfq")
     await db.rfqs.insert_one(doc)
     doc.pop("_id", None)
-    await db.purchase_requisitions.update_one({"id": payload.pr_id}, {"$set": {"status": "rfq_initiated", "rfq_id": doc["id"], "rfq_number": doc["rfq_number"]}})
+    await db.purchase_requisitions.update_one(
+        {"id": payload.pr_id},
+        {"$set": {"status": "rfq_initiated", "rfq_id": doc["id"], "rfq_number": doc["rfq_number"]},
+         "$push": {"rfq_ids": doc["id"]}})
     await audit(user=user, action="create", resource="rfqs", record_id=doc["id"], after=doc, ip=_ip(request))
     return doc
 
@@ -628,8 +644,9 @@ async def convert_rfq_to_po(rfq_id: str, request: Request,
         "delivery_days": vendor_row.get("delivery_days"),
         "payment_terms": vendor_row.get("payment_terms"),
         **calc,
-        "status": "pending_approval",   # every PO must pass the PO approval chain
+        "status": "draft",   # purchase team edits the draft, then submits into the approval chain
         "revision": 0,
+        "item_indexes": rfq.get("item_indexes"),
         "project": pr.get("project_code"),
         "site": pr.get("site_code"),
         "department": pr.get("department"),
@@ -640,10 +657,17 @@ async def convert_rfq_to_po(rfq_id: str, request: Request,
     await stamp_dept_doc(po, "purchase_order")
     await db.purchase_orders.insert_one(po)
     po.pop("_id", None)
-    po["approval_id"] = await create_po_approval(po, user)
-    await db.purchase_orders.update_one({"id": po["id"]}, {"$set": {"approval_id": po["approval_id"]}})
     await db.rfqs.update_one({"id": rfq_id}, {"$set": {"status": "converted_to_po", "po_id": po["id"], "po_number": po["po_number"], "updated_at": now_iso()}})
-    await db.purchase_requisitions.update_one({"id": rfq["pr_id"]}, {"$set": {"status": "po_generated", "po_id": po["id"], "po_number": po["po_number"], "updated_at": now_iso()}})
+    # PR coverage: 'po_generated' only when every PR item is covered by a converted RFQ
+    pr_item_count = len(pr.get("items") or [])
+    covered: set = set()
+    async for r in db.rfqs.find({"pr_id": rfq["pr_id"], "po_id": {"$exists": True, "$ne": None}}, {"_id": 0, "item_indexes": 1}):
+        covered |= set(r.get("item_indexes") if r.get("item_indexes") is not None else range(pr_item_count))
+    pr_status = "po_generated" if covered >= set(range(pr_item_count)) else "partially_fulfilled"
+    await db.purchase_requisitions.update_one(
+        {"id": rfq["pr_id"]},
+        {"$set": {"status": pr_status, "po_id": po["id"], "po_number": po["po_number"], "updated_at": now_iso()},
+         "$push": {"po_ids": po["id"]}})
     await audit(user=user, action="create", resource="purchase_orders", record_id=po["id"], after=po, ip=_ip(request))
     return po
 
@@ -654,6 +678,10 @@ class POItemsUpdateIn(BaseModel):
     delivery_terms: Optional[str] = None
     special_terms: Optional[str] = None
     other_terms: Optional[str] = None
+    payment_terms: Optional[str] = None
+    tds_pct: Optional[float] = None         # TDS on basic (informational)
+    retention_pct: Optional[float] = None   # retention on grand total (informational)
+    advance_pct: Optional[float] = None     # advance on grand total (informational)
 
 
 @router.put("/procurement/pos/{po_id}/items")
@@ -684,10 +712,20 @@ async def update_po_items(po_id: str, payload: POItemsUpdateIn, request: Request
         new_items.append(base)
     validate_po_items(new_items)
     upd = recalc_po_items(new_items, gst_type)
-    for f in ("delivery_terms", "special_terms", "other_terms"):
+    for f in ("delivery_terms", "special_terms", "other_terms", "payment_terms"):
         v = getattr(payload, f)
         if v is not None:
             upd[f] = v
+    for f, base_key in (("tds_pct", "amount"), ("retention_pct", "total"), ("advance_pct", "total")):
+        v = getattr(payload, f)
+        if v is None:
+            v = po.get(f)
+        if v is not None:
+            v = float(v)
+            if v < 0 or v > 100:
+                raise HTTPException(status_code=400, detail=f"{f.replace('_pct', '').upper()} % must be between 0 and 100")
+            upd[f] = v
+            upd[f.replace("_pct", "_amount")] = round(upd[base_key] * v / 100, 2)
     upd.update({"updated_at": now_iso(), "updated_by": user["id"]})
     await db.purchase_orders.update_one({"id": po_id}, {"$set": upd})
     await audit(user=user, action="update", resource="purchase_orders", record_id=po_id,

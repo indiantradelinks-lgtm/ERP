@@ -20,6 +20,7 @@ const RFQ_STATUS_TONE = {
   sent: "info", response_pending: "warning", under_evaluation: "info",
   vendor_selected: "success", approved: "success", converted_to_po: "primary",
 };
+const RFQ_PR_STATUSES = ["approved", "rfq_initiated", "partially_fulfilled"];
 
 export default function Rfqs() {
   const [searchParams] = useSearchParams();
@@ -30,7 +31,7 @@ export default function Rfqs() {
   const [vendors, setVendors] = useState([]);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(!!initialPr);
-  const [form, setForm] = useState({ pr_id: initialPr, vendor_ids: [], notes: "", response_due_date: "" });
+  const [form, setForm] = useState({ pr_id: initialPr, vendor_ids: [], notes: "", response_due_date: "", item_indexes: [] });
   const [respondOpen, setRespondOpen] = useState(null);
   const [compareOpen, setCompareOpen] = useState(null);
   const [emailFor, setEmailFor] = useState(null);
@@ -42,33 +43,59 @@ export default function Rfqs() {
     try {
       const [r, p, v] = await Promise.all([
         api.get("/procurement/rfqs"),
-        api.get("/procurement/prs?status=approved"),
+        api.get("/procurement/prs"),
         api.get("/vendors"),
       ]);
-      setRows(r.data || []); setPrs(p.data || []); setVendors(v.data || []);
+      setRows(r.data || []);
+      setPrs((p.data || []).filter((x) => RFQ_PR_STATUSES.includes(x.status)));
+      setVendors(v.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Failed to load"); }
   };
   useEffect(() => { load(); }, []);
 
+  const selectedPr = useMemo(() => prs.find((p) => p.id === form.pr_id), [prs, form.pr_id]);
+  // indexes already released in existing RFQs for the selected PR (legacy RFQs without item_indexes cover ALL items)
+  const coveredIdx = useMemo(() => {
+    if (!selectedPr) return new Set();
+    const s = new Set();
+    rows.filter((r) => r.pr_id === selectedPr.id).forEach((r) => {
+      const idxs = r.item_indexes ?? (selectedPr.items || []).map((_, i) => i);
+      idxs.forEach((i) => s.add(i));
+    });
+    return s;
+  }, [rows, selectedPr]);
+
+  const pickPr = (pr_id) => {
+    const pr = prs.find((p) => p.id === pr_id);
+    const covered = new Set();
+    rows.filter((r) => r.pr_id === pr_id).forEach((r) => {
+      const idxs = r.item_indexes ?? (pr?.items || []).map((_, i) => i);
+      idxs.forEach((i) => covered.add(i));
+    });
+    const remaining = (pr?.items || []).map((_, i) => i).filter((i) => !covered.has(i));
+    setForm((f) => ({ ...f, pr_id, item_indexes: remaining }));
+  };
+
   const create = async () => {
     if (!form.pr_id) { toast.error("Pick a PR"); return; }
+    if (!form.item_indexes.length) { toast.error("Select at least one item for this RFQ"); return; }
     if (!form.vendor_ids.length) { toast.error("Pick at least one vendor"); return; }
     try {
-      const payload = { pr_id: form.pr_id, vendors: form.vendor_ids.map((vid) => ({ vendor_id: vid })), notes: form.notes, response_due_date: form.response_due_date };
+      const payload = { pr_id: form.pr_id, vendors: form.vendor_ids.map((vid) => ({ vendor_id: vid })), notes: form.notes, response_due_date: form.response_due_date, item_indexes: form.item_indexes };
       const { data } = await api.post("/procurement/rfqs", payload);
-      toast.success(`${data.rfq_number} created`);
+      toast.success(`${data.rfq_number} created for ${form.item_indexes.length} item(s)`);
       setOpen(false);
-      setForm({ pr_id: "", vendor_ids: [], notes: "", response_due_date: "" });
+      setForm({ pr_id: "", vendor_ids: [], notes: "", response_due_date: "", item_indexes: [] });
       load();
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
 
   const convertToPO = async (rfq) => {
     if (!rfq.selected_vendor_id) { toast.error("Select a vendor first"); return; }
-    if (!window.confirm(`Convert ${rfq.rfq_number} → PO?`)) return;
+    if (!window.confirm(`Convert ${rfq.rfq_number} → draft PO?`)) return;
     try {
       const { data } = await api.post(`/procurement/rfqs/${rfq.id}/convert-to-po`);
-      toast.success(`PO ${data.po_number} created`);
+      toast.success(`PO ${data.po_number} created as DRAFT — review, edit & submit it for approval from Purchase Orders`);
       load();
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
@@ -120,7 +147,7 @@ export default function Rfqs() {
                 return (
                   <TableRow key={r.id} className="hover:bg-muted/30" data-testid={`rfq-row-${r.id}`}>
                     <TableCell className="font-mono-data text-sm font-bold">{r.rfq_number}</TableCell>
-                    <TableCell className="font-mono-data text-xs">{r.pr_number}</TableCell>
+                    <TableCell className="font-mono-data text-xs">{r.pr_number}<div className="text-[10px] text-muted-foreground">{(r.items || []).length} item(s)</div></TableCell>
                     <TableCell className="text-xs">{(r.vendors || []).length} vendor{r.vendors?.length === 1 ? "" : "s"}<div className="text-[10px] text-muted-foreground">{responded} responded</div></TableCell>
                     <TableCell><StatusBadge text={(r.status || "").replaceAll("_", " ")} tone={RFQ_STATUS_TONE[r.status] || "neutral"} /></TableCell>
                     <TableCell className="text-xs">{selectedVendor ? <StatusBadge text={selectedVendor.vendor_name} tone="success" /> : "—"}</TableCell>
@@ -176,12 +203,33 @@ export default function Rfqs() {
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div>
-              <Label className="text-xs uppercase tracking-wider">PR (approved only)</Label>
-              <select className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm mt-1" value={form.pr_id} onChange={(e) => setForm({ ...form, pr_id: e.target.value })} data-testid="rfq-pr-select">
+              <Label className="text-xs uppercase tracking-wider">PR (approved / partially fulfilled)</Label>
+              <select className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm mt-1" value={form.pr_id} onChange={(e) => pickPr(e.target.value)} data-testid="rfq-pr-select">
                 <option value="">— pick a PR —</option>
-                {prs.map((p) => <option key={p.id} value={p.id}>{p.pr_number} · {p.department || ""} · {(p.items || []).length} items</option>)}
+                {prs.map((p) => <option key={p.id} value={p.id}>{p.pr_number} · {p.department || ""} · {(p.items || []).length} items{p.status !== "approved" ? ` · ${p.status.replaceAll("_", " ")}` : ""}</option>)}
               </select>
             </div>
+            {selectedPr && (selectedPr.items || []).length > 0 && (
+              <div>
+                <Label className="text-xs uppercase tracking-wider">Items for this RFQ ({form.item_indexes.length}/{selectedPr.items.length} selected)</Label>
+                <div className="border border-input rounded-sm bg-background mt-1 max-h-52 overflow-y-auto divide-y divide-border" data-testid="rfq-item-list">
+                  {selectedPr.items.map((it, idx) => {
+                    const checked = form.item_indexes.includes(idx);
+                    const inRfq = coveredIdx.has(idx);
+                    return (
+                      <label key={idx} className={`flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer hover:bg-muted/40 ${inRfq && !checked ? "opacity-60" : ""}`} data-testid={`rfq-item-check-${idx}`}>
+                        <input type="checkbox" checked={checked}
+                          onChange={() => setForm((f) => ({ ...f, item_indexes: checked ? f.item_indexes.filter((x) => x !== idx) : [...f.item_indexes, idx].sort((a, b) => a - b) }))} />
+                        <span className="flex-1 min-w-0 truncate font-medium">{it.name}</span>
+                        <span className="text-xs text-muted-foreground tabular">{it.quantity} {it.unit || "Nos"}</span>
+                        {inRfq && <span className="text-[9px] uppercase font-bold bg-sky-100 text-sky-700 px-1 py-0.5 rounded-sm" title="Already released in another RFQ for this PR">In RFQ</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">Release only the selected items in this RFQ — the remaining items can go to different vendors via separate RFQs.</p>
+              </div>
+            )}
             <div>
               <Label className="text-xs uppercase tracking-wider">Vendors</Label>
               <div className="flex flex-wrap gap-1.5 p-2 border border-input rounded-sm bg-background mt-1 max-h-48 overflow-y-auto" data-testid="rfq-vendor-list">

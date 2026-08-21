@@ -98,6 +98,9 @@ export default function PurchaseOrders() {
             info: "bg-sky-100 text-sky-700", warning: "bg-amber-100 text-amber-700", neutral: "bg-slate-100 text-slate-600",
           }[toneFor(PO_STATUS_TONE, row.status, "warning")]}`}>{(row.status || "").replaceAll("_", " ")}</span>
           {row.amendment_status === "requested" && <div className="text-[10px] text-amber-700 mt-0.5">Amendment requested</div>}
+          {row.status === "pending_revision" && row.reject_reason && (
+            <div className="text-[10px] text-red-600 mt-0.5 max-w-[180px] truncate" title={`Rejected: ${row.reject_reason}`} data-testid={`po-reject-reason-${row.id}`}>✗ {row.reject_reason}</div>
+          )}
         </div>
       ),
     },

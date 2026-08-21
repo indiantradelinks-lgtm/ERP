@@ -347,6 +347,13 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
         gst_rows = (f"<tr><td>CGST</td><td class='num'>₹ {_money(half)}</td></tr>"
                     f"<tr><td>SGST</td><td class='num'>₹ {_money(gst_amt - half)}</td></tr>")
     revision = int(po.get("revision") or 0)
+    extra_rows = ""
+    if float(po.get("advance_pct") or 0) > 0:
+        extra_rows += f"<tr><td>Advance @ {float(po['advance_pct']):g}%</td><td class='num'>₹ {_money(po.get('advance_amount') or 0)}</td></tr>"
+    if float(po.get("tds_pct") or 0) > 0:
+        extra_rows += f"<tr><td>TDS @ {float(po['tds_pct']):g}% (on basic)</td><td class='num'>₹ {_money(po.get('tds_amount') or 0)}</td></tr>"
+    if float(po.get("retention_pct") or 0) > 0:
+        extra_rows += f"<tr><td>Retention @ {float(po['retention_pct']):g}%</td><td class='num'>₹ {_money(po.get('retention_amount') or 0)}</td></tr>"
     rev_banner = ""
     amendments = po.get("amendments") or []
     if revision > 0:
@@ -370,6 +377,7 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
   <div><b>RFQ Reference</b></div><div>{_esc(po.get('rfq_number') or '—')}</div>
   <div><b>Project</b></div><div>{_esc(po.get('project_code') or '—')}</div>
   <div><b>Delivery Date</b></div><div>{_esc(po.get('delivery_date') or '—')}</div>
+  <div><b>Payment Terms</b></div><div>{_esc(po.get('payment_terms') or '—')}</div>
 </div>
 <div class="section-title">Vendor</div>
 <div class="kv">
@@ -388,6 +396,7 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
 {gst_rows}
 <tr><td>Total GST</td><td class="num">₹ {_money(gst_amt)}</td></tr>
 <tr class="grand"><td>Grand Total</td><td class="num">₹ {_money(grand)}</td></tr>
+{extra_rows}
 </table>
 {f'<div class="section-title" style="clear:both;">Delivery Terms</div><div class="note">{_esc(po.get("delivery_terms"))}</div>' if po.get('delivery_terms') else ''}
 {f'<div class="section-title" style="clear:both;">Special Terms</div><div class="note">{_esc(po.get("special_terms"))}</div>' if po.get('special_terms') else ''}

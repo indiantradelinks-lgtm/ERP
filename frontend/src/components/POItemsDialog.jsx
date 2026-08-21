@@ -17,6 +17,8 @@ export const POItemsDialog = ({ po, canWrite, onClose }) => {
   const [items, setItems] = useState(() => (po.items || []).map((it) => ({ ...it, gst_pct: it.gst_pct ?? po.gst_pct ?? 18 })));
   const [gstType, setGstType] = useState(po.gst_type || "cgst_sgst");
   const [terms, setTerms] = useState({ delivery_terms: po.delivery_terms || "", special_terms: po.special_terms || "", other_terms: po.other_terms || "" });
+  const [paymentTerms, setPaymentTerms] = useState(po.payment_terms || "");
+  const [pcts, setPcts] = useState({ tds_pct: po.tds_pct ?? "", retention_pct: po.retention_pct ?? "", advance_pct: po.advance_pct ?? "" });
   const [saving, setSaving] = useState(false);
 
   const rows = useMemo(() => items.map((it) => {
@@ -45,7 +47,10 @@ export const POItemsDialog = ({ po, canWrite, onClose }) => {
     try {
       await api.put(`/procurement/pos/${po.id}/items`, {
         items: items.map(({ _new, ...it }) => ({ ...it, quantity: Number(it.quantity || 0), rate: Number(it.rate || 0), gst_pct: Number(it.gst_pct || 0) })),
-        gst_type: gstType, ...terms,
+        gst_type: gstType, ...terms, payment_terms: paymentTerms,
+        tds_pct: pcts.tds_pct === "" ? null : Number(pcts.tds_pct),
+        retention_pct: pcts.retention_pct === "" ? null : Number(pcts.retention_pct),
+        advance_pct: pcts.advance_pct === "" ? null : Number(pcts.advance_pct),
       });
       toast.success("PO updated — totals recalculated");
       onClose(true);
@@ -70,6 +75,11 @@ export const POItemsDialog = ({ po, canWrite, onClose }) => {
           </DialogDescription>
         </DialogHeader>
 
+        {po.status === "pending_revision" && po.reject_reason && (
+          <div className="border border-red-200 bg-red-50 text-red-700 rounded-sm px-3 py-2 text-sm" data-testid="po-reject-banner">
+            <b>Rejected — revision required:</b> {po.reject_reason}
+          </div>
+        )}
         <div className="flex flex-wrap items-end gap-4 text-sm">
           <div>
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">GST Type</div>
@@ -82,6 +92,18 @@ export const POItemsDialog = ({ po, canWrite, onClose }) => {
           </div>
           <div className="text-muted-foreground">PR: <span className="font-medium text-foreground">{po.pr_number || "—"}</span></div>
           <div className="text-muted-foreground">Vendor: <span className="font-medium text-foreground">{po.vendor || "—"}</span></div>
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Payment Terms</div>
+            {editable ? <Input value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} placeholder="e.g. 30 days credit" className="h-8 w-44 rounded-sm text-sm" data-testid="po-payment-terms-input" />
+              : <span className="font-medium">{po.payment_terms || "—"}</span>}
+          </div>
+          {[["tds_pct", "TDS %"], ["retention_pct", "Retention %"], ["advance_pct", "Advance %"]].map(([k, label]) => (
+            <div key={k}>
+              <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">{label}</div>
+              {editable ? <Input type="number" min="0" max="100" step="0.1" value={pcts[k]} onChange={(e) => setPcts((p) => ({ ...p, [k]: e.target.value }))} placeholder="0" className="h-8 w-20 rounded-sm text-sm text-right" data-testid={`po-${k.replace("_", "-")}-input`} />
+                : <span className="font-medium">{po[k] != null ? `${po[k]}%` : "—"}</span>}
+            </div>
+          ))}
         </div>
 
         {rows.length === 0 ? (
@@ -108,12 +130,13 @@ export const POItemsDialog = ({ po, canWrite, onClose }) => {
                         <Input placeholder="Item name *" value={r.name} onChange={(e) => setField(idx, "name", e.target.value)} className="h-7 w-40 text-sm rounded-sm" data-testid={`po-item-name-${idx}`} />
                       ) : <div className="font-medium">{r.name}</div>}
                       {editable ? (
-                        <div className="flex gap-1 mt-1">
+                        <div className="flex gap-1 mt-1 flex-wrap">
+                          <Input placeholder="HSN/SAC" value={r.hsn_sac || ""} onChange={(e) => setField(idx, "hsn_sac", e.target.value)} className="h-6 w-20 text-xs rounded-sm" data-testid={`po-item-hsn-${idx}`} />
                           <Input placeholder="Make" value={r.make || ""} onChange={(e) => setField(idx, "make", e.target.value)} className="h-6 w-24 text-xs rounded-sm" data-testid={`po-item-make-${idx}`} />
                           <Input placeholder="Technical specs" value={r.technical_specs || ""} onChange={(e) => setField(idx, "technical_specs", e.target.value)} className="h-6 w-40 text-xs rounded-sm" data-testid={`po-item-specs-${idx}`} />
                         </div>
-                      ) : (r.make || r.technical_specs) && (
-                        <div className="text-[11px] text-muted-foreground">{[r.make && `Make: ${r.make}`, r.technical_specs && `Specs: ${r.technical_specs}`].filter(Boolean).join(" · ")}</div>
+                      ) : (r.hsn_sac || r.make || r.technical_specs) && (
+                        <div className="text-[11px] text-muted-foreground">{[r.hsn_sac && `HSN/SAC: ${r.hsn_sac}`, r.make && `Make: ${r.make}`, r.technical_specs && `Specs: ${r.technical_specs}`].filter(Boolean).join(" · ")}</div>
                       )}
                     </td>
                     <td className={`${cell} text-right`}>
@@ -173,6 +196,16 @@ export const POItemsDialog = ({ po, canWrite, onClose }) => {
                   <td colSpan={8} className="py-1.5 pr-2 text-right">Grand Total</td>
                   <td className="py-1.5 text-right" data-testid="po-items-grand-total">{inr(subTotal + gstTotal)}</td>
                 </tr>
+                {[["advance_pct", "Advance", subTotal + gstTotal], ["tds_pct", "TDS (on basic)", subTotal], ["retention_pct", "Retention", subTotal + gstTotal]].map(([k, label, base]) => {
+                  const p = Number(pcts[k] || 0);
+                  if (!p) return null;
+                  return (
+                    <tr key={k} className="text-xs text-muted-foreground">
+                      <td colSpan={8} className="py-0.5 pr-2 text-right">{label} @ {p}%</td>
+                      <td className="py-0.5 text-right" data-testid={`po-items-${k.replace("_pct", "")}-amount`}>{inr(base * p / 100)}</td>
+                    </tr>
+                  );
+                })}
               </tfoot>
             </table>
           </div>
