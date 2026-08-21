@@ -5515,3 +5515,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Footer moved from `position:fixed` (was overlapped by flowing content) to CSS Paged Media running element: `@page @bottom-center { content: element(pageFooter) }` + `.footer { position: running(pageFooter) }`, footer div moved to top of body so it renders on EVERY page inside the 28mm bottom margin — never overlapped. Applies to all pdf_generator documents (PO/GRN/SRN…), GRN regression-checked.
 - PO T&C section: renders ONLY selected clauses (skips selected:false / empty), serial-numbered flex rows (.tnc-item/.tnc-num/.tnc-body), body text only — no title, category tag or "New Clause" heading; justified text, 5px spacing, page-break-inside:avoid per clause, serials continue naturally across pages.
 - Verified visually via pymupdf page renders (2-page PO: clauses 1-11 pg1, 12 pg2, footer clean both pages, no category tags).
+
+### Iteration 200 (Aug 2026) — Recruitment module updates ✅
+1. Candidate Database: "HR Recruiter (follow-up owner)" select on the New/Edit form (options = active users with hr* role via GET /api/auth/users) + "Recruiter" column in the list. Saved to candidates.recruiter (generic CRUD, no backend change).
+2. Recruitment Requests: Project column now shows Project Code + Project Name (from /api/projects map, keyed by code & id); new "Project User" column = project.manager → fallback row.raised_by → "—". testids: recruit-project-{id}, recruit-project-user-{id}.
+- No existing functionality touched (additive only). Verified via screenshots: recruiter dropdown lists 4 HR users; dashboard shows PRJ code + client name + manager (e.g. Arjun Reddy on PRJ-2025-01).

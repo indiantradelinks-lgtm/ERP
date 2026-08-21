@@ -1,14 +1,49 @@
 import DataTableShell from "@/components/DataTableShell";
 import useResource from "@/hooks/useResource";
 import { toneFor } from "@/lib/statusTone";
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 
 const RECRUIT_STATUS_TONE = { filled: "success", closed: "neutral" };
 
 export default function RecruitmentRequests() {
   const r = useResource("recruitment-requests");
+  const [projMap, setProjMap] = useState({});
+  useEffect(() => {
+    api.get("/projects").then((res) => {
+      const m = {};
+      (res.data || []).forEach((p) => {
+        const info = { code: p.code || p.project_code, name: p.name, manager: p.manager || p.manager_name || p.project_manager };
+        if (info.code) m[info.code] = info;
+        if (p.id) m[p.id] = info;
+      });
+      setProjMap(m);
+    }).catch(() => {});
+  }, []);
+  const projInfo = (row) => projMap[row.project_code] || projMap[row.project_id] || projMap[row.project] || null;
   const columns = [
     { key: "position", label: "Position" },
-    { key: "project", label: "Project", render: (row) => row.project || row.project_code || "—" },
+    {
+      key: "project", label: "Project",
+      render: (row) => {
+        const p = projInfo(row);
+        const code = p?.code || row.project_code || row.project;
+        if (!code) return "—";
+        return (
+          <div data-testid={`recruit-project-${row.id}`}>
+            <div className="font-medium">{code}</div>
+            {p?.name && <div className="text-[11px] text-muted-foreground max-w-[200px] truncate" title={p.name}>{p.name}</div>}
+          </div>
+        );
+      },
+    },
+    {
+      key: "project_user", label: "Project User",
+      render: (row) => {
+        const p = projInfo(row);
+        return <span data-testid={`recruit-project-user-${row.id}`}>{p?.manager || row.raised_by || "—"}</span>;
+      },
+    },
     { key: "source", label: "Source", badge: (row) => row.source === "project_request"
         ? { text: "Project Request", tone: "info" }
         : { text: "Manual", tone: "neutral" } },
