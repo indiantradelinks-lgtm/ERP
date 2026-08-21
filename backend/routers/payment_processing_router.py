@@ -332,6 +332,10 @@ async def mark_paid(rid: str, p: MarkPaidIn, request: Request,
     if row.get("source") == "vendor_bill" and row.get("source_id"):
         await db.logistics_vendor_bills.update_one({"id": row["source_id"]}, {"$set": {
             "status": "paid", "utr_no": p.utr_no, "paid_date": p.paid_date, "updated_at": now_iso()}})
+        lvb = await db.logistics_vendor_bills.find_one({"id": row["source_id"]}, {"_id": 0})
+        if lvb:
+            from routers.logistics_phase4_router import _mirror_bill_to_vendor_bills
+            await _mirror_bill_to_vendor_bills(lvb)
     if row.get("source") == "accounts_vendor_bill" and row.get("source_id"):
         paid_amt = float(v.get("net_payable") if v.get("net_payable") is not None else net)
         bill = await db.vendor_bills.find_one({"id": row["source_id"]},

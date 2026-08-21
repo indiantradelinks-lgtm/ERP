@@ -12,7 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, RefreshCcw, CheckCircle2, X, AlertCircle, Shield, ShieldOff, Pencil, FileDown } from "lucide-react";
+import { Plus, RefreshCcw, CheckCircle2, X, AlertCircle, Shield, ShieldOff, Pencil, FileDown, History, Truck } from "lucide-react";
+import DirectBookingDialog from "@/components/DirectBookingDialog";
 import { fmt } from "./AccountsViews";
 import { ProjectSelect } from "@/components/MasterSelect";
 
@@ -28,6 +29,7 @@ const STATUS_COLORS = {
   rejected: "bg-rose-100 text-rose-800",
   partially_paid: "bg-amber-100 text-amber-800",
   paid: "bg-green-100 text-green-800",
+  posted: "bg-cyan-100 text-cyan-800",
   cancelled: "bg-rose-100 text-rose-800",
 };
 
@@ -79,6 +81,7 @@ export function VendorBillsView() {
   const [pendingGrns, setPendingGrns] = useState([]);
   const [poTerms, setPoTerms] = useState(null);
   const [editId, setEditId] = useState(null);
+  const [directOpen, setDirectOpen] = useState(false);
 
   function newFormState() {
     return {
@@ -300,6 +303,7 @@ export function VendorBillsView() {
           </select>
           <Button size="sm" variant="outline" onClick={downloadReport} data-testid="pay-vb-report-pdf"><FileDown className="h-3.5 w-3.5 mr-1" />PDF Report</Button>
           <Button size="sm" variant="outline" onClick={load}><RefreshCcw className="h-3.5 w-3.5 mr-1" />Refresh</Button>
+          <Button size="sm" variant="outline" onClick={() => setDirectOpen(true)} data-testid="pay-vb-direct" title="Book historical / pre-ERP cost directly to a project"><History className="h-3.5 w-3.5 mr-1" />Direct Booking</Button>
           <Button size="sm" onClick={() => setOpen(true)} data-testid="pay-vb-add"><Plus className="h-3.5 w-3.5 mr-1" />New Bill</Button>
         </div>
       </CardHeader>
@@ -329,9 +333,13 @@ export function VendorBillsView() {
                   <td className="px-3 py-1.5 font-mono text-xs">{r.invoice_date}</td>
                   <td className="px-3 py-1.5">
                     {r.vendor_name}
-                    {r.bank_verified
-                      ? <Shield className="inline h-3 w-3 ml-1 text-emerald-700" title="Bank verified" />
-                      : <ShieldOff className="inline h-3 w-3 ml-1 text-rose-700" title="Bank NOT verified" />}
+                    {r.source === "logistics_vendor_bill"
+                      ? <span className="inline-flex items-center gap-0.5 ml-1 px-1 py-0.5 rounded text-[9px] font-bold uppercase bg-orange-100 text-orange-700" title={`Auto-booked from ${r.source_no} (Logistics)`} data-testid={`pay-vb-transport-${r.bill_no}`}><Truck className="h-2.5 w-2.5" />Transport</span>
+                      : r.bill_type === "direct_booking"
+                        ? <span className="inline-block ml-1 px-1 py-0.5 rounded text-[9px] font-bold uppercase bg-violet-100 text-violet-700" title="Direct cost booking — pre-ERP historical expense" data-testid={`pay-vb-historical-${r.bill_no}`}>Historical</span>
+                        : r.bank_verified
+                          ? <Shield className="inline h-3 w-3 ml-1 text-emerald-700" title="Bank verified" />
+                          : <ShieldOff className="inline h-3 w-3 ml-1 text-rose-700" title="Bank NOT verified" />}
                   </td>
                   <td className="px-3 py-1.5 text-xs">
                     {r.po_number || "—"}{r.grn_number ? ` / ${r.grn_number}` : ""}
@@ -343,6 +351,12 @@ export function VendorBillsView() {
                   <td className="px-3 py-1.5 text-center"><span className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${STATUS_COLORS[r.status] || ""}`}>{r.status}</span></td>
                   <td className="px-3 py-1.5 text-right whitespace-nowrap">
                     {(() => {
+                      if (r.source === "logistics_vendor_bill") {
+                        return <span className="text-[10px] text-slate-500" title="Managed in Logistics → Transport Vendor Bills">via {r.source_no || "Logistics"}</span>;
+                      }
+                      if (r.bill_type === "direct_booking") {
+                        return <span className="text-[10px] text-slate-500" title="Historical booking — already settled pre-ERP">booked to {r.project_code || "project"}</span>;
+                      }
                       const wf3 = r.workflow_version === 3;
                       const wf2 = r.workflow_version === 2;
                       const canReject = ["draft", "dept_approved", "accounts_approved", "admin_approved", "verified_l1", "verified", "approved_l1"].includes(r.status);
@@ -380,6 +394,7 @@ export function VendorBillsView() {
           </table>
         </div>
       </CardContent>
+      {directOpen && <DirectBookingDialog onClose={(saved) => { setDirectOpen(false); if (saved) load(); }} />}
 
       <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setPoTerms(null); setEditId(null); setForm(newFormState()); } }}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">

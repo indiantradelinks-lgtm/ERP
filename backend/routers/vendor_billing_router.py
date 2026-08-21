@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from pydantic import BaseModel, Field
 
 from core import db, require_permission, get_current_user, now_iso, new_id
@@ -1082,3 +1082,156 @@ async def po_wise_payable(user: dict = Depends(require_permission("accounting", 
         row["outstanding"] += float(r.get("outstanding") or 0)
         row["bills"].append(r)
     return {"pos": sorted(by_po.values(), key=lambda x: -x["outstanding"])}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Direct Cost Booking — historical / pre-ERP expenses (PO & GRN done outside ERP)
+# ═══════════════════════════════════════════════════════════════════════════
+DIRECT_CATEGORIES = ("material", "labour", "transport", "subcontract", "service", "other")
+
+
+class DirectBookingIn(BaseModel):
+    vendor_name: str
+    invoice_no: str
+    invoice_date: str                       # actual (past) bill date YYYY-MM-DD
+    project_id: Optional[str] = None
+    project_code: Optional[str] = None
+    expense_category: str = "other"
+    taxable_value: float
+    gst_amount: float = 0.0
+    tds_amount: float = 0.0
+    remarks: Optional[str] = None
+    attachments: Optional[List[Dict[str, Any]]] = None
+
+
+async def _resolve_direct_project(project_id: Optional[str], project_code: Optional[str]) -> Dict[str, Any]:
+    q = {"$or": [{"id": project_id or ""}, {"code": project_code or ""},
+                 {"project_code": project_code or ""}]}
+    proj = await db.projects.find_one(q, {"_id": 0, "id": 1, "code": 1, "project_code": 1, "name": 1})
+    if not proj:
+        raise HTTPException(status_code=400,
+                            detail=f"Project '{project_code or project_id}' not found — project is mandatory for direct cost booking")
+    return proj
+
+
+async def _insert_direct_booking(data: DirectBookingIn, user: dict) -> Dict[str, Any]:
+    if not (data.vendor_name or "").strip():
+        raise HTTPException(status_code=400, detail="Vendor name is required")
+    if not (data.invoice_no or "").strip():
+        raise HTTPException(status_code=400, detail="Bill/invoice number is required")
+    if float(data.taxable_value or 0) <= 0:
+        raise HTTPException(status_code=400, detail="Basic amount must be greater than zero")
+    if data.expense_category not in DIRECT_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"expense_category must be one of {DIRECT_CATEGORIES}")
+    try:
+        datetime.fromisoformat(data.invoice_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid bill date '{data.invoice_date}' — use YYYY-MM-DD")
+    proj = await _resolve_direct_project(data.project_id, data.project_code)
+    dup = await db.vendor_bills.find_one({"vendor_name": data.vendor_name.strip(), "invoice_no": data.invoice_no.strip(),
+                                          "status": {"$nin": ["cancelled", "rejected"]}}, {"_id": 0, "bill_no": 1})
+    if dup:
+        raise HTTPException(status_code=400,
+                            detail=f"Duplicate: invoice {data.invoice_no} for {data.vendor_name} already booked ({dup['bill_no']})")
+    basic = round(float(data.taxable_value), 2)
+    gst = round(float(data.gst_amount or 0), 2)
+    tds = round(float(data.tds_amount or 0), 2)
+    gross = round(basic + gst, 2)
+    net = round(gross - tds, 2)
+    doc = {
+        "id": new_id(),
+        "bill_no": await next_sequence("DCB"),
+        "bill_type": "direct_booking", "is_historical": True, "workflow_version": "direct",
+        "vendor_name": data.vendor_name.strip(),
+        "invoice_no": data.invoice_no.strip(), "invoice_date": data.invoice_date,
+        "project_id": proj["id"], "project_code": proj.get("code") or proj.get("project_code"),
+        "project_name": proj.get("name"),
+        "expense_category": data.expense_category,
+        "taxable_value": basic, "amount": gross, "total": gross,
+        "tax_amount": gst, "gst_amount": gst, "tds_amount": tds,
+        "totals": {"taxable": basic, "gst": gst, "tds": tds, "gross": gross, "net_payable": net},
+        "paid_amount": gross, "outstanding": 0.0,   # historical bills were already settled pre-ERP
+        "status": "posted",
+        "notes": data.remarks or "Direct cost booking — PO/GRN completed before ERP implementation",
+        "attachments": data.attachments or [],
+        "created_at": now_iso(),
+        "created_by": user.get("name") or user.get("email"),
+        "created_by_id": user.get("id"),
+    }
+    await db.vendor_bills.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@router.post("/vendor-bills/direct")
+async def create_direct_booking(payload: DirectBookingIn, request: Request,
+                                user: dict = Depends(require_permission("accounting", "write"))):
+    doc = await _insert_direct_booking(payload, user)
+    await audit(user=user, action="direct_cost_booking", resource="vendor_bills", record_id=doc["id"],
+                after={"bill_no": doc["bill_no"], "vendor": doc["vendor_name"], "project": doc["project_code"],
+                       "gross": doc["amount"]}, ip=request.client.host if request.client else None)
+    return doc
+
+
+_DIRECT_HEADERS = ["Vendor Name", "Bill Number", "Bill Date (YYYY-MM-DD)", "Project Code",
+                   "Expense Category (material/labour/transport/subcontract/service/other)",
+                   "Basic Amount", "GST Amount", "TDS Amount", "Remarks"]
+
+
+@router.get("/vendor-bills/direct/template")
+async def direct_booking_template(user: dict = Depends(require_permission("accounting", "read"))):
+    from openpyxl import Workbook
+    from io import BytesIO
+    from fastapi import Response
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Direct Bookings"
+    ws.append(_DIRECT_HEADERS)
+    ws.append(["ABC Transport Co", "INV-1041", "2025-11-14", "PRJ-2026-0049", "transport", 50000, 9000, 1000,
+               "Opening cost booking — pre-ERP"])
+    for col in "ABCDEFGHI":
+        ws.column_dimensions[col].width = 24
+    buf = BytesIO()
+    wb.save(buf)
+    return Response(content=buf.getvalue(),
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": "attachment; filename=direct_cost_booking_template.xlsx"})
+
+
+@router.post("/vendor-bills/direct/import")
+async def import_direct_bookings(request: Request, file: UploadFile = File(...),
+                                 user: dict = Depends(require_permission("accounting", "write"))):
+    from openpyxl import load_workbook
+    from io import BytesIO
+    try:
+        wb = load_workbook(BytesIO(await file.read()), data_only=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Could not read file — upload the .xlsx template")
+    ws = wb.active
+    inserted, errors = [], []
+    for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        if not row or all(c in (None, "") for c in row):
+            continue
+        vals = list(row) + [None] * (9 - len(row))
+
+        def _s(x):
+            return str(x).strip() if x is not None else ""
+        bill_date = vals[2]
+        if hasattr(bill_date, "date"):
+            bill_date = bill_date.date().isoformat()
+        try:
+            data = DirectBookingIn(
+                vendor_name=_s(vals[0]), invoice_no=_s(vals[1]), invoice_date=_s(bill_date),
+                project_code=_s(vals[3]), expense_category=_s(vals[4]).lower() or "other",
+                taxable_value=float(vals[5] or 0), gst_amount=float(vals[6] or 0),
+                tds_amount=float(vals[7] or 0), remarks=_s(vals[8]) or None)
+            doc = await _insert_direct_booking(data, user)
+            inserted.append(doc["bill_no"])
+        except HTTPException as e:
+            errors.append({"row": i, "error": e.detail})
+        except Exception as e:
+            errors.append({"row": i, "error": str(e)})
+    await audit(user=user, action="direct_cost_booking_import", resource="vendor_bills", record_id="bulk",
+                after={"inserted": len(inserted), "errors": len(errors)},
+                ip=request.client.host if request.client else None)
+    return {"inserted": len(inserted), "bill_nos": inserted, "errors": errors}

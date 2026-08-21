@@ -5503,3 +5503,10 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Entry point: "Tag vendors (n untagged)" link inside the New RFQ dialog above the vendor list; saving reloads vendors so filtering updates immediately.
 - RFQ vendor matcher sharpened: vendor category CODES expanded to master names (ITM → "IT Items") before fuzzy matching against item categories.
 - Tested: curl PUT categories save/revert + UI e2e (dialog, chip toggle, save 1 vendor, dialog closes, list reloads). Demo tag reverted.
+
+### Iteration 198 (Aug 2026) — Transport bills → Vendor Bills + Direct Cost Booking (pre-ERP) ✅
+1. **Transport mirror**: `_mirror_bill_to_vendor_bills` (logistics_phase4_router) upserts approved/paid transport bills into `vendor_bills` (source=logistics_vendor_bill, expense_category=transport, read_only). Hooks: approvals final-approve (vendor_bill type), manual status update, payment-processing paid; reject deletes mirror. Backfilled 7 existing bills. UI: orange TRANSPORT badge, actions replaced by "via VB-xxxx" note.
+2. **Project cost fix**: `_procurement_summary` vendor_cost now sums `total or amount` excluding draft/rejected/cancelled (was summing non-existent `total` → 0 for ERP bills).
+3. **Direct Cost Booking (historical)**: `POST /api/payables/vendor-bills/direct` (posted instantly, status=posted, is_historical, treated settled: paid_amount=gross, outstanding=0, DCB-#### sequence, duplicate + project-mandatory validation). Excel: GET .../direct/template + POST .../direct/import (row-level errors). UI: "Direct Booking" toolbar button → DirectBookingDialog.jsx (form + template download + bulk upload + error list); violet HISTORICAL badge.
+- Best-practice guidance given to user: bill-by-bill where documents exist; monthly lump-sum per project+category ("Opening cost booking – <month>") where not; hard cut-off date (before → Direct Booking, after → PR→PO→GRN).
+- Tested: curl (DCB create ₹118000, duplicate 400, template 200, import 1 ok + 1 row error, list shows 7 mirrors + DCBs, project vendor_cost=141600 confirmed) + UI screenshot (badges + dialog). Test DCBs cleaned; transport mirrors kept (real data).

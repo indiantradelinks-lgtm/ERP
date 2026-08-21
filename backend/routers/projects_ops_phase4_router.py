@@ -271,7 +271,8 @@ async def _procurement_summary(project_id: str) -> dict:
     bills = []
     if await _coll_exists("vendor_bills"):
         bills = await db.vendor_bills.find({"project_id": project_id}, {"_id": 0}).to_list(2000)
-    vendor_cost = round(sum(float(b.get("total") or 0) for b in bills), 2)
+    vendor_cost = round(sum(float(b.get("total") or b.get("amount") or 0) for b in bills
+                            if b.get("status") not in ("draft", "rejected", "cancelled")), 2)
     bills_pending = sum(1 for b in bills if b.get("status") in ("draft", "verified", "approved"))
 
     # subcontractor — resources of type=subcontract

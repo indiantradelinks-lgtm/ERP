@@ -231,8 +231,9 @@ async def approval_action(approval_id: str, payload: ApprovalAction, user: dict 
                         {"id": vb["id"]},
                         {"$set": {"status": "approved", "approved_at": now_iso(),
                                   "approval_id": updated["id"], "updated_at": now_iso()}})
-                    from routers.logistics_phase4_router import _push_bill_to_accounts, _audit as _vb_audit
+                    from routers.logistics_phase4_router import _push_bill_to_accounts, _audit as _vb_audit, _mirror_bill_to_vendor_bills
                     await _push_bill_to_accounts({**vb, "status": "approved"}, user)
+                    await _mirror_bill_to_vendor_bills({**vb, "status": "approved"})
                     await _vb_audit("vendor_bill", vb["id"], "approved_2level", user, vb.get("vb_no") or "",
                                     {"approval_id": updated["id"]})
             elif updated.get("type") == "client_onboarding" and updated.get("record_id"):
@@ -312,6 +313,8 @@ async def approval_action(approval_id: str, payload: ApprovalAction, user: dict 
             await db.logistics_vendor_bills.update_one(
                 {"id": updated["record_id"]},
                 {"$set": {"status": "rejected", "reject_reason": payload.comment or "", "updated_at": now_iso()}})
+            # remove the accounts mirror so rejected transport bills don't book cost
+            await db.vendor_bills.delete_one({"source": "logistics_vendor_bill", "source_id": updated["record_id"]})
         if updated.get("type") == "po_amendment" and updated.get("record_id"):
             await db.purchase_orders.update_one(
                 {"id": updated["record_id"]},

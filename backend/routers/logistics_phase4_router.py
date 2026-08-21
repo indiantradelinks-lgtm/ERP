@@ -536,6 +536,44 @@ async def vb_create(
     return doc
 
 
+async def _mirror_bill_to_vendor_bills(bill: dict) -> None:
+    """Mirror an approved/paid transport vendor bill into accounts `vendor_bills`
+    so it shows on the Vendor Bills page and books cost to its project."""
+    basic = round(sum(float(bill.get(k) or 0) for k in
+                      ("freight_amount", "loading_cost", "unloading_cost", "detention_amount", "other_charges")), 2)
+    gst = round(float(bill.get("gst_amount") or 0), 2)
+    tds = round(float(bill.get("tds_amount") or 0), 2)
+    gross = round(basic + gst, 2)
+    net = round(float(bill.get("net_payable") or (gross - tds)), 2)
+    status = "paid" if bill.get("status") == "paid" else "approved"
+    doc = {
+        "source": "logistics_vendor_bill", "source_id": bill["id"], "source_no": bill.get("vb_no"),
+        "bill_type": "transport_mirror", "read_only": True, "workflow_version": "mirror",
+        "vendor_id": bill.get("vendor_id"), "vendor_name": bill.get("vendor_name"),
+        "invoice_no": bill.get("bill_no"), "invoice_date": bill.get("bill_date"),
+        "project_id": bill.get("project_id"), "project_code": bill.get("project_code"),
+        "cost_center_id": bill.get("cost_center_id"), "cost_center_label": bill.get("cost_center_label"),
+        "expense_category": "transport",
+        "taxable_value": basic, "amount": gross, "total": gross,
+        "tax_amount": gst, "gst_amount": gst, "tds_amount": tds,
+        "totals": {"taxable": basic, "gst": gst, "tds": tds, "gross": gross, "net_payable": net},
+        "paid_amount": gross if status == "paid" else 0.0,
+        "outstanding": 0.0 if status == "paid" else net,
+        "status": status,
+        "notes": f"Auto-booked from Transport Vendor Bill {bill.get('vb_no')} (Logistics)",
+        "updated_at": now_iso(),
+    }
+    existing = await db.vendor_bills.find_one(
+        {"source": "logistics_vendor_bill", "source_id": bill["id"]}, {"_id": 0, "id": 1})
+    if existing:
+        await db.vendor_bills.update_one({"id": existing["id"]}, {"$set": doc})
+    else:
+        from sequences import next_sequence
+        doc.update({"id": new_id(), "bill_no": await next_sequence("VB"), "created_at": now_iso(),
+                    "created_by": "system (logistics mirror)"})
+        await db.vendor_bills.insert_one(doc)
+
+
 async def _push_bill_to_accounts(bill: dict, user: dict) -> None:
     """Puts an approved transport vendor bill into the Accounts payment queue
     (shadow row in project_requests, is_payment=True) — same flow as payment requests."""
@@ -605,6 +643,7 @@ async def vb_update(
     # Emit cost + accounts event when approved
     if updates.get("status") == "approved" and ex.get("status") != "approved":
         await _push_bill_to_accounts({**ex, **updates, "id": bid}, user)
+        await _mirror_bill_to_vendor_bills({**ex, **updates, "id": bid})
     if updates.get("status") == "submitted" and ex.get("status") != "submitted":
         await _start_bill_approval({**ex, **updates, "id": bid}, user)
         await _emit_cost("vendor_bill", bid, ex.get("vb_no", ""), updates.get("net_payable") or 0,
