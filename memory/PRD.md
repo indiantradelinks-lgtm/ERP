@@ -5497,3 +5497,9 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 2. **RFQ cancel/reject**: `POST /api/procurement/rfqs/{id}/cancel` (reason ≥5 chars, blocked for converted RFQs). RFQ stays on record as CANCELLED with reason/by/at; items freed; PR status re-derived via new `_recompute_pr_release_status` helper (also used by create/convert — approved ↔ rfq_initiated ↔ partially_fulfilled ↔ po_generated). Coverage endpoint excludes cancelled RFQs. UI: Cancel button + reason dialog, red reason under status badge; action buttons hidden for cancelled rows.
 3. **Category-matched vendors**: New RFQ dialog filters vendor chips to those whose vendor.categories/category fuzzy-match the selected items' categories (substring, case-insensitive); "Show all vendors" toggle; falls back to all when nothing matches or items uncategorised.
 - Tested via curl (overlap 400, cancel validation, cancel→PR back to approved, re-release after cancel, coverage) + UI screenshots (locked items, cancel reason display, vendor filter 6/21 on PPE+Paint PR with toggle). Test data cleaned.
+
+### Iteration 197 (Aug 2026) — Quick Vendor Category Tagging ✅
+- New `VendorTagDialog.jsx`: lists vendors (default "Untagged only" + search), category chips from `/api/vendor-categories` (inv_categories master), per-vendor toggle with "unsaved" badge, bulk save via `PUT /api/vendors/{id} {categories}` (existing vendors_router endpoint).
+- Entry point: "Tag vendors (n untagged)" link inside the New RFQ dialog above the vendor list; saving reloads vendors so filtering updates immediately.
+- RFQ vendor matcher sharpened: vendor category CODES expanded to master names (ITM → "IT Items") before fuzzy matching against item categories.
+- Tested: curl PUT categories save/revert + UI e2e (dialog, chip toggle, save 1 vendor, dialog closes, list reloads). Demo tag reverted.

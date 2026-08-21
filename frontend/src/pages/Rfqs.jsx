@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import SendEmailDialog from "@/components/SendEmailDialog";
 import RfqBulkEmailDialog from "@/components/RfqBulkEmailDialog";
 import EmailHistoryDialog from "@/components/EmailHistoryDialog";
+import VendorTagDialog from "@/components/VendorTagDialog";
 
 const RFQ_STATUS_TONE = {
   sent: "info", response_pending: "warning", under_evaluation: "info",
@@ -42,6 +43,8 @@ export default function Rfqs() {
   const [cancelFor, setCancelFor] = useState(null);
   const [cancelReason, setCancelReason] = useState("");
   const [showAllVendors, setShowAllVendors] = useState(false);
+  const [tagOpen, setTagOpen] = useState(false);
+  const [catMaster, setCatMaster] = useState([]);
 
   const load = async () => {
     try {
@@ -53,6 +56,7 @@ export default function Rfqs() {
       setRows(r.data || []);
       setPrs((p.data || []).filter((x) => RFQ_PR_STATUSES.includes(x.status)));
       setVendors(v.data || []);
+      api.get("/vendor-categories").then((c) => setCatMaster(c.data || [])).catch(() => {});
     } catch (e) { toast.error(e.response?.data?.detail || "Failed to load"); }
   };
   useEffect(() => { load(); }, []);
@@ -77,9 +81,12 @@ export default function Rfqs() {
       .filter(Boolean).map((c) => c.toLowerCase())));
   }, [selectedPr, form.item_indexes]);
   const matchesCat = (v) => {
-    const vc = [...(v.categories || []), v.category].filter(Boolean).map((c) => String(c).toLowerCase());
+    // expand vendor category codes to master names (e.g. ITM → "IT Items") for accurate matching
+    const codeToName = Object.fromEntries(catMaster.map((c) => [String(c.code).toLowerCase(), String(c.name).toLowerCase()]));
+    const vc = [...(v.categories || []), v.category].filter(Boolean)
+      .flatMap((c) => { const lc = String(c).toLowerCase(); return codeToName[lc] ? [lc, codeToName[lc]] : [lc]; });
     if (!vc.length) return false;
-    return selectedCats.some((ic) => vc.some((c) => ic.includes(c) || c.includes(ic)));
+    return selectedCats.some((ic) => vc.some((c) => ic === c || ic.includes(c) || c.includes(ic)));
   };
   const visibleVendors = useMemo(() => {
     if (showAllVendors || !selectedCats.length) return vendors;
@@ -277,11 +284,16 @@ export default function Rfqs() {
             <div>
               <div className="flex items-center justify-between">
                 <Label className="text-xs uppercase tracking-wider">Vendors {selectedCats.length > 0 && !showAllVendors ? `(matching item category)` : ""}</Label>
-                {selectedCats.length > 0 && (
-                  <label className="flex items-center gap-1 text-[11px] text-muted-foreground cursor-pointer">
-                    <input type="checkbox" checked={showAllVendors} onChange={(e) => setShowAllVendors(e.target.checked)} data-testid="rfq-show-all-vendors" /> Show all vendors
-                  </label>
-                )}
+                <div className="flex items-center gap-3">
+                  <button type="button" className="text-[11px] text-primary underline" onClick={() => setTagOpen(true)} data-testid="rfq-open-vendor-tagging" title="Tag untagged vendors with categories for sharper filtering">
+                    Tag vendors{vendors.filter((v) => !(v.categories || []).length).length ? ` (${vendors.filter((v) => !(v.categories || []).length).length} untagged)` : ""}
+                  </button>
+                  {selectedCats.length > 0 && (
+                    <label className="flex items-center gap-1 text-[11px] text-muted-foreground cursor-pointer">
+                      <input type="checkbox" checked={showAllVendors} onChange={(e) => setShowAllVendors(e.target.checked)} data-testid="rfq-show-all-vendors" /> Show all vendors
+                    </label>
+                  )}
+                </div>
               </div>
               <div className="flex flex-wrap gap-1.5 p-2 border border-input rounded-sm bg-background mt-1 max-h-48 overflow-y-auto" data-testid="rfq-vendor-list">
                 {visibleVendors.length === 0 && <span className="text-xs text-muted-foreground p-1">No vendors found.</span>}
@@ -344,6 +356,7 @@ export default function Rfqs() {
         />
       )}
 
+      {tagOpen && <VendorTagDialog onClose={(saved) => { setTagOpen(false); if (saved) load(); }} />}
       {/* Cancel/reject RFQ dialog */}
       <Dialog open={!!cancelFor} onOpenChange={(o) => !o && setCancelFor(null)}>
         <DialogContent className="max-w-md rounded-sm" data-testid="rfq-cancel-dialog">
