@@ -329,7 +329,8 @@ async def pr_coverage(pr_id: str, user: dict = Depends(require_permission("purch
     if not pr:
         raise HTTPException(status_code=404, detail="PR not found")
     pr_items = pr.get("items") or []
-    rfqs = await db.rfqs.find({"pr_id": pr_id}, {"_id": 0, "id": 1, "rfq_number": 1, "status": 1,
+    rfqs = await db.rfqs.find({"pr_id": pr_id, "status": {"$ne": "cancelled"}},
+                              {"_id": 0, "id": 1, "rfq_number": 1, "status": 1,
                                                  "item_indexes": 1, "po_id": 1, "po_number": 1,
                                                  "selected_vendor_id": 1, "vendors": 1}).to_list(100)
     po_ids = [r["po_id"] for r in rfqs if r.get("po_id")]
@@ -422,6 +423,30 @@ async def get_rfq(rfq_id: str, user: dict = Depends(require_permission("rfqs", "
     return row
 
 
+async def _recompute_pr_release_status(pr_id: str) -> str:
+    """Re-derive PR status from its active (non-cancelled) RFQs and converted POs."""
+    pr = await db.purchase_requisitions.find_one({"id": pr_id}, {"_id": 0, "items": 1, "status": 1})
+    if not pr:
+        return ""
+    n = len(pr.get("items") or [])
+    rfqs = await db.rfqs.find({"pr_id": pr_id, "status": {"$ne": "cancelled"}},
+                              {"_id": 0, "item_indexes": 1, "po_id": 1}).to_list(200)
+    po_covered: set = set()
+    for r in rfqs:
+        if r.get("po_id"):
+            po_covered |= set(r.get("item_indexes") if r.get("item_indexes") is not None else range(n))
+    if po_covered >= set(range(n)) and n:
+        status = "po_generated"
+    elif po_covered:
+        status = "partially_fulfilled"
+    elif rfqs:
+        status = "rfq_initiated"
+    else:
+        status = "approved"
+    await db.purchase_requisitions.update_one({"id": pr_id}, {"$set": {"status": status, "updated_at": now_iso()}})
+    return status
+
+
 @router.post("/procurement/rfqs")
 async def create_rfq(payload: RFQIn, request: Request,
                      user: dict = Depends(require_permission("rfqs", "write"))):
@@ -433,14 +458,24 @@ async def create_rfq(payload: RFQIn, request: Request,
     if not payload.vendors:
         raise HTTPException(status_code=400, detail="Pick at least one vendor")
     pr_items = pr.get("items") or []
+    # Items already in a live (non-cancelled) RFQ cannot go into another one — only balance items
+    active_covered: set = set()
+    async for r in db.rfqs.find({"pr_id": payload.pr_id, "status": {"$ne": "cancelled"}}, {"_id": 0, "item_indexes": 1}):
+        active_covered |= set(r.get("item_indexes") if r.get("item_indexes") is not None else range(len(pr_items)))
     if payload.item_indexes is not None:
         idxs = sorted(set(int(i) for i in payload.item_indexes))
         if not idxs:
             raise HTTPException(status_code=400, detail="Select at least one item for this RFQ")
         if any(i < 0 or i >= len(pr_items) for i in idxs):
             raise HTTPException(status_code=400, detail="Invalid item selection for this PR")
+        dup = [pr_items[i].get("name") or f"Item {i + 1}" for i in idxs if i in active_covered]
+        if dup:
+            raise HTTPException(status_code=400,
+                                detail=f"Already released in a live RFQ: {', '.join(dup)}. Cancel that RFQ first or pick only balance items.")
         rfq_items = [{**pr_items[i], "pr_item_index": i} for i in idxs]
     else:
+        if active_covered:
+            raise HTTPException(status_code=400, detail="Some items are already in a live RFQ — select only the balance items")
         idxs = list(range(len(pr_items)))
         rfq_items = [{**it, "pr_item_index": i} for i, it in enumerate(pr_items)]
 
@@ -480,10 +515,39 @@ async def create_rfq(payload: RFQIn, request: Request,
     doc.pop("_id", None)
     await db.purchase_requisitions.update_one(
         {"id": payload.pr_id},
-        {"$set": {"status": "rfq_initiated", "rfq_id": doc["id"], "rfq_number": doc["rfq_number"]},
+        {"$set": {"rfq_id": doc["id"], "rfq_number": doc["rfq_number"]},
          "$push": {"rfq_ids": doc["id"]}})
+    await _recompute_pr_release_status(payload.pr_id)
     await audit(user=user, action="create", resource="rfqs", record_id=doc["id"], after=doc, ip=_ip(request))
     return doc
+
+
+class RFQCancelIn(BaseModel):
+    reason: str
+
+
+@router.post("/procurement/rfqs/{rfq_id}/cancel")
+async def cancel_rfq(rfq_id: str, payload: RFQCancelIn, request: Request,
+                     user: dict = Depends(require_permission("rfqs", "write"))):
+    """Reject/withdraw a wrongly-sent RFQ with a mandatory reason. The RFQ stays on
+    record (status 'cancelled'); its items are freed for a fresh RFQ."""
+    if len((payload.reason or "").strip()) < 5:
+        raise HTTPException(status_code=400, detail="Rejection reason is required (min 5 characters)")
+    rfq = await db.rfqs.find_one({"id": rfq_id}, {"_id": 0})
+    if not rfq:
+        raise HTTPException(status_code=404, detail="RFQ not found")
+    if rfq.get("status") == "cancelled":
+        raise HTTPException(status_code=400, detail="RFQ is already cancelled")
+    if rfq.get("status") == "converted_to_po":
+        raise HTTPException(status_code=400, detail="RFQ already converted to a PO — amend/cancel the PO instead")
+    upd = {"status": "cancelled", "cancel_reason": payload.reason.strip(),
+           "cancelled_by": user.get("name") or user.get("email"),
+           "cancelled_by_id": user["id"], "cancelled_at": now_iso(), "updated_at": now_iso()}
+    await db.rfqs.update_one({"id": rfq_id}, {"$set": upd})
+    pr_status = await _recompute_pr_release_status(rfq["pr_id"]) if rfq.get("pr_id") else None
+    await audit(user=user, action="cancel", resource="rfqs", record_id=rfq_id,
+                before=rfq, after={**rfq, **upd}, ip=_ip(request))
+    return {**rfq, **upd, "pr_status": pr_status}
 
 
 @router.post("/procurement/rfqs/{rfq_id}/respond")
@@ -706,16 +770,11 @@ async def convert_rfq_to_po(rfq_id: str, request: Request,
     await db.purchase_orders.insert_one(po)
     po.pop("_id", None)
     await db.rfqs.update_one({"id": rfq_id}, {"$set": {"status": "converted_to_po", "po_id": po["id"], "po_number": po["po_number"], "updated_at": now_iso()}})
-    # PR coverage: 'po_generated' only when every PR item is covered by a converted RFQ
-    pr_item_count = len(pr.get("items") or [])
-    covered: set = set()
-    async for r in db.rfqs.find({"pr_id": rfq["pr_id"], "po_id": {"$exists": True, "$ne": None}}, {"_id": 0, "item_indexes": 1}):
-        covered |= set(r.get("item_indexes") if r.get("item_indexes") is not None else range(pr_item_count))
-    pr_status = "po_generated" if covered >= set(range(pr_item_count)) else "partially_fulfilled"
     await db.purchase_requisitions.update_one(
         {"id": rfq["pr_id"]},
-        {"$set": {"status": pr_status, "po_id": po["id"], "po_number": po["po_number"], "updated_at": now_iso()},
+        {"$set": {"po_id": po["id"], "po_number": po["po_number"], "updated_at": now_iso()},
          "$push": {"po_ids": po["id"]}})
+    await _recompute_pr_release_status(rfq["pr_id"])
     await audit(user=user, action="create", resource="purchase_orders", record_id=po["id"], after=po, ip=_ip(request))
     return po
 

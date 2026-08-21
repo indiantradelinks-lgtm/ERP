@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, Fragment } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { Plus, RefreshCw, Search, Trophy, FileText, ChevronRight, Send, Mail, Network, FileDown, Mails, History } from "lucide-react";
+import { Plus, RefreshCw, Search, Trophy, FileText, ChevronRight, Send, Mail, Network, FileDown, Mails, History, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,6 +19,7 @@ import EmailHistoryDialog from "@/components/EmailHistoryDialog";
 const RFQ_STATUS_TONE = {
   sent: "info", response_pending: "warning", under_evaluation: "info",
   vendor_selected: "success", approved: "success", converted_to_po: "primary",
+  cancelled: "danger",
 };
 const RFQ_PR_STATUSES = ["approved", "rfq_initiated", "partially_fulfilled"];
 
@@ -38,6 +39,9 @@ export default function Rfqs() {
   const [bulkFor, setBulkFor] = useState(null);
   const [historyFor, setHistoryFor] = useState(null);
   const [lineageFor, setLineageFor] = useState(null);
+  const [cancelFor, setCancelFor] = useState(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [showAllVendors, setShowAllVendors] = useState(false);
 
   const load = async () => {
     try {
@@ -54,26 +58,54 @@ export default function Rfqs() {
   useEffect(() => { load(); }, []);
 
   const selectedPr = useMemo(() => prs.find((p) => p.id === form.pr_id), [prs, form.pr_id]);
-  // indexes already released in existing RFQs for the selected PR (legacy RFQs without item_indexes cover ALL items)
+  // indexes already released in LIVE (non-cancelled) RFQs — balance items only
   const coveredIdx = useMemo(() => {
     if (!selectedPr) return new Set();
     const s = new Set();
-    rows.filter((r) => r.pr_id === selectedPr.id).forEach((r) => {
+    rows.filter((r) => r.pr_id === selectedPr.id && r.status !== "cancelled").forEach((r) => {
       const idxs = r.item_indexes ?? (selectedPr.items || []).map((_, i) => i);
       idxs.forEach((i) => s.add(i));
     });
     return s;
   }, [rows, selectedPr]);
 
+  // Only vendors whose category matches the selected items' categories are shown
+  const selectedCats = useMemo(() => {
+    if (!selectedPr) return [];
+    return Array.from(new Set(form.item_indexes
+      .map((i) => (selectedPr.items || [])[i]?.category)
+      .filter(Boolean).map((c) => c.toLowerCase())));
+  }, [selectedPr, form.item_indexes]);
+  const matchesCat = (v) => {
+    const vc = [...(v.categories || []), v.category].filter(Boolean).map((c) => String(c).toLowerCase());
+    if (!vc.length) return false;
+    return selectedCats.some((ic) => vc.some((c) => ic.includes(c) || c.includes(ic)));
+  };
+  const visibleVendors = useMemo(() => {
+    if (showAllVendors || !selectedCats.length) return vendors;
+    const matched = vendors.filter(matchesCat);
+    return matched.length ? matched : vendors;   // fall back to all if nothing matches
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendors, selectedCats, showAllVendors]);
+
   const pickPr = (pr_id) => {
     const pr = prs.find((p) => p.id === pr_id);
     const covered = new Set();
-    rows.filter((r) => r.pr_id === pr_id).forEach((r) => {
+    rows.filter((r) => r.pr_id === pr_id && r.status !== "cancelled").forEach((r) => {
       const idxs = r.item_indexes ?? (pr?.items || []).map((_, i) => i);
       idxs.forEach((i) => covered.add(i));
     });
     const remaining = (pr?.items || []).map((_, i) => i).filter((i) => !covered.has(i));
-    setForm((f) => ({ ...f, pr_id, item_indexes: remaining }));
+    setForm((f) => ({ ...f, pr_id, item_indexes: remaining, vendor_ids: [] }));
+  };
+
+  const cancelRfq = async () => {
+    try {
+      await api.post(`/procurement/rfqs/${cancelFor.id}/cancel`, { reason: cancelReason });
+      toast.success(`${cancelFor.rfq_number} cancelled — its items are free for a fresh RFQ`);
+      setCancelFor(null); setCancelReason("");
+      load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed to cancel"); }
   };
 
   const create = async () => {
@@ -149,10 +181,16 @@ export default function Rfqs() {
                     <TableCell className="font-mono-data text-sm font-bold">{r.rfq_number}</TableCell>
                     <TableCell className="font-mono-data text-xs">{r.pr_number}<div className="text-[10px] text-muted-foreground">{(r.items || []).length} item(s)</div></TableCell>
                     <TableCell className="text-xs">{(r.vendors || []).length} vendor{r.vendors?.length === 1 ? "" : "s"}<div className="text-[10px] text-muted-foreground">{responded} responded</div></TableCell>
-                    <TableCell><StatusBadge text={(r.status || "").replaceAll("_", " ")} tone={RFQ_STATUS_TONE[r.status] || "neutral"} /></TableCell>
+                    <TableCell>
+                      <StatusBadge text={(r.status || "").replaceAll("_", " ")} tone={RFQ_STATUS_TONE[r.status] || "neutral"} />
+                      {r.status === "cancelled" && r.cancel_reason && (
+                        <div className="text-[10px] text-red-600 mt-0.5 max-w-[160px] truncate" title={`Cancelled by ${r.cancelled_by || ""}: ${r.cancel_reason}`} data-testid={`rfq-cancel-reason-${r.id}`}>✗ {r.cancel_reason}</div>
+                      )}
+                    </TableCell>
                     <TableCell className="text-xs">{selectedVendor ? <StatusBadge text={selectedVendor.vendor_name} tone="success" /> : "—"}</TableCell>
                     <TableCell className="text-right">
                       <div className="inline-flex gap-1">
+                        {r.status !== "cancelled" && (<>
                         <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={() => setRespondOpen(r)} data-testid={`rfq-respond-${r.id}`}>
                           <Send className="h-3 w-3 mr-1" /> Response
                         </Button>
@@ -179,6 +217,12 @@ export default function Rfqs() {
                             <ChevronRight className="h-3 w-3 mr-1" /> PO
                           </Button>
                         )}
+                        {r.status !== "converted_to_po" && (
+                          <Button size="sm" variant="ghost" className="h-7 px-2 text-destructive" onClick={() => { setCancelFor(r); setCancelReason(""); }} data-testid={`rfq-cancel-${r.id}`} title="Reject/withdraw this RFQ with a reason — its items get freed for a fresh RFQ">
+                            <XCircle className="h-3 w-3 mr-1" /> Cancel
+                          </Button>
+                        )}
+                        </>)}
                         {r.po_number && (
                           <button onClick={() => navigate("/app/purchase-orders")} className="text-xs underline text-primary px-2" data-testid={`rfq-po-link-${r.id}`}>
                             {r.po_number}
@@ -217,23 +261,31 @@ export default function Rfqs() {
                     const checked = form.item_indexes.includes(idx);
                     const inRfq = coveredIdx.has(idx);
                     return (
-                      <label key={idx} className={`flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer hover:bg-muted/40 ${inRfq && !checked ? "opacity-60" : ""}`} data-testid={`rfq-item-check-${idx}`}>
-                        <input type="checkbox" checked={checked}
+                      <label key={idx} className={`flex items-center gap-2 px-2 py-1.5 text-sm ${inRfq ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-muted/40"}`} data-testid={`rfq-item-check-${idx}`}>
+                        <input type="checkbox" checked={checked} disabled={inRfq}
                           onChange={() => setForm((f) => ({ ...f, item_indexes: checked ? f.item_indexes.filter((x) => x !== idx) : [...f.item_indexes, idx].sort((a, b) => a - b) }))} />
                         <span className="flex-1 min-w-0 truncate font-medium">{it.name}</span>
                         <span className="text-xs text-muted-foreground tabular">{it.quantity} {it.unit || "Nos"}</span>
-                        {inRfq && <span className="text-[9px] uppercase font-bold bg-sky-100 text-sky-700 px-1 py-0.5 rounded-sm" title="Already released in another RFQ for this PR">In RFQ</span>}
+                        {inRfq && <span className="text-[9px] uppercase font-bold bg-sky-100 text-sky-700 px-1 py-0.5 rounded-sm" title="Already in a live RFQ — cancel that RFQ to free this item">In RFQ</span>}
                       </label>
                     );
                   })}
                 </div>
-                <p className="text-[11px] text-muted-foreground mt-1">Release only the selected items in this RFQ — the remaining items can go to different vendors via separate RFQs.</p>
+                <p className="text-[11px] text-muted-foreground mt-1">Only balance items can be released — items already in a live RFQ are locked (cancel that RFQ to free them).</p>
               </div>
             )}
             <div>
-              <Label className="text-xs uppercase tracking-wider">Vendors</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs uppercase tracking-wider">Vendors {selectedCats.length > 0 && !showAllVendors ? `(matching item category)` : ""}</Label>
+                {selectedCats.length > 0 && (
+                  <label className="flex items-center gap-1 text-[11px] text-muted-foreground cursor-pointer">
+                    <input type="checkbox" checked={showAllVendors} onChange={(e) => setShowAllVendors(e.target.checked)} data-testid="rfq-show-all-vendors" /> Show all vendors
+                  </label>
+                )}
+              </div>
               <div className="flex flex-wrap gap-1.5 p-2 border border-input rounded-sm bg-background mt-1 max-h-48 overflow-y-auto" data-testid="rfq-vendor-list">
-                {vendors.map((v) => {
+                {visibleVendors.length === 0 && <span className="text-xs text-muted-foreground p-1">No vendors found.</span>}
+                {visibleVendors.map((v) => {
                   const active = form.vendor_ids.includes(v.id);
                   return (
                     <button key={v.id} type="button" onClick={() => setForm((f) => ({ ...f, vendor_ids: active ? f.vendor_ids.filter((x) => x !== v.id) : [...f.vendor_ids, v.id] }))}
@@ -291,6 +343,23 @@ export default function Rfqs() {
           onClose={() => setHistoryFor(null)}
         />
       )}
+
+      {/* Cancel/reject RFQ dialog */}
+      <Dialog open={!!cancelFor} onOpenChange={(o) => !o && setCancelFor(null)}>
+        <DialogContent className="max-w-md rounded-sm" data-testid="rfq-cancel-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-display text-destructive">Cancel RFQ — {cancelFor?.rfq_number}</DialogTitle>
+            <DialogDescription>The RFQ stays on record as CANCELLED with your reason, and its items become free to release in a fresh RFQ with corrections.</DialogDescription>
+          </DialogHeader>
+          <textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}
+            placeholder="Reason for rejection (min 5 characters) — e.g. wrong quantity sent, missing specs…"
+            className="w-full min-h-[90px] rounded-sm border border-input bg-background p-2 text-sm" data-testid="rfq-cancel-reason-input" />
+          <DialogFooter>
+            <Button variant="outline" className="rounded-sm" onClick={() => setCancelFor(null)}>Keep RFQ</Button>
+            <Button variant="destructive" className="rounded-sm" onClick={cancelRfq} disabled={cancelReason.trim().length < 5} data-testid="rfq-cancel-confirm">Cancel RFQ</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!lineageFor} onOpenChange={(o) => !o && setLineageFor(null)}>
         <DialogContent className="max-w-5xl rounded-sm">
