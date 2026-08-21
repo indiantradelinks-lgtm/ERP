@@ -321,6 +321,54 @@ async def submit_pr(pr_id: str, request: Request, body: Optional[dict] = None,
     return {"pr_id": pr_id, "approval_id": approval["id"]}
 
 
+@router.get("/procurement/prs/{pr_id}/coverage")
+async def pr_coverage(pr_id: str, user: dict = Depends(require_permission("purchase_requisitions", "read"))):
+    """Per-item release map: which RFQ each PR item went into, which PO it landed
+    in, and which items are still pending RFQ release."""
+    pr = await db.purchase_requisitions.find_one({"id": pr_id}, {"_id": 0})
+    if not pr:
+        raise HTTPException(status_code=404, detail="PR not found")
+    pr_items = pr.get("items") or []
+    rfqs = await db.rfqs.find({"pr_id": pr_id}, {"_id": 0, "id": 1, "rfq_number": 1, "status": 1,
+                                                 "item_indexes": 1, "po_id": 1, "po_number": 1,
+                                                 "selected_vendor_id": 1, "vendors": 1}).to_list(100)
+    po_ids = [r["po_id"] for r in rfqs if r.get("po_id")]
+    pos = {p["id"]: p async for p in db.purchase_orders.find(
+        {"id": {"$in": po_ids}}, {"_id": 0, "id": 1, "po_number": 1, "status": 1, "total": 1, "vendor": 1, "revision": 1})}
+    out_items = []
+    released = po_covered = 0
+    for i, it in enumerate(pr_items):
+        releases = []
+        for r in rfqs:
+            idxs = r.get("item_indexes") if r.get("item_indexes") is not None else list(range(len(pr_items)))
+            if i not in idxs:
+                continue
+            sel = next((v for v in (r.get("vendors") or []) if v.get("vendor_id") == r.get("selected_vendor_id")), None)
+            po = pos.get(r.get("po_id"))
+            releases.append({
+                "rfq_id": r["id"], "rfq_number": r.get("rfq_number"), "rfq_status": r.get("status"),
+                "vendor": (po or {}).get("vendor") or (sel or {}).get("vendor_name"),
+                "po_id": (po or {}).get("id"), "po_number": (po or {}).get("po_number"),
+                "po_status": (po or {}).get("status"), "po_revision": (po or {}).get("revision"),
+            })
+        state = "pending_release"
+        if any(x.get("po_number") for x in releases):
+            state = "po_created"
+            po_covered += 1
+            released += 1
+        elif releases:
+            state = "in_rfq"
+            released += 1
+        out_items.append({"index": i, "name": it.get("name"), "quantity": it.get("quantity"),
+                          "unit": it.get("unit") or "Nos", "state": state, "releases": releases})
+    return {
+        "pr_number": pr.get("pr_number"), "status": pr.get("status"),
+        "summary": {"total_items": len(pr_items), "released": released,
+                    "po_created": po_covered, "pending": len(pr_items) - released},
+        "items": out_items,
+    }
+
+
 @router.delete("/procurement/prs/{pr_id}")
 async def delete_pr(pr_id: str, request: Request,
                     user: dict = Depends(require_permission("purchase_requisitions", "delete"))):

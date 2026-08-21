@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, Trash2, Send, ClipboardCheck, Briefcase, AlertTriangle, RefreshCw, X, Network, FileDown } from "lucide-react";
+import { Plus, Search, Trash2, Send, ClipboardCheck, Briefcase, AlertTriangle, RefreshCw, X, Network, FileDown, ListTree } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,6 +38,7 @@ export default function PurchaseRequisitions() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(blankForm());
   const [lineageFor, setLineageFor] = useState(null);
+  const [coverageFor, setCoverageFor] = useState(null);
   const [submitFor, setSubmitFor] = useState(null);
   const [dropdowns, setDropdowns] = useState({ departments: [], projects: [], sites: [], categories: [], items_by_category: {}, cost_centers: [] });
 
@@ -166,13 +167,18 @@ export default function PurchaseRequisitions() {
                           <ClipboardCheck className="h-3 w-3 mr-1" /> Approval
                         </Button>
                       )}
+                      {["approved", "rfq_initiated", "partially_fulfilled", "po_generated", "closed"].includes(r.status) && (
+                        <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setCoverageFor(r)} data-testid={`pr-coverage-${r.id}`} title="Item-wise release map: RFQ / PO / pending">
+                          <ListTree className="h-3 w-3 mr-1" /> Coverage
+                        </Button>
+                      )}
                       <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setLineageFor(r)} data-testid={`pr-lineage-${r.id}`} title="View end-to-end procurement lineage">
                         <Network className="h-3 w-3 mr-1" /> Lineage
                       </Button>
                       <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => downloadPdf(`/procurement/prs/${r.id}/pdf`, `${r.pr_number}.pdf`)} data-testid={`pr-pdf-${r.id}`} title="Download PR PDF">
                         <FileDown className="h-3 w-3 mr-1" /> PDF
                       </Button>
-                      {r.status === "approved" && (
+                      {["approved", "rfq_initiated", "partially_fulfilled"].includes(r.status) && (
                         <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={() => navigate(`/app/rfqs?pr=${r.id}`)} data-testid={`pr-rfq-${r.id}`}>
                           <RefreshCw className="h-3 w-3 mr-1" /> RFQ
                         </Button>
@@ -191,6 +197,7 @@ export default function PurchaseRequisitions() {
         </div>
       </div>
 
+      {coverageFor && <PRCoverageDialog pr={coverageFor} onClose={() => setCoverageFor(null)} />}
       <Dialog open={!!lineageFor} onOpenChange={(o) => !o && setLineageFor(null)}>
         <DialogContent className="max-w-5xl rounded-sm">
           <DialogHeader>
@@ -420,5 +427,84 @@ function SelectField({ label, value, onChange, options, testid, placeholder }) {
         {(options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </div>
+  );
+}
+
+const COVERAGE_STATE = {
+  pending_release: { label: "Pending Release", cls: "bg-amber-100 text-amber-800" },
+  in_rfq: { label: "In RFQ", cls: "bg-sky-100 text-sky-700" },
+  po_created: { label: "PO Created", cls: "bg-emerald-100 text-emerald-700" },
+};
+
+function PRCoverageDialog({ pr, onClose }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    api.get(`/procurement/prs/${pr.id}/coverage`)
+      .then((r) => setData(r.data))
+      .catch((e) => setError(e.response?.data?.detail || "Failed to load coverage"));
+  }, [pr.id]);
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-4xl rounded-sm max-h-[85vh] overflow-y-auto" data-testid="pr-coverage-dialog">
+        <DialogHeader>
+          <DialogTitle className="font-display">Item Coverage — {pr.pr_number}</DialogTitle>
+          <DialogDescription>Which items went into which RFQ / PO, and what is still pending release.</DialogDescription>
+        </DialogHeader>
+        {error && <div className="text-sm text-destructive py-4">{error}</div>}
+        {!data && !error && <div className="text-sm text-muted-foreground py-4">Loading…</div>}
+        {data && (
+          <>
+            <div className="flex flex-wrap gap-2 text-xs" data-testid="pr-coverage-summary">
+              <span className="px-2 py-1 rounded-sm bg-muted font-semibold">{data.summary.total_items} item(s)</span>
+              <span className="px-2 py-1 rounded-sm bg-sky-100 text-sky-700 font-semibold">{data.summary.released} released to RFQ</span>
+              <span className="px-2 py-1 rounded-sm bg-emerald-100 text-emerald-700 font-semibold">{data.summary.po_created} with PO</span>
+              <span className={`px-2 py-1 rounded-sm font-semibold ${data.summary.pending ? "bg-amber-100 text-amber-800" : "bg-muted text-muted-foreground"}`}>{data.summary.pending} pending release</span>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="text-[10px] uppercase tracking-wider">#</TableHead>
+                  <TableHead className="text-[10px] uppercase tracking-wider">Item</TableHead>
+                  <TableHead className="text-[10px] uppercase tracking-wider">Qty</TableHead>
+                  <TableHead className="text-[10px] uppercase tracking-wider">RFQ</TableHead>
+                  <TableHead className="text-[10px] uppercase tracking-wider">PO</TableHead>
+                  <TableHead className="text-[10px] uppercase tracking-wider">Vendor</TableHead>
+                  <TableHead className="text-[10px] uppercase tracking-wider">State</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.items.map((it) => {
+                  const st = COVERAGE_STATE[it.state] || COVERAGE_STATE.pending_release;
+                  return (
+                    <TableRow key={it.index} data-testid={`pr-coverage-row-${it.index}`}>
+                      <TableCell className="text-xs text-muted-foreground">{it.index + 1}</TableCell>
+                      <TableCell className="text-sm font-semibold">{it.name}</TableCell>
+                      <TableCell className="text-xs tabular">{it.quantity} {it.unit}</TableCell>
+                      <TableCell className="text-xs font-mono-data">
+                        {it.releases.length === 0 ? "—" : it.releases.map((rl, k) => (
+                          <div key={k}>{rl.rfq_number} <span className="text-[10px] text-muted-foreground">({(rl.rfq_status || "").replaceAll("_", " ")})</span></div>
+                        ))}
+                      </TableCell>
+                      <TableCell className="text-xs font-mono-data">
+                        {it.releases.some((rl) => rl.po_number) ? it.releases.filter((rl) => rl.po_number).map((rl, k) => (
+                          <div key={k} className="text-success font-bold">{rl.po_number}{Number(rl.po_revision) > 0 ? ` (Rev ${rl.po_revision})` : ""} <span className="text-[10px] text-muted-foreground font-normal">({(rl.po_status || "").replaceAll("_", " ")})</span></div>
+                        )) : "—"}
+                      </TableCell>
+                      <TableCell className="text-xs">{it.releases.map((rl) => rl.vendor).filter(Boolean).join(", ") || "—"}</TableCell>
+                      <TableCell><span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-sm ${st.cls}`} data-testid={`pr-coverage-state-${it.index}`}>{st.label}</span></TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </>
+        )}
+        <DialogFooter>
+          <Button variant="outline" className="rounded-sm" onClick={onClose}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

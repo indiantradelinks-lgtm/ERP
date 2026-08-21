@@ -5486,3 +5486,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 4/5. **Lock & reject-reopen**: verified — pending_approval locked; reject stores `reject_reason`, status pending_revision (editable + resubmittable). Reject remarks now shown in PO list status cell + red banner in Items dialog.
 6/7. **Commercial factors**: PO editor + `PUT /procurement/pos/{id}/items` support payment_terms, tds_pct (amt on basic), retention_pct & advance_pct (amt on grand total), per-item HSN/SAC input. PDF prints Payment Terms + Advance/TDS/Retention rows under totals. WO = SO (user confirmed; SO unchanged beyond earlier PR-mandatory rule).
 - Tested end-to-end via curl: PR(3 items)→RFQ[0,1]+RFQ[2]→2 draft POs→partially_fulfilled→po_generated; commercial factors math (TDS 2%=2840 on 142000 basic; retention 5%/advance 10% on 171360); PDF rows; reject→edit→resubmit→approved. UI screenshots: PO editor (payment/TDS/HSN live calc) + RFQ item-picker dialog. Test data cleaned.
+
+### Iteration 195 (Aug 2026) — PR Coverage View ✅
+- New `GET /api/procurement/prs/{id}/coverage`: per-item release map (item → RFQs with status → PO number/status/revision → vendor) + summary counts (total / released / with PO / pending release). Legacy RFQs without item_indexes treated as covering all items.
+- Frontend: "Coverage" button on PR rows (approved/rfq_initiated/partially_fulfilled/po_generated/closed) → `PRCoverageDialog` with summary chips + per-item table with Pending Release / In RFQ / PO Created state badges. RFQ button now also visible for rfq_initiated & partially_fulfilled PRs (release remaining items).
+- Tested: curl on po_generated PR (correct summary + PO ref) + UI screenshot (multi-item PR with 2 RFQs each showing status).
