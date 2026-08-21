@@ -231,7 +231,11 @@ async def list_requests(project_code: Optional[str] = None, request_type: Option
         q["status"] = status
     if dept:
         q["owning_dept"] = dept
-    q = await apply_project_scope(user, q, "project_id")
+    base = dict(q)
+    scoped = await apply_project_scope(user, q, "project_id")
+    # Users must always see requests THEY raised (e.g. self/expense payments routed
+    # to Head Office with no project scope) with live status.
+    q = scoped if scoped is q else {"$or": [scoped, {**base, "created_by_id": user.get("id")}]}
     q["source"] = {"$ne": "vendor_bill"}  # vendor-bill shadow rows live only in the Accounts queue
     rows = await db.project_requests.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
     pay_ids = [r["id"] for r in rows if r.get("is_payment")]
@@ -254,7 +258,9 @@ async def list_requests(project_code: Optional[str] = None, request_type: Option
 async def summary(project_code: Optional[str] = None,
                   user: dict = Depends(require_permission("project_requests", "read"))):
     q: Dict[str, Any] = {"project_code": project_code} if project_code else {}
-    q = await apply_project_scope(user, q, "project_id")
+    base = dict(q)
+    scoped = await apply_project_scope(user, q, "project_id")
+    q = scoped if scoped is q else {"$or": [scoped, {**base, "created_by_id": user.get("id")}]}
     rows = await db.project_requests.find(q, {"_id": 0, "status": 1, "est_value": 1}).to_list(5000)
     return {
         "total": len(rows),

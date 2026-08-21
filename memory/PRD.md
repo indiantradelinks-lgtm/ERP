@@ -5520,3 +5520,7 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 1. Candidate Database: "HR Recruiter (follow-up owner)" select on the New/Edit form (options = active users with hr* role via GET /api/auth/users) + "Recruiter" column in the list. Saved to candidates.recruiter (generic CRUD, no backend change).
 2. Recruitment Requests: Project column now shows Project Code + Project Name (from /api/projects map, keyed by code & id); new "Project User" column = project.manager → fallback row.raised_by → "—". testids: recruit-project-{id}, recruit-project-user-{id}.
 - No existing functionality touched (additive only). Verified via screenshots: recruiter dropdown lists 4 HR users; dashboard shows PRJ code + client name + manager (e.g. Arjun Reddy on PRJ-2025-01).
+
+### Iteration 201 (Aug 2026) — Self/Expense payments visible to raiser ✅
+- `GET /api/project-requests` (+ /summary): project-scope clause now ORs `{created_by_id: user.id}` (with same user filters), so scoped users always see requests THEY raised — e.g. self/expense payments routed to Head Office cost centers with no project_id — with live status and pay_stage (pending_verification → verified → paid, UTR shown). No workflow/permission changes; approvals/scoping for other rows untouched.
+- Tested: PM (test_pm) raised self_expense → visible pending_approval → after approval status with_dept + pay_stage pending_verification in PM's own list. Test request cleaned.
