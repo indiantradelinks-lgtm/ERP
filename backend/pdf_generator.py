@@ -41,7 +41,8 @@ WATERMARK_FILE = "file:///app/backend/assets/itl-watermark.png"
 
 CSS_BASE = """
 <style>
-@page { size: A4; margin: 18mm 16mm 22mm 16mm; }
+@page { size: A4; margin: 18mm 16mm 28mm 16mm;
+        @bottom-center { content: element(pageFooter); } }
 * { box-sizing: border-box; font-family: 'Helvetica','Arial',sans-serif; }
 body { color: #0f172a; font-size: 10.5pt; }
 .brand { font-size: 8.5pt; color: #475569; letter-spacing: 0.5px; text-transform: uppercase; }
@@ -68,7 +69,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .tag.amber { background: #fef3c7; color: #92400e; }
 .tag.red   { background: #fee2e2; color: #991b1b; }
 .tag.slate { background: #e2e8f0; color: #334155; }
-.footer { position: fixed; bottom: 6mm; left: 16mm; right: 16mm;
+.footer { position: running(pageFooter); width: 100%;
           font-size: 8pt; color: #64748b; border-top: 1px solid #e2e8f0;
           padding-top: 4px; }
 .footer .frow { display: flex; justify-content: space-between; }
@@ -78,6 +79,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .signs { margin-top: 28px; display: flex; gap: 24px; }
 .signs .box { flex: 1; border-top: 1px solid #0f172a; padding-top: 4px; font-size: 9pt; color: #475569; }
 .note { font-size: 9pt; color: #64748b; margin-top: 6px; }
+.tnc-item { display: flex; gap: 7px; font-size: 9pt; color: #334155;
+            margin: 0 0 5px; line-height: 1.45; page-break-inside: avoid; }
+.tnc-num { min-width: 16px; font-weight: 700; color: #0f172a; text-align: right; }
+.tnc-body { flex: 1; text-align: justify; }
 .justify { background: #fef3c7; border-left: 3px solid #f59e0b; padding: 6px 8px; font-size: 9pt; }
 </style>
 """
@@ -103,6 +108,10 @@ def _esc(s: Any) -> str:
 
 def _wrap(title: str, body_html: str) -> str:
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8">{CSS_BASE}</head><body>
+<div class="footer">
+  <div class="frow"><div>{_esc(FOOTER_NOTE)}</div><div>{_esc(BRAND)}</div></div>
+  <div class="faddr">{_esc(CORPORATE_ADDRESS)}</div>
+</div>
 <div class="wm"><img src="{WATERMARK_FILE}" /></div>
 <div class="title-row">
   <div>
@@ -112,10 +121,6 @@ def _wrap(title: str, body_html: str) -> str:
   <div class="meta">Generated: <b>{_now_str()}</b></div>
 </div>
 {body_html}
-<div class="footer">
-  <div class="frow"><div>{_esc(FOOTER_NOTE)}</div><div>{_esc(BRAND)}</div></div>
-  <div class="faddr">{_esc(CORPORATE_ADDRESS)}</div>
-</div>
 </body></html>"""
 
 
@@ -368,6 +373,13 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
     for a in (v.get("addresses") or [])[:1]:
         addr_lines += [a.get("line1"), a.get("line2"), f"{a.get('city','')} {a.get('pin','')}", a.get("state")]
     addr_html = "<br/>".join([_esc(x) for x in addr_lines if x]) or _esc(v.get("address") or "—")
+    # T&C — only selected clauses, serial numbered, body text only (no category/title headers)
+    tnc = [t for t in (po.get("terms_structured") or [])
+           if t.get("selected") is not False and ((t.get("body") or "").strip() or (t.get("title") or "").strip())]
+    tnc_html = "".join(
+        f"<div class='tnc-item'><span class='tnc-num'>{i + 1}.</span>"
+        f"<span class='tnc-body'>{_esc((t.get('body') or t.get('title') or '').strip())}</span></div>"
+        for i, t in enumerate(tnc))
     body = f"""
 {rev_banner}
 <div class="kv">
@@ -402,7 +414,7 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
 {f'<div class="section-title" style="clear:both;">Special Terms</div><div class="note">{_esc(po.get("special_terms"))}</div>' if po.get('special_terms') else ''}
 {f'<div class="section-title" style="clear:both;">Other Terms</div><div class="note">{_esc(po.get("other_terms"))}</div>' if po.get('other_terms') else ''}
 <div class="section-title" style="clear:both;">Terms & Conditions</div>
-{"".join(f"<div class='note'><b>{i + 1}. {_esc(t.get('title'))}</b> <span style='color:#888'>[{_esc((t.get('category') or 'general').upper())}]</span> — {_esc(t.get('body'))}</div>" for i, t in enumerate(po.get('terms_structured') or [])) or f"<div class='note'>{_esc(po.get('terms') or '1. Goods to be delivered as per delivery schedule.  2. Payment 30 days after GRN acceptance.  3. Quality as per agreed spec — defects to be replaced free of cost.')}</div>"}
+{tnc_html or f"<div class='note'>{_esc(po.get('terms') or '1. Goods to be delivered as per delivery schedule.  2. Payment 30 days after GRN acceptance.  3. Quality as per agreed spec — defects to be replaced free of cost.')}</div>"}
 <div class="signs">
   <div class="box">For {_esc(BRAND)}</div>
   <div class="box">Vendor Acknowledgement</div>
