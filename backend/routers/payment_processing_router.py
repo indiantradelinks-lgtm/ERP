@@ -49,7 +49,7 @@ async def payment_queue(stage: str = "", project_code: str = "",
         {"request_id": {"$in": [r["id"] for r in reqs]}}, {"_id": 0})}
     proj_ids = list({r.get("project_id") for r in reqs if r.get("project_id")})
     pmap = {p["id"]: p async for p in db.projects.find(
-        {"id": {"$in": proj_ids}}, {"_id": 0, "id": 1, "project_manager_name": 1, "manager": 1})}
+        {"id": {"$in": proj_ids}}, {"_id": 0, "id": 1, "name": 1, "code": 1, "project_manager_name": 1, "manager": 1})}
     emp_ids = list({r.get("employee_id") for r in reqs if r.get("employee_id")})
     emap = {e["id"]: e async for e in db.employees.find(
         {"id": {"$in": emp_ids}},
@@ -71,6 +71,9 @@ async def payment_queue(stage: str = "", project_code: str = "",
             (f"{cc.get('category_code') or ''} · {cc.get('category_name') or ''}".strip(" ·") or cc.get("name"))
             if cc else None)
         out.append({**r, "verification": v, "pay_stage": st, "cost_center_name": cc_name,
+                    "project_name": r.get("project_name") or proj.get("name"),
+                    "project_code": r.get("project_code") or proj.get("code"),
+                    "raised_by": r.get("created_by") or r.get("requested_by"),
                     "project_manager": proj.get("project_manager_name") or proj.get("manager"),
                     "employee_bank": ({"account_no": emp.get("bank_account_no"), "ifsc": emp.get("bank_ifsc"),
                                        "bank_name": emp.get("bank_name"), "branch": emp.get("bank_branch")}

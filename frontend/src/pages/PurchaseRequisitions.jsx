@@ -34,6 +34,18 @@ const blankForm = () => ({
 export default function PurchaseRequisitions() {
   const navigate = useNavigate();
   const [rows, setRows] = useState([]);
+  const [projMap, setProjMap] = useState({});
+  useEffect(() => {
+    api.get("/projects").then((res) => {
+      const m = {};
+      (res.data || []).forEach((p) => {
+        const info = { code: p.code || p.project_code, name: p.name, manager: p.manager || p.project_manager_name };
+        if (info.code) m[info.code] = info;
+        m[p.id] = info;
+      });
+      setProjMap(m);
+    }).catch(() => {});
+  }, []);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(blankForm());
@@ -141,7 +153,18 @@ export default function PurchaseRequisitions() {
                   <TableCell className="font-mono-data text-xs">{r.pr_date}</TableCell>
                   <TableCell className="text-sm">
                     {r.department || "—"}
-                    <div className="text-[11px] text-muted-foreground">{r.project_code || r.site_code || ""}</div>
+                    {(() => {
+                      const p = projMap[r.project_code] || projMap[r.project_id];
+                      const code = p?.code || r.project_code || r.site_code;
+                      if (!code) return null;
+                      return (
+                        <div className="text-[11px] text-muted-foreground" data-testid={`pr-project-${r.id}`}>
+                          <span className="font-medium text-foreground/80">{code}</span>
+                          {p?.name && <span> · {p.name}</span>}
+                          {p?.manager && <div className="text-[10px]">PM: {p.manager}</div>}
+                        </div>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell className="text-xs">{(r.items || []).length} item{r.items?.length === 1 ? "" : "s"}<div className="text-[10px] text-muted-foreground truncate max-w-[200px]">{(r.items || []).map((i) => i.name).filter(Boolean).join(", ")}</div></TableCell>
                   <TableCell><StatusBadge text={r.priority || "—"} tone={PRIORITY_TONE[r.priority]} /></TableCell>

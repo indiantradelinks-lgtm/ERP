@@ -40,6 +40,24 @@ export default function BillRequests() {
   const canGenerate = (user && GENERATE_ROLES.has(user.role)) || (!!can && can("ra_bills", "write"));
   const [rows, setRows] = useState([]);
   const [statusFilter, setStatusFilter] = useState("");
+  const [rejectFor, setRejectFor] = useState(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejecting, setRejecting] = useState(false);
+
+  const rejectBill = async () => {
+    setRejecting(true);
+    try {
+      await api.post(`/bill-requests/${rejectFor.id}/reject`, { reason: rejectReason });
+      toast.success(`${rejectFor.request_no || "Request"} rejected — remarks visible to the requester`);
+      setRejectFor(null);
+      setRejectReason("");
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Failed to reject");
+    } finally {
+      setRejecting(false);
+    }
+  };
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState(blank());
   const [ctx, setCtx] = useState(null);
@@ -185,11 +203,23 @@ export default function BillRequests() {
                     ))}
                   </div>
                 </TableCell>
-                <TableCell>{STATUS_BADGE[r.status] || r.status}</TableCell>
+                <TableCell>
+                  {STATUS_BADGE[r.status] || r.status}
+                  {r.status === "rejected" && r.reject_reason && (
+                    <div className="text-[10px] text-rose-700 mt-0.5 max-w-[200px]" title={`Rejected by ${r.rejected_by || "Accounts"}: ${r.reject_reason}`} data-testid={`br-reject-reason-${r.id}`}>
+                      ✗ {r.reject_reason}
+                    </div>
+                  )}
+                </TableCell>
                 <TableCell className="text-right">
                   {r.status === "approved" && canGenerate && (
                     <Button size="sm" className="h-7 rounded-sm" onClick={() => nav(`/app/ra-bills?fromRequest=${r.id}`)} data-testid={`br-generate-${r.id}`}>
                       Generate Bill <ArrowRight className="h-3 w-3 ml-1" />
+                    </Button>
+                  )}
+                  {["approved", "pending_approval"].includes(r.status) && canGenerate && (
+                    <Button size="sm" variant="ghost" className="h-7 rounded-sm text-rose-700 ml-1" onClick={() => { setRejectFor(r); setRejectReason(""); }} data-testid={`br-reject-${r.id}`} title="Reject this bill request with mandatory remarks">
+                      Reject
                     </Button>
                   )}
                   {r.status === "bill_generated" && (
@@ -323,6 +353,21 @@ export default function BillRequests() {
 
       <RowAttachments open={!!attachFor} onOpenChange={() => setAttachFor(null)}
         parentType="bill_requests" parentId={attachFor?.id} recordTitle={`Documents — ${attachFor?.request_no || ""}`} />
+
+      <Dialog open={!!rejectFor} onOpenChange={(o) => !o && setRejectFor(null)}>
+        <DialogContent className="max-w-md rounded-sm" data-testid="br-reject-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-display text-rose-700">Reject Bill Request — {rejectFor?.request_no}</DialogTitle>
+            <DialogDescription>Rejection reason is mandatory and will be visible to the Manager/Operations user who raised this request.</DialogDescription>
+          </DialogHeader>
+          <Textarea rows={3} value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="Reason / remarks for rejection (min 5 characters)…" className="rounded-sm" data-testid="br-reject-reason-input" />
+          <DialogFooter>
+            <Button variant="outline" className="rounded-sm" onClick={() => setRejectFor(null)}>Cancel</Button>
+            <Button variant="destructive" className="rounded-sm" onClick={rejectBill} disabled={rejecting || rejectReason.trim().length < 5} data-testid="br-reject-confirm">Reject Request</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

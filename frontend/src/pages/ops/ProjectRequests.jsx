@@ -417,6 +417,9 @@ export default function ProjectRequests() {
                       <div className="mt-1" data-testid={`req-paystage-${r.id}`}>
                         <Badge variant="outline" className={`rounded-sm text-[9px] ${(PAY_STAGE[r.pay_stage] || [])[1]}`}>{(PAY_STAGE[r.pay_stage] || [r.pay_stage])[0]}</Badge>
                         {r.pay_info?.utr_no && <div className="text-[9px] font-mono-data text-muted-foreground mt-0.5">UTR {r.pay_info.utr_no}</div>}
+                        {r.pay_stage === "rejected" && r.pay_info?.remarks && (
+                          <div className="text-[9px] text-rose-700 mt-0.5 max-w-[180px]" title={`Rejected by ${r.pay_info.verified_by || "Accounts"}: ${r.pay_info.remarks}`} data-testid={`req-payreject-${r.id}`}>✗ {r.pay_info.remarks}</div>
+                        )}
                       </div>
                     )}
                   </TableCell>
@@ -841,6 +844,12 @@ export default function ProjectRequests() {
                   <div className="border border-border rounded-sm p-2 text-xs" data-testid="req-detail-paystage">
                     <span className="text-[10px] uppercase tracking-wider text-muted-foreground mr-2">Accounts Workflow</span>
                     <Badge variant="outline" className={`rounded-sm ${(PAY_STAGE[detail.pay_stage] || [])[1]}`}>{(PAY_STAGE[detail.pay_stage] || [detail.pay_stage])[0]}</Badge>
+                    {detail.pay_stage === "rejected" && detail.pay_info?.remarks && (
+                      <div className="text-xs text-rose-700 mt-1" data-testid="req-detail-payreject">
+                        <b>Accounts rejection remarks:</b> {detail.pay_info.remarks}
+                        {detail.pay_info?.verified_by && <span className="text-muted-foreground"> — {detail.pay_info.verified_by}</span>}
+                      </div>
+                    )}
                     {detail.pay_info?.verified_by && <span className="ml-2 text-muted-foreground">verified by {detail.pay_info.verified_by} · {(detail.pay_info.verified_at || "").slice(0, 16).replace("T", " ")}</span>}
                     {detail.pay_info?.bank_file_no && <span className="ml-2 font-mono-data">{detail.pay_info.bank_file_no}</span>}
                     {detail.pay_info?.utr_no && <span className="ml-2 font-mono-data">UTR {detail.pay_info.utr_no} · {detail.pay_info.paid_date}</span>}

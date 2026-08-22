@@ -203,8 +203,8 @@ class BillRequestIn(BaseModel):
 
 
 def _request_status(req: Dict[str, Any], approval: Optional[Dict[str, Any]]) -> str:
-    if req.get("status") == "bill_generated":
-        return "bill_generated"
+    if req.get("status") in ("bill_generated", "rejected"):
+        return req["status"]
     if not approval:
         return req.get("status") or "pending_approval"
     return {"pending": "pending_approval", "approved": "approved",
@@ -330,6 +330,33 @@ async def mark_bill_generated(rid: str, payload: MarkGeneratedIn, request: Reque
     await audit(user=user, action="bill_request_generated", resource="bill_requests",
                 record_id=rid, after={"bill_id": payload.bill_id}, ip=_ip(request))
     return {"ok": True, "bill_number": bill.get("bill_number")}
+
+
+class BillRejectIn(BaseModel):
+    reason: str
+
+
+@router.post("/bill-requests/{rid}/reject")
+async def reject_bill_request(rid: str, payload: BillRejectIn, request: Request,
+                              user: dict = Depends(require_permission("ra_bills", "write"))):
+    """Accounts rejects a bill generation request with a mandatory reason —
+    status + remarks stay visible to the Manager/Operations users who raised it."""
+    if len((payload.reason or "").strip()) < 5:
+        raise HTTPException(400, "Rejection reason / remarks are mandatory (min 5 characters)")
+    r = await db.bill_requests.find_one({"id": rid}, {"_id": 0})
+    if not r:
+        raise HTTPException(404, "Bill request not found")
+    if r.get("status") == "bill_generated":
+        raise HTTPException(400, "Bill already generated — cannot reject this request")
+    if r.get("status") == "rejected":
+        raise HTTPException(400, "Bill request is already rejected")
+    await db.bill_requests.update_one({"id": rid}, {"$set": {
+        "status": "rejected", "reject_reason": payload.reason.strip(),
+        "rejected_by": user.get("name") or user.get("email"),
+        "rejected_at": now_iso(), "updated_at": now_iso()}})
+    await audit(user=user, action="bill_request_rejected", resource="bill_requests",
+                record_id=rid, after={"reason": payload.reason}, ip=_ip(request))
+    return {"ok": True, "status": "rejected"}
 
 
 @router.get("/ra-bills/project-context/{project_code}")

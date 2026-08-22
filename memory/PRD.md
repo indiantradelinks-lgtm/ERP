@@ -5524,3 +5524,11 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 ### Iteration 201 (Aug 2026) — Self/Expense payments visible to raiser ✅
 - `GET /api/project-requests` (+ /summary): project-scope clause now ORs `{created_by_id: user.id}` (with same user filters), so scoped users always see requests THEY raised — e.g. self/expense payments routed to Head Office cost centers with no project_id — with live status and pay_stage (pending_verification → verified → paid, UTR shown). No workflow/permission changes; approvals/scoping for other rows untouched.
 - Tested: PM (test_pm) raised self_expense → visible pending_approval → after approval status with_dept + pay_stage pending_verification in PM's own list. Test request cleaned.
+
+### Iteration 202 (Aug 2026) — 5 ERP enhancements (visibility + rejection remarks) ✅
+1. Bill Generation Requests: `POST /api/bill-requests/{id}/reject` (ra_bills write, reason ≥5, blocked after bill_generated); `_request_status` honors stored rejected; UI Reject button + mandatory-reason dialog (BillRequests.jsx), red reason line under status visible to Manager/Ops. Curl tested (validation, reject, re-reject block, list shows reason).
+2. Payment Processing Center: queue endpoint (/api/accounts/payment-queue) now returns project_name + raised_by (created_by); pmap projection includes name/code. UI Type cell shows "Raised by" for advances; Project cell already shows code+name+PM.
+3. Purchase Requisitions list: Dept · Project cell now shows code · project name + "PM: <manager>" via /projects map (pr-project-{id}).
+4. Purchase Orders list: Project column shows code + name + PM (po-project-{id}).
+5. Payment rejection remarks: ProjectRequests list + detail show Accounts rejection remarks (pay_info.remarks + verified_by) in red when pay_stage=rejected (req-payreject-{id}, req-detail-payreject).
+- Workflows/permissions unchanged (additive). Screenshot-verified PR/PO columns; backend curl-verified reject + queue enrichment. Test bill request cleaned.

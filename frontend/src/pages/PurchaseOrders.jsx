@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import DataTableShell from "@/components/DataTableShell";
 import useResource from "@/hooks/useResource";
 import { toneFor } from "@/lib/statusTone";
@@ -27,6 +27,18 @@ const EMAIL_READY = ["approved", "sent_to_vendor", "received", "partially_receiv
 
 export default function PurchaseOrders() {
   const r = useResource("purchase-orders");
+  const [projMap, setProjMap] = useState({});
+  useEffect(() => {
+    api.get("/projects").then((res) => {
+      const m = {};
+      (res.data || []).forEach((p) => {
+        const info = { code: p.code || p.project_code, name: p.name, manager: p.manager || p.project_manager_name };
+        if (info.code) m[info.code] = info;
+        m[p.id] = info;
+      });
+      setProjMap(m);
+    }).catch(() => {});
+  }, []);
   const [emailFor, setEmailFor] = useState(null);
   const [historyFor, setHistoryFor] = useState(null);
   const [lineageFor, setLineageFor] = useState(null);
@@ -76,7 +88,21 @@ export default function PurchaseOrders() {
     },
     { key: "vendor", label: "Vendor" },
     { key: "pr_number", label: "PR #", render: (row) => row.pr_number || "—" },
-    { key: "project", label: "Project" },
+    {
+      key: "project", label: "Project",
+      render: (row) => {
+        const p = projMap[row.project] || projMap[row.project_code] || projMap[row.project_id];
+        const code = p?.code || row.project || row.project_code;
+        if (!code) return "—";
+        return (
+          <div data-testid={`po-project-${row.id}`}>
+            <div className="font-medium">{code}</div>
+            {p?.name && <div className="text-[11px] text-muted-foreground max-w-[180px] truncate" title={p.name}>{p.name}</div>}
+            {p?.manager && <div className="text-[10px] text-muted-foreground">PM: {p.manager}</div>}
+          </div>
+        );
+      },
+    },
     { key: "total", label: "Total", render: (row) => "₹ " + Number(row.total || row.amount || 0).toLocaleString("en-IN") },
     { key: "paid", label: "Paid", render: (row) => (row.paid ? "Yes" : "No") },
     {

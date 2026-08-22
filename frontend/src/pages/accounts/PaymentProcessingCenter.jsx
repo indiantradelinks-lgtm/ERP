@@ -230,6 +230,9 @@ export default function PaymentProcessingCenter() {
           <div className="text-[10px] text-slate-500 max-w-[160px] truncate" title={r.cost_center_name}
             data-testid={`ppc-cc-${r.request_no}`}>CC: {r.cost_center_name}</div>
         )}
+        {r.source === "advance" && r.raised_by && (
+          <div className="text-[10px] text-slate-500 whitespace-nowrap" data-testid={`ppc-raised-by-${r.request_no}`}>Raised by: {r.raised_by}</div>
+        )}
       </TableCell>
       <TableCell className="text-xs">
         <div className="whitespace-nowrap font-medium">{r.project_code}</div>
