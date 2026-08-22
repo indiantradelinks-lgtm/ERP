@@ -5532,3 +5532,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 4. Purchase Orders list: Project column shows code + name + PM (po-project-{id}).
 5. Payment rejection remarks: ProjectRequests list + detail show Accounts rejection remarks (pay_info.remarks + verified_by) in red when pay_stage=rejected (req-payreject-{id}, req-detail-payreject).
 - Workflows/permissions unchanged (additive). Screenshot-verified PR/PO columns; backend curl-verified reject + queue enrichment. Test bill request cleaned.
+
+### Iteration 203 (Aug 2026) — Employee Advance: project details ✅
+- advance_router: `_project_details()` resolves project by code/id/name → advance create stamps project_id/project_code/project_name/project_manager; GET /advances list + GET /advances/{id} enrich legacy rows on the fly from projects master; advance→payment-queue shadow row now carries real project_id/code/name (was hardcoded "HR").
+- UI (hr/Advances.jsx): new "Project" column (code + name + "PM:" line, testid advance-project-{no}); detail drawer shows Project ID / Project Name / Project Manager KVs.
+- Tested: curl create with project → stamped fields, list + detail enriched (legacy rows too); screenshot shows column populated. PM shows when project has a manager assigned. Test advance cleaned.

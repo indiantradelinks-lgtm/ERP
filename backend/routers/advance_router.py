@@ -108,6 +108,18 @@ async def delete_advance_type(type_id: str, user: dict = Depends(get_current_use
 # ────────────────────────────────────────────────────────────────────────
 # Advance Requests
 # ────────────────────────────────────────────────────────────────────────
+async def _project_details(code_or_id: str) -> dict:
+    """Resolve project id/name/manager from a project code or id."""
+    if not code_or_id:
+        return {}
+    p = await db.projects.find_one({"$or": [{"code": code_or_id}, {"id": code_or_id}, {"name": code_or_id}]},
+                                   {"_id": 0, "id": 1, "code": 1, "name": 1, "manager": 1, "project_manager_name": 1})
+    if not p:
+        return {}
+    return {"project_id": p["id"], "project_code": p.get("code"), "project_name": p.get("name"),
+            "project_manager": p.get("manager") or p.get("project_manager_name")}
+
+
 class AdvanceCreateIn(BaseModel):
     employee_id: str
     advance_type: str   # name OR code
@@ -255,6 +267,7 @@ async def create_advance(payload: AdvanceCreateIn, user: dict = Depends(get_curr
         "designation": emp.get("designation"),
         "site": payload.site or emp.get("site"),
         "project": payload.project,
+        **(await _project_details(payload.project)),
         "reporting_manager": emp.get("reporting_manager"),
         "salary": emp.get("salary"),
         "joining_date": emp.get("joining_date"),
@@ -377,6 +390,21 @@ async def list_advances(
         q["advance_type"] = advance_type
 
     rows = await db.employee_advances.find(q, {"_id": 0}).sort("created_at", -1).limit(500).to_list(500)
+    # Enrich project details (id / name / manager) from the projects master
+    pcodes = {r.get("project") for r in rows if r.get("project")} | {r.get("project_code") for r in rows if r.get("project_code")}
+    if pcodes:
+        pmap = {}
+        async for p in db.projects.find({"$or": [{"code": {"$in": list(pcodes)}}, {"id": {"$in": list(pcodes)}}]},
+                                        {"_id": 0, "id": 1, "code": 1, "name": 1, "manager": 1, "project_manager_name": 1}):
+            info = {"project_id": p["id"], "project_code": p.get("code"), "project_name": p.get("name"),
+                    "project_manager": p.get("manager") or p.get("project_manager_name")}
+            pmap[p.get("code")] = info
+            pmap[p["id"]] = info
+        for r in rows:
+            if not r.get("project_name"):
+                info = pmap.get(r.get("project_code")) or pmap.get(r.get("project"))
+                if info:
+                    r.update(info)
     # Attach the pending approval step (if any) so the UI can show "Awaiting: HR"
     for r in rows:
         if r["status"] in {"submitted", "under_approval"} and r.get("approval_id"):
@@ -407,6 +435,8 @@ async def get_advance(advance_id: str, user: dict = Depends(get_current_user)):
         if not is_owner:
             raise HTTPException(status_code=403, detail="You don't have access to this advance")
     # Attach approval doc for timeline display
+    if not adv.get("project_name") and (adv.get("project") or adv.get("project_code")):
+        adv.update(await _project_details(adv.get("project_code") or adv.get("project")))
     if adv.get("approval_id"):
         appr = await db.approvals.find_one({"id": adv["approval_id"]}, {"_id": 0})
         adv["approval"] = appr
@@ -570,7 +600,9 @@ async def _push_advance_to_accounts(advance_id: str) -> None:
         "status": "with_dept",
         "payment_status": "payment_pending",
         "source": "advance", "source_id": advance_id,
-        "project_id": None, "project_code": adv.get("department") or "HR",
+        "project_id": adv.get("project_id"),
+        "project_code": adv.get("project_code") or adv.get("project") or adv.get("department") or "HR",
+        "project_name": adv.get("project_name"),
         "paid_to_type": "person",
         "employee_id": adv.get("employee_id"), "employee_code": adv.get("employee_code"),
         "employee_name": adv.get("employee_name"),

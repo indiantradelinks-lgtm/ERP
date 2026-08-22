@@ -173,6 +173,7 @@ export default function Advances() {
                       <TableRow>
                         <TableHead>Advance #</TableHead>
                         <TableHead>Employee</TableHead>
+                        <TableHead>Project</TableHead>
                         <TableHead>Type</TableHead>
                         <TableHead className="text-right">Requested</TableHead>
                         <TableHead className="text-right">Approved</TableHead>
@@ -196,6 +197,15 @@ export default function Advances() {
                             <div className="font-medium text-sm">{a.employee_name}</div>
                             <div className="text-xs text-muted-foreground">{a.employee_code} · {a.department}</div>
                             {a.on_behalf_of && <Badge variant="outline" className="text-[10px] mt-0.5">On behalf · {a.created_by_role}</Badge>}
+                          </TableCell>
+                          <TableCell className="text-xs" data-testid={`advance-project-${a.advance_no}`}>
+                            {(a.project_code || a.project) ? (
+                              <>
+                                <div className="font-medium">{a.project_code || a.project}</div>
+                                {a.project_name && <div className="text-[10px] text-muted-foreground max-w-[150px] truncate" title={a.project_name}>{a.project_name}</div>}
+                                {a.project_manager && <div className="text-[10px] text-muted-foreground">PM: {a.project_manager}</div>}
+                              </>
+                            ) : "—"}
                           </TableCell>
                           <TableCell><Badge variant="outline">{a.advance_type}</Badge>{a.emergency && <Badge className="ml-1 bg-rose-100 text-rose-700">!</Badge>}</TableCell>
                           <TableCell className="text-right">{inr(a.requested_amount)}</TableCell>
@@ -529,7 +539,9 @@ function AdvanceDetailDialog({ id, onOpenChange, onChange, user }) {
             <KV label="Recovered" value={inr(adv.recovered_amount)} />
             <KV label="Repayment Start" value={adv.repayment_start_month} />
             <KV label="Site" value={adv.site} />
-            <KV label="Project" value={adv.project} />
+            <KV label="Project ID" value={adv.project_id ? `${adv.project_code || adv.project} (${String(adv.project_id).slice(0, 8)})` : (adv.project_code || adv.project)} />
+            <KV label="Project Name" value={adv.project_name} />
+            <KV label="Project Manager" value={adv.project_manager} />
             <KV label="Emergency" value={adv.emergency ? "Yes ⚠" : "No"} />
           </div>
 
