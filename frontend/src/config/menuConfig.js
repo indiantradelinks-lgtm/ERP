@@ -378,6 +378,7 @@ export const MENU_ITEMS = [
   { department: "admin", label: "User Management",            to: "/app/admin/users",                icon: Users,         testid: "nav-admin-users", superAdminOnly: true },
   { department: "admin", label: "Project Assignments",        to: "/app/admin/project-assignments",  icon: Users,         testid: "nav-admin-project-assignments", roles: ["super_admin", "director", "general_manager", "dept_head"] },
   { department: "admin", label: "Role Management",            to: "/app/admin/role-register",        icon: ShieldCheck,   testid: "nav-admin-role-register", superAdminOnly: true },
+  { department: "admin", label: "Approval Report",            to: "/app/admin/approval-report",      icon: FileSearch,    testid: "nav-admin-approval-report", superAdminOnly: true },
   { department: "admin", label: "Auto Code Override",         to: "/app/admin/code-override",        icon: KeyRound,      testid: "nav-admin-code-override", superAdminOnly: true },
   { department: "admin", label: "Role Catalog",               to: "/app/admin/role-catalog",         icon: ShieldPlus,    testid: "nav-admin-role-catalog", superAdminOnly: true },
   { department: "admin", label: "Permission Management",      to: "/app/admin/security-center",      icon: Lock,          testid: "nav-admin-security-center", superAdminOnly: true },

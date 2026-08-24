@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Inbox, RefreshCw, CheckCircle2, XCircle, ExternalLink, ClipboardCheck, Wallet, Layers, FileText, HardHat, Receipt, Banknote } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
@@ -28,16 +29,40 @@ export default function MyApprovalsCenter() {
   const [data, setData] = useState(null);
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(null);
+  const [ff, setFf] = useState({ status: "pending", q: "", from: "", to: "", pm: "" });
+  const [decided, setDecided] = useState(null);
+  const setF = (k) => (e) => setFf((p) => ({ ...p, [k]: e.target?.value ?? e }));
 
   const load = useCallback(() => {
     api.get("/my-inbox").then((r) => setData(r.data)).catch(() => toast.error("Failed to load inbox"));
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    if (ff.status === "pending") { setDecided(null); return; }
+    const p = new URLSearchParams({ status: ff.status });
+    if (ff.q) p.set("q", ff.q);
+    if (ff.from) p.set("date_from", ff.from);
+    if (ff.to) p.set("date_to", ff.to);
+    if (ff.pm) p.set("project_manager", ff.pm);
+    api.get(`/approvals/report?${p}`).then((r) => setDecided(r.data)).catch(() => toast.error("Failed to load decided approvals"));
+  }, [ff]);
+
   const items = useMemo(() => {
-    const all = data?.items || [];
-    return filter ? all.filter((i) => i.source === filter) : all;
-  }, [data, filter]);
+    let all = data?.items || [];
+    if (filter) all = all.filter((i) => i.source === filter);
+    if (ff.q) {
+      const q = ff.q.toLowerCase();
+      all = all.filter((i) => `${i.title} ${i.ref} ${i.created_by} ${i.subtitle}`.toLowerCase().includes(q));
+    }
+    if (ff.pm) {
+      const pm = ff.pm.toLowerCase();
+      all = all.filter((i) => `${i.title} ${i.subtitle} ${i.created_by}`.toLowerCase().includes(pm));
+    }
+    if (ff.from) all = all.filter((i) => (i.created_at || "").slice(0, 10) >= ff.from);
+    if (ff.to) all = all.filter((i) => (i.created_at || "").slice(0, 10) <= ff.to);
+    return all;
+  }, [data, filter, ff]);
 
   const act = async (item, kind) => {
     const path = kind === "approve" ? item.approve_path : item.reject_path;
@@ -67,6 +92,55 @@ export default function MyApprovalsCenter() {
         <Button variant="outline" className="h-9 rounded-sm" onClick={load} data-testid="inbox-reload"><RefreshCw className="h-4 w-4" /></Button>
       </div>
 
+      <div className="bg-card border border-border rounded-sm p-3 grid grid-cols-2 md:grid-cols-5 gap-2">
+        <select className="h-9 border border-input rounded-sm px-2 text-sm bg-background" value={ff.status} onChange={setF("status")} data-testid="inbox-filter-status">
+          <option value="pending">Pending (my action)</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+        <Input placeholder="Search name / ref…" className="h-9" value={ff.q} onChange={setF("q")} data-testid="inbox-filter-q" />
+        <Input type="date" className="h-9" value={ff.from} onChange={setF("from")} data-testid="inbox-filter-from" />
+        <Input type="date" className="h-9" value={ff.to} onChange={setF("to")} data-testid="inbox-filter-to" />
+        <Input placeholder="Project Manager…" className="h-9" value={ff.pm} onChange={setF("pm")} data-testid="inbox-filter-pm" />
+      </div>
+
+      {ff.status !== "pending" ? (
+        <div className="bg-card border border-border rounded-sm overflow-x-auto" data-testid="inbox-decided-table">
+          <Table>
+            <TableHeader><TableRow className="bg-muted/30 hover:bg-muted/30">
+              <TableHead className="text-[10px] uppercase tracking-wider">Ref / Type</TableHead>
+              <TableHead className="text-[10px] uppercase tracking-wider">Request</TableHead>
+              <TableHead className="text-[10px] uppercase tracking-wider">Project / PM</TableHead>
+              <TableHead className="text-[10px] uppercase tracking-wider text-right">Amount</TableHead>
+              <TableHead className="text-[10px] uppercase tracking-wider">{ff.status === "approved" ? "Approved By" : "Rejected By"}</TableHead>
+              <TableHead className="text-[10px] uppercase tracking-wider">{ff.status === "approved" ? "Approved At" : "Rejected At"}</TableHead>
+            </TableRow></TableHeader>
+            <TableBody>
+              {!decided && <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>}
+              {decided && decided.rows.length === 0 && <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">No {ff.status} items match the filters.</TableCell></TableRow>}
+              {decided && decided.rows.map((r) => (
+                <TableRow key={r.id} data-testid={`decided-row-${r.id}`}>
+                  <TableCell>
+                    <div className="font-mono-data text-xs font-bold">{r.reference || "—"}</div>
+                    <div className="text-[10px] text-muted-foreground">{(r.type || "").replaceAll("_", " ")}</div>
+                  </TableCell>
+                  <TableCell className="max-w-[280px]"><div className="text-sm font-semibold truncate" title={r.title}>{r.title}</div><div className="text-[10px] text-muted-foreground">by {r.requested_by || "—"}</div></TableCell>
+                  <TableCell>
+                    <div className="text-xs font-semibold">{r.project_code || "—"}</div>
+                    {r.project_manager && <div className="text-[10px] text-muted-foreground">PM: {r.project_manager}</div>}
+                  </TableCell>
+                  <TableCell className="text-right font-mono-data tabular text-sm font-bold">{r.amount ? inr(r.amount) : "—"}</TableCell>
+                  <TableCell className="text-xs">{r.decided_by || "—"}</TableCell>
+                  <TableCell className="text-xs whitespace-nowrap font-semibold" title={(r.approvers || []).map((a) => `${a.step}: ${a.by} @ ${(a.at || "").slice(0, 16).replace("T", " ")}`).join("\n")}>
+                    {r.decided_at ? `${r.decided_at.slice(0, 10)} ${r.decided_at.slice(11, 16)}` : "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
+      <>
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
         <button onClick={() => setFilter("")}
           className={`text-left bg-card border rounded-sm p-3 transition-colors ${filter === "" ? "border-primary ring-1 ring-primary/30" : "border-border hover:border-primary/50"}`}
@@ -141,6 +215,8 @@ export default function MyApprovalsCenter() {
           </TableBody>
         </Table>
       </div>
+      </>
+      )}
     </div>
   );
 }

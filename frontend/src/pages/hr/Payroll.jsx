@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Wallet, Play, Eye, Download, Users, Calculator, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Wallet, Play, Eye, Download, Upload, Users, Calculator, AlertCircle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 
 const inr = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
@@ -238,6 +238,8 @@ function MasterTab() {
   const [rows, setRows] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [editing, setEditing] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
   const load = async () => {
     try {
       const [m, e] = await Promise.all([api.get("/payroll/master"), api.get("/employees")]);
@@ -245,11 +247,46 @@ function MasterTab() {
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
   useEffect(() => { load(); }, []);
+  const downloadTemplate = async () => {
+    try {
+      const { data } = await api.get("/payroll/master/bulk/template", { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([data]));
+      const a = document.createElement("a");
+      a.href = url; a.download = "payroll-master-template.xlsx";
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+  };
+  const onImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await api.post("/payroll/master/bulk/import", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      setImportResult(data);
+      if (data.error_count === 0) toast.success(`Imported: ${data.created} created · ${data.updated} updated`);
+      else toast.warning(`${data.error_count} row(s) had errors — see details`);
+      load();
+    } catch (er) { toast.error(apiErrorMessage(er)); }
+    finally { setImporting(false); }
+  };
   const unmapped = employees.filter((e) => e.active !== false && !rows.find((r) => r.employee_id === e.id));
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center gap-3">
+      <CardHeader className="flex flex-row items-center gap-2 flex-wrap">
         <CardTitle className="text-base flex-1">Payroll Master <Badge variant="outline" className="ml-2">{rows.length} mapped · {unmapped.length} unmapped</Badge></CardTitle>
+        <Button size="sm" variant="outline" onClick={downloadTemplate} data-testid="master-template-btn">
+          <Download className="h-3 w-3 mr-1" /> Template
+        </Button>
+        <label className="inline-flex">
+          <input type="file" accept=".xlsx" className="hidden" onChange={onImportFile} data-testid="master-import-input" />
+          <Button size="sm" variant="outline" disabled={importing} asChild data-testid="master-import-btn">
+            <span className="cursor-pointer"><Upload className="h-3 w-3 mr-1" /> {importing ? "Uploading…" : "Bulk Upload"}</span>
+          </Button>
+        </label>
         <Button size="sm" onClick={() => setEditing({ employee_id: "", basic: 0, hra: 0, special_allowance: 0, pf_applicable: true, esi_applicable: false, pt_state: "GJ", fixed_other_earnings: [], fixed_other_deductions: [] })}>+ Add</Button>
       </CardHeader>
       <CardContent>
@@ -276,8 +313,38 @@ function MasterTab() {
           </Table>
         </div>
         {editing && <MasterDialog initial={editing} employees={employees} existingIds={rows.map((r) => r.employee_id)} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
+        {importResult && <ImportResultDialog result={importResult} onClose={() => setImportResult(null)} />}
       </CardContent>
     </Card>
+  );
+}
+
+function ImportResultDialog({ result, onClose }) {
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="master-import-result">
+        <DialogHeader><DialogTitle>Bulk Upload Result</DialogTitle></DialogHeader>
+        <div className="grid grid-cols-4 gap-3">
+          <Tile label="Created" value={result.created} tone="emerald" />
+          <Tile label="Updated" value={result.updated} tone="emerald" />
+          <Tile label="Skipped" value={result.skipped} />
+          <Tile label="Errors" value={result.error_count} />
+        </div>
+        {result.errors?.length > 0 && (
+          <div className="border rounded max-h-64 overflow-y-auto">
+            <Table>
+              <TableHeader><TableRow><TableHead className="w-16">Row</TableHead><TableHead>Employee</TableHead><TableHead>Error</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {result.errors.map((e, i) => (
+                  <TableRow key={i}><TableCell>{e.row}</TableCell><TableCell className="text-xs font-mono">{e.employee}</TableCell><TableCell className="text-xs text-red-600">{e.error}</TableCell></TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+        <DialogFooter><Button variant="outline" onClick={onClose}>Close</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

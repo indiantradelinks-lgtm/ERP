@@ -1022,3 +1022,188 @@ async def migrate_approvals_chain():
             {"$set": {"chain": chain, "current_step": 0, "history": [], "version": "1.0"}},
         )
     await db.approvals.update_many({"version": {"$exists": False}}, {"$set": {"version": "1.0"}})
+
+
+# ─── Approval Report (Iter 180) ──────────────────────────────────────────────
+REPORT_STATUS_MAP = {
+    "approved": {"status": "approved"},
+    "rejected": {"status": {"$in": ["rejected", "rejected_revision_required"]}},
+    "pending": {"status": {"$in": ["pending", "in_progress", None]}},
+    "all": {},
+}
+
+
+async def _report_project_info(rows: List[dict]) -> Dict[str, dict]:
+    """approval_id -> {project_code, project_name, project_manager} via source records."""
+    by_type: Dict[str, List[dict]] = {}
+    for r in rows:
+        coll = RECORD_COLLECTION_MAP.get(r.get("type"))
+        rid = r.get("record_id") or r.get("reference")
+        if coll and rid:
+            by_type.setdefault(coll, []).append(r)
+    out: Dict[str, dict] = {}
+    proj_keys = set()
+    for coll, items in by_type.items():
+        ids = list({(i.get("record_id") or i.get("reference")) for i in items})
+        docs = {d["id"]: d async for d in db[coll].find(
+            {"id": {"$in": ids}},
+            {"_id": 0, "id": 1, "project_code": 1, "project_name": 1, "project": 1,
+             "project_id": 1, "project_manager": 1, "project_manager_name": 1})}
+        for i in items:
+            d = docs.get(i.get("record_id") or i.get("reference"))
+            if not d:
+                continue
+            info = {
+                "project_code": d.get("project_code") or (d.get("project") if isinstance(d.get("project"), str) else None),
+                "project_name": d.get("project_name"),
+                "project_manager": d.get("project_manager_name") or d.get("project_manager"),
+                "_project_id": d.get("project_id"),
+            }
+            out[i["id"]] = info
+            if (info["project_code"] or info["_project_id"]) and not (info["project_name"] and info["project_manager"]):
+                proj_keys.add(info["project_code"] or info["_project_id"])
+    if proj_keys:
+        pmap = {}
+        async for p in db.projects.find(
+                {"$or": [{"code": {"$in": list(proj_keys)}}, {"id": {"$in": list(proj_keys)}}]},
+                {"_id": 0, "id": 1, "code": 1, "name": 1, "project_manager_name": 1, "manager": 1}):
+            pmap[p["code"]] = p
+            pmap[p["id"]] = p
+        for info in out.values():
+            p = pmap.get(info.get("project_code") or info.get("_project_id") or "")
+            if p:
+                info["project_code"] = info["project_code"] or p.get("code")
+                info["project_name"] = info["project_name"] or p.get("name")
+                info["project_manager"] = info["project_manager"] or p.get("project_manager_name") or p.get("manager")
+    return out
+
+
+async def _build_approval_report(status: str, type: Optional[str], date_from: Optional[str],
+                                 date_to: Optional[str], q: Optional[str], approver: Optional[str],
+                                 project_manager: Optional[str], user: dict):
+    query = dict(REPORT_STATUS_MAP.get(status or "approved", REPORT_STATUS_MAP["approved"]))
+    if type:
+        query["type"] = type
+    raw = await db.approvals.find(
+        query, {"_id": 0, "documents": 0, "payload": 0, "chain.comment": 0}
+    ).sort("created_at", -1).to_list(2000)
+
+    if user.get("role") not in {"super_admin", "director"}:
+        uid, uname = user.get("id"), user.get("name") or user.get("email")
+        raw = [a for a in raw if any(h.get("by_id") == uid or h.get("by") == uname for h in a.get("history") or [])]
+
+    pinfo = await _report_project_info(raw)
+    rows = []
+    for a in raw:
+        hist = a.get("history") or []
+        decisions = [h for h in hist if h.get("action") in ("approve", "reject")]
+        last = decisions[-1] if decisions else None
+        approve_steps = [h for h in hist if h.get("action") == "approve"]
+        info = pinfo.get(a["id"], {})
+        ref = a.get("record_no") or a.get("reference")
+        if ref and len(str(ref)) == 36 and str(ref).count("-") == 4:
+            ref = None
+        rows.append({
+            "id": a["id"], "title": a.get("title"), "type": a.get("type"),
+            "reference": ref,
+            "amount": a.get("amount"), "requested_by": a.get("requested_by"),
+            "created_at": a.get("created_at"), "status": a.get("status"),
+            "decided_at": (last or {}).get("at"), "decided_by": (last or {}).get("by"),
+            "approvals_count": len(approve_steps),
+            "chain_length": len(a.get("chain") or []),
+            "approvers": [{"by": h.get("by"), "step": h.get("step_label"), "at": h.get("at")} for h in approve_steps],
+            "project_code": info.get("project_code"), "project_name": info.get("project_name"),
+            "project_manager": info.get("project_manager"),
+        })
+
+    def _match(r):
+        if q:
+            hay = f"{r['title']} {r['requested_by']} {r['reference']}".lower()
+            if q.lower() not in hay:
+                return False
+        if approver and not any(approver.lower() in (ap["by"] or "").lower() for ap in r["approvers"]):
+            return False
+        if project_manager and project_manager.lower() not in (r["project_manager"] or "").lower():
+            return False
+        anchor = (r["decided_at"] or r["created_at"] or "")[:10]
+        if date_from and anchor < date_from:
+            return False
+        if date_to and anchor > date_to:
+            return False
+        return True
+
+    rows = [r for r in rows if _match(r)]
+    by_type: Dict[str, int] = {}
+    by_status: Dict[str, int] = {}
+    for r in rows:
+        by_type[r["type"]] = by_type.get(r["type"], 0) + 1
+        by_status[r["status"]] = by_status.get(r["status"], 0) + 1
+    summary = {"total": len(rows), "total_amount": round(sum(r["amount"] or 0 for r in rows), 2),
+               "by_type": by_type, "by_status": by_status}
+    return rows, summary
+
+
+@router.get("/approvals/report")
+async def approvals_report(status: str = "approved", type: Optional[str] = None,
+                           date_from: Optional[str] = None, date_to: Optional[str] = None,
+                           q: Optional[str] = None, approver: Optional[str] = None,
+                           project_manager: Optional[str] = None,
+                           user: dict = Depends(get_current_user)):
+    rows, summary = await _build_approval_report(status, type, date_from, date_to, q, approver, project_manager, user)
+    return {"rows": rows[:500], "summary": summary}
+
+
+@router.get("/approvals/report/export")
+async def approvals_report_export(fmt: str = "xlsx", status: str = "approved", type: Optional[str] = None,
+                                  date_from: Optional[str] = None, date_to: Optional[str] = None,
+                                  q: Optional[str] = None, approver: Optional[str] = None,
+                                  project_manager: Optional[str] = None,
+                                  user: dict = Depends(get_current_user)):
+    from fastapi import Response
+    rows, summary = await _build_approval_report(status, type, date_from, date_to, q, approver, project_manager, user)
+    stamp = now_iso()[:10]
+    if fmt == "pdf":
+        from pdf_generator import render_approval_report_pdf
+        data = render_approval_report_pdf(rows, summary, {
+            "Status": status, "Type": type or "All", "From": date_from or "—", "To": date_to or "—",
+            "Search": q or "—", "Approver": approver or "—", "Project Manager": project_manager or "—"})
+        return Response(content=data, media_type="application/pdf",
+                        headers={"Content-Disposition": f'inline; filename="approval-report-{stamp}.pdf"'})
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    from io import BytesIO
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Approval Report"
+    ws.append(["Ref", "Title", "Type", "Status", "Requested By", "Project Code", "Project Name",
+               "Project Manager", "Amount", "Raised At", "Final Decision By", "Decision At",
+               "Approvals Count", "Chain Steps", "Approval Trail"])
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="0F172A")
+    for r in rows:
+        trail = "; ".join(f"{ap['step']}: {ap['by']} @ {(ap['at'] or '')[:16].replace('T', ' ')}" for ap in r["approvers"])
+        ws.append([r["reference"], r["title"], r["type"], r["status"], r["requested_by"],
+                   r["project_code"], r["project_name"], r["project_manager"], r["amount"],
+                   (r["created_at"] or "")[:16].replace("T", " "),
+                   r["decided_by"], (r["decided_at"] or "")[:16].replace("T", " "),
+                   r["approvals_count"], r["chain_length"], trail])
+    for i, w in enumerate([16, 40, 18, 14, 18, 14, 24, 18, 12, 17, 18, 17, 9, 8, 60], start=1):
+        ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
+    s = wb.create_sheet("Summary")
+    s.append(["Total Records", summary["total"]])
+    s.append(["Total Amount (₹)", summary["total_amount"]])
+    s.append([])
+    s.append(["By Type", "Count"])
+    for k, v in sorted(summary["by_type"].items()):
+        s.append([k, v])
+    s.append([])
+    s.append(["By Status", "Count"])
+    for k, v in sorted(summary["by_status"].items()):
+        s.append([k, v])
+    s.column_dimensions["A"].width = 28
+    buf = BytesIO()
+    wb.save(buf)
+    return Response(content=buf.getvalue(),
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="approval-report-{stamp}.xlsx"'})

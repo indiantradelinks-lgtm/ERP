@@ -25,9 +25,9 @@ from __future__ import annotations
 
 import logging
 from calendar import monthrange
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from core import db, get_current_user, now_iso, new_id
@@ -75,7 +75,7 @@ async def list_payroll_master(user: dict = Depends(get_current_user)):
     # Hydrate employee summary
     for r in rows:
         emp = await db.employees.find_one({"id": r["employee_id"]},
-                                          {"_id": 0, "name": 1, "employee_id": 1, "designation": 1, "departments": 1})
+                                          {"_id": 0, "name": 1, "employee_id": 1, "emp_code": 1, "designation": 1, "departments": 1})
         if emp:
             r["employee_name"] = emp.get("name")
             r["employee_code"] = emp.get("employee_id") or emp.get("emp_code")
@@ -117,6 +117,168 @@ async def upsert_master(employee_id: str, payload: PayrollMasterIn, user: dict =
         await db.payroll_master.insert_one(update)
     out = await db.payroll_master.find_one({"employee_id": employee_id}, {"_id": 0})
     return out
+
+
+# ── Bulk upload: template + import ───────────────────────────────────────
+MASTER_COLS = ["Employee Code", "Employee Name", "Basic", "HRA", "Special Allowance",
+               "Site Allowance", "Conveyance", "Medical", "PF Applicable (Y/N)",
+               "ESI Applicable (Y/N)", "PT State", "TDS Override %", "OT Rate/Hour",
+               "OT Multiplier", "PAN", "Bank Name", "Bank Account", "Bank IFSC"]
+
+
+@router.get("/master/bulk/template")
+async def master_template(user: dict = Depends(get_current_user)):
+    """Excel template: one row per active employee, existing master values prefilled."""
+    if user.get("role") not in HR_ROLES:
+        raise HTTPException(status_code=403, detail="hr only")
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    from io import BytesIO
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Payroll Master"
+    ws.append(MASTER_COLS)
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="0F172A")
+    masters = {m["employee_id"]: m async for m in db.payroll_master.find({}, {"_id": 0})}
+    async for emp in db.employees.find({"active": {"$ne": False}},
+                                       {"_id": 0, "id": 1, "name": 1, "employee_id": 1, "emp_code": 1}).sort("name", 1):
+        m = masters.get(emp["id"]) or {}
+        ws.append([
+            emp.get("employee_id") or emp.get("emp_code") or emp["id"][:8],
+            emp.get("name") or "",
+            m.get("basic") or 0, m.get("hra") or 0, m.get("special_allowance") or 0,
+            m.get("site_allowance") or 0, m.get("conveyance") or 0, m.get("medical") or 0,
+            "Y" if m.get("pf_applicable", True) else "N",
+            "Y" if m.get("esi_applicable") else "N",
+            m.get("pt_state") or "GJ", m.get("tds_override_pct") or 0,
+            m.get("ot_rate_per_hour") or 0, m.get("ot_multiplier") or 1.0,
+            m.get("pan") or "", m.get("bank_name") or "", m.get("bank_account") or "",
+            m.get("bank_ifsc") or "",
+        ])
+    for i, w in enumerate([14, 26, 10, 10, 16, 14, 12, 10, 18, 18, 9, 14, 12, 12, 13, 18, 18, 13], start=1):
+        ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
+    notes = wb.create_sheet("Instructions")
+    for line in [
+        "Payroll Master Bulk Upload — Instructions",
+        "1. Employee Code must match the code in Employee Master (column is pre-filled — do not edit).",
+        "2. All amount columns are MONTHLY figures in ₹ (numbers only, no commas).",
+        "3. PF/ESI Applicable: Y or N. PT State: 2-letter state code (GJ, MH, DL...).",
+        "4. Rows already mapped are pre-filled with current values — edit and re-upload to update.",
+        "5. Leave a row unchanged (all zeros, new employee) to skip it, or delete the row.",
+    ]:
+        notes.append([line])
+    notes.column_dimensions["A"].width = 110
+    buf = BytesIO()
+    wb.save(buf)
+    return Response(content=buf.getvalue(),
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": 'attachment; filename="payroll-master-template.xlsx"'})
+
+
+def _yn(v) -> bool:
+    return str(v or "").strip().lower() in {"y", "yes", "true", "1"}
+
+
+def _num(v, field: str, row: int) -> float:
+    if v is None or str(v).strip() == "":
+        return 0.0
+    try:
+        n = float(str(v).replace(",", "").strip())
+    except ValueError:
+        raise ValueError(f"Row {row}: '{field}' must be a number (got '{v}')")
+    if n < 0:
+        raise ValueError(f"Row {row}: '{field}' cannot be negative")
+    return n
+
+
+@router.post("/master/bulk/import")
+async def master_bulk_import(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    """Upsert payroll_master rows from the uploaded template. Returns per-row results."""
+    if user.get("role") not in HR_ROLES:
+        raise HTTPException(status_code=403, detail="hr only")
+    if not (file.filename or "").lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Upload the .xlsx template file")
+    from openpyxl import load_workbook
+    from io import BytesIO
+    try:
+        wb = load_workbook(BytesIO(await file.read()), data_only=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Could not read the Excel file — is it a valid .xlsx?")
+    ws = wb.worksheets[0]
+    header = [str(c.value or "").strip() for c in ws[1]]
+    if not header or header[0] != "Employee Code":
+        raise HTTPException(status_code=400, detail="Unrecognized format — download the template and keep the header row")
+    idx = {name: i for i, name in enumerate(header)}
+
+    def cell(vals, col):
+        i = idx.get(col)
+        return vals[i] if i is not None and i < len(vals) else None
+
+    emp_by_code: Dict[str, dict] = {}
+    async for e in db.employees.find({}, {"_id": 0, "id": 1, "name": 1, "employee_id": 1, "emp_code": 1}):
+        for k in (e.get("employee_id"), e.get("emp_code"), e["id"][:8]):
+            if k:
+                emp_by_code[str(k).strip().lower()] = e
+
+    created = updated = skipped = 0
+    errors: List[Dict[str, Any]] = []
+    for rno, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        code = str(cell(row, "Employee Code") or "").strip()
+        if not code:
+            continue
+        emp = emp_by_code.get(code.lower())
+        if not emp:
+            errors.append({"row": rno, "employee": code, "error": "Employee code not found in Employee Master"})
+            continue
+        try:
+            basic = _num(cell(row, "Basic"), "Basic", rno)
+            hra = _num(cell(row, "HRA"), "HRA", rno)
+            special = _num(cell(row, "Special Allowance"), "Special Allowance", rno)
+            site = _num(cell(row, "Site Allowance"), "Site Allowance", rno)
+            conv = _num(cell(row, "Conveyance"), "Conveyance", rno)
+            med = _num(cell(row, "Medical"), "Medical", rno)
+            tds = _num(cell(row, "TDS Override %"), "TDS Override %", rno)
+            ot_rate = _num(cell(row, "OT Rate/Hour"), "OT Rate/Hour", rno)
+            ot_mult = _num(cell(row, "OT Multiplier"), "OT Multiplier", rno) or 1.0
+        except ValueError as e:
+            errors.append({"row": rno, "employee": code, "error": str(e)})
+            continue
+        if tds > 100:
+            errors.append({"row": rno, "employee": code, "error": f"Row {rno}: TDS Override % cannot exceed 100"})
+            continue
+        existing = await db.payroll_master.find_one({"employee_id": emp["id"]}, {"_id": 0, "id": 1})
+        if basic + hra + special + site + conv + med <= 0 and not existing:
+            skipped += 1
+            continue
+        pt_state = str(cell(row, "PT State") or "GJ").strip().upper()[:3] or "GJ"
+        update = {
+            "employee_id": emp["id"],
+            "basic": basic, "hra": hra, "special_allowance": special,
+            "site_allowance": site, "conveyance": conv, "medical": med,
+            "pf_applicable": _yn(cell(row, "PF Applicable (Y/N)")),
+            "esi_applicable": _yn(cell(row, "ESI Applicable (Y/N)")),
+            "pt_state": pt_state,
+            "tds_override_pct": tds,
+            "ot_rate_per_hour": ot_rate, "ot_multiplier": ot_mult,
+            "pan": str(cell(row, "PAN") or "").strip().upper(),
+            "bank_name": str(cell(row, "Bank Name") or "").strip(),
+            "bank_account": str(cell(row, "Bank Account") or "").strip(),
+            "bank_ifsc": str(cell(row, "Bank IFSC") or "").strip().upper(),
+            "updated_at": now_iso(),
+            "updated_by": f"{user.get('name') or user.get('email')} (bulk upload)",
+        }
+        if existing:
+            await db.payroll_master.update_one({"employee_id": emp["id"]}, {"$set": update})
+            updated += 1
+        else:
+            update["id"] = new_id()
+            update["created_at"] = now_iso()
+            await db.payroll_master.insert_one(update)
+            created += 1
+    return {"ok": True, "created": created, "updated": updated, "skipped": skipped,
+            "error_count": len(errors), "errors": errors[:100]}
 
 
 # ════════════════════════════════════════════════════════════════════════

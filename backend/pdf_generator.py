@@ -768,3 +768,38 @@ def render_payslips_bundle_pdf(slips: List[Dict[str, Any]], month: str, pans: Op
 <h1>Payslip — {_esc(_month_label(month))}</h1></div><div class="meta">Generated: <b>{_now_str()}</b></div></div>"""
         sections.append(f"<div style='{brk}'>{head}{_payslip_body(s, pan=pans.get(s.get('employee_id') or '', ''))}</div>")
     return _render(_wrap(f"Payslip — {_month_label(month)}", "".join(sections)))
+
+
+# ──────────────────────────── Approval Report ────────────────────────────
+def render_approval_report_pdf(rows: List[Dict[str, Any]], summary: Dict[str, Any],
+                               filters: Dict[str, Any]) -> bytes:
+    def dt(v):
+        return _esc((v or "")[:16].replace("T", " ")) or "—"
+    chips = " · ".join(f"<b>{_esc(k)}:</b> {_esc(v)}" for k, v in filters.items() if v and v != "—")
+    trs = ""
+    for r in rows[:600]:
+        proj = " ".join(x for x in [r.get("project_code"), r.get("project_name")] if x) or "—"
+        trs += f"""<tr>
+<td>{_esc(r.get('reference') or '—')}<br/><span style="color:#64748b;font-size:7pt;">{_esc((r.get('type') or '').replace('_',' '))}</span></td>
+<td>{_esc(r.get('title'))}</td>
+<td>{_esc(proj)}<br/><span style="color:#64748b;font-size:7pt;">PM: {_esc(r.get('project_manager') or '—')}</span></td>
+<td>{_esc(r.get('requested_by') or '—')}</td>
+<td class="num">{_money(r.get('amount')) if r.get('amount') else '—'}</td>
+<td>{_esc(r.get('decided_by') or '—')}</td>
+<td>{dt(r.get('decided_at'))}</td>
+<td class="num">{r.get('approvals_count')}/{r.get('chain_length')}</td>
+</tr>"""
+    body = f"""
+<div class="kv" style="grid-template-columns: 1fr 1fr 1fr 1fr;">
+  <div><b>Total Records</b><br/>{summary.get('total')}</div>
+  <div><b>Total Amount</b><br/>₹ {_money(summary.get('total_amount'))}</div>
+  <div><b>Types</b><br/>{len(summary.get('by_type') or {})}</div>
+  <div><b>Statuses</b><br/>{_esc(', '.join(f"{k}: {v}" for k, v in (summary.get('by_status') or {}).items()))}</div>
+</div>
+<div class="note" style="margin-bottom:8px;">Filters — {chips or 'None'}</div>
+<table style="font-size:7.5pt;"><thead><tr>
+<th>Ref / Type</th><th>Request</th><th>Project</th><th>Requested By</th>
+<th class="num">Amount (₹)</th><th>Final Approver</th><th>Decision At</th><th class="num">Steps</th>
+</tr></thead><tbody>{trs or '<tr><td colspan="8">No records match the selected filters.</td></tr>'}</tbody></table>
+"""
+    return _render(_wrap("Approval Report", body))

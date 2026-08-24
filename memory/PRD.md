@@ -5563,3 +5563,16 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Problem (reported from PRODUCTION): "Vendor (Approved)" dropdown empty for non-super-admin users. Old flow: frontend called GET /api/vendors (full Vendor Master, gated by vendors:read which the DB-driven Role×Permission matrix may deny for requester roles) then filtered status==="approved" client-side.
 - Fix: new `GET /api/vendors/approved-lite` in vendors_router (declared BEFORE /vendors/{vid}) — gated by `project_requests:read` (any Request Center user), returns only id/name/status/categories for vendors with status in {approved, active}. ProjectRequests.jsx + ProjectExpenses.jsx now use it.
 - Verified: manager_o_p + admin both get 5 approved vendors via API; UI dialog shows populated dropdown (screenshot); /vendors/{vid} regression 200.
+
+### Iteration 179 (Aug 24, 2026) — Payroll Master Bulk Upload
+- `GET /api/payroll/master/bulk/template` (HR only): xlsx with one row per active employee, existing master values pre-filled (edit + re-upload = update), Instructions sheet.
+- `POST /api/payroll/master/bulk/import` (HR only, multipart): validates employee code against Employee Master (employee_id/emp_code/id-prefix), numeric >=0 checks, TDS<=100, Y/N booleans, PAN/IFSC uppercased; upserts payroll_master; skips all-zero unmapped rows; returns {created, updated, skipped, errors[]} (row-wise).
+- Frontend `hr/Payroll.jsx` Master tab: Template + Bulk Upload buttons (`master-template-btn`, `master-import-input`), ImportResultDialog with per-row error table.
+- Tested via curl round-trip: 51-row template downloaded, modified, uploaded → 6 created/7 updated/38 skipped/2 errors correctly reported (bad code + non-numeric). Also fixed master list hydration to include emp_code in projection.
+
+### Iteration 180 (Aug 24, 2026) — Approval Report + My Pending Approvals filters
+- `GET /api/approvals/report` (+ `/export?fmt=xlsx|pdf`): filters status/type/date_from/date_to/q/approver/project_manager; rows include decided_at/decided_by (from history), approvals_count/chain_length, full approver trail, project code/name/PM (enriched via RECORD_COLLECTION_MAP source docs + projects lookup); summary {total, total_amount, by_type, by_status}. super_admin/director see all; other roles auto-restricted to approvals where they acted. UUID-looking refs hidden.
+- PDF via `render_approval_report_pdf` in pdf_generator.py; Excel via openpyxl (Report + Summary sheets, approval trail column).
+- New page `/app/admin/approval-report` (admin/ApprovalReport.jsx, superAdminOnly menu item `nav-admin-approval-report`) with filter bar, KPI tiles, Excel/PDF download buttons.
+- MyApprovalsCenter.jsx: filter bar (status pending/approved/rejected, search, date from/to, PM). Pending = client-side filtered inbox; Approved/Rejected = server report rows with exact Approved/Rejected At timestamp + approver (hover shows full step trail).
+- Tested: curl (date/q/status filters, xlsx 125 rows, pdf 7 pages, role scoping for test_mop=0) + screenshots of both pages.
