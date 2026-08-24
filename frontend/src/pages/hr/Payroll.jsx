@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, apiErrorMessage } from "@/lib/api";
+import { downloadPdf } from "@/lib/exports";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -177,7 +178,14 @@ function SlipDialog({ slip, onClose }) {
             <div className="text-2xl font-bold text-emerald-700">{inr(slip.net_pay)}</div>
           </div>
         </div>
-        <DialogFooter><Button variant="outline" onClick={onClose}>Close</Button></DialogFooter>
+        <DialogFooter>
+          {slip.id && (
+            <Button variant="outline" onClick={() => downloadPdf(`/payroll/payslips/${slip.employee_id}/${slip.month}/pdf`, `Payslip-${slip.employee_code}-${slip.month}.pdf`)} data-testid="slip-dialog-pdf-btn">
+              <Download className="h-3 w-3 mr-1" /> PDF
+            </Button>
+          )}
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -202,6 +210,11 @@ function PayslipsTab() {
         <CardTitle className="text-base flex-1">Payslips</CardTitle>
         <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="w-40" />
         <Button size="sm" onClick={load}>Reload</Button>
+        {rows.length > 0 && (
+          <Button size="sm" variant="outline" onClick={() => downloadPdf(`/payroll/payslips/bulk-pdf?month=${month}`, `Payslips-${month}.pdf`)} data-testid="payslips-bulk-pdf-btn">
+            <Download className="h-3 w-3 mr-1" /> All PDF
+          </Button>
+        )}
       </CardHeader>
       <CardContent>
         <div className="border rounded overflow-x-auto">
@@ -210,7 +223,7 @@ function PayslipsTab() {
             <TableBody>
               {rows.length === 0 && <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">No payslips for {month}</TableCell></TableRow>}
               {rows.map((s) => (
-                <TableRow key={s.id}><TableCell className="text-xs font-mono">{s.dept_doc_no}</TableCell><TableCell>{s.employee_name}<div className="text-xs text-muted-foreground">{s.employee_code}</div></TableCell><TableCell>{s.month}</TableCell><TableCell className="text-right font-semibold">{inr(s.net_pay)}</TableCell><TableCell><Button size="sm" variant="ghost" onClick={() => setViewing(s)}><Eye className="h-3 w-3" /></Button></TableCell></TableRow>
+                <TableRow key={s.id}><TableCell className="text-xs font-mono">{s.dept_doc_no}</TableCell><TableCell>{s.employee_name}<div className="text-xs text-muted-foreground">{s.employee_code}</div></TableCell><TableCell>{s.month}</TableCell><TableCell className="text-right font-semibold">{inr(s.net_pay)}</TableCell><TableCell className="whitespace-nowrap"><Button size="sm" variant="ghost" onClick={() => setViewing(s)} data-testid={`payslip-view-${s.employee_code}`}><Eye className="h-3 w-3" /></Button><Button size="sm" variant="ghost" onClick={() => downloadPdf(`/payroll/payslips/${s.employee_id}/${s.month}/pdf`, `Payslip-${s.employee_code}-${s.month}.pdf`)} data-testid={`payslip-pdf-${s.employee_code}`} title="Download Payslip PDF"><Download className="h-3 w-3" /></Button></TableCell></TableRow>
               ))}
             </TableBody>
           </Table>

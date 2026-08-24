@@ -648,3 +648,123 @@ def render_material_issue_pdf(slip: Dict[str, Any]) -> bytes:
 </div>
 """
     return _render(_wrap(f"Material Issue Slip — {slip.get('txn_no') or slip.get('slip_no','')}", body))
+
+
+# ─────────────────────────────── Payslip ───────────────────────────────
+_ONES = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+         "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen",
+         "Eighteen", "Nineteen"]
+_TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+
+
+def _two(n: int) -> str:
+    if n < 20:
+        return _ONES[n]
+    return (_TENS[n // 10] + (" " + _ONES[n % 10] if n % 10 else "")).strip()
+
+
+def _amount_words_inr(v: Any) -> str:
+    """Indian-system number to words (Rupees only, paise dropped)."""
+    try:
+        n = int(round(float(v or 0)))
+    except Exception:
+        return ""
+    if n <= 0:
+        return "Zero Rupees"
+    parts = []
+    crore, n = divmod(n, 10_000_000)
+    lakh, n = divmod(n, 100_000)
+    thousand, n = divmod(n, 1000)
+    hundred, rest = divmod(n, 100)
+    if crore:
+        parts.append(f"{_two(crore) if crore < 100 else _amount_words_inr(crore).replace(' Rupees','')} Crore")
+    if lakh:
+        parts.append(f"{_two(lakh)} Lakh")
+    if thousand:
+        parts.append(f"{_two(thousand)} Thousand")
+    if hundred:
+        parts.append(f"{_ONES[hundred]} Hundred")
+    if rest:
+        parts.append(_two(rest))
+    return " ".join(parts) + " Rupees Only"
+
+
+def _month_label(month: str) -> str:
+    try:
+        return datetime.strptime(month, "%Y-%m").strftime("%B %Y")
+    except Exception:
+        return month
+
+
+def _payslip_body(slip: Dict[str, Any], pan: str = "") -> str:
+    """HTML body for one payslip (used standalone and in bundles)."""
+    bank = slip.get("bank") or {}
+    earn_rows = ""
+    for k, v in (slip.get("earnings") or {}).items():
+        earn_rows += f"<tr><td>{_esc(k.replace('_', ' ').title())}</td><td class='num'>{_money(v)}</td></tr>"
+    for e in slip.get("extra_earnings") or []:
+        earn_rows += f"<tr><td>{_esc(e.get('label'))}</td><td class='num'>{_money(e.get('amount'))}</td></tr>"
+
+    ded_rows = ""
+    labels = {"pf": "Provident Fund (PF)", "esi": "ESI", "professional_tax": "Professional Tax", "pt": "Professional Tax", "tds": "TDS"}
+    for k, v in (slip.get("statutory_deductions") or {}).items():
+        ded_rows += f"<tr><td>{_esc(labels.get(k, k.upper()))}</td><td class='num'>{_money(v)}</td></tr>"
+    if float(slip.get("advance_emi") or 0) > 0:
+        adv_nos = ", ".join(str(a.get("advance_no") or "") for a in (slip.get("advance_lines") or []))
+        ded_rows += f"<tr><td>Advance EMI{(' (' + _esc(adv_nos) + ')') if adv_nos else ''}</td><td class='num'>{_money(slip.get('advance_emi'))}</td></tr>"
+    for d in slip.get("extra_deductions") or []:
+        ded_rows += f"<tr><td>{_esc(d.get('label'))}</td><td class='num'>{_money(d.get('amount'))}</td></tr>"
+
+    return f"""
+<div class="kv" style="grid-template-columns: 120px 1fr 120px 1fr;">
+  <div><b>Employee</b></div><div>{_esc(slip.get('employee_name'))}</div>
+  <div><b>Emp Code</b></div><div>{_esc(slip.get('employee_code') or '—')}</div>
+  <div><b>Department</b></div><div>{_esc(slip.get('department') or '—')}</div>
+  <div><b>Designation</b></div><div>{_esc(slip.get('designation') or '—')}</div>
+  <div><b>Pay Month</b></div><div>{_esc(_month_label(slip.get('month', '')))}</div>
+  <div><b>Slip No</b></div><div>{_esc(slip.get('dept_doc_no') or slip.get('id') or '—')}</div>
+  <div><b>PAN</b></div><div>{_esc(pan or '—')}</div>
+  <div><b>Bank</b></div><div>{_esc(bank.get('name') or '—')}{(' · A/c ' + _esc(bank.get('account'))) if bank.get('account') else ''}{(' · IFSC ' + _esc(bank.get('ifsc'))) if bank.get('ifsc') else ''}</div>
+</div>
+<div class="section-title">Attendance</div>
+<table><thead><tr><th class="num">Month Days</th><th class="num">Paid Days</th><th class="num">LOP Days</th><th class="num">OT Hours</th></tr></thead>
+<tbody><tr>
+  <td class="num">{_esc(slip.get('total_days'))}</td>
+  <td class="num">{_esc(slip.get('paid_days'))}</td>
+  <td class="num">{_esc(slip.get('lop_days'))}</td>
+  <td class="num">{_esc(slip.get('ot_hours') or 0)}</td>
+</tr></tbody></table>
+<table style="margin-top:12px;"><thead>
+<tr><th style="width:35%">Earnings</th><th class="num" style="width:15%">Amount (₹)</th>
+    <th style="width:35%">Deductions</th><th class="num" style="width:15%">Amount (₹)</th></tr></thead>
+<tbody><tr>
+  <td colspan="2" style="padding:0;"><table style="margin:0;">{earn_rows or "<tr><td>—</td></tr>"}</table></td>
+  <td colspan="2" style="padding:0;"><table style="margin:0;">{ded_rows or "<tr><td>—</td></tr>"}</table></td>
+</tr>
+<tr style="font-weight:700; background:#f8fafc;">
+  <td>Total Earnings</td><td class="num">{_money(slip.get('total_earnings'))}</td>
+  <td>Total Deductions</td><td class="num">{_money(slip.get('total_deductions'))}</td>
+</tr></tbody></table>
+<div style="margin-top:14px; border:2px solid #166534; background:#f0fdf4; padding:10px 14px;
+            display:flex; justify-content:space-between; align-items:center;">
+  <div style="font-size:9pt; color:#166534;"><b>Net Pay (in words):</b> {_esc(_amount_words_inr(slip.get('net_pay')))}</div>
+  <div style="font-size:14pt; font-weight:700; color:#166534;">₹ {_money(slip.get('net_pay'))}</div>
+</div>
+<div class="note">This is a system-generated payslip and does not require a signature.</div>
+"""
+
+
+def render_payslip_pdf(slip: Dict[str, Any], pan: str = "") -> bytes:
+    title = f"Payslip — {_month_label(slip.get('month', ''))}"
+    return _render(_wrap(title, _payslip_body(slip, pan=pan)))
+
+
+def render_payslips_bundle_pdf(slips: List[Dict[str, Any]], month: str, pans: Optional[Dict[str, str]] = None) -> bytes:
+    pans = pans or {}
+    sections = []
+    for i, s in enumerate(slips):
+        brk = "page-break-before: always;" if i > 0 else ""
+        head = "" if i == 0 else f"""<div class="title-row"><div><div class="brand">{_esc(BRAND)}</div>
+<h1>Payslip — {_esc(_month_label(month))}</h1></div><div class="meta">Generated: <b>{_now_str()}</b></div></div>"""
+        sections.append(f"<div style='{brk}'>{head}{_payslip_body(s, pan=pans.get(s.get('employee_id') or '', ''))}</div>")
+    return _render(_wrap(f"Payslip — {_month_label(month)}", "".join(sections)))

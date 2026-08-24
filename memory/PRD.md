@@ -5537,3 +5537,14 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - advance_router: `_project_details()` resolves project by code/id/name → advance create stamps project_id/project_code/project_name/project_manager; GET /advances list + GET /advances/{id} enrich legacy rows on the fly from projects master; advance→payment-queue shadow row now carries real project_id/code/name (was hardcoded "HR").
 - UI (hr/Advances.jsx): new "Project" column (code + name + "PM:" line, testid advance-project-{no}); detail drawer shows Project ID / Project Name / Project Manager KVs.
 - Tested: curl create with project → stamped fields, list + detail enriched (legacy rows too); screenshot shows column populated. PM shows when project has a manager assigned. Test advance cleaned.
+
+### Iteration 204 (Aug 2026) — Bill Generation Request autofill hardening ✅
+- `/api/ra-bills/project-context/{code}` fallbacks strengthened: client name via project.client_id → clients master; customer PO also matched by project_code/project_id (not just handover work-order/client); line items fall back to customer PO (order) items when no offer/quote linked.
+- Fetched Client/Offer/PO now PERSIST on the bill request (BillRequestIn + create doc: client_name/quotation_no/po_number, frontend sends ctx) and display in the list row (Offer/PO refs, testid br-refs-{id}).
+- Verified UI as PM (test_pm): selecting project auto-filled Client ONGC, Offer QTN-2026-0086, PO ORD-2026-0012, 8 line items + toast. Note: projects with NO linked handover/quote/order legitimately return empty context.
+
+### Iteration 175 (Aug 24, 2026) — Payslip PDF Export + OneDrive tenant fix
+- **Payslip PDF export**: `render_payslip_pdf` + `render_payslips_bundle_pdf` in `/app/backend/pdf_generator.py` (branded HTML→WeasyPrint, attendance block, earnings/deductions side-by-side, Net Pay in Indian words, PAN/bank from payroll_master).
+- Endpoints: `GET /api/payroll/payslips/{employee_id}/{month}/pdf` (HR/Finance or self), `GET /api/payroll/payslips/bulk-pdf?month=` (HR/Finance, all slips in one PDF page-per-employee). Tested via curl: 200, valid PDFs (1pg single / 2pg bulk).
+- Frontend `hr/Payroll.jsx` Payslips tab: per-row Download button (`payslip-pdf-{code}`), header "All PDF" (`payslips-bulk-pdf-btn`), PDF button inside SlipDialog for committed slips. Verified via screenshot on /app/hr/payroll.
+- **OneDrive**: user supplied correct Tenant ID `a42099ca-046c-40be-bf44-0b9ea8284951` (old stored one was wrong — fixed in preview DB settings). Client ID unchanged/matching. Remaining blocker: stored Client Secret is invalid (AADSTS7000215 — secret ID was saved instead of secret VALUE, or expired). User must paste the secret VALUE in Admin → OneDrive Settings (and again in PRODUCTION since prod DB is separate).

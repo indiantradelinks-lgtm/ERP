@@ -97,6 +97,9 @@ export default function BillRequests() {
     try {
       const r = await api.post("/bill-requests", {
         ...form,
+        client_name: ctx?.client_name || undefined,
+        quotation_no: ctx?.quotation_no || undefined,
+        po_number: ctx?.po_number || undefined,
         items: form.items.map((i) => ({ description: i.description, quantity: Number(i.quantity) || 0, unit: i.unit, rate: Number(i.rate) || 0 })),
         expected_amount: totalAmount,
       });
@@ -175,6 +178,11 @@ export default function BillRequests() {
                 <TableCell>
                   <div className="font-semibold text-sm">{r.project_code}</div>
                   <div className="text-[11px] text-muted-foreground">{r.client_name || r.project_name}</div>
+                  {(r.quotation_no || r.po_number) && (
+                    <div className="text-[10px] text-muted-foreground" data-testid={`br-refs-${r.id}`}>
+                      {r.quotation_no && <>Offer: {r.quotation_no}</>}{r.quotation_no && r.po_number && " · "}{r.po_number && <>PO: {r.po_number}</>}
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell><Badge variant="outline" className="rounded-sm uppercase text-[10px]">{r.bill_type}</Badge></TableCell>
                 <TableCell className="text-xs">{r.period_from || "—"} → {r.period_to || "—"}</TableCell>

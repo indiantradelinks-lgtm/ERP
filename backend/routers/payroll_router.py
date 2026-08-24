@@ -27,7 +27,7 @@ import logging
 from calendar import monthrange
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from core import db, get_current_user, now_iso, new_id
@@ -448,17 +448,48 @@ async def list_payslips(month: str = "", employee_id: str = "", user: dict = Dep
     return rows
 
 
-@router.get("/payslips/{employee_id}/{month}")
-async def get_payslip(employee_id: str, month: str, user: dict = Depends(get_current_user)):
+@router.get("/payslips/bulk-pdf")
+async def payslips_bulk_pdf(month: str, user: dict = Depends(get_current_user)):
+    """All committed payslips for a month as one PDF (HR/Finance only)."""
+    if user.get("role") not in HR_ROLES | FINANCE_ROLES:
+        raise HTTPException(status_code=403, detail="not allowed")
+    slips = await db.payslips.find({"month": month}, {"_id": 0}).sort("employee_name", 1).to_list(1000)
+    if not slips:
+        raise HTTPException(status_code=404, detail=f"no payslips found for {month}")
+    from pdf_generator import render_payslips_bundle_pdf
+    emp_ids = [s["employee_id"] for s in slips]
+    pans = {m["employee_id"]: m.get("pan") or "" async for m in db.payroll_master.find(
+        {"employee_id": {"$in": emp_ids}}, {"_id": 0, "employee_id": 1, "pan": 1})}
+    data = render_payslips_bundle_pdf(slips, month, pans=pans)
+    return Response(content=data, media_type="application/pdf", headers={
+        "Content-Disposition": f'inline; filename="Payslips-{month}.pdf"'})
+
+
+async def _payslip_with_access(employee_id: str, month: str, user: dict) -> dict:
     doc = await db.payslips.find_one({"employee_id": employee_id, "month": month}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="payslip not found")
-    role = user.get("role")
-    if role not in HR_ROLES | FINANCE_ROLES:
+    if user.get("role") not in HR_ROLES | FINANCE_ROLES:
         emp = await db.employees.find_one({"email": user.get("email")}, {"_id": 0, "id": 1})
         if not emp or emp["id"] != employee_id:
             raise HTTPException(status_code=403, detail="not allowed")
     return doc
+
+
+@router.get("/payslips/{employee_id}/{month}")
+async def get_payslip(employee_id: str, month: str, user: dict = Depends(get_current_user)):
+    return await _payslip_with_access(employee_id, month, user)
+
+
+@router.get("/payslips/{employee_id}/{month}/pdf")
+async def payslip_pdf(employee_id: str, month: str, user: dict = Depends(get_current_user)):
+    doc = await _payslip_with_access(employee_id, month, user)
+    from pdf_generator import render_payslip_pdf
+    master = await db.payroll_master.find_one({"employee_id": employee_id}, {"_id": 0, "pan": 1}) or {}
+    data = render_payslip_pdf(doc, pan=master.get("pan") or "")
+    fname = f"Payslip-{doc.get('employee_code') or employee_id[:6]}-{month}.pdf"
+    return Response(content=data, media_type="application/pdf", headers={
+        "Content-Disposition": f'inline; filename="{fname}"'})
 
 
 @router.get("/runs")

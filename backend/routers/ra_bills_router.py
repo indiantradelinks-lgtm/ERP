@@ -200,6 +200,9 @@ class BillRequestIn(BaseModel):
     expected_amount: float = 0
     items: List[Dict[str, Any]] = []
     remarks: Optional[str] = None
+    client_name: Optional[str] = None
+    quotation_no: Optional[str] = None
+    po_number: Optional[str] = None
 
 
 def _request_status(req: Dict[str, Any], approval: Optional[Dict[str, Any]]) -> str:
@@ -240,7 +243,9 @@ async def create_bill_request(payload: BillRequestIn, request: Request,
         "request_no": req_no,
         "project_code": payload.project_code,
         "project_name": project.get("name") or "",
-        "client_name": (handover or {}).get("client_name") or project.get("client") or "",
+        "client_name": payload.client_name or (handover or {}).get("client_name") or project.get("client") or "",
+        "quotation_no": payload.quotation_no or (handover or {}).get("quotation_no") or project.get("quotation_no") or "",
+        "po_number": payload.po_number or (handover or {}).get("work_order_number") or "",
         "bill_type": payload.bill_type,
         "period_from": payload.period_from, "period_to": payload.period_to,
         "expected_amount": expected,
@@ -368,19 +373,25 @@ async def ra_bill_project_context(project_code: str,
     handover = await db.project_handovers.find_one(
         {"project_code": project_code}, {"_id": 0}, sort=[("created_at", -1)])
 
-    client_name = (handover or {}).get("client_name") or (project or {}).get("client") or ""
-    client_id = (handover or {}).get("client_id") or ""
+    client_name = (handover or {}).get("client_name") or (project or {}).get("client") or (project or {}).get("client_name") or ""
+    client_id = (handover or {}).get("client_id") or (project or {}).get("client_id") or ""
+    if not client_name and client_id:
+        c = await db.clients.find_one({"id": client_id}, {"_id": 0, "name": 1})
+        client_name = (c or {}).get("name") or ""
     if not client_id and client_name:
         c = await db.clients.find_one({"name": client_name}, {"_id": 0, "id": 1})
         client_id = (c or {}).get("id") or ""
     site_name = (handover or {}).get("site_location") or (project or {}).get("site") or ""
 
-    # Customer PO: work order on the handover, else latest order for this client
+    # Customer PO: work order on the handover, else latest order for this client/project
     po_number = (handover or {}).get("work_order_number") or ""
     po_id = ""
     order = None
     if po_number:
         order = await db.orders.find_one({"order_no": po_number}, {"_id": 0})
+    if not order:
+        order = await db.orders.find_one({"$or": [{"project_code": project_code}, {"project_id": (project or {}).get("id") or ""}]},
+                                         {"_id": 0}, sort=[("created_at", -1)])
     if not order and client_name:
         order = await db.orders.find_one({"customer": client_name}, {"_id": 0}, sort=[("created_at", -1)])
     if order:
@@ -440,6 +451,12 @@ async def ra_bill_project_context(project_code: str,
             items = [{"description": i.get("description") or "", "quantity": i.get("quantity") or 1,
                       "unit": i.get("unit") or "", "rate": i.get("rate") or 0}
                      for i in quote["items"]]
+
+    if not items and order and (order.get("items") or []):
+        # No offer/quote linked — fall back to the customer PO (order) line items
+        items = [{"description": i.get("description") or i.get("name") or "", "quantity": i.get("quantity") or 1,
+                  "unit": i.get("unit") or "", "rate": i.get("rate") or 0}
+                 for i in order["items"]]
 
     return {
         "project_code": project_code,
