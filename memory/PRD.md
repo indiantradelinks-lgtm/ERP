@@ -5548,3 +5548,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Endpoints: `GET /api/payroll/payslips/{employee_id}/{month}/pdf` (HR/Finance or self), `GET /api/payroll/payslips/bulk-pdf?month=` (HR/Finance, all slips in one PDF page-per-employee). Tested via curl: 200, valid PDFs (1pg single / 2pg bulk).
 - Frontend `hr/Payroll.jsx` Payslips tab: per-row Download button (`payslip-pdf-{code}`), header "All PDF" (`payslips-bulk-pdf-btn`), PDF button inside SlipDialog for committed slips. Verified via screenshot on /app/hr/payroll.
 - **OneDrive**: user supplied correct Tenant ID `a42099ca-046c-40be-bf44-0b9ea8284951` (old stored one was wrong — fixed in preview DB settings). Client ID unchanged/matching. Remaining blocker: stored Client Secret is invalid (AADSTS7000215 — secret ID was saved instead of secret VALUE, or expired). User must paste the secret VALUE in Admin → OneDrive Settings (and again in PRODUCTION since prod DB is separate).
+
+### Iteration 176 (Aug 24, 2026) — Manager OP Bill Request auto-fill 403 fix
+- Root cause: `GET /api/ra-bills/project-context/{code}` required `ra_bills:read`, which `manager_o_p` (and other ops roles) lack — auto-fill silently failed (frontend catch swallows the 403). Bill request flow itself uses `bill_requests` perms (read = everyone).
+- Fix: endpoint permission changed to `bill_requests:read` in `/app/backend/routers/ra_bills_router.py` (line ~369). Verified: test_mop@erp.com now gets client/offer/PO/line-items context (both API + UI screenshot on /app/ops/bill-requests); admin regression OK.
+- NOTE: user's screenshot was PRODUCTION (PRJ-2026-0081 Nestlé doesn't exist in preview). User must REDEPLOY to get this fix live.

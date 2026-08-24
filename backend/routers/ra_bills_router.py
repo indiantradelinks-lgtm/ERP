@@ -366,7 +366,7 @@ async def reject_bill_request(rid: str, payload: BillRejectIn, request: Request,
 
 @router.get("/ra-bills/project-context/{project_code}")
 async def ra_bill_project_context(project_code: str,
-                                  user: dict = Depends(require_permission("ra_bills", "read"))):
+                                  user: dict = Depends(require_permission("bill_requests", "read"))):
     """Auto-fill context for a New RA Bill: client, site, customer PO and the
     line-item format of the offer (quotation) / received order for the project."""
     project = await db.projects.find_one({"code": project_code}, {"_id": 0})
