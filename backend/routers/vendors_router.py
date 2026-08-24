@@ -137,6 +137,16 @@ async def list_vendors(status: Optional[str] = None,
     return mask(user, "vendors", rows)
 
 
+@router.get("/vendors/approved-lite")
+async def approved_vendors_lite(user: dict = Depends(require_permission("project_requests", "read"))):
+    """Approved/active vendor names for request 'Paid To' dropdowns.
+    Gated by project_requests read (not full Vendor Master access) — returns no sensitive fields."""
+    rows = await db.vendors.find(
+        {"status": {"$in": ["approved", "active"]}},
+        {"_id": 0, "id": 1, "name": 1, "status": 1, "categories": 1}).sort("name", 1).to_list(2000)
+    return rows
+
+
 @router.get("/vendors/{vid}")
 async def get_vendor(vid: str, user: dict = Depends(require_permission("vendors", "read"))):
     row = await db.vendors.find_one({"id": vid}, {"_id": 0})

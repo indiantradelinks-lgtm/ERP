@@ -63,7 +63,7 @@ export default function ProjectExpenses({ embedded = false }) {
   useEffect(() => {
     api.get("/project-expenses/types").then((r) => setTypes(r.data || [])).catch(() => {});
     api.get("/project-expenses/settings").then((r) => setThreshold(r.data?.large_threshold || 10000)).catch(() => {});
-    api.get("/vendors").then((r) => setVendors((r.data || []).filter((v) => v.status === "approved"))).catch(() => {});
+    api.get("/vendors/approved-lite").then((r) => setVendors(r.data || [])).catch(() => {});
     api.get("/advances/eligible-employees").then((r) => setEmployees(r.data || [])).catch(() => {});
   }, []);
   useEffect(() => { load(); }, [filters]); // eslint-disable-line

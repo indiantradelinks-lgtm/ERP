@@ -5558,3 +5558,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Root cause: `_push_advance_to_accounts` (advance_router.py) read `adv.requested_by` — advances store `created_by` — so shadow rows fell back to "approval_engine".
 - Fixes: (1) sync now uses `adv.created_by` and carries `project_manager`; (2) `/api/accounts/payment-queue` read-time fallback — advance rows resolve raised_by from employee_advances, project name/PM resolve via project_code lookup (pcode_map) when project_id missing. No DB migration needed; works on existing prod rows after redeploy.
 - Verified: queue API shows real requester names, project code/name/PM display in UI (screenshot). Frontend unchanged (already rendered these fields).
+
+### Iteration 178 (Aug 24, 2026) — Service/Payment Request vendor dropdown fix
+- Problem (reported from PRODUCTION): "Vendor (Approved)" dropdown empty for non-super-admin users. Old flow: frontend called GET /api/vendors (full Vendor Master, gated by vendors:read which the DB-driven Role×Permission matrix may deny for requester roles) then filtered status==="approved" client-side.
+- Fix: new `GET /api/vendors/approved-lite` in vendors_router (declared BEFORE /vendors/{vid}) — gated by `project_requests:read` (any Request Center user), returns only id/name/status/categories for vendors with status in {approved, active}. ProjectRequests.jsx + ProjectExpenses.jsx now use it.
+- Verified: manager_o_p + admin both get 5 approved vendors via API; UI dialog shows populated dropdown (screenshot); /vendors/{vid} regression 200.

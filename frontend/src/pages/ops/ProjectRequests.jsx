@@ -118,7 +118,7 @@ export default function ProjectRequests() {
   useEffect(() => { api.get("/procurement/master/categories").then((r) => setCategories(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { api.get("/project-expenses/types").then((r) => setExpTypes(r.data || [])).catch(() => {}); }, []);
   useEffect(() => {
-    api.get("/vendors").then((r) => setVendors((r.data || []).filter((v) => v.status === "approved"))).catch(() => {});
+    api.get("/vendors/approved-lite").then((r) => setVendors(r.data || [])).catch(() => {});
   }, []);
   useEffect(() => { load(); }, [filters]); // eslint-disable-line
   useAutoSync(load);
