@@ -50,6 +50,13 @@ async def payment_queue(stage: str = "", project_code: str = "",
     proj_ids = list({r.get("project_id") for r in reqs if r.get("project_id")})
     pmap = {p["id"]: p async for p in db.projects.find(
         {"id": {"$in": proj_ids}}, {"_id": 0, "id": 1, "name": 1, "code": 1, "project_manager_name": 1, "manager": 1})}
+    proj_codes = list({r.get("project_code") for r in reqs if r.get("project_code") and not r.get("project_id")})
+    pcode_map = {p["code"]: p async for p in db.projects.find(
+        {"code": {"$in": proj_codes}}, {"_id": 0, "id": 1, "name": 1, "code": 1, "project_manager_name": 1, "manager": 1})} if proj_codes else {}
+    adv_ids = list({r.get("source_id") for r in reqs if r.get("source") == "advance" and r.get("source_id")})
+    amap = {a["id"]: a async for a in db.employee_advances.find(
+        {"id": {"$in": adv_ids}},
+        {"_id": 0, "id": 1, "created_by": 1, "project_code": 1, "project_name": 1, "project_manager": 1})} if adv_ids else {}
     emp_ids = list({r.get("employee_id") for r in reqs if r.get("employee_id")})
     emap = {e["id"]: e async for e in db.employees.find(
         {"id": {"$in": emp_ids}},
@@ -64,17 +71,22 @@ async def payment_queue(stage: str = "", project_code: str = "",
         st = _stage(v)
         if stage and st != stage:
             continue
-        proj = pmap.get(r.get("project_id")) or {}
+        proj = pmap.get(r.get("project_id")) or pcode_map.get(r.get("project_code")) or {}
+        adv = amap.get(r.get("source_id")) if r.get("source") == "advance" else None
+        raised_by = r.get("created_by") or r.get("requested_by")
+        if adv and (not raised_by or raised_by == "approval_engine"):
+            raised_by = adv.get("created_by") or raised_by
         emp = emap.get(r.get("employee_id"))
         cc = ccmap.get(r.get("cost_center_id"))
         cc_name = r.get("cost_center_label") or (
             (f"{cc.get('category_code') or ''} · {cc.get('category_name') or ''}".strip(" ·") or cc.get("name"))
             if cc else None)
         out.append({**r, "verification": v, "pay_stage": st, "cost_center_name": cc_name,
-                    "project_name": r.get("project_name") or proj.get("name"),
-                    "project_code": r.get("project_code") or proj.get("code"),
-                    "raised_by": r.get("created_by") or r.get("requested_by"),
-                    "project_manager": proj.get("project_manager_name") or proj.get("manager"),
+                    "project_name": r.get("project_name") or proj.get("name") or (adv or {}).get("project_name"),
+                    "project_code": r.get("project_code") or proj.get("code") or (adv or {}).get("project_code"),
+                    "raised_by": raised_by,
+                    "project_manager": r.get("project_manager") or proj.get("project_manager_name")
+                                       or proj.get("manager") or (adv or {}).get("project_manager"),
                     "employee_bank": ({"account_no": emp.get("bank_account_no"), "ifsc": emp.get("bank_ifsc"),
                                        "bank_name": emp.get("bank_name"), "branch": emp.get("bank_branch")}
                                       if emp and emp.get("bank_account_no") else None)})

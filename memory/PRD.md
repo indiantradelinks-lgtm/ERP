@@ -5553,3 +5553,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Root cause: `GET /api/ra-bills/project-context/{code}` required `ra_bills:read`, which `manager_o_p` (and other ops roles) lack — auto-fill silently failed (frontend catch swallows the 403). Bill request flow itself uses `bill_requests` perms (read = everyone).
 - Fix: endpoint permission changed to `bill_requests:read` in `/app/backend/routers/ra_bills_router.py` (line ~369). Verified: test_mop@erp.com now gets client/offer/PO/line-items context (both API + UI screenshot on /app/ops/bill-requests); admin regression OK.
 - NOTE: user's screenshot was PRODUCTION (PRJ-2026-0081 Nestlé doesn't exist in preview). User must REDEPLOY to get this fix live.
+
+### Iteration 177 (Aug 24, 2026) — Payment Processing Center: Advance "Raised by" fix + project details
+- Root cause: `_push_advance_to_accounts` (advance_router.py) read `adv.requested_by` — advances store `created_by` — so shadow rows fell back to "approval_engine".
+- Fixes: (1) sync now uses `adv.created_by` and carries `project_manager`; (2) `/api/accounts/payment-queue` read-time fallback — advance rows resolve raised_by from employee_advances, project name/PM resolve via project_code lookup (pcode_map) when project_id missing. No DB migration needed; works on existing prod rows after redeploy.
+- Verified: queue API shows real requester names, project code/name/PM display in UI (screenshot). Frontend unchanged (already rendered these fields).

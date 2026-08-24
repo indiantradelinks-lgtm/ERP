@@ -603,6 +603,7 @@ async def _push_advance_to_accounts(advance_id: str) -> None:
         "project_id": adv.get("project_id"),
         "project_code": adv.get("project_code") or adv.get("project") or adv.get("department") or "HR",
         "project_name": adv.get("project_name"),
+        "project_manager": adv.get("project_manager"),
         "paid_to_type": "person",
         "employee_id": adv.get("employee_id"), "employee_code": adv.get("employee_code"),
         "employee_name": adv.get("employee_name"),
@@ -610,7 +611,7 @@ async def _push_advance_to_accounts(advance_id: str) -> None:
         "description": f"Approved employee advance {adv.get('advance_no')} — {adv.get('employee_name')} "
                        f"({adv.get('installments') or 0} EMIs)",
         "items": [], "chain": [], "current_step": None,
-        "created_by": adv.get("requested_by") or "approval_engine", "created_at": now_iso(),
+        "created_by": adv.get("created_by") or adv.get("requested_by") or "approval_engine", "created_at": now_iso(),
     })
 
 
