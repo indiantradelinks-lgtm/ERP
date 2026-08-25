@@ -38,8 +38,10 @@ COMPANY_GST = "07ARWPC7166J1Z6"
 COMPANY_PAN = "ARWPC7166J"
 LOGO_FILE = "file:///app/backend/assets/itl-logo.jpg"
 FOOTER_NOTE = "System-generated · Not valid without approval signatures"
-CORPORATE_ADDRESS = ("Registered Address - Wz-3536A, Ground Floor, Raja Park, Rani Bagh, "
-                     "Shakur Basti, New Delhi-110034.")
+CORPORATE_ADDRESS = ("Corporate Address - Tower-1, Office No. 605-606, 6th Floor, "
+                     "Pearl Omaxe Building, Netaji Subhash Place, Pitampura, Delhi - 110034.")
+REGISTERED_ADDRESS = ("Wz-3536A, Ground Floor, Raja Park, Rani Bagh, "
+                      "Shakur Basti, New Delhi-110034.")
 WATERMARK_FILE = "file:///app/backend/assets/itl-watermark.png"
 
 CSS_BASE = """
@@ -414,7 +416,8 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
   <div class="party">
     <div class="ph">From</div>
     <div class="pname">{_esc(BRAND)}</div>
-    <div class="prow">{_esc(CORPORATE_ADDRESS.replace('Registered Address - ', ''))}</div>
+    <div class="prow"><b>Regd. Office:</b> {_esc(REGISTERED_ADDRESS)}</div>
+    <div class="prow"><b>Corporate Office:</b> {_esc(CORPORATE_ADDRESS.replace('Corporate Address - ', ''))}</div>
     <div class="prow"><b>GST No.:</b> {COMPANY_GST}</div>
     <div class="prow"><b>PAN No.:</b> {COMPANY_PAN}</div>
   </div>

@@ -5640,3 +5640,6 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 ### Iteration 185b (Aug 25, 2026) — PO PDF address + payment terms layout
 - CORPORATE_ADDRESS replaced globally (footer + PO From panel): "Registered Address - Wz-3536A, Ground Floor, Raja Park, Rani Bagh, Shakur Basti, New Delhi-110034." (old Pearl Omaxe address removed everywhere).
 - Payment Terms moved beside Terms & Conditions (flex 2:1 side-by-side sections after totals). Verified via rendered PDF image.
+
+### Iteration 185c (Aug 25, 2026) — Both addresses on PO PDF
+- From panel now shows Regd. Office (Wz-3536A, Raja Park, Rani Bagh, Shakur Basti, New Delhi-110034) AND Corporate Office (Pearl Omaxe, Pitampura — restored, also back in footer). REGISTERED_ADDRESS constant added; CORPORATE_ADDRESS restored to original. Verified via rendered PDF image.
