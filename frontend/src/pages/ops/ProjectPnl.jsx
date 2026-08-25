@@ -39,7 +39,8 @@ export default function ProjectPnl() {
           <h1 className="font-display font-black text-3xl tracking-tight">Project Profit & Loss</h1>
           <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
             Sales = RA bills raised (billed value, ex-GST) with receipts shown separately.
-            Expenses = Material/GRN + approved daily expense bookings + site expenses.
+            Expenses = Vendor bills (incl. transport &amp; direct bookings) + unbilled GRN material + approved expense bookings
+            (fooding, travelling…) + site petty cash + salary/employee advances + paid service &amp; payment requests. Updates live as records are approved/paid.
           </p>
         </div>
         <div className="flex gap-2">

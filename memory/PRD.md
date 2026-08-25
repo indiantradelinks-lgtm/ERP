@@ -5643,3 +5643,9 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 
 ### Iteration 185c (Aug 25, 2026) — Both addresses on PO PDF
 - From panel now shows Regd. Office (Wz-3536A, Raja Park, Rani Bagh, Shakur Basti, New Delhi-110034) AND Corporate Office (Pearl Omaxe, Pitampura — restored, also back in footer). REGISTERED_ADDRESS constant added; CORPORATE_ADDRESS restored to original. Verified via rendered PDF image.
+
+### Iteration 186 (Aug 25, 2026) — Project P&L covers ALL cost sources
+- Audit result: P&L previously counted only GRN material + project_expenses + site_expenses. MISSING: vendor bills, salary advances, paid service/payment requests.
+- `_project_pnl` (project_expenses_router) now aggregates 6 sources: (1) vendor_bills approved/paid — basic amount by expense_category (incl. transport + is_historical direct bookings); (2) GRNs NOT covered by a vendor bill ("Material Received — bill pending") to avoid double counting; (3) project_expenses approved/paid by type; (4) site_expenses approved; (5) employee_advances paid/under_recovery/closed with project link ("Salary / Employee Advances"); (6) project_requests is_payment paid (status paid/payment_done or UTR/date set), excluding shadow sources advance/vendor_bill/accounts_vendor_bill — grouped "Service Payments — {type}".
+- Profitability = income_billed (RA bills ex-GST) − total_expense; margin %. Live-computed → auto-updates as records are approved/paid.
+- Verified via API (categories now include Vendor Bills — transport/material, Fuel, Accommodation, Service Payments) + P&L page screenshot (/app/ops/pnl); subtitle updated.

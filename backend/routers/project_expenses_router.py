@@ -371,21 +371,54 @@ async def _project_pnl(project: dict) -> dict:
     receipts = round(sum(float(b.get("paid_amount") or 0) for b in bills), 2)
 
     expenses: Dict[str, float] = {}
-    grn_rows = await db.grn.find({"project_id": pid}, {"_id": 0, "items": 1}).to_list(2000)
+    # 1) Vendor bills (incl. transport + direct/historical bookings) — basic amount, approved/paid only
+    vbills = await db.vendor_bills.find(
+        {"$or": [{"project_id": pid}, {"project_code": code}], "status": {"$in": ["approved", "paid"]}},
+        {"_id": 0, "amount": 1, "expense_category": 1, "grn_id": 1}).to_list(3000)
+    billed_grn_ids = {b["grn_id"] for b in vbills if b.get("grn_id")}
+    for b in vbills:
+        key = f"Vendor Bills — {b.get('expense_category') or 'General'}"
+        expenses[key] = round(expenses.get(key, 0) + float(b.get("amount") or 0), 2)
+    # 2) GRNs not yet covered by a vendor bill (accrued material cost, avoids double counting)
+    grn_rows = await db.grn.find({"project_id": pid}, {"_id": 0, "id": 1, "items": 1}).to_list(2000)
     grn_total = sum(float(it.get("amount") or it.get("total") or 0)
-                    for g in grn_rows for it in (g.get("items") or []))
+                    for g in grn_rows if g.get("id") not in billed_grn_ids
+                    for it in (g.get("items") or []))
     if grn_total:
-        expenses["Material / Procurement (GRN)"] = round(grn_total, 2)
+        expenses["Material Received — bill pending (GRN)"] = round(grn_total, 2)
+    # 3) Booked daily expenses (fooding, travelling, site consumables… via Expense Booking)
     pex = await db.project_expenses.find({"project_id": pid, "status": {"$in": ["approved_for_payment", "paid"]}},
                                          {"_id": 0, "expense_type_label": 1, "amount": 1}).to_list(3000)
     for e in pex:
         key = e.get("expense_type_label") or "Daily Expense"
         expenses[key] = round(expenses.get(key, 0) + float(e.get("amount") or 0), 2)
+    # 4) Site petty-cash expenses
     se = await db.site_expenses.find({"$or": [{"project_id": pid}, {"project_code": code}], "status": "approved"},
                                      {"_id": 0, "amount": 1}).to_list(2000)
     se_total = sum(float(x.get("amount") or 0) for x in se)
     if se_total:
         expenses["Site Expenses (petty cash)"] = round(se_total, 2)
+    # 5) Salary / employee advances disbursed against the project
+    advs = await db.employee_advances.find(
+        {"$or": [{"project_id": pid}, {"project_code": code}],
+         "status": {"$in": ["paid", "under_recovery", "closed"]}},
+        {"_id": 0, "amount": 1}).to_list(2000)
+    adv_total = sum(float(a.get("amount") or 0) for a in advs)
+    if adv_total:
+        expenses["Salary / Employee Advances"] = round(adv_total, 2)
+    # 6) Paid Service/Payment requests (fuel, vehicles, fooding, travel, custom types…)
+    #    Excludes shadow rows (advance / vendor bill syncs) already counted above.
+    preqs = await db.project_requests.find(
+        {"$or": [{"project_id": pid}, {"project_code": code}],
+         "is_payment": True,
+         "source": {"$nin": ["advance", "vendor_bill", "accounts_vendor_bill", "expense"]},
+         "$and": [{"$or": [{"status": {"$in": ["paid", "payment_done"]}},
+                           {"payment_utr": {"$nin": [None, ""]}},
+                           {"payment_date": {"$nin": [None, ""]}}]}]},
+        {"_id": 0, "amount": 1, "est_value": 1, "request_type": 1}).to_list(3000)
+    for r in preqs:
+        key = f"Service Payments — {(r.get('request_type') or 'other').replace('_', ' ').title()}"
+        expenses[key] = round(expenses.get(key, 0) + float(r.get("amount") or r.get("est_value") or 0), 2)
 
     total_expense = round(sum(expenses.values()), 2)
     gross_profit = round(income_billed - total_expense, 2)
