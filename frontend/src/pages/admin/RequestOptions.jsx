@@ -29,7 +29,7 @@ function OptionDialog({ kind, initial, expenseTypes, onClose, onSaved }) {
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md" data-testid="option-dialog">
-        <DialogHeader><DialogTitle>{isNew ? "Add" : "Edit"} {kind === "request_type" ? "Request Type" : "Expense Type"}{initial.key ? ` — ${initial.key}` : ""}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{isNew ? "Add" : "Edit"} {kind === "request_type" ? "Request Type" : kind === "service_type" ? "Service Type" : "Expense Type"}{initial.key ? ` — ${initial.key}` : ""}</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div><Label className="text-[10px] uppercase tracking-wider">Label *</Label>
             <Input value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} className="h-9 mt-1" data-testid="option-label" /></div>
@@ -50,10 +50,10 @@ function OptionDialog({ kind, initial, expenseTypes, onClose, onSaved }) {
                 <label className="flex items-center gap-2"><input type="checkbox" checked={f.stockable} onChange={(e) => setF({ ...f, stockable: e.target.checked })} /> Stockable (store check)</label>
               </div>
             </>
-          ) : (
+          ) : kind === "expense_type" ? (
             <div><Label className="text-[10px] uppercase tracking-wider">GL Account Code</Label>
               <Input value={f.account} onChange={(e) => setF({ ...f, account: e.target.value })} className="h-9 mt-1" data-testid="option-account" /></div>
-          )}
+          ) : null}
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} /> Active (visible in dropdowns)</label>
         </div>
         <DialogFooter>
@@ -82,14 +82,14 @@ function OptionsTable({ kind, rows, expenseTypes, onChanged }) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center">
-        <CardTitle className="text-base flex-1">{kind === "request_type" ? "Request Types (Routing)" : "Expense Types"} <Badge variant="outline" className="ml-2">{rows.length}</Badge></CardTitle>
+        <CardTitle className="text-base flex-1">{kind === "request_type" ? "Request Types (Routing)" : kind === "service_type" ? "Service Types" : "Expense Types"} <Badge variant="outline" className="ml-2">{rows.length}</Badge></CardTitle>
         <Button size="sm" onClick={() => setEditing({})} data-testid={`add-${kind}`}><ListPlus className="h-3.5 w-3.5 mr-1" /> Add</Button>
       </CardHeader>
       <CardContent>
         <Table>
           <TableHeader><TableRow>
             <TableHead>Label</TableHead><TableHead>Key</TableHead>
-            {kind === "request_type" ? <><TableHead>Routing Dept</TableHead><TableHead>Payment</TableHead><TableHead>Default Expense</TableHead></> : <TableHead>GL Account</TableHead>}
+            {kind === "request_type" ? <><TableHead>Routing Dept</TableHead><TableHead>Payment</TableHead><TableHead>Default Expense</TableHead></> : kind === "expense_type" ? <TableHead>GL Account</TableHead> : null}
             <TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead>
           </TableRow></TableHeader>
           <TableBody>
@@ -103,7 +103,7 @@ function OptionsTable({ kind, rows, expenseTypes, onChanged }) {
                     <TableCell className="text-xs">{r.payment ? "Yes" : "No"}</TableCell>
                     <TableCell className="text-xs">{r.expense_type || "—"}</TableCell>
                   </>
-                ) : <TableCell className="font-mono-data text-xs">{r.account}</TableCell>}
+                ) : kind === "expense_type" ? <TableCell className="font-mono-data text-xs">{r.account}</TableCell> : null}
                 <TableCell><Badge variant="outline" className={`text-[10px] ${r.active === false ? "border-slate-300 text-slate-500" : "border-emerald-300 text-emerald-800 bg-emerald-50"}`}>{r.active === false ? "Hidden" : "Active"}</Badge></TableCell>
                 <TableCell className="text-right whitespace-nowrap">
                   <Button size="sm" variant="ghost" onClick={() => setEditing(r)} data-testid={`edit-${kind}-${r.key}`}><Pencil className="h-3 w-3" /></Button>
@@ -133,12 +133,13 @@ export default function RequestOptions() {
       <div>
         <h1 className="font-display font-black text-3xl tracking-tight">Request &amp; Expense Type Master</h1>
         <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
-          Centrally manage the <b>Request Type (Routing)</b> and <b>Expense Type</b> dropdowns used in the
-          Service / Payment Request form. Changes reflect immediately for all users. Built-in options can be renamed or hidden; custom options can be added freely.
+          Centrally manage the <b>Request Type (Routing)</b>, <b>Expense Type</b> and <b>Service Type</b> dropdowns used across the
+          Service / Payment Request form and Billing reports. Changes reflect immediately for all users. Built-in options can be renamed or hidden; custom options can be added freely.
         </p>
       </div>
       {data && <OptionsTable kind="request_type" rows={data.request_types} expenseTypes={data.expense_types.filter((t) => t.active !== false)} onChanged={load} />}
       {data && <OptionsTable kind="expense_type" rows={data.expense_types} expenseTypes={[]} onChanged={load} />}
+      {data && <OptionsTable kind="service_type" rows={data.service_types || []} expenseTypes={[]} onChanged={load} />}
     </div>
   );
 }

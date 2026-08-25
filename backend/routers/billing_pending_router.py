@@ -21,6 +21,24 @@ router = APIRouter(tags=["billing-pending"])
 BILLING_TYPES = {"annual_rate_contract", "one_time_supply"}
 ORDER_TYPES = {"supply", "service", "one_time_service", "arc", "shutdown", "outage"}
 SERVICE_TYPES_STD = ["scaffolding", "painting", "roof_sheeting", "roof_access", "rope_access", "insulation", "services", "shutdown"]
+
+
+async def get_service_types(active_only: bool = False) -> Dict[str, Dict[str, Any]]:
+    """Standard service types merged with super-admin overrides/custom entries."""
+    merged: Dict[str, Dict[str, Any]] = {
+        k: {"label": k.replace("_", " ").title(), "active": True, "builtin": True} for k in SERVICE_TYPES_STD}
+    async for o in db.service_type_options.find({}, {"_id": 0}):
+        k = o.get("key")
+        if not k:
+            continue
+        base = merged.get(k, {"label": k.replace("_", " ").title(), "builtin": False})
+        if o.get("label"):
+            base["label"] = o["label"]
+        base["active"] = o.get("active", True)
+        merged[k] = base
+    if active_only:
+        return {k: v for k, v in merged.items() if v.get("active", True)}
+    return merged
 ACTIVE_PROJECT_STATUSES = {"active", "in_progress", "ongoing", "on_hold", None, ""}
 REMINDER_ROLES = ["project_manager", "manager_o_p", "project_coordinator",
                   "dept_head", "general_manager", "director"]
@@ -216,7 +234,8 @@ async def pending_report(month: Optional[str] = None, status: Optional[str] = No
     return {"month": month, "rows": rows, "summary": _summarise(rows),
             "managers": sorted({r["project_manager"] for r in report["rows"] if r["project_manager"]}),
             "clients": sorted({r["client"] for r in report["rows"] if r["client"]}),
-            "service_types": sorted({r["service_type"] for r in report["rows"] if r.get("service_type")} | set(SERVICE_TYPES_STD)),
+            "service_types": sorted({r["service_type"] for r in report["rows"] if r.get("service_type")}
+                                    | set((await get_service_types(active_only=True)).keys())),
             "order_types": sorted(ORDER_TYPES)}
 
 

@@ -140,7 +140,8 @@ async def delete_dropdown(opt_id: str, request: Request, user: dict = Depends(re
 
 
 # ---------- Request Type / Expense Type Master (Iter 182) ----------
-OPTION_COLLS = {"request_type": "request_type_options", "expense_type": "expense_type_options"}
+OPTION_COLLS = {"request_type": "request_type_options", "expense_type": "expense_type_options",
+                "service_type": "service_type_options"}
 REQUEST_DEPTS = {"stores", "admin", "logistics", "hr"}
 
 
@@ -164,6 +165,9 @@ async def _merged_options(kind: str):
     if kind == "request_type":
         from routers.project_requests_router import get_request_types
         merged = await get_request_types()
+    elif kind == "service_type":
+        from routers.billing_pending_router import get_service_types
+        merged = await get_service_types()
     else:
         from routers.project_expenses_router import get_expense_types
         merged = await get_expense_types()
@@ -173,7 +177,8 @@ async def _merged_options(kind: str):
 @router.get("/request-options")
 async def list_request_options(user: dict = Depends(require_super_admin)):
     return {"request_types": await _merged_options("request_type"),
-            "expense_types": await _merged_options("expense_type")}
+            "expense_types": await _merged_options("expense_type"),
+            "service_types": await _merged_options("service_type")}
 
 
 @router.post("/request-options/{kind}")
@@ -197,7 +202,7 @@ async def create_request_option(kind: str, payload: ManagedOptionIn, request: Re
         doc.setdefault("payment", True)
         doc.setdefault("stockable", False)
         doc.setdefault("expense_type", "misc")
-    else:
+    elif kind == "expense_type":
         doc.setdefault("account", "5900")
     await db[coll].insert_one(doc)
     doc.pop("_id", None)
@@ -232,6 +237,9 @@ async def delete_request_option(kind: str, key: str, request: Request,
     if kind == "request_type":
         from routers.project_requests_router import REQUEST_TYPES
         builtin_keys = set(REQUEST_TYPES)
+    elif kind == "service_type":
+        from routers.billing_pending_router import SERVICE_TYPES_STD
+        builtin_keys = set(SERVICE_TYPES_STD)
     else:
         from routers.project_expenses_router import EXPENSE_TYPES
         builtin_keys = set(EXPENSE_TYPES)

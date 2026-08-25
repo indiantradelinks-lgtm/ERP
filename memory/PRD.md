@@ -5622,3 +5622,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Report + export accept order_type/service_type/period filters; response includes order_types + service_types option lists. Excel adds "WO/PO Type" + "Service Type" columns; PDF shows them under Billing Type.
 - UI: filter bar additions (WO/PO Type, Service Type, Service Period from–to) + inline per-project tag selects under the Billing Type cell (order-type-{code}, service-type-{code}).
 - Tested via curl (all filters + filtered xlsx) and screenshot (service filter → 3 rows, inline tag selects visible).
+
+### Iteration 184b (Aug 25, 2026) — Service Type central management
+- `get_service_types()` in billing_pending_router (builtins SERVICE_TYPES_STD merged with `service_type_options` collection). Admin CRUD extended: kind "service_type" in /api/admin/request-options endpoints (add custom, rename, hide builtin, restore, delete custom).
+- Billing report service_types filter list now uses merged active list (+ any legacy project tags).
+- RequestOptions.jsx page: third "Service Types" table (label/key/status, add/edit/hide/restore). Tested via curl (add fireproofing → appears in report filter; hide insulation → disappears; cleaned) + screenshot.
