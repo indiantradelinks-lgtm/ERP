@@ -5608,3 +5608,7 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Server-side filters on /api/billing/pending-report + /export: q (project search), project_manager, client, billing_type (incl. "unset"), payment_status, min_pending_days; response also returns distinct managers/clients lists for dropdowns. `pending_days` computed per project (days since last generated bill, else project start).
 - UI filter bar (search, PM select, client select, billing type, payment status, pending ≥ N days). Status tiles remain client-side; exports include the tile status + all filters. Pending days shown under status badge and in Excel/PDF.
 - Tested: all six filters via curl (PM=Arjun→2, client=Adani→5, one_time_supply, ≥30 days→18, paid→PRJ-2026-0034, filtered xlsx 17 rows) + UI screenshot with PM filter applied.
+
+### Iteration 183 (Aug 25, 2026) — Manual Amount field on Service/Payment Request
+- ProjectRequests.jsx: prominent "Amount (₹) *" input placed below Description/Justification and above Estimated Value, shown for ALL non-stockable/non-manpower request types (incl. custom types like "Material Rental"); replaced old hardcoded per-type amount block. Estimated Value live-updates from the entered amount (form.amount takes precedence in estValue calc; backend _estimate_value already prioritises p.amount).
+- Verified: field renders for fuel type, est updates to ₹25,000 on input (screenshot); API create with amount=12345 → stored amount + est_value 12345 (test data cleaned).

@@ -726,13 +726,14 @@ export default function ProjectRequests() {
                   <Input type="number" value={form.months} onChange={(e) => setForm({ ...form, months: e.target.value })} className="h-9 rounded-sm mt-1 tabular" data-testid="req-form-months" /></div>
               </>
             )}
-            {(form.request_type === "fuel" || form.request_type === "insurance" || form.request_type === "one_time_vehicle" || form.request_type === "accommodation" || form.request_type === "other" || form.request_type === "self_expense") && (
-              <div><Label className="text-[10px] uppercase tracking-wider">{form.request_type === "accommodation" ? "One-time / Deposit Amount (₹)" : "Amount (₹)"}</Label>
-                <Input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="h-9 rounded-sm mt-1 tabular" data-testid="req-form-amount" /></div>
-            )}
-
             <div className="col-span-2"><Label className="text-[10px] uppercase tracking-wider">Description / Justification *</Label>
               <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="rounded-sm mt-1 min-h-[56px]" data-testid="req-form-desc" /></div>
+
+            {!isStockable && !isManpower && (
+              <div className="col-span-2"><Label className="text-[10px] uppercase tracking-wider">{form.request_type === "accommodation" ? "One-time / Deposit Amount (₹) *" : "Amount (₹) *"}</Label>
+                <Input type="number" min="0" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                  placeholder="Enter the required amount" className="h-10 rounded-sm mt-1 tabular text-base font-semibold" data-testid="req-form-amount" /></div>
+            )}
 
             <div className="col-span-2 flex items-center justify-between bg-muted/30 border border-border rounded-sm p-2.5">
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Estimated Value</div>
