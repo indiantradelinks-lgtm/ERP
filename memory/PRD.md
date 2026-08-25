@@ -5587,3 +5587,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Bill requests: new `bill_nature` field (partial | one_time | monthly_last), validated, stored, surfaced in approval title; select added in ops/BillRequests.jsx form (`br-form-nature`).
 - Frontend page `/app/accounts/billing-pending` (accounts/BillingPendingReport.jsx) with month picker, KPI tiles (pending/in-flow/partially-billed/billed), inline billing-type select per project, "Send Reminder Now" button (mgmt). Menu: accounts + ops sections (perm bill_requests).
 - Tested: report months (Jul shows PRJ-2026-0022 billed), type set, BR with bill_nature=partial → report "requested", reminder queued to 8 recipients w/ 18 pending (SMTP auth fails in PREVIEW only — no real M365 app password; works in prod), screenshot OK.
+
+### Iteration 181b (Aug 25, 2026) — Billing report: Basic/GST split + payment status
+- Report rows now aggregate linked ra_bills per project: billed_basic (subtotal), billed_gst, billed_gross, paid_amount, balance_due; payment_status = paid | partially_paid | unpaid | not_billed (falls back to bill_requests expected_amount for basic when no ra_bill exists).
+- Frontend: "Basic (₹)" + "GST (₹)" columns and Payment badge (partially-paid shows Recd/Due breakdown).
+- Verified: PRJ-2026-0034 → ₹10,00,000 + ₹1,80,000 GST, Paid; PRJ-2026-0035 → Unpaid, due ₹1,18,000 (API + screenshot).

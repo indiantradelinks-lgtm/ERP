@@ -52,6 +52,12 @@ async def build_pending_report(month: str, user: Optional[dict] = None) -> Dict[
              "period_from": 1, "period_to": 1, "created_at": 1, "bill_number": 1,
              "expected_amount": 1, "generated_at": 1, "request_no": 1}):
         reqs_by_proj.setdefault(r["project_code"], []).append(r)
+    bills_by_proj: Dict[str, List[dict]] = {}
+    async for b in db.ra_bills.find(
+            {"project_code": {"$in": codes}, "status": {"$nin": ["cancelled", "rejected"]}},
+            {"_id": 0, "project_code": 1, "subtotal": 1, "gst_amount": 1, "gross_value": 1,
+             "paid_amount": 1, "balance_due": 1, "status": 1}):
+        bills_by_proj.setdefault(b["project_code"], []).append(b)
 
     rows: List[Dict[str, Any]] = []
     for p in projects:
@@ -83,6 +89,23 @@ async def build_pending_report(month: str, user: Optional[dict] = None) -> Dict[
                 status = "pending"
 
         open_req = max(open_reqs, key=lambda r: r.get("created_at") or "", default=None)
+        bills = bills_by_proj.get(p.get("code") or "", [])
+        basic = round(sum(b.get("subtotal") or 0 for b in bills), 2)
+        gst = round(sum(b.get("gst_amount") or 0 for b in bills), 2)
+        gross = round(sum(b.get("gross_value") or ((b.get("subtotal") or 0) + (b.get("gst_amount") or 0)) for b in bills), 2)
+        paid = round(sum(b.get("paid_amount") or 0 for b in bills), 2)
+        balance = round(sum(b.get("balance_due") if b.get("balance_due") is not None
+                            else (b.get("gross_value") or 0) - (b.get("paid_amount") or 0) for b in bills), 2)
+        if not bills and gen:
+            basic = round(sum(r.get("expected_amount") or 0 for r in gen), 2)
+        if not bills and not gen:
+            payment_status = "not_billed"
+        elif bills and all(b.get("status") == "paid" or (b.get("balance_due") is not None and b["balance_due"] <= 0) for b in bills):
+            payment_status = "paid"
+        elif paid > 0:
+            payment_status = "partially_paid"
+        else:
+            payment_status = "unpaid"
         rows.append({
             "project_id": p.get("id"), "project_code": p.get("code"), "project_name": p.get("name"),
             "client": p.get("client"), "project_status": p.get("status"),
@@ -96,6 +119,9 @@ async def build_pending_report(month: str, user: Optional[dict] = None) -> Dict[
             "open_request_nature": (open_req or {}).get("bill_nature") or (open_req or {}).get("bill_type"),
             "bills_generated": len(gen),
             "billed_amount": round(sum(r.get("expected_amount") or 0 for r in gen), 2),
+            "billed_basic": basic, "billed_gst": gst, "billed_gross": gross,
+            "paid_amount": paid, "balance_due": balance,
+            "payment_status": payment_status,
         })
 
     counts: Dict[str, int] = {}

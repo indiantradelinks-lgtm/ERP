@@ -16,6 +16,12 @@ const STATUS_META = {
   billed: { label: "Billed", cls: "border-emerald-300 text-emerald-800 bg-emerald-50" },
 };
 const TYPE_LABEL = { annual_rate_contract: "Annual Rate Contract (Monthly)", one_time_supply: "One-Time Supply" };
+const PAY_META = {
+  paid: { label: "Paid", cls: "border-emerald-300 text-emerald-800 bg-emerald-50" },
+  partially_paid: { label: "Partially Paid", cls: "border-blue-300 text-blue-800 bg-blue-50" },
+  unpaid: { label: "Unpaid", cls: "border-amber-300 text-amber-800 bg-amber-50" },
+  not_billed: { label: "Not Billed", cls: "border-slate-300 text-slate-600 bg-slate-50" },
+};
 
 export default function BillingPendingReport() {
   const { user } = useAuth();
@@ -98,11 +104,13 @@ export default function BillingPendingReport() {
             <TableHead className="text-[10px] uppercase tracking-wider">Status ({month})</TableHead>
             <TableHead className="text-[10px] uppercase tracking-wider">Last Bill</TableHead>
             <TableHead className="text-[10px] uppercase tracking-wider">Open Request</TableHead>
-            <TableHead className="text-[10px] uppercase tracking-wider text-right">Billed (Total)</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-wider text-right">Basic (₹)</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-wider text-right">GST (₹)</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-wider">Payment</TableHead>
           </TableRow></TableHeader>
           <TableBody>
-            {!data && <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>}
-            {data && rows.length === 0 && <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">No projects match.</TableCell></TableRow>}
+            {!data && <TableRow><TableCell colSpan={9} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>}
+            {data && rows.length === 0 && <TableRow><TableCell colSpan={9} className="text-center py-10 text-muted-foreground">No projects match.</TableCell></TableRow>}
             {rows.map((r) => {
               const m = STATUS_META[r.billing_status] || {};
               return (
@@ -130,7 +138,14 @@ export default function BillingPendingReport() {
                   <TableCell className="text-xs">
                     {r.open_request_no ? <><div className="font-semibold">{r.open_request_no}</div><div className="text-[10px] text-muted-foreground">{(r.open_request_nature || "").replaceAll("_", " ")}</div></> : "—"}
                   </TableCell>
-                  <TableCell className="text-right font-mono-data tabular text-sm">{r.bills_generated ? `${inr(r.billed_amount)} · ${r.bills_generated}` : "—"}</TableCell>
+                  <TableCell className="text-right font-mono-data tabular text-sm">{r.billed_basic ? inr(r.billed_basic) : "—"}</TableCell>
+                  <TableCell className="text-right font-mono-data tabular text-xs">{r.billed_gst ? inr(r.billed_gst) : "—"}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={`rounded-sm text-[10px] ${PAY_META[r.payment_status]?.cls || ""}`}>
+                      {PAY_META[r.payment_status]?.label || "—"}
+                    </Badge>
+                    {r.payment_status === "partially_paid" && <div className="text-[10px] text-muted-foreground mt-0.5">Recd {inr(r.paid_amount)} · Due {inr(r.balance_due)}</div>}
+                  </TableCell>
                 </TableRow>
               );
             })}
