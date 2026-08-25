@@ -5612,3 +5612,6 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 ### Iteration 183 (Aug 25, 2026) — Manual Amount field on Service/Payment Request
 - ProjectRequests.jsx: prominent "Amount (₹) *" input placed below Description/Justification and above Estimated Value, shown for ALL non-stockable/non-manpower request types (incl. custom types like "Material Rental"); replaced old hardcoded per-type amount block. Estimated Value live-updates from the entered amount (form.amount takes precedence in estValue calc; backend _estimate_value already prioritises p.amount).
 - Verified: field renders for fuel type, est updates to ₹25,000 on input (screenshot); API create with amount=12345 → stored amount + est_value 12345 (test data cleaned).
+
+### Iteration 183b (Aug 25, 2026) — Amount field moved above Description
+- Amount (₹) input now renders ABOVE Description/Justification in the Service/Payment Request form (verified via bounding-box check + screenshot: amount y=697 < desc y=777).
