@@ -34,6 +34,9 @@ except Exception:  # pragma: no cover
 
 
 BRAND = "INDIAN TRADE LINKS"
+COMPANY_GST = "07ARWPC7166J1Z6"
+COMPANY_PAN = "ARWPC7166J"
+LOGO_FILE = "file:///app/backend/assets/itl-logo.jpg"
 FOOTER_NOTE = "System-generated · Not valid without approval signatures"
 CORPORATE_ADDRESS = ("Corporate Address - Tower-1, Office No. 605-606, 6th Floor, "
                      "Pearl Omaxe Building, Netaji Subhash Place, Pitampura, Delhi - 110034.")
@@ -84,6 +87,17 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .tnc-num { min-width: 16px; font-weight: 700; color: #0f172a; text-align: right; }
 .tnc-body { flex: 1; text-align: justify; }
 .justify { background: #fef3c7; border-left: 3px solid #f59e0b; padding: 6px 8px; font-size: 9pt; }
+.logo-img { height: 17mm; margin-right: 10px; }
+.title-left { display: flex; align-items: center; }
+.fromto { display: flex; gap: 10px; margin: 10px 0 4px; }
+.fromto .party { flex: 1; border: 1px solid #cbd5e1; padding: 8px 10px; font-size: 9pt; line-height: 1.5; }
+.fromto .party .ph { font-size: 8pt; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
+                     color: #fff; background: #0f172a; display: inline-block; padding: 2px 8px; margin: -8px 0 6px -10px; }
+.fromto .party .pname { font-size: 10.5pt; font-weight: 700; color: #0f172a; }
+.fromto .party .prow { color: #334155; }
+.fromto .party .prow b { color: #0f172a; }
+.pt-box { border: 1px solid #cbd5e1; background: #f8fafc; padding: 7px 10px; font-size: 9.5pt; margin-top: 8px; }
+.pt-box b { color: #0f172a; }
 </style>
 """
 
@@ -106,7 +120,8 @@ def _esc(s: Any) -> str:
     return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
 
-def _wrap(title: str, body_html: str) -> str:
+def _wrap(title: str, body_html: str, logo: bool = False) -> str:
+    logo_html = f'<img class="logo-img" src="{LOGO_FILE}" />' if logo else ""
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8">{CSS_BASE}</head><body>
 <div class="footer">
   <div class="frow"><div>{_esc(FOOTER_NOTE)}</div><div>{_esc(BRAND)}</div></div>
@@ -114,9 +129,12 @@ def _wrap(title: str, body_html: str) -> str:
 </div>
 <div class="wm"><img src="{WATERMARK_FILE}" /></div>
 <div class="title-row">
-  <div>
-    <div class="brand">{_esc(BRAND)}</div>
-    <h1>{_esc(title)}</h1>
+  <div class="title-left">
+    {logo_html}
+    <div>
+      <div class="brand">{_esc(BRAND)}</div>
+      <h1>{_esc(title)}</h1>
+    </div>
   </div>
   <div class="meta">Generated: <b>{_now_str()}</b></div>
 </div>
@@ -373,6 +391,8 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
     for a in (v.get("addresses") or [])[:1]:
         addr_lines += [a.get("line1"), a.get("line2"), f"{a.get('city','')} {a.get('pin','')}", a.get("state")]
     addr_html = "<br/>".join([_esc(x) for x in addr_lines if x]) or _esc(v.get("address") or "—")
+    contact_bits = [x for x in [v.get("contact_person") or v.get("contact"), v.get("phone"), v.get("email")] if x]
+    contact_html = " · ".join(_esc(x) for x in contact_bits) or "—"
     # T&C — only selected clauses, serial numbered, body text only (no category/title headers)
     tnc = [t for t in (po.get("terms_structured") or [])
            if t.get("selected") is not False and ((t.get("body") or "").strip() or (t.get("title") or "").strip())]
@@ -382,24 +402,32 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
         for i, t in enumerate(tnc))
     body = f"""
 {rev_banner}
-<div class="kv">
+<div class="kv" style="grid-template-columns: 110px 1fr 110px 1fr;">
   <div><b>PO Number</b></div><div>{_esc(po.get('po_number') or po.get('po_no'))}{f" — <b>Rev {revision}</b>" if revision else ""}</div>
   <div><b>PO Date</b></div><div>{_esc(po.get('po_date') or po.get('created_at','')[:10])}</div>
   <div><b>PR Reference</b></div><div>{_esc(po.get('pr_number') or '—')}</div>
   <div><b>RFQ Reference</b></div><div>{_esc(po.get('rfq_number') or '—')}</div>
   <div><b>Project</b></div><div>{_esc(po.get('project_code') or '—')}</div>
   <div><b>Delivery Date</b></div><div>{_esc(po.get('delivery_date') or '—')}</div>
-  <div><b>Payment Terms</b></div><div>{_esc(po.get('payment_terms') or '—')}</div>
 </div>
-<div class="section-title">Vendor</div>
-<div class="kv">
-  <div><b>Name</b></div><div>{_esc(v.get('name') or po.get('vendor_name') or '—')}</div>
-  <div><b>Vendor Code</b></div><div>{_esc(v.get('vendor_code') or '—')}</div>
-  <div><b>Address</b></div><div>{addr_html}</div>
-  <div><b>GSTIN</b></div><div>{_esc(v.get('gst') or '—')}</div>
-  <div><b>PAN</b></div><div>{_esc(v.get('pan') or '—')}</div>
-  <div><b>Contact</b></div><div>{_esc(v.get('phone') or '—')} · {_esc(v.get('email') or '')}</div>
+<div class="fromto">
+  <div class="party">
+    <div class="ph">From</div>
+    <div class="pname">{_esc(BRAND)}</div>
+    <div class="prow">{_esc(CORPORATE_ADDRESS.replace('Corporate Address - ', ''))}</div>
+    <div class="prow"><b>GST No.:</b> {COMPANY_GST}</div>
+    <div class="prow"><b>PAN No.:</b> {COMPANY_PAN}</div>
+  </div>
+  <div class="party">
+    <div class="ph">To — Vendor</div>
+    <div class="pname">{_esc(v.get('name') or po.get('vendor_name') or '—')}</div>
+    <div class="prow">{addr_html}</div>
+    <div class="prow"><b>Vendor Code:</b> {_esc(v.get('vendor_code') or v.get('code') or '—')}</div>
+    <div class="prow"><b>GST No.:</b> {_esc(v.get('gst') or '—')} &nbsp;·&nbsp; <b>PAN No.:</b> {_esc(v.get('pan') or '—')}</div>
+    <div class="prow"><b>Contact:</b> {contact_html}</div>
+  </div>
 </div>
+<div class="pt-box"><b>Payment Terms:</b> {_esc(po.get('payment_terms') or 'As mutually agreed')}</div>
 <div class="section-title">Items</div>
 <table><thead><tr><th>#</th><th>Item</th><th class="num">Qty</th><th>Unit</th><th class="num">Rate</th><th class="num">Amount</th><th class="num">GST %</th><th class="num">GST Amt</th><th class="num">Total</th></tr></thead>
 <tbody>{items_html or '<tr><td colspan=9>No items</td></tr>'}</tbody></table>
@@ -420,7 +448,7 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
   <div class="box">Vendor Acknowledgement</div>
 </div>
 """
-    return _render(_wrap(f"Purchase Order — {po.get('po_number') or po.get('po_no','')}{f' (Rev {revision})' if revision else ''}", body))
+    return _render(_wrap(f"Purchase Order — {po.get('po_number') or po.get('po_no','')}{f' (Rev {revision})' if revision else ''}", body, logo=True))
 
 
 # ─────────────────────────────────── GRN ───────────────────────────────────

@@ -5631,3 +5631,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 ### Iteration 184c (Aug 25, 2026) — Multi-filter combination UX
 - All report filters were already AND-combined server-side; added "Active filters (N)" chip row with per-chip remove (×) and "Clear all" button (billing-clear-filters). Exports inherit combined filters.
 - Verified: PM + Service Type together → exactly 1 project; 3-filter combo via API; chips + clear-all via screenshot.
+
+### Iteration 185 (Aug 25, 2026) — Professional PO PDF header
+- pdf_generator.py: constants COMPANY_GST=07ARWPC7166J1Z6, COMPANY_PAN=ARWPC7166J, LOGO_FILE=/app/backend/assets/itl-logo.jpg. `_wrap(title, body, logo=False)` — logo=True renders ITL logo beside brand/title (used by PO only).
+- render_po_pdf: new side-by-side FROM (ITL name/address/GST/PAN) and TO — VENDOR (name, address, vendor code, GST, PAN, contact person/phone/email from Vendor Master; contact falls back contact_person→contact) panels; "Payment Terms" highlighted box above Items; 4-col PO meta grid. T&C rendering unchanged (structured clauses).
+- Verified: PDF text contains company GST/PAN; page rendered to image via pypdfium2 — logo aligned, panels clean, totals + T&C + signature blocks intact.
