@@ -44,6 +44,24 @@ EXPENSE_TYPES: Dict[str, Dict[str, str]] = {
     "other":                {"label": "Other", "account": "5900"},
 }
 
+
+async def get_expense_types(active_only: bool = False) -> Dict[str, Dict[str, Any]]:
+    """Built-in EXPENSE_TYPES merged with super-admin overrides/custom entries."""
+    merged: Dict[str, Dict[str, Any]] = {k: {**v, "active": True, "builtin": True} for k, v in EXPENSE_TYPES.items()}
+    async for o in db.expense_type_options.find({}, {"_id": 0}):
+        k = o.get("key")
+        if not k:
+            continue
+        base = merged.get(k, {"label": k, "account": "5900", "builtin": False})
+        for f in ("label", "account"):
+            if o.get(f):
+                base[f] = o[f]
+        base["active"] = o.get("active", True)
+        merged[k] = base
+    if active_only:
+        return {k: v for k, v in merged.items() if v.get("active", True)}
+    return merged
+
 RAISE_ROLES = {"project_coordinator", "project_manager", "super_admin"}
 BASE_CHAIN = [("dept_head", "Project Head")]
 LARGE_CHAIN_EXTRA = [("general_manager", "GM"), ("director", "Director")]
@@ -90,7 +108,8 @@ class PaidIn(BaseModel):
 
 @router.get("/project-expenses/types")
 async def expense_types(user: dict = Depends(require_permission("project_expenses", "read"))):
-    return [{"key": k, **v} for k, v in EXPENSE_TYPES.items()]
+    merged = await get_expense_types(active_only=True)
+    return [{"key": k, "label": v["label"], "account": v.get("account")} for k, v in merged.items()]
 
 
 @router.get("/project-expenses/settings")
@@ -146,8 +165,9 @@ async def create_expense(p: ExpenseIn, request: Request,
                          user: dict = Depends(require_permission("project_expenses", "write"))):
     if user.get("role") not in RAISE_ROLES:
         raise HTTPException(403, "Expense requests can only be raised by the Project Coordinator or Project Manager")
-    if p.expense_type not in EXPENSE_TYPES:
-        raise HTTPException(400, f"expense_type must be one of {sorted(EXPENSE_TYPES)}")
+    _etypes = await get_expense_types(active_only=True)
+    if p.expense_type not in _etypes:
+        raise HTTPException(400, f"expense_type must be one of {sorted(_etypes)}")
     if p.amount <= 0:
         raise HTTPException(400, "Amount must be positive")
     project = None
@@ -174,7 +194,7 @@ async def create_expense(p: ExpenseIn, request: Request,
         "project_name": project.get("name"), "client_name": project.get("client"),
         "cost_center_id": (cc or {}).get("id"), "category_code": (cc or {}).get("category_code"),
         "category_name": (cc or {}).get("category_name"),
-        "expense_type": p.expense_type, "expense_type_label": EXPENSE_TYPES[p.expense_type]["label"],
+        "expense_type": p.expense_type, "expense_type_label": _etypes[p.expense_type]["label"],
         "expense_date": p.expense_date, "amount": round(float(p.amount), 2),
         "description": p.description or "", "bill_no": p.bill_no, "paid_to": p.paid_to,
         "paid_to_type": p.paid_to_type,
@@ -247,7 +267,8 @@ async def _notify_accounts(row: dict) -> None:
 async def _post_expense_je(row: dict, user: dict) -> Optional[str]:
     try:
         from accounting_service import post_journal_entry
-        account = EXPENSE_TYPES[row["expense_type"]]["account"]
+        _etypes = await get_expense_types()
+        account = _etypes.get(row["expense_type"], {}).get("account") or "5900"
         amount = float(row["amount"])
         lines = [{"account_code": account, "debit": amount, "credit": 0,
                   "project_id": row.get("project_id"),

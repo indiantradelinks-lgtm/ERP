@@ -139,6 +139,115 @@ async def delete_dropdown(opt_id: str, request: Request, user: dict = Depends(re
     return {"ok": True}
 
 
+# ---------- Request Type / Expense Type Master (Iter 182) ----------
+OPTION_COLLS = {"request_type": "request_type_options", "expense_type": "expense_type_options"}
+REQUEST_DEPTS = {"stores", "admin", "logistics", "hr"}
+
+
+class ManagedOptionIn(BaseModel):
+    key: Optional[str] = None
+    label: str
+    dept: Optional[str] = None          # request_type only
+    payment: Optional[bool] = None      # request_type only
+    stockable: Optional[bool] = None    # request_type only
+    expense_type: Optional[str] = None  # request_type only (default expense mapping)
+    account: Optional[str] = None       # expense_type only (GL account)
+    active: bool = True
+
+
+def _slug(label: str) -> str:
+    import re as _re
+    return _re.sub(r"[^a-z0-9]+", "_", label.strip().lower()).strip("_")[:40]
+
+
+async def _merged_options(kind: str):
+    if kind == "request_type":
+        from routers.project_requests_router import get_request_types
+        merged = await get_request_types()
+    else:
+        from routers.project_expenses_router import get_expense_types
+        merged = await get_expense_types()
+    return [{"key": k, **v} for k, v in merged.items()]
+
+
+@router.get("/request-options")
+async def list_request_options(user: dict = Depends(require_super_admin)):
+    return {"request_types": await _merged_options("request_type"),
+            "expense_types": await _merged_options("expense_type")}
+
+
+@router.post("/request-options/{kind}")
+async def create_request_option(kind: str, payload: ManagedOptionIn, request: Request,
+                                user: dict = Depends(require_super_admin)):
+    coll = OPTION_COLLS.get(kind)
+    if not coll:
+        raise HTTPException(400, "kind must be request_type or expense_type")
+    key = (payload.key or _slug(payload.label)).strip()
+    if not key:
+        raise HTTPException(400, "label/key required")
+    existing = {o["key"] for o in await _merged_options(kind)}
+    if key in existing:
+        raise HTTPException(400, f"'{key}' already exists")
+    if kind == "request_type" and payload.dept and payload.dept not in REQUEST_DEPTS:
+        raise HTTPException(400, f"dept must be one of {sorted(REQUEST_DEPTS)}")
+    doc = {k: v for k, v in payload.model_dump().items() if v is not None}
+    doc.update({"key": key, "id": new_id(), "created_at": now_iso(), "created_by": user.get("name")})
+    if kind == "request_type":
+        doc.setdefault("dept", "admin")
+        doc.setdefault("payment", True)
+        doc.setdefault("stockable", False)
+        doc.setdefault("expense_type", "misc")
+    else:
+        doc.setdefault("account", "5900")
+    await db[coll].insert_one(doc)
+    doc.pop("_id", None)
+    await audit(user=user, action="create", resource=coll, record_id=doc["id"], after=doc, ip=_ip(request))
+    return doc
+
+
+@router.put("/request-options/{kind}/{key}")
+async def update_request_option(kind: str, key: str, payload: ManagedOptionIn, request: Request,
+                                user: dict = Depends(require_super_admin)):
+    coll = OPTION_COLLS.get(kind)
+    if not coll:
+        raise HTTPException(400, "kind must be request_type or expense_type")
+    if kind == "request_type" and payload.dept and payload.dept not in REQUEST_DEPTS:
+        raise HTTPException(400, f"dept must be one of {sorted(REQUEST_DEPTS)}")
+    update = {k: v for k, v in payload.model_dump().items() if v is not None and k != "key"}
+    update["active"] = payload.active
+    update["updated_at"] = now_iso()
+    update["updated_by"] = user.get("name")
+    await db[coll].update_one({"key": key}, {"$set": update, "$setOnInsert": {"id": new_id(), "key": key}}, upsert=True)
+    await audit(user=user, action="update", resource=coll, record_id=key, after=update, ip=_ip(request))
+    return {"ok": True, "key": key, **update}
+
+
+@router.delete("/request-options/{kind}/{key}")
+async def delete_request_option(kind: str, key: str, request: Request,
+                                user: dict = Depends(require_super_admin)):
+    coll = OPTION_COLLS.get(kind)
+    if not coll:
+        raise HTTPException(400, "kind must be request_type or expense_type")
+    builtin_keys = set()
+    if kind == "request_type":
+        from routers.project_requests_router import REQUEST_TYPES
+        builtin_keys = set(REQUEST_TYPES)
+    else:
+        from routers.project_expenses_router import EXPENSE_TYPES
+        builtin_keys = set(EXPENSE_TYPES)
+    if key in builtin_keys:
+        await db[coll].update_one({"key": key},
+                                  {"$set": {"active": False, "updated_at": now_iso(), "updated_by": user.get("name")},
+                                   "$setOnInsert": {"id": new_id(), "key": key}}, upsert=True)
+        await audit(user=user, action="deactivate", resource=coll, record_id=key, ip=_ip(request))
+        return {"ok": True, "key": key, "deactivated": True}
+    res = await db[coll].delete_one({"key": key})
+    if not res.deleted_count:
+        raise HTTPException(404, "Not found")
+    await audit(user=user, action="delete", resource=coll, record_id=key, ip=_ip(request))
+    return {"ok": True, "key": key, "deleted": True}
+
+
 # ---------- Approval Matrix ----------
 class ChainStep(BaseModel):
     role: str

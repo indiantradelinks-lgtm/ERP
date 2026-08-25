@@ -36,6 +36,7 @@ from scope import apply_project_scope, ensure_project_access
 from datetime import datetime, timezone
 from audit import audit
 from routers.project_expenses_router import EXPENSE_TYPES as PEX_TYPES
+from routers.project_expenses_router import get_expense_types as _pex_types
 from sequences import next_sequence
 from exports import to_excel, to_pdf
 
@@ -57,6 +58,28 @@ REQUEST_TYPES: Dict[str, Dict[str, Any]] = {
     "other":            {"label": "Other", "dept": "admin", "stockable": False, "payment": True, "expense_type": "misc"},
     "self_expense":     {"label": "User Expense / Self Expense", "dept": "admin", "stockable": False, "payment": True, "expense_type": "head_office"},
 }
+
+
+async def get_request_types(active_only: bool = False) -> Dict[str, Dict[str, Any]]:
+    """Built-in REQUEST_TYPES merged with super-admin overrides/custom entries."""
+    merged: Dict[str, Dict[str, Any]] = {k: {**v, "active": True, "builtin": True} for k, v in REQUEST_TYPES.items()}
+    async for o in db.request_type_options.find({}, {"_id": 0}):
+        k = o.get("key")
+        if not k:
+            continue
+        base = merged.get(k, {"label": k, "dept": "admin", "stockable": False, "payment": True,
+                              "expense_type": "misc", "builtin": False})
+        for f in ("label", "dept", "expense_type"):
+            if o.get(f):
+                base[f] = o[f]
+        for f in ("stockable", "payment"):
+            if o.get(f) is not None:
+                base[f] = bool(o[f])
+        base["active"] = o.get("active", True)
+        merged[k] = base
+    if active_only:
+        return {k: v for k, v in merged.items() if v.get("active", True)}
+    return merged
 RAISE_ROLES = {"project_coordinator", "project_manager", "super_admin"}
 FULFIL_ROLES = {
     "stores": {"super_admin", "store_manager", "storekeeper", "inventory_manager", "procurement_executive"},
@@ -173,7 +196,8 @@ def _estimate_value(p: RequestIn) -> float:
 
 @router.get("/project-requests/types")
 async def request_types(user: dict = Depends(require_permission("project_requests", "read"))):
-    return [{"key": k, **{x: v[x] for x in ("label", "dept", "stockable", "payment")}} for k, v in REQUEST_TYPES.items()]
+    merged = await get_request_types(active_only=True)
+    return [{"key": k, **{x: v.get(x) for x in ("label", "dept", "stockable", "payment")}} for k, v in merged.items()]
 
 
 async def _stock_for_item(item: ReqItem) -> Dict[str, Any]:
@@ -279,9 +303,10 @@ async def create_request(p: RequestIn, request: Request,
     if (p.request_type != "self_expense"
             and user.get("role") not in RAISE_ROLES and not is_pm_scoped(user)):
         raise HTTPException(403, "Only Project Coordinator / Project Manager can raise project requests")
-    if p.request_type not in REQUEST_TYPES:
-        raise HTTPException(400, f"request_type must be one of {sorted(REQUEST_TYPES)}")
-    meta = REQUEST_TYPES[p.request_type]
+    _rtypes = await get_request_types(active_only=True)
+    if p.request_type not in _rtypes:
+        raise HTTPException(400, f"request_type must be one of {sorted(_rtypes)}")
+    meta = _rtypes[p.request_type]
     project = None
     if p.project_id:
         project = await db.projects.find_one({"id": p.project_id}, {"_id": 0})
@@ -348,7 +373,7 @@ async def create_request(p: RequestIn, request: Request,
         "project_name": project.get("name"), "client_name": project.get("client"),
         "request_type": p.request_type, "request_type_label": meta["label"],
         "owning_dept": meta["dept"], "is_payment": meta["payment"], "is_stockable": meta["stockable"],
-        "expense_type": (p.expense_type if p.expense_type in PEX_TYPES else None) or meta["expense_type"],
+        "expense_type": (p.expense_type if p.expense_type in (await _pex_types()) else None) or meta.get("expense_type"),
         "expense_date": p.expense_date,
         "settlement_mode": p.settlement_mode,
         "paid_to_type": ("person" if p.request_type == "self_expense" else p.paid_to_type),

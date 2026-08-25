@@ -5592,3 +5592,9 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Report rows now aggregate linked ra_bills per project: billed_basic (subtotal), billed_gst, billed_gross, paid_amount, balance_due; payment_status = paid | partially_paid | unpaid | not_billed (falls back to bill_requests expected_amount for basic when no ra_bill exists).
 - Frontend: "Basic (₹)" + "GST (₹)" columns and Payment badge (partially-paid shows Recd/Due breakdown).
 - Verified: PRJ-2026-0034 → ₹10,00,000 + ₹1,80,000 GST, Paid; PRJ-2026-0035 → Unpaid, due ₹1,18,000 (API + screenshot).
+
+### Iteration 182 (Aug 25, 2026) — Centrally managed Request/Expense Type dropdowns
+- `get_request_types()` (project_requests_router) and `get_expense_types()` (project_expenses_router): built-in dicts merged with DB overrides in `request_type_options` / `expense_type_options` collections (rename builtins, hide/deactivate builtins, add custom keys with dept/payment/stockable/expense_type or GL account). All consumers switched: /project-requests/types, /project-expenses/types, create validations, expense JE account lookup (fallback 5900), request expense_type default.
+- Admin CRUD (super_admin only) in admin_router: GET /api/admin/request-options, POST/PUT/DELETE /api/admin/request-options/{kind}/{key} (kind: request_type|expense_type; DELETE on builtin = deactivate, on custom = hard delete; PUT upserts override).
+- New page /app/admin/request-options (admin/RequestOptions.jsx, menu "Request Type Master" superAdminOnly): two tables with add/edit dialogs, active/hidden badges, restore button for hidden builtins.
+- Tested via curl: custom type add (both kinds), builtin rename, builtin hide, user dropdown reflects instantly (manager_o_p), reactivation; screenshot of admin page OK. Test data cleaned after.
