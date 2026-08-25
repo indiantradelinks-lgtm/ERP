@@ -19,13 +19,17 @@ from scope import apply_project_scope
 router = APIRouter(tags=["billing-pending"])
 
 BILLING_TYPES = {"annual_rate_contract", "one_time_supply"}
+ORDER_TYPES = {"supply", "service", "one_time_service", "arc", "shutdown", "outage"}
+SERVICE_TYPES_STD = ["scaffolding", "painting", "roof_sheeting", "roof_access", "rope_access", "insulation", "services", "shutdown"]
 ACTIVE_PROJECT_STATUSES = {"active", "in_progress", "ongoing", "on_hold", None, ""}
 REMINDER_ROLES = ["project_manager", "manager_o_p", "project_coordinator",
                   "dept_head", "general_manager", "director"]
 
 
 class BillingTypeIn(BaseModel):
-    billing_type: str
+    billing_type: Optional[str] = None
+    order_type: Optional[str] = None
+    service_type: Optional[str] = None
 
 
 def _month_overlap(req: dict, month: str) -> bool:
@@ -36,13 +40,25 @@ def _month_overlap(req: dict, month: str) -> bool:
     return (req.get("created_at") or "")[:7] == month
 
 
-async def build_pending_report(month: str, user: Optional[dict] = None) -> Dict[str, Any]:
+def _range_overlap(req: dict, dfrom: str, dto: str) -> bool:
+    """True when a bill request's service period overlaps [dfrom, dto] (YYYY-MM-DD)."""
+    pf, pt = (req.get("period_from") or "")[:10], (req.get("period_to") or "")[:10]
+    if pf or pt:
+        return (pf or "0000-00-00") <= dto and (pt or "9999-99-99") >= dfrom
+    created = (req.get("created_at") or "")[:10]
+    return dfrom <= created <= dto
+
+
+async def build_pending_report(month: str, user: Optional[dict] = None,
+                               period_from: Optional[str] = None,
+                               period_to: Optional[str] = None) -> Dict[str, Any]:
     q: Dict[str, Any] = {"status": {"$nin": ["completed", "closed", "cancelled", "archived"]}}
     if user:
         q = await apply_project_scope(user, q, id_field="id", code_field="code")
     projects = await db.projects.find(
         q, {"_id": 0, "id": 1, "code": 1, "name": 1, "client": 1, "status": 1,
-            "billing_type": 1, "project_manager_name": 1, "manager": 1,
+            "billing_type": 1, "order_type": 1, "type": 1,
+            "project_manager_name": 1, "manager": 1,
             "project_manager_id": 1, "start_date": 1, "created_at": 1}).sort("code", 1).to_list(2000)
     codes = [p["code"] for p in projects if p.get("code")]
     reqs_by_proj: Dict[str, List[dict]] = {}
@@ -79,8 +95,12 @@ async def build_pending_report(month: str, user: Optional[dict] = None) -> Dict[
             else:
                 status = "pending"
         else:  # monthly cycle (ARC)
-            month_gen = [r for r in gen if _month_overlap(r, month)]
-            month_open = [r for r in open_reqs if _month_overlap(r, month)]
+            if period_from and period_to:
+                month_gen = [r for r in gen if _range_overlap(r, period_from, period_to)]
+                month_open = [r for r in open_reqs if _range_overlap(r, period_from, period_to)]
+            else:
+                month_gen = [r for r in gen if _month_overlap(r, month)]
+                month_open = [r for r in open_reqs if _month_overlap(r, month)]
             if month_gen:
                 status = "billed"
             elif month_open:
@@ -117,6 +137,7 @@ async def build_pending_report(month: str, user: Optional[dict] = None) -> Dict[
             "project_id": p.get("id"), "project_code": p.get("code"), "project_name": p.get("name"),
             "client": p.get("client"), "project_status": p.get("status"),
             "billing_type": btype, "effective_billing_type": effective,
+            "order_type": p.get("order_type"), "service_type": p.get("type"),
             "project_manager": p.get("project_manager_name") or p.get("manager"),
             "project_manager_id": p.get("project_manager_id"),
             "billing_status": status,
@@ -143,7 +164,8 @@ async def build_pending_report(month: str, user: Optional[dict] = None) -> Dict[
 def apply_report_filters(rows: List[dict], *, status: Optional[str] = None, q: Optional[str] = None,
                          project_manager: Optional[str] = None, client: Optional[str] = None,
                          billing_type: Optional[str] = None, payment_status: Optional[str] = None,
-                         min_pending_days: Optional[int] = None) -> List[dict]:
+                         min_pending_days: Optional[int] = None,
+                         order_type: Optional[str] = None, service_type: Optional[str] = None) -> List[dict]:
     def ok(r):
         if status and r["billing_status"] != status:
             return False
@@ -159,6 +181,10 @@ def apply_report_filters(rows: List[dict], *, status: Optional[str] = None, q: O
             if billing_type != "unset" and r["effective_billing_type"] != billing_type:
                 return False
         if payment_status and r["payment_status"] != payment_status:
+            return False
+        if order_type and (r.get("order_type") or "") != order_type:
+            return False
+        if service_type and (r.get("service_type") or "") != service_type:
             return False
         if min_pending_days and (r.get("pending_days") or 0) < int(min_pending_days):
             return False
@@ -178,30 +204,44 @@ async def pending_report(month: Optional[str] = None, status: Optional[str] = No
                          q: Optional[str] = None, project_manager: Optional[str] = None,
                          client: Optional[str] = None, billing_type: Optional[str] = None,
                          payment_status: Optional[str] = None, min_pending_days: Optional[int] = None,
+                         period_from: Optional[str] = None, period_to: Optional[str] = None,
+                         order_type: Optional[str] = None, service_type: Optional[str] = None,
                          user: dict = Depends(require_permission("bill_requests", "read"))):
     month = month or now_iso()[:7]
-    report = await build_pending_report(month, user=user)
+    report = await build_pending_report(month, user=user, period_from=period_from, period_to=period_to)
     rows = apply_report_filters(report["rows"], status=status, q=q, project_manager=project_manager,
                                 client=client, billing_type=billing_type,
-                                payment_status=payment_status, min_pending_days=min_pending_days)
+                                payment_status=payment_status, min_pending_days=min_pending_days,
+                                order_type=order_type, service_type=service_type)
     return {"month": month, "rows": rows, "summary": _summarise(rows),
             "managers": sorted({r["project_manager"] for r in report["rows"] if r["project_manager"]}),
-            "clients": sorted({r["client"] for r in report["rows"] if r["client"]})}
+            "clients": sorted({r["client"] for r in report["rows"] if r["client"]}),
+            "service_types": sorted({r["service_type"] for r in report["rows"] if r.get("service_type")} | set(SERVICE_TYPES_STD)),
+            "order_types": sorted(ORDER_TYPES)}
 
 
 @router.put("/billing/projects/{code}/billing-type")
 async def set_billing_type(code: str, payload: BillingTypeIn,
                            user: dict = Depends(require_permission("bill_requests", "write"))):
-    if payload.billing_type not in BILLING_TYPES:
-        raise HTTPException(400, f"billing_type must be one of {sorted(BILLING_TYPES)}")
-    res = await db.projects.update_one(
-        {"code": code},
-        {"$set": {"billing_type": payload.billing_type,
-                  "billing_type_updated_by": user.get("name") or user.get("email"),
-                  "billing_type_updated_at": now_iso()}})
+    update: Dict[str, Any] = {}
+    if payload.billing_type:
+        if payload.billing_type not in BILLING_TYPES:
+            raise HTTPException(400, f"billing_type must be one of {sorted(BILLING_TYPES)}")
+        update["billing_type"] = payload.billing_type
+    if payload.order_type:
+        if payload.order_type not in ORDER_TYPES:
+            raise HTTPException(400, f"order_type must be one of {sorted(ORDER_TYPES)}")
+        update["order_type"] = payload.order_type
+    if payload.service_type:
+        update["type"] = payload.service_type.strip().lower().replace(" ", "_")
+    if not update:
+        raise HTTPException(400, "nothing to update")
+    update["billing_type_updated_by"] = user.get("name") or user.get("email")
+    update["billing_type_updated_at"] = now_iso()
+    res = await db.projects.update_one({"code": code}, {"$set": update})
     if not res.matched_count:
         raise HTTPException(404, "Project not found")
-    return {"ok": True, "code": code, "billing_type": payload.billing_type}
+    return {"ok": True, "code": code, **update}
 
 
 @router.get("/billing/pending-report/export")
@@ -210,13 +250,16 @@ async def pending_report_export(fmt: str = "xlsx", month: Optional[str] = None,
                                 project_manager: Optional[str] = None, client: Optional[str] = None,
                                 billing_type: Optional[str] = None, payment_status: Optional[str] = None,
                                 min_pending_days: Optional[int] = None,
+                                period_from: Optional[str] = None, period_to: Optional[str] = None,
+                                order_type: Optional[str] = None, service_type: Optional[str] = None,
                                 user: dict = Depends(require_permission("bill_requests", "read"))):
     from fastapi import Response
     month = month or now_iso()[:7]
-    report = await build_pending_report(month, user=user)
+    report = await build_pending_report(month, user=user, period_from=period_from, period_to=period_to)
     rows = apply_report_filters(report["rows"], status=status, q=q, project_manager=project_manager,
                                 client=client, billing_type=billing_type,
-                                payment_status=payment_status, min_pending_days=min_pending_days)
+                                payment_status=payment_status, min_pending_days=min_pending_days,
+                                order_type=order_type, service_type=service_type)
     summary = _summarise(rows)
     if fmt == "pdf":
         from pdf_generator import render_billing_pending_pdf
@@ -230,6 +273,7 @@ async def pending_report_export(fmt: str = "xlsx", month: Optional[str] = None,
     ws = wb.active
     ws.title = f"Pending Billing {month}"
     ws.append(["Project Code", "Project Name", "Client", "Project Manager", "Billing Type",
+               "WO/PO Type", "Service Type",
                f"Billing Status ({month})", "Pending Days", "Last Bill No", "Last Bill Date", "Open Request",
                "Bills Generated", "Billed Basic (₹)", "GST (₹)", "Gross (₹)",
                "Paid (₹)", "Balance Due (₹)", "Payment Status"])
@@ -239,6 +283,8 @@ async def pending_report_export(fmt: str = "xlsx", month: Optional[str] = None,
     for r in rows:
         ws.append([r["project_code"], r["project_name"], r["client"], r["project_manager"],
                    (r["effective_billing_type"] or "").replace("_", " ").title(),
+                   (r.get("order_type") or "").replace("_", " ").title(),
+                   (r.get("service_type") or "").replace("_", " ").title(),
                    r["billing_status"].replace("_", " ").title(),
                    r.get("pending_days"),
                    r["last_bill_no"], (r["last_bill_at"] or "")[:10],
@@ -246,7 +292,7 @@ async def pending_report_export(fmt: str = "xlsx", month: Optional[str] = None,
                    r["billed_basic"], r["billed_gst"], r["billed_gross"],
                    r["paid_amount"], r["balance_due"],
                    (r["payment_status"] or "").replace("_", " ").title()])
-    for i, w in enumerate([15, 28, 20, 18, 24, 16, 12, 16, 12, 14, 8, 14, 12, 14, 14, 14, 14], start=1):
+    for i, w in enumerate([15, 28, 20, 18, 24, 14, 14, 16, 12, 16, 12, 14, 8, 14, 12, 14, 14, 14, 14], start=1):
         ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
     s = wb.create_sheet("Summary")
     for k, v in summary.items():

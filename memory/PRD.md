@@ -5615,3 +5615,10 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 
 ### Iteration 183b (Aug 25, 2026) — Amount field moved above Description
 - Amount (₹) input now renders ABOVE Description/Justification in the Service/Payment Request form (verified via bounding-box check + screenshot: amount y=697 < desc y=777).
+
+### Iteration 184 (Aug 25, 2026) — Billing report: service period / WO-PO type / service type filters
+- Service Period date-range filter (period_from/period_to): ARC billing status computed over the range via `_range_overlap` (falls back to month when unset). Verified: PRJ-2026-0022 billed for Jul range, pending for Aug range.
+- Projects taggable with `order_type` (supply|service|one_time_service|arc|shutdown|outage) and `service_type` (stored in projects.type — existing field; std list scaffolding/painting/roof_sheeting/roof_access/rope_access/insulation/services/shutdown + any existing values). PUT /billing/projects/{code}/billing-type now accepts {billing_type?, order_type?, service_type?}.
+- Report + export accept order_type/service_type/period filters; response includes order_types + service_types option lists. Excel adds "WO/PO Type" + "Service Type" columns; PDF shows them under Billing Type.
+- UI: filter bar additions (WO/PO Type, Service Type, Service Period from–to) + inline per-project tag selects under the Billing Type cell (order-type-{code}, service-type-{code}).
+- Tested via curl (all filters + filtered xlsx) and screenshot (service filter → 3 rows, inline tag selects visible).

@@ -28,7 +28,7 @@ export default function BillingPendingReport() {
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [data, setData] = useState(null);
   const [statusFilter, setStatusFilter] = useState("");
-  const [ff, setFf] = useState({ q: "", project_manager: "", client: "", billing_type: "", payment_status: "", min_pending_days: "" });
+  const [ff, setFf] = useState({ q: "", project_manager: "", client: "", billing_type: "", payment_status: "", min_pending_days: "", period_from: "", period_to: "", order_type: "", service_type: "" });
   const [sending, setSending] = useState(false);
   const isMgmt = ["super_admin", "director", "general_manager"].includes(user?.role);
   const setF = (k) => (e) => setFf((p) => ({ ...p, [k]: e.target?.value ?? e }));
@@ -46,10 +46,10 @@ export default function BillingPendingReport() {
   }, [qs]);
   useEffect(() => { load(); }, [load]);
 
-  const setType = async (code, billing_type) => {
+  const setType = async (code, patch) => {
     try {
-      await api.put(`/billing/projects/${code}/billing-type`, { billing_type });
-      toast.success(`${code} → ${TYPE_LABEL[billing_type]}`);
+      await api.put(`/billing/projects/${code}/billing-type`, patch);
+      toast.success(`${code} updated`);
       load();
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
@@ -134,6 +134,20 @@ export default function BillingPendingReport() {
           <option value="60">Pending ≥ 60 days</option>
           <option value="90">Pending ≥ 90 days</option>
         </select>
+        <select className="h-9 border border-input rounded-sm px-2 text-sm bg-background" value={ff.order_type} onChange={setF("order_type")} data-testid="billing-filter-order-type">
+          <option value="">All WO/PO Types</option>
+          {(data?.order_types || []).map((t) => <option key={t} value={t}>{t.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase())}</option>)}
+        </select>
+        <select className="h-9 border border-input rounded-sm px-2 text-sm bg-background" value={ff.service_type} onChange={setF("service_type")} data-testid="billing-filter-service-type">
+          <option value="">All Service Types</option>
+          {(data?.service_types || []).map((t) => <option key={t} value={t}>{t.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase())}</option>)}
+        </select>
+        <div className="flex items-center gap-1 col-span-2">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground whitespace-nowrap">Service Period</span>
+          <Input type="date" className="h-9" value={ff.period_from} onChange={setF("period_from")} data-testid="billing-filter-period-from" />
+          <span className="text-xs text-muted-foreground">to</span>
+          <Input type="date" className="h-9" value={ff.period_to} onChange={setF("period_to")} data-testid="billing-filter-period-to" />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -179,12 +193,24 @@ export default function BillingPendingReport() {
                     <div className="text-[10px] text-muted-foreground">PM: {r.project_manager || "—"}</div>
                   </TableCell>
                   <TableCell>
-                    <select value={r.billing_type || ""} onChange={(e) => e.target.value && setType(r.project_code, e.target.value)}
-                      className="h-8 rounded-sm border border-input bg-background px-2 text-xs" data-testid={`billing-type-${r.project_code}`}>
+                    <select value={r.billing_type || ""} onChange={(e) => e.target.value && setType(r.project_code, { billing_type: e.target.value })}
+                      className="h-8 rounded-sm border border-input bg-background px-2 text-xs w-full" data-testid={`billing-type-${r.project_code}`}>
                       <option value="">— Set type —</option>
                       <option value="annual_rate_contract">Annual Rate Contract (Monthly)</option>
                       <option value="one_time_supply">One-Time Supply</option>
                     </select>
+                    <div className="flex gap-1 mt-1">
+                      <select value={r.order_type || ""} onChange={(e) => e.target.value && setType(r.project_code, { order_type: e.target.value })}
+                        className="h-7 rounded-sm border border-input bg-background px-1 text-[10px] flex-1" data-testid={`order-type-${r.project_code}`}>
+                        <option value="">WO/PO type…</option>
+                        {(data?.order_types || []).map((t) => <option key={t} value={t}>{t.replaceAll("_", " ")}</option>)}
+                      </select>
+                      <select value={r.service_type || ""} onChange={(e) => e.target.value && setType(r.project_code, { service_type: e.target.value })}
+                        className="h-7 rounded-sm border border-input bg-background px-1 text-[10px] flex-1" data-testid={`service-type-${r.project_code}`}>
+                        <option value="">Service…</option>
+                        {(data?.service_types || []).map((t) => <option key={t} value={t}>{t.replaceAll("_", " ")}</option>)}
+                      </select>
+                    </div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className={`rounded-sm text-[10px] ${m.cls || ""}`}>{m.label || r.billing_status}</Badge>
