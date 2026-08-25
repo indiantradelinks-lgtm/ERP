@@ -5652,3 +5652,7 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 
 ### Iteration 187 (Aug 25, 2026) — Shared mailbox switched to noreply@
 - backend/.env M365_SMTP_SHARED_USERNAME changed erp.itl@ → noreply@indiantradelinks.in. Password was ALREADY EMPTY in preview (SMTP never worked here). Awaiting App Password from user for noreply@ mailbox. /api/email/config shows mailbox but configured=false until password set. Production env vars must be updated separately by user (Emergent deploy env settings / support).
+
+### Iteration 187b (Aug 25, 2026) — noreply@ shared mailbox WORKING
+- M365_SMTP_SHARED_USERNAME=noreply@indiantradelinks.in + app password (label NOREPLYITL) configured in preview backend/.env. Live test email SENT successfully (status: sent, via shared). All system emails (billing reminders, notifications) now send from noreply@.
+- PRODUCTION: user must set the same two env vars in production environment settings and redeploy.
