@@ -195,6 +195,7 @@ class BillRequestIn(BaseModel):
     id: Optional[str] = None  # client may pre-generate to link attachments before submit
     project_code: str
     bill_type: str = "running"
+    bill_nature: Optional[str] = None  # partial | one_time | monthly_last
     period_from: Optional[str] = None
     period_to: Optional[str] = None
     expected_amount: float = 0
@@ -219,6 +220,8 @@ async def create_bill_request(payload: BillRequestIn, request: Request,
                               user: dict = Depends(require_permission("bill_requests", "write"))):
     if payload.bill_type not in ("running", "final"):
         raise HTTPException(400, "bill_type must be running or final")
+    if payload.bill_nature and payload.bill_nature not in ("partial", "one_time", "monthly_last"):
+        raise HTTPException(400, "bill_nature must be partial, one_time or monthly_last")
     scoped_q = await apply_project_scope(user, {"code": payload.project_code}, id_field="id", code_field="code")
     project = await db.projects.find_one(scoped_q, {"_id": 0})
     if not project:
@@ -247,6 +250,7 @@ async def create_bill_request(payload: BillRequestIn, request: Request,
         "quotation_no": payload.quotation_no or (handover or {}).get("quotation_no") or project.get("quotation_no") or "",
         "po_number": payload.po_number or (handover or {}).get("work_order_number") or "",
         "bill_type": payload.bill_type,
+        "bill_nature": payload.bill_nature or None,
         "period_from": payload.period_from, "period_to": payload.period_to,
         "expected_amount": expected,
         "items": items,
@@ -261,7 +265,7 @@ async def create_bill_request(payload: BillRequestIn, request: Request,
     chain = await build_chain("bill_request")
     approval = {
         "id": new_id(),
-        "title": f"Bill Request {req_no} — {doc['project_code']} · {doc['client_name']} ({payload.bill_type.upper()}, ₹{expected:,.0f}, {len(items)} line item(s), {attachments} document(s))",
+        "title": f"Bill Request {req_no} — {doc['project_code']} · {doc['client_name']} ({(payload.bill_nature or payload.bill_type).replace('_', ' ').upper()}, ₹{expected:,.0f}, {len(items)} line item(s), {attachments} document(s))",
         "type": "bill_request",
         "reference": doc["id"],
         "amount": expected,

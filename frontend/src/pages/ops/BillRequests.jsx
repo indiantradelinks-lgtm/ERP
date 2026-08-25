@@ -28,7 +28,7 @@ const inr = (v) => `₹ ${Number(v || 0).toLocaleString("en-IN")}`;
 
 const blank = () => ({
   id: (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`),
-  project_code: "", bill_type: "running", period_from: "", period_to: "",
+  project_code: "", bill_type: "running", bill_nature: "", period_from: "", period_to: "",
   expected_amount: 0, items: [], remarks: "",
 });
 
@@ -257,6 +257,16 @@ export default function BillRequests() {
                   className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="br-form-type">
                   <option value="running">RA (Running) Bill</option>
                   <option value="final">Final Bill</option>
+                </select>
+              </div>
+              <div>
+                <Label className="text-[10px] uppercase tracking-wider">Bill Nature</Label>
+                <select value={form.bill_nature || ""} onChange={(e) => setForm({ ...form, bill_nature: e.target.value })}
+                  className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="br-form-nature">
+                  <option value="">— Select —</option>
+                  <option value="partial">Partial Bill</option>
+                  <option value="one_time">One-Time Bill</option>
+                  <option value="monthly_last">Last Bill of the Month</option>
                 </select>
               </div>
               <div>

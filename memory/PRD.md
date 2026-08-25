@@ -5576,3 +5576,14 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - New page `/app/admin/approval-report` (admin/ApprovalReport.jsx, superAdminOnly menu item `nav-admin-approval-report`) with filter bar, KPI tiles, Excel/PDF download buttons.
 - MyApprovalsCenter.jsx: filter bar (status pending/approved/rejected, search, date from/to, PM). Pending = client-side filtered inbox; Approved/Rejected = server report rows with exact Approved/Rejected At timestamp + approver (hover shows full step trail).
 - Tested: curl (date/q/status filters, xlsx 125 rows, pdf 7 pages, role scoping for test_mop=0) + screenshots of both pages.
+
+### Iteration 181 (Aug 25, 2026) — Pending Billing Report + monthly reminder emails
+- New `/app/backend/routers/billing_pending_router.py` (registered as billing_pending):
+  - `GET /api/billing/pending-report?month=` (bill_requests:read, project-scoped): per-project live billing status. ARC (annual_rate_contract, default) → billed/requested/pending per month (period overlap or created-in-month); one_time_supply → billed (final/one_time generated), partially_billed, requested, pending. Row includes billing_type, PM, last bill, open request + nature, billed totals. Status auto-updates because computed from bill_requests (bill_generated set by Accounts).
+  - `PUT /api/billing/projects/{code}/billing-type` — tag projects annual_rate_contract | one_time_supply.
+  - `POST /api/billing/pending-report/send-reminder` (super_admin/director/GM) — queues email via email_outbox (shared M365 mailbox) in background (asyncio.create_task, avoids proxy timeout); email_retry job retries failures.
+  - Recipients: users with roles project_manager, manager_o_p, project_coordinator, dept_head, general_manager, director (active). HTML table of pending projects.
+- Scheduler `_billing_reminder_job` (daily 9:30, tz per scheduler): sends once per month on/after the 5th (marker `billing-reminder-YYYY-MM`), plus in-app alerts to PM/GM/Director roles.
+- Bill requests: new `bill_nature` field (partial | one_time | monthly_last), validated, stored, surfaced in approval title; select added in ops/BillRequests.jsx form (`br-form-nature`).
+- Frontend page `/app/accounts/billing-pending` (accounts/BillingPendingReport.jsx) with month picker, KPI tiles (pending/in-flow/partially-billed/billed), inline billing-type select per project, "Send Reminder Now" button (mgmt). Menu: accounts + ops sections (perm bill_requests).
+- Tested: report months (Jul shows PRJ-2026-0022 billed), type set, BR with bill_nature=partial → report "requested", reminder queued to 8 recipients w/ 18 pending (SMTP auth fails in PREVIEW only — no real M365 app password; works in prod), screenshot OK.

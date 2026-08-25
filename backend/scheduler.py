@@ -230,6 +230,39 @@ async def _vendor_payment_due_job():
         logger.exception(f"Vendor payment due job failed: {e}")
 
 
+async def _billing_reminder_job():
+    """Daily: after the 5th of the month, send the pending-billing reminder once per month."""
+    try:
+        from core import db as _db, now_iso
+        from datetime import date as _date
+        today = _date.today()
+        if today.day < 5:
+            return
+        month = today.isoformat()[:7]
+        marker = f"billing-reminder-{month}"
+        if await _db.notification_markers.find_one({"id": marker}):
+            return
+        from routers.billing_pending_router import send_billing_reminder, build_pending_report
+        res = await send_billing_reminder(month, queued_by="scheduler")
+        if res.get("sent") or res.get("reason") == "no pending projects":
+            await _db.notification_markers.insert_one({"id": marker, "at": now_iso(), "result": res})
+        # In-app alerts for PMs of pending projects (independent of email outcome)
+        report = await build_pending_report(month, user=None)
+        pending = [r for r in report["rows"] if r["billing_status"] == "pending"]
+        if pending:
+            for role in ("project_manager", "manager_o_p", "general_manager", "director", "super_admin"):
+                await _push_inapp_for_role(role, {
+                    "type": "billing_pending",
+                    "title": f"Billing pending — {len(pending)} project(s) for {month}",
+                    "body": ", ".join(r["project_code"] for r in pending[:10]),
+                    "link": "/app/accounts/billing-pending",
+                })
+        _last_results["billing_reminder"] = {"pending": len(pending), "email": res, "ts": datetime.utcnow().isoformat()}
+        logger.info(f"[billing_reminder] month={month} pending={len(pending)} email={res}")
+    except Exception as e:
+        logger.exception(f"Billing reminder job failed: {e}")
+
+
 def start_scheduler() -> None:
     global _scheduler
     if _scheduler is not None:
@@ -244,6 +277,9 @@ def start_scheduler() -> None:
     _scheduler.add_job(_gmc_weekly_job, CronTrigger(day_of_week="mon", hour=9, minute=15), id="gmc_weekly_review", replace_existing=True)
     # Daily manpower shortage scan @ 07:30 UTC (1.5h before standup)
     _scheduler.add_job(_shortage_job, CronTrigger(hour=7, minute=30), id="shortage_scan", replace_existing=True)
+
+    _scheduler.add_job(_billing_reminder_job, CronTrigger(hour=9, minute=30),
+                       id="billing_reminder", replace_existing=True)
 
     _scheduler.add_job(_vendor_payment_due_job, CronTrigger(hour=8, minute=15),
                        id="vendor_payment_due", replace_existing=True)

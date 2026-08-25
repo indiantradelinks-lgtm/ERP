@@ -161,6 +161,7 @@ import PmHandover from "@/pages/ops/PmHandover";
 import Scaffolding from "@/pages/store/Scaffolding";
 import MyApprovalsCenter from "@/pages/MyApprovalsCenter";
 import ApprovalReport from "@/pages/admin/ApprovalReport";
+import BillingPendingReport from "@/pages/accounts/BillingPendingReport";
 import ProjectPnl from "@/pages/ops/ProjectPnl";
 import ReportsCenter from "@/pages/ReportsCenter";
 import BillRequests from "@/pages/ops/BillRequests";
@@ -258,6 +259,7 @@ export default function App() {
             <Route path="/app/scaffolding" element={<ProtectedShell><Scaffolding /></ProtectedShell>} />
             <Route path="/app/my-approvals" element={<ProtectedShell><MyApprovalsCenter /></ProtectedShell>} />
             <Route path="/app/admin/approval-report" element={<ProtectedShell><ApprovalReport /></ProtectedShell>} />
+            <Route path="/app/accounts/billing-pending" element={<ProtectedShell><BillingPendingReport /></ProtectedShell>} />
             <Route path="/app/ops/pnl" element={<ProtectedShell><ProjectPnl /></ProtectedShell>} />
             <Route path="/app/projects" element={<ProtectedShell><Projects /></ProtectedShell>} />
             <Route path="/app/ops/handovers" element={<ProtectedShell><ContractHandovers /></ProtectedShell>} />

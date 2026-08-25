@@ -33,6 +33,7 @@ from routers.exports_router import router as exports_router
 from routers.dashboard_router import router as dashboard_router
 from routers.admin_router import router as admin_router
 from routers.billing_defaults_router import router as billing_defaults_router
+from routers.billing_pending_router import router as billing_pending_router
 from routers.quotation_builder_router import router as quotation_builder_router
 from routers.ai_quotation_router import router as ai_quotation_router
 from routers.project_dashboard_legacy_router import router as project_dashboard_router
@@ -164,6 +165,7 @@ ROUTERS_IN_ORDER: List[Tuple[str, APIRouter]] = [
     ("advance", advance_router),
     ("ai_quotation", ai_quotation_router),
     ("billing_defaults", billing_defaults_router),
+    ("billing_pending", billing_pending_router),
     ("clients", clients_router),
     ("commercial", commercial_router),
     ("dashboard", dashboard_router),
