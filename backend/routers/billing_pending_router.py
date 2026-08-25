@@ -154,6 +154,54 @@ async def set_billing_type(code: str, payload: BillingTypeIn,
     return {"ok": True, "code": code, "billing_type": payload.billing_type}
 
 
+@router.get("/billing/pending-report/export")
+async def pending_report_export(fmt: str = "xlsx", month: Optional[str] = None,
+                                status: Optional[str] = None,
+                                user: dict = Depends(require_permission("bill_requests", "read"))):
+    from fastapi import Response
+    month = month or now_iso()[:7]
+    report = await build_pending_report(month, user=user)
+    rows = [r for r in report["rows"] if not status or r["billing_status"] == status]
+    if fmt == "pdf":
+        from pdf_generator import render_billing_pending_pdf
+        data = render_billing_pending_pdf(rows, report["summary"], month)
+        return Response(content=data, media_type="application/pdf",
+                        headers={"Content-Disposition": f'inline; filename="pending-billing-{month}.pdf"'})
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    from io import BytesIO
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f"Pending Billing {month}"
+    ws.append(["Project Code", "Project Name", "Client", "Project Manager", "Billing Type",
+               f"Billing Status ({month})", "Last Bill No", "Last Bill Date", "Open Request",
+               "Bills Generated", "Billed Basic (₹)", "GST (₹)", "Gross (₹)",
+               "Paid (₹)", "Balance Due (₹)", "Payment Status"])
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="0F172A")
+    for r in rows:
+        ws.append([r["project_code"], r["project_name"], r["client"], r["project_manager"],
+                   (r["effective_billing_type"] or "").replace("_", " ").title(),
+                   r["billing_status"].replace("_", " ").title(),
+                   r["last_bill_no"], (r["last_bill_at"] or "")[:10],
+                   r["open_request_no"], r["bills_generated"],
+                   r["billed_basic"], r["billed_gst"], r["billed_gross"],
+                   r["paid_amount"], r["balance_due"],
+                   (r["payment_status"] or "").replace("_", " ").title()])
+    for i, w in enumerate([15, 28, 20, 18, 24, 16, 16, 12, 14, 8, 14, 12, 14, 14, 14, 14], start=1):
+        ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
+    s = wb.create_sheet("Summary")
+    for k, v in report["summary"].items():
+        s.append([k.replace("_", " ").title(), v])
+    s.column_dimensions["A"].width = 24
+    buf = BytesIO()
+    wb.save(buf)
+    return Response(content=buf.getvalue(),
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="pending-billing-{month}.xlsx"'})
+
+
 # ─── Reminder email ──────────────────────────────────────────────────────────
 def _reminder_html(month: str, pending: List[dict]) -> str:
     trs = ""

@@ -803,3 +803,38 @@ def render_approval_report_pdf(rows: List[Dict[str, Any]], summary: Dict[str, An
 </tr></thead><tbody>{trs or '<tr><td colspan="8">No records match the selected filters.</td></tr>'}</tbody></table>
 """
     return _render(_wrap("Approval Report", body))
+
+
+# ──────────────────────── Pending Billing Report ────────────────────────
+def render_billing_pending_pdf(rows: List[Dict[str, Any]], summary: Dict[str, Any], month: str) -> bytes:
+    STATUS_COLORS = {"pending": "#b91c1c", "requested": "#b45309", "partially_billed": "#1d4ed8", "billed": "#166534"}
+    PAY_LABEL = {"paid": "Paid", "partially_paid": "Partially Paid", "unpaid": "Unpaid", "not_billed": "Not Billed"}
+    trs = ""
+    for r in rows:
+        col = STATUS_COLORS.get(r.get("billing_status"), "#0f172a")
+        trs += f"""<tr>
+<td>{_esc(r.get('project_code'))}<br/><span style="color:#64748b;font-size:7pt;">{_esc(r.get('project_name') or '')}</span></td>
+<td>{_esc(r.get('client') or '—')}<br/><span style="color:#64748b;font-size:7pt;">PM: {_esc(r.get('project_manager') or '—')}</span></td>
+<td>{_esc((r.get('effective_billing_type') or '').replace('_', ' ').title())}</td>
+<td style="color:{col};font-weight:700;">{_esc((r.get('billing_status') or '').replace('_', ' ').title())}</td>
+<td>{_esc(r.get('last_bill_no') or '—')}<br/><span style="color:#64748b;font-size:7pt;">{_esc((r.get('last_bill_at') or '')[:10])}</span></td>
+<td class="num">{_money(r.get('billed_basic')) if r.get('billed_basic') else '—'}</td>
+<td class="num">{_money(r.get('billed_gst')) if r.get('billed_gst') else '—'}</td>
+<td class="num">{_money(r.get('balance_due')) if r.get('balance_due') else '—'}</td>
+<td>{_esc(PAY_LABEL.get(r.get('payment_status'), '—'))}</td>
+</tr>"""
+    body = f"""
+<div class="kv" style="grid-template-columns: 1fr 1fr 1fr 1fr 1fr;">
+  <div><b>Projects</b><br/>{summary.get('total')}</div>
+  <div><b>Pending</b><br/><span style="color:#b91c1c;font-weight:700;">{summary.get('pending', 0)}</span></div>
+  <div><b>In Flow</b><br/>{summary.get('requested', 0)}</div>
+  <div><b>Partially Billed</b><br/>{summary.get('partially_billed', 0)}</div>
+  <div><b>Billed</b><br/>{summary.get('billed', 0)}</div>
+</div>
+<table style="font-size:7.5pt;"><thead><tr>
+<th>Project</th><th>Client / PM</th><th>Billing Type</th><th>Status</th><th>Last Bill</th>
+<th class="num">Basic (₹)</th><th class="num">GST (₹)</th><th class="num">Balance Due (₹)</th><th>Payment</th>
+</tr></thead><tbody>{trs or '<tr><td colspan="9">No projects.</td></tr>'}</tbody></table>
+<div class="note">ARC projects require one bill per month; one-time supply projects require final/partial billing.</div>
+"""
+    return _render(_wrap(f"Pending Billing Report — {month}", body))

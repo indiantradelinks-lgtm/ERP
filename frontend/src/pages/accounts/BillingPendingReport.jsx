@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Banknote, Mail, RefreshCw } from "lucide-react";
+import { Banknote, Download, FileText, Mail, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -45,6 +45,19 @@ export default function BillingPendingReport() {
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
+  const download = async (fmt) => {
+    try {
+      const p = new URLSearchParams({ fmt, month });
+      if (statusFilter) p.set("status", statusFilter);
+      const { data: blob } = await api.get(`/billing/pending-report/export?${p}`, { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([blob]));
+      const a = document.createElement("a");
+      a.href = url; a.download = `pending-billing-${month}.${fmt}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+  };
+
   const sendReminder = async () => {
     setSending(true);
     try {
@@ -72,6 +85,8 @@ export default function BillingPendingReport() {
         </div>
         <div className="flex gap-2 items-center">
           <Input type="month" className="h-9 w-40" value={month} onChange={(e) => setMonth(e.target.value)} data-testid="billing-month" />
+          <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("xlsx")} data-testid="billing-export-xlsx"><Download className="h-4 w-4 mr-1" /> Excel</Button>
+          <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("pdf")} data-testid="billing-export-pdf"><FileText className="h-4 w-4 mr-1" /> PDF</Button>
           {isMgmt && (
             <Button className="h-9 rounded-sm" disabled={sending} onClick={sendReminder} data-testid="billing-send-reminder">
               <Mail className="h-4 w-4 mr-1" /> {sending ? "Sending…" : "Send Reminder Now"}

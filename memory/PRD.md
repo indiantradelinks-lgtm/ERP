@@ -5598,3 +5598,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Admin CRUD (super_admin only) in admin_router: GET /api/admin/request-options, POST/PUT/DELETE /api/admin/request-options/{kind}/{key} (kind: request_type|expense_type; DELETE on builtin = deactivate, on custom = hard delete; PUT upserts override).
 - New page /app/admin/request-options (admin/RequestOptions.jsx, menu "Request Type Master" superAdminOnly): two tables with add/edit dialogs, active/hidden badges, restore button for hidden builtins.
 - Tested via curl: custom type add (both kinds), builtin rename, builtin hide, user dropdown reflects instantly (manager_o_p), reactivation; screenshot of admin page OK. Test data cleaned after.
+
+### Iteration 182b (Aug 25, 2026) — Billing report Excel/PDF export
+- `GET /api/billing/pending-report/export?fmt=xlsx|pdf&month=&status=` (bill_requests:read, project-scoped): Excel (full columns incl. Basic/GST/Gross/Paid/Balance/Payment + Summary sheet) and PDF via `render_billing_pending_pdf` (colored statuses, KPI header). Status filter honored.
+- Frontend: Excel + PDF buttons on /app/accounts/billing-pending (respect active month + status tile filter).
+- Tested: xlsx 21 rows/2 sheets, pdf 2 pages with correct KPI text, status=pending variant, UI buttons via screenshot.
