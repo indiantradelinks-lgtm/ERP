@@ -5636,3 +5636,7 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - pdf_generator.py: constants COMPANY_GST=07ARWPC7166J1Z6, COMPANY_PAN=ARWPC7166J, LOGO_FILE=/app/backend/assets/itl-logo.jpg. `_wrap(title, body, logo=False)` — logo=True renders ITL logo beside brand/title (used by PO only).
 - render_po_pdf: new side-by-side FROM (ITL name/address/GST/PAN) and TO — VENDOR (name, address, vendor code, GST, PAN, contact person/phone/email from Vendor Master; contact falls back contact_person→contact) panels; "Payment Terms" highlighted box above Items; 4-col PO meta grid. T&C rendering unchanged (structured clauses).
 - Verified: PDF text contains company GST/PAN; page rendered to image via pypdfium2 — logo aligned, panels clean, totals + T&C + signature blocks intact.
+
+### Iteration 185b (Aug 25, 2026) — PO PDF address + payment terms layout
+- CORPORATE_ADDRESS replaced globally (footer + PO From panel): "Registered Address - Wz-3536A, Ground Floor, Raja Park, Rani Bagh, Shakur Basti, New Delhi-110034." (old Pearl Omaxe address removed everywhere).
+- Payment Terms moved beside Terms & Conditions (flex 2:1 side-by-side sections after totals). Verified via rendered PDF image.

@@ -38,8 +38,8 @@ COMPANY_GST = "07ARWPC7166J1Z6"
 COMPANY_PAN = "ARWPC7166J"
 LOGO_FILE = "file:///app/backend/assets/itl-logo.jpg"
 FOOTER_NOTE = "System-generated · Not valid without approval signatures"
-CORPORATE_ADDRESS = ("Corporate Address - Tower-1, Office No. 605-606, 6th Floor, "
-                     "Pearl Omaxe Building, Netaji Subhash Place, Pitampura, Delhi - 110034.")
+CORPORATE_ADDRESS = ("Registered Address - Wz-3536A, Ground Floor, Raja Park, Rani Bagh, "
+                     "Shakur Basti, New Delhi-110034.")
 WATERMARK_FILE = "file:///app/backend/assets/itl-watermark.png"
 
 CSS_BASE = """
@@ -414,7 +414,7 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
   <div class="party">
     <div class="ph">From</div>
     <div class="pname">{_esc(BRAND)}</div>
-    <div class="prow">{_esc(CORPORATE_ADDRESS.replace('Corporate Address - ', ''))}</div>
+    <div class="prow">{_esc(CORPORATE_ADDRESS.replace('Registered Address - ', ''))}</div>
     <div class="prow"><b>GST No.:</b> {COMPANY_GST}</div>
     <div class="prow"><b>PAN No.:</b> {COMPANY_PAN}</div>
   </div>
@@ -427,7 +427,6 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
     <div class="prow"><b>Contact:</b> {contact_html}</div>
   </div>
 </div>
-<div class="pt-box"><b>Payment Terms:</b> {_esc(po.get('payment_terms') or 'As mutually agreed')}</div>
 <div class="section-title">Items</div>
 <table><thead><tr><th>#</th><th>Item</th><th class="num">Qty</th><th>Unit</th><th class="num">Rate</th><th class="num">Amount</th><th class="num">GST %</th><th class="num">GST Amt</th><th class="num">Total</th></tr></thead>
 <tbody>{items_html or '<tr><td colspan=9>No items</td></tr>'}</tbody></table>
@@ -441,8 +440,16 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
 {f'<div class="section-title" style="clear:both;">Delivery Terms</div><div class="note">{_esc(po.get("delivery_terms"))}</div>' if po.get('delivery_terms') else ''}
 {f'<div class="section-title" style="clear:both;">Special Terms</div><div class="note">{_esc(po.get("special_terms"))}</div>' if po.get('special_terms') else ''}
 {f'<div class="section-title" style="clear:both;">Other Terms</div><div class="note">{_esc(po.get("other_terms"))}</div>' if po.get('other_terms') else ''}
-<div class="section-title" style="clear:both;">Terms & Conditions</div>
-{tnc_html or f"<div class='note'>{_esc(po.get('terms') or '1. Goods to be delivered as per delivery schedule.  2. Payment 30 days after GRN acceptance.  3. Quality as per agreed spec — defects to be replaced free of cost.')}</div>"}
+<div style="display:flex; gap:14px; clear:both; margin-top:14px;">
+  <div style="flex:2;">
+    <div class="section-title" style="margin-top:0;">Terms &amp; Conditions</div>
+    {tnc_html or f"<div class='note'>{_esc(po.get('terms') or '1. Goods to be delivered as per delivery schedule.  2. Payment 30 days after GRN acceptance.  3. Quality as per agreed spec — defects to be replaced free of cost.')}</div>"}
+  </div>
+  <div style="flex:1;">
+    <div class="section-title" style="margin-top:0;">Payment Terms</div>
+    <div class="pt-box" style="margin-top:4px;">{_esc(po.get('payment_terms') or 'As mutually agreed')}</div>
+  </div>
+</div>
 <div class="signs">
   <div class="box">For {_esc(BRAND)}</div>
   <div class="box">Vendor Acknowledgement</div>
