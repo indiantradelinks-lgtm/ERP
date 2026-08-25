@@ -5603,3 +5603,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - `GET /api/billing/pending-report/export?fmt=xlsx|pdf&month=&status=` (bill_requests:read, project-scoped): Excel (full columns incl. Basic/GST/Gross/Paid/Balance/Payment + Summary sheet) and PDF via `render_billing_pending_pdf` (colored statuses, KPI header). Status filter honored.
 - Frontend: Excel + PDF buttons on /app/accounts/billing-pending (respect active month + status tile filter).
 - Tested: xlsx 21 rows/2 sheets, pdf 2 pages with correct KPI text, status=pending variant, UI buttons via screenshot.
+
+### Iteration 182c (Aug 25, 2026) — Billing report filters
+- Server-side filters on /api/billing/pending-report + /export: q (project search), project_manager, client, billing_type (incl. "unset"), payment_status, min_pending_days; response also returns distinct managers/clients lists for dropdowns. `pending_days` computed per project (days since last generated bill, else project start).
+- UI filter bar (search, PM select, client select, billing type, payment status, pending ≥ N days). Status tiles remain client-side; exports include the tile status + all filters. Pending days shown under status badge and in Excel/PDF.
+- Tested: all six filters via curl (PM=Arjun→2, client=Adani→5, one_time_supply, ≥30 days→18, paid→PRJ-2026-0034, filtered xlsx 17 rows) + UI screenshot with PM filter applied.

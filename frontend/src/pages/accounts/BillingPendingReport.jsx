@@ -28,13 +28,22 @@ export default function BillingPendingReport() {
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [data, setData] = useState(null);
   const [statusFilter, setStatusFilter] = useState("");
+  const [ff, setFf] = useState({ q: "", project_manager: "", client: "", billing_type: "", payment_status: "", min_pending_days: "" });
   const [sending, setSending] = useState(false);
   const isMgmt = ["super_admin", "director", "general_manager"].includes(user?.role);
+  const setF = (k) => (e) => setFf((p) => ({ ...p, [k]: e.target?.value ?? e }));
+
+  const qs = useCallback((withStatus) => {
+    const p = new URLSearchParams({ month });
+    if (withStatus && statusFilter) p.set("status", statusFilter);
+    Object.entries(ff).forEach(([k, v]) => v && p.set(k, v));
+    return p.toString();
+  }, [month, statusFilter, ff]);
 
   const load = useCallback(async () => {
-    try { setData((await api.get(`/billing/pending-report?month=${month}`)).data); }
+    try { setData((await api.get(`/billing/pending-report?${qs(false)}`)).data); }
     catch (e) { toast.error(apiErrorMessage(e)); }
-  }, [month]);
+  }, [qs]);
   useEffect(() => { load(); }, [load]);
 
   const setType = async (code, billing_type) => {
@@ -47,9 +56,7 @@ export default function BillingPendingReport() {
 
   const download = async (fmt) => {
     try {
-      const p = new URLSearchParams({ fmt, month });
-      if (statusFilter) p.set("status", statusFilter);
-      const { data: blob } = await api.get(`/billing/pending-report/export?${p}`, { responseType: "blob" });
+      const { data: blob } = await api.get(`/billing/pending-report/export?fmt=${fmt}&${qs(true)}`, { responseType: "blob" });
       const url = window.URL.createObjectURL(new Blob([blob]));
       const a = document.createElement("a");
       a.href = url; a.download = `pending-billing-${month}.${fmt}`;
@@ -94,6 +101,39 @@ export default function BillingPendingReport() {
           )}
           <Button variant="outline" className="h-9 rounded-sm" onClick={load}><RefreshCw className="h-4 w-4" /></Button>
         </div>
+      </div>
+
+      <div className="bg-card border border-border rounded-sm p-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+        <Input placeholder="Search project…" className="h-9" value={ff.q} onChange={setF("q")} data-testid="billing-filter-q" />
+        <select className="h-9 border border-input rounded-sm px-2 text-sm bg-background" value={ff.project_manager} onChange={setF("project_manager")} data-testid="billing-filter-pm">
+          <option value="">All Project Managers</option>
+          {(data?.managers || []).map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <select className="h-9 border border-input rounded-sm px-2 text-sm bg-background" value={ff.client} onChange={setF("client")} data-testid="billing-filter-client">
+          <option value="">All Clients</option>
+          {(data?.clients || []).map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select className="h-9 border border-input rounded-sm px-2 text-sm bg-background" value={ff.billing_type} onChange={setF("billing_type")} data-testid="billing-filter-type">
+          <option value="">All Billing Types</option>
+          <option value="annual_rate_contract">Annual Rate Contract</option>
+          <option value="one_time_supply">One-Time Supply</option>
+          <option value="unset">Type Not Set</option>
+        </select>
+        <select className="h-9 border border-input rounded-sm px-2 text-sm bg-background" value={ff.payment_status} onChange={setF("payment_status")} data-testid="billing-filter-payment">
+          <option value="">All Payment Statuses</option>
+          <option value="paid">Paid</option>
+          <option value="partially_paid">Partially Paid</option>
+          <option value="unpaid">Unpaid</option>
+          <option value="not_billed">Not Billed</option>
+        </select>
+        <select className="h-9 border border-input rounded-sm px-2 text-sm bg-background" value={ff.min_pending_days} onChange={setF("min_pending_days")} data-testid="billing-filter-days">
+          <option value="">Pending Any Duration</option>
+          <option value="7">Pending ≥ 7 days</option>
+          <option value="15">Pending ≥ 15 days</option>
+          <option value="30">Pending ≥ 30 days</option>
+          <option value="60">Pending ≥ 60 days</option>
+          <option value="90">Pending ≥ 90 days</option>
+        </select>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -146,7 +186,10 @@ export default function BillingPendingReport() {
                       <option value="one_time_supply">One-Time Supply</option>
                     </select>
                   </TableCell>
-                  <TableCell><Badge variant="outline" className={`rounded-sm text-[10px] ${m.cls || ""}`}>{m.label || r.billing_status}</Badge></TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={`rounded-sm text-[10px] ${m.cls || ""}`}>{m.label || r.billing_status}</Badge>
+                    {r.billing_status === "pending" && r.pending_days != null && <div className="text-[10px] text-muted-foreground mt-0.5">{r.pending_days} days</div>}
+                  </TableCell>
                   <TableCell className="text-xs">
                     {r.last_bill_no ? <><div className="font-semibold">{r.last_bill_no}</div><div className="text-[10px] text-muted-foreground">{(r.last_bill_at || "").slice(0, 10)}</div></> : "—"}
                   </TableCell>

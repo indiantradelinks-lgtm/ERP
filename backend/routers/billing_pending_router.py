@@ -43,7 +43,7 @@ async def build_pending_report(month: str, user: Optional[dict] = None) -> Dict[
     projects = await db.projects.find(
         q, {"_id": 0, "id": 1, "code": 1, "name": 1, "client": 1, "status": 1,
             "billing_type": 1, "project_manager_name": 1, "manager": 1,
-            "project_manager_id": 1}).sort("code", 1).to_list(2000)
+            "project_manager_id": 1, "start_date": 1, "created_at": 1}).sort("code", 1).to_list(2000)
     codes = [p["code"] for p in projects if p.get("code")]
     reqs_by_proj: Dict[str, List[dict]] = {}
     async for r in db.bill_requests.find(
@@ -106,6 +106,13 @@ async def build_pending_report(month: str, user: Optional[dict] = None) -> Dict[
             payment_status = "partially_paid"
         else:
             payment_status = "unpaid"
+        anchor = (last_gen or {}).get("generated_at") or (last_gen or {}).get("created_at") \
+            or p.get("start_date") or p.get("created_at")
+        try:
+            from datetime import date as _date
+            pending_days = (_date.today() - _date.fromisoformat(str(anchor)[:10])).days
+        except Exception:
+            pending_days = None
         rows.append({
             "project_id": p.get("id"), "project_code": p.get("code"), "project_name": p.get("name"),
             "client": p.get("client"), "project_status": p.get("status"),
@@ -122,6 +129,7 @@ async def build_pending_report(month: str, user: Optional[dict] = None) -> Dict[
             "billed_basic": basic, "billed_gst": gst, "billed_gross": gross,
             "paid_amount": paid, "balance_due": balance,
             "payment_status": payment_status,
+            "pending_days": pending_days,
         })
 
     counts: Dict[str, int] = {}
@@ -132,11 +140,53 @@ async def build_pending_report(month: str, user: Optional[dict] = None) -> Dict[
                         "pending": counts.get("pending", 0)}}
 
 
+def apply_report_filters(rows: List[dict], *, status: Optional[str] = None, q: Optional[str] = None,
+                         project_manager: Optional[str] = None, client: Optional[str] = None,
+                         billing_type: Optional[str] = None, payment_status: Optional[str] = None,
+                         min_pending_days: Optional[int] = None) -> List[dict]:
+    def ok(r):
+        if status and r["billing_status"] != status:
+            return False
+        if q and q.lower() not in f"{r['project_code']} {r['project_name']}".lower():
+            return False
+        if project_manager and project_manager.lower() not in (r["project_manager"] or "").lower():
+            return False
+        if client and client.lower() not in (r["client"] or "").lower():
+            return False
+        if billing_type:
+            if billing_type == "unset" and r["billing_type"]:
+                return False
+            if billing_type != "unset" and r["effective_billing_type"] != billing_type:
+                return False
+        if payment_status and r["payment_status"] != payment_status:
+            return False
+        if min_pending_days and (r.get("pending_days") or 0) < int(min_pending_days):
+            return False
+        return True
+    return [r for r in rows if ok(r)]
+
+
+def _summarise(rows: List[dict]) -> Dict[str, Any]:
+    counts: Dict[str, int] = {}
+    for r in rows:
+        counts[r["billing_status"]] = counts.get(r["billing_status"], 0) + 1
+    return {"total": len(rows), **counts, "pending": counts.get("pending", 0)}
+
+
 @router.get("/billing/pending-report")
-async def pending_report(month: Optional[str] = None,
+async def pending_report(month: Optional[str] = None, status: Optional[str] = None,
+                         q: Optional[str] = None, project_manager: Optional[str] = None,
+                         client: Optional[str] = None, billing_type: Optional[str] = None,
+                         payment_status: Optional[str] = None, min_pending_days: Optional[int] = None,
                          user: dict = Depends(require_permission("bill_requests", "read"))):
     month = month or now_iso()[:7]
-    return await build_pending_report(month, user=user)
+    report = await build_pending_report(month, user=user)
+    rows = apply_report_filters(report["rows"], status=status, q=q, project_manager=project_manager,
+                                client=client, billing_type=billing_type,
+                                payment_status=payment_status, min_pending_days=min_pending_days)
+    return {"month": month, "rows": rows, "summary": _summarise(rows),
+            "managers": sorted({r["project_manager"] for r in report["rows"] if r["project_manager"]}),
+            "clients": sorted({r["client"] for r in report["rows"] if r["client"]})}
 
 
 @router.put("/billing/projects/{code}/billing-type")
@@ -156,15 +206,21 @@ async def set_billing_type(code: str, payload: BillingTypeIn,
 
 @router.get("/billing/pending-report/export")
 async def pending_report_export(fmt: str = "xlsx", month: Optional[str] = None,
-                                status: Optional[str] = None,
+                                status: Optional[str] = None, q: Optional[str] = None,
+                                project_manager: Optional[str] = None, client: Optional[str] = None,
+                                billing_type: Optional[str] = None, payment_status: Optional[str] = None,
+                                min_pending_days: Optional[int] = None,
                                 user: dict = Depends(require_permission("bill_requests", "read"))):
     from fastapi import Response
     month = month or now_iso()[:7]
     report = await build_pending_report(month, user=user)
-    rows = [r for r in report["rows"] if not status or r["billing_status"] == status]
+    rows = apply_report_filters(report["rows"], status=status, q=q, project_manager=project_manager,
+                                client=client, billing_type=billing_type,
+                                payment_status=payment_status, min_pending_days=min_pending_days)
+    summary = _summarise(rows)
     if fmt == "pdf":
         from pdf_generator import render_billing_pending_pdf
-        data = render_billing_pending_pdf(rows, report["summary"], month)
+        data = render_billing_pending_pdf(rows, summary, month)
         return Response(content=data, media_type="application/pdf",
                         headers={"Content-Disposition": f'inline; filename="pending-billing-{month}.pdf"'})
     from openpyxl import Workbook
@@ -174,7 +230,7 @@ async def pending_report_export(fmt: str = "xlsx", month: Optional[str] = None,
     ws = wb.active
     ws.title = f"Pending Billing {month}"
     ws.append(["Project Code", "Project Name", "Client", "Project Manager", "Billing Type",
-               f"Billing Status ({month})", "Last Bill No", "Last Bill Date", "Open Request",
+               f"Billing Status ({month})", "Pending Days", "Last Bill No", "Last Bill Date", "Open Request",
                "Bills Generated", "Billed Basic (₹)", "GST (₹)", "Gross (₹)",
                "Paid (₹)", "Balance Due (₹)", "Payment Status"])
     for c in ws[1]:
@@ -184,15 +240,16 @@ async def pending_report_export(fmt: str = "xlsx", month: Optional[str] = None,
         ws.append([r["project_code"], r["project_name"], r["client"], r["project_manager"],
                    (r["effective_billing_type"] or "").replace("_", " ").title(),
                    r["billing_status"].replace("_", " ").title(),
+                   r.get("pending_days"),
                    r["last_bill_no"], (r["last_bill_at"] or "")[:10],
                    r["open_request_no"], r["bills_generated"],
                    r["billed_basic"], r["billed_gst"], r["billed_gross"],
                    r["paid_amount"], r["balance_due"],
                    (r["payment_status"] or "").replace("_", " ").title()])
-    for i, w in enumerate([15, 28, 20, 18, 24, 16, 16, 12, 14, 8, 14, 12, 14, 14, 14, 14], start=1):
+    for i, w in enumerate([15, 28, 20, 18, 24, 16, 12, 16, 12, 14, 8, 14, 12, 14, 14, 14, 14], start=1):
         ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
     s = wb.create_sheet("Summary")
-    for k, v in report["summary"].items():
+    for k, v in summary.items():
         s.append([k.replace("_", " ").title(), v])
     s.column_dimensions["A"].width = 24
     buf = BytesIO()

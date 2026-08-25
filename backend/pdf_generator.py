@@ -816,7 +816,7 @@ def render_billing_pending_pdf(rows: List[Dict[str, Any]], summary: Dict[str, An
 <td>{_esc(r.get('project_code'))}<br/><span style="color:#64748b;font-size:7pt;">{_esc(r.get('project_name') or '')}</span></td>
 <td>{_esc(r.get('client') or '—')}<br/><span style="color:#64748b;font-size:7pt;">PM: {_esc(r.get('project_manager') or '—')}</span></td>
 <td>{_esc((r.get('effective_billing_type') or '').replace('_', ' ').title())}</td>
-<td style="color:{col};font-weight:700;">{_esc((r.get('billing_status') or '').replace('_', ' ').title())}</td>
+<td style="color:{col};font-weight:700;">{_esc((r.get('billing_status') or '').replace('_', ' ').title())}<br/><span style="color:#64748b;font-size:7pt;font-weight:400;">{str(r.get('pending_days')) + ' days' if r.get('pending_days') is not None else ''}</span></td>
 <td>{_esc(r.get('last_bill_no') or '—')}<br/><span style="color:#64748b;font-size:7pt;">{_esc((r.get('last_bill_at') or '')[:10])}</span></td>
 <td class="num">{_money(r.get('billed_basic')) if r.get('billed_basic') else '—'}</td>
 <td class="num">{_money(r.get('billed_gst')) if r.get('billed_gst') else '—'}</td>
