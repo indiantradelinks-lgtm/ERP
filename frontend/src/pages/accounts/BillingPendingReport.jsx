@@ -75,6 +75,9 @@ export default function BillingPendingReport() {
     finally { setSending(false); }
   };
 
+  const FILTER_LABELS = { q: "Search", project_manager: "PM", client: "Client", billing_type: "Billing Type", payment_status: "Payment", min_pending_days: "Pending ≥ days", period_from: "Period From", period_to: "Period To", order_type: "WO/PO Type", service_type: "Service Type" };
+  const activeFilters = Object.entries(ff).filter(([, v]) => v).map(([k, v]) => [k, `${FILTER_LABELS[k]}: ${String(v).replaceAll("_", " ")}`]);
+
   const s = data?.summary;
   const rows = (data?.rows || []).filter((r) => !statusFilter || r.billing_status === statusFilter);
   return (
@@ -148,6 +151,27 @@ export default function BillingPendingReport() {
           <span className="text-xs text-muted-foreground">to</span>
           <Input type="date" className="h-9" value={ff.period_to} onChange={setF("period_to")} data-testid="billing-filter-period-to" />
         </div>
+        {activeFilters.length > 0 && (
+          <div className="col-span-full flex items-center gap-2 flex-wrap pt-1 border-t border-border/60">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Active filters ({activeFilters.length}):</span>
+            {activeFilters.map(([k, label]) => (
+              <Badge key={k} variant="outline" className="rounded-sm text-[10px] gap-1 pr-1" data-testid={`active-filter-${k}`}>
+                {label}
+                <button onClick={() => setFf((p) => ({ ...p, [k]: "" }))} className="hover:text-destructive font-bold px-0.5" title="Remove">×</button>
+              </Badge>
+            ))}
+            {statusFilter && (
+              <Badge variant="outline" className="rounded-sm text-[10px] gap-1 pr-1">
+                Status: {STATUS_META[statusFilter]?.label}
+                <button onClick={() => setStatusFilter("")} className="hover:text-destructive font-bold px-0.5">×</button>
+              </Badge>
+            )}
+            <Button size="sm" variant="ghost" className="h-6 text-[11px] text-destructive" data-testid="billing-clear-filters"
+              onClick={() => { setFf({ q: "", project_manager: "", client: "", billing_type: "", payment_status: "", min_pending_days: "", period_from: "", period_to: "", order_type: "", service_type: "" }); setStatusFilter(""); }}>
+              Clear all
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">

@@ -5627,3 +5627,7 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - `get_service_types()` in billing_pending_router (builtins SERVICE_TYPES_STD merged with `service_type_options` collection). Admin CRUD extended: kind "service_type" in /api/admin/request-options endpoints (add custom, rename, hide builtin, restore, delete custom).
 - Billing report service_types filter list now uses merged active list (+ any legacy project tags).
 - RequestOptions.jsx page: third "Service Types" table (label/key/status, add/edit/hide/restore). Tested via curl (add fireproofing → appears in report filter; hide insulation → disappears; cleaned) + screenshot.
+
+### Iteration 184c (Aug 25, 2026) — Multi-filter combination UX
+- All report filters were already AND-combined server-side; added "Active filters (N)" chip row with per-chip remove (×) and "Clear all" button (billing-clear-filters). Exports inherit combined filters.
+- Verified: PM + Service Type together → exactly 1 project; 3-filter combo via API; chips + clear-all via screenshot.
