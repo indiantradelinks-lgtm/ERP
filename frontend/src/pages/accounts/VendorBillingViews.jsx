@@ -91,7 +91,7 @@ export function VendorBillsView() {
       invoice_date: new Date().toISOString().slice(0, 10),
       invoice_received_date: new Date().toISOString().slice(0, 10),
       expense_category: "material", is_inventory: false,
-      lines: [{ description: "", quantity: 1, unit: "Nos", rate: 0 }],
+      lines: [{ description: "", quantity: 1, unit: "Nos", rate: 0, gst_pct: null }],
       gst_rate: 18, is_intra_state: true,
       tds_section: "", tds_rate: 0, advance_adjusted: 0, retention_amount: 0,
       due_days: 30, payment_priority: "normal",
@@ -132,7 +132,7 @@ export function VendorBillsView() {
         lines: data.lines?.length ? data.lines : f.lines,
       }));
       setPoTerms(data);
-      toast.success(`Fetched vendor, ${data.lines?.length || 0} line(s) @ PO rates & terms from ${data.po_number || "PO"}`);
+      toast.success(`Fetched vendor, ${data.lines?.length || 0} line(s) @ PO rates & item-wise GST from ${data.po_number || "PO"}`);
     } catch (e) { toast.error(e.response?.data?.detail || "GRN not found"); }
   };
 
@@ -150,7 +150,11 @@ export function VendorBillsView() {
 
   const totals = useMemo(() => {
     const taxable = form.lines.reduce((a, l) => a + Number(l.quantity || 0) * Number(l.rate || 0), 0);
-    const gst = taxable * (form.gst_rate || 0) / 100;
+    const gst = form.lines.reduce((a, l) => {
+      const amt = Number(l.quantity || 0) * Number(l.rate || 0);
+      const pct = l.gst_pct !== null && l.gst_pct !== undefined && l.gst_pct !== "" ? Number(l.gst_pct) : Number(form.gst_rate || 0);
+      return a + amt * pct / 100;
+    }, 0);
     const gross = taxable + gst;
     const tds = taxable * (form.tds_rate || 0) / 100;
     const net = gross - tds - Number(form.advance_adjusted || 0) - Number(form.retention_amount || 0);
@@ -475,7 +479,7 @@ export function VendorBillsView() {
             <Label className="text-[10px] uppercase tracking-wider mb-1 block">Lines</Label>
             <div className="border rounded-md overflow-hidden">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-xs"><tr><th className="text-left px-2 py-1">Description</th><th className="text-right px-2 py-1">Qty</th><th className="text-left px-2 py-1">Unit</th><th className="text-right px-2 py-1">Rate</th><th className="text-right px-2 py-1">Amount</th><th></th></tr></thead>
+                <thead className="bg-slate-50 text-xs"><tr><th className="text-left px-2 py-1">Description</th><th className="text-right px-2 py-1">Qty</th><th className="text-left px-2 py-1">Unit</th><th className="text-right px-2 py-1">Rate</th><th className="text-right px-2 py-1">Amount</th><th className="text-right px-2 py-1">GST %</th><th className="text-right px-2 py-1">GST Amt</th><th></th></tr></thead>
                 <tbody>
                   {form.lines.map((ln, i) => (
                     <tr key={i} className="border-t">
@@ -484,17 +488,19 @@ export function VendorBillsView() {
                       <td className="px-2 py-1"><Input value={ln.unit} onChange={e => { const lines = [...form.lines]; lines[i].unit = e.target.value; setForm({ ...form, lines }); }} className="h-8 w-20" /></td>
                       <td className="px-2 py-1"><Input type="number" value={ln.rate} onChange={e => { const lines = [...form.lines]; lines[i].rate = Number(e.target.value); setForm({ ...form, lines }); }} className="h-8 text-right" data-testid={`pay-vb-line-${i}-rate`} /></td>
                       <td className="px-2 py-1 text-right tabular-nums" data-testid={`pay-vb-line-${i}-amount`}>{fmt(Number(ln.quantity || 0) * Number(ln.rate || 0))}</td>
+                      <td className="px-2 py-1"><Input type="number" value={ln.gst_pct ?? ""} placeholder={String(form.gst_rate)} onChange={e => { const lines = [...form.lines]; lines[i].gst_pct = e.target.value === "" ? null : Number(e.target.value); setForm({ ...form, lines }); }} className="h-8 text-right w-16" data-testid={`pay-vb-line-${i}-gst-pct`} /></td>
+                      <td className="px-2 py-1 text-right tabular-nums text-slate-600" data-testid={`pay-vb-line-${i}-gst-amt`}>{fmt(Number(ln.quantity || 0) * Number(ln.rate || 0) * ((ln.gst_pct ?? form.gst_rate) || 0) / 100)}</td>
                       <td><Button size="sm" variant="ghost" onClick={() => setForm({ ...form, lines: form.lines.filter((_, x) => x !== i) })}><X className="h-3 w-3" /></Button></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <Button variant="outline" size="sm" className="mt-2" onClick={() => setForm({ ...form, lines: [...form.lines, { description: "", quantity: 1, unit: "Nos", rate: 0 }] })}>+ Line</Button>
+            <Button variant="outline" size="sm" className="mt-2" onClick={() => setForm({ ...form, lines: [...form.lines, { description: "", quantity: 1, unit: "Nos", rate: 0, gst_pct: null }] })}>+ Line</Button>
           </div>
 
           <div className="grid grid-cols-4 gap-2 mt-3">
-            <Field label="GST %"><Input type="number" value={form.gst_rate} onChange={e => setForm({ ...form, gst_rate: Number(e.target.value) })} /></Field>
+            <Field label="Default GST % (lines w/o PO GST)"><Input type="number" value={form.gst_rate} onChange={e => setForm({ ...form, gst_rate: Number(e.target.value) })} /></Field>
             <Field label="Tax Type">
               <select className="h-9 w-full rounded-sm border bg-background px-2" value={form.is_intra_state ? "intra" : "inter"} onChange={e => setForm({ ...form, is_intra_state: e.target.value === "intra" })}>
                 <option value="intra">Intra-state</option><option value="inter">Inter-state</option>
@@ -518,7 +524,7 @@ export function VendorBillsView() {
           <div className="border rounded-md p-3 bg-slate-50 mt-3">
             <div className="grid grid-cols-5 gap-2 text-sm">
               <div><div className="text-[10px] uppercase text-slate-500">Taxable</div><div className="font-semibold tabular-nums">{fmt(totals.taxable)}</div></div>
-              <div><div className="text-[10px] uppercase text-slate-500">GST ({form.gst_rate}%)</div><div className="font-semibold tabular-nums">{fmt(totals.gst)}</div></div>
+              <div><div className="text-[10px] uppercase text-slate-500">GST (line-wise)</div><div className="font-semibold tabular-nums">{fmt(totals.gst)}</div></div>
               <div><div className="text-[10px] uppercase text-slate-500">Gross</div><div className="font-semibold tabular-nums text-blue-700">{fmt(totals.gross)}</div></div>
               <div><div className="text-[10px] uppercase text-slate-500">TDS</div><div className="font-semibold tabular-nums text-rose-700">−{fmt(totals.tds)}</div></div>
               <div><div className="text-[10px] uppercase text-slate-500">Net Payable</div><div className="font-bold tabular-nums text-emerald-700">{fmt(totals.net)}</div></div>

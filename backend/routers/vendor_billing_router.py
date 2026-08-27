@@ -55,6 +55,7 @@ class VendorBillLineIn(BaseModel):
     unit: str = "Nos"
     rate: float = 0
     taxable_value: Optional[float] = None
+    gst_pct: Optional[float] = None  # item-wise GST inherited from PO
 
 
 class VendorBillIn(BaseModel):
@@ -118,7 +119,13 @@ def _compute_bill_totals(payload: VendorBillIn) -> Dict[str, float]:
         (ln.taxable_value if ln.taxable_value is not None else ln.quantity * ln.rate)
         for ln in payload.lines
     ), 2) if payload.lines else 0.0
-    gst = round(taxable * (payload.gst_rate or 0) / 100, 2)
+    if payload.lines and any(ln.gst_pct is not None for ln in payload.lines):
+        gst = round(sum(
+            (ln.taxable_value if ln.taxable_value is not None else ln.quantity * ln.rate)
+            * float(ln.gst_pct if ln.gst_pct is not None else (payload.gst_rate or 0)) / 100
+            for ln in payload.lines), 2)
+    else:
+        gst = round(taxable * (payload.gst_rate or 0) / 100, 2)
     cgst = sgst = igst = 0.0
     if payload.is_intra_state:
         cgst = sgst = round(gst / 2, 2)
@@ -208,18 +215,27 @@ async def grn_prefill(grn_number: str = Query(...),
         if acc <= 0:
             continue
         rate = 0.0
+        matched = None
         idx = it.get("po_item_index")
         if idx is not None and 0 <= int(idx) < len(po_items):
-            rate = float(po_items[int(idx)].get("rate") or 0)
+            matched = po_items[int(idx)]
+            rate = float(matched.get("rate") or 0)
         if not rate and it.get("item_id"):
             for p_it in po_items:
                 if p_it.get("item_id") == it.get("item_id"):
+                    matched = p_it
                     rate = float(p_it.get("rate") or 0)
                     break
         if not rate and po and len(po_items) <= 1:
+            matched = po_items[0] if po_items else None
             rate = float(po.get("rate") or 0)
+        gst_pct = None
+        if matched and matched.get("gst_pct") is not None:
+            gst_pct = float(matched["gst_pct"])
+        elif po and po.get("gst_pct") is not None:
+            gst_pct = float(po["gst_pct"])
         lines.append({"description": it.get("item_name") or "", "quantity": acc,
-                      "unit": it.get("unit") or "Nos", "rate": rate})
+                      "unit": it.get("unit") or "Nos", "rate": rate, "gst_pct": gst_pct})
     bank = None
     for acct in (vendor or {}).get("bank_accounts") or []:
         if acct.get("is_default"):
