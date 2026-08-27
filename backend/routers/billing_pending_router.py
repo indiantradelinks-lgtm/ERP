@@ -380,7 +380,8 @@ async def send_billing_reminder(month: str, *, queued_by: str = "scheduler",
     text = f"Billing pending for {len(pending)} project(s) in {month}: " + \
         ", ".join(f"{r['project_code']} ({r.get('project_manager') or 'PM —'})" for r in pending)
     outbox_id = await _queue_outbox(
-        sender_type="shared", sender_user_id="", sender_email="", sender_display_name="ERP Billing Bot",
+        sender_type="system", sender_purpose="noreply",
+        sender_user_id="", sender_email="", sender_display_name="ERP Billing Bot",
         to=recipients, cc=[], bcc=[], subject=subject, body_text=text, body_html=html,
         reply_to=None, attachments_inline=[], file_ids=[],
         related={"type": "billing_reminder", "month": month}, queued_by=queued_by)

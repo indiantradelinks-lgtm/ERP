@@ -134,13 +134,25 @@ async def _send_and_log(outbox_id: str) -> dict:
         username = creds["smtp_username"]
         from_name = creds.get("display_name") or None
     else:
-        if not shared_mailbox_configured():
-            result = {"ok": False, "error_type": "auth", "last_error": "Shared mailbox not configured (.env)"}
-            await _persist_outbox_record(rec, result, sent_via="shared")
-            return result
-        username = SHARED_USERNAME
-        password = SHARED_PASSWORD
-        from_name = rec.get("from_name") or SHARED_DISPLAY_NAME
+        username = password = None
+        purpose = rec.get("sender_purpose")
+        if sender_type == "system" and purpose:
+            mb = await db.system_mailboxes.find_one({"purpose": purpose, "active": {"$ne": False}}, {"_id": 0})
+            if mb:
+                try:
+                    password = decrypt_secret(mb["encrypted_app_password"])
+                    username = mb["email"]
+                    from_name = rec.get("from_name") or mb.get("display_name") or SHARED_DISPLAY_NAME
+                except Exception as e:
+                    logger.warning(f"System mailbox '{purpose}' decrypt failed, falling back to shared: {e}")
+        if not username:  # fallback: env shared mailbox
+            if not shared_mailbox_configured():
+                result = {"ok": False, "error_type": "auth", "last_error": "Shared mailbox not configured (.env)"}
+                await _persist_outbox_record(rec, result, sent_via="shared")
+                return result
+            username = SHARED_USERNAME
+            password = SHARED_PASSWORD
+            from_name = rec.get("from_name") or SHARED_DISPLAY_NAME
 
     # Resolve attachments
     attachments: List[Attachment] = []
@@ -326,10 +338,12 @@ async def _queue_outbox(
     file_ids: List[str],
     related: Optional[dict],
     queued_by: str,
+    sender_purpose: str = "",
 ) -> str:
     rec = {
         "id": new_id(),
         "sender_type": sender_type,
+        "sender_purpose": sender_purpose or None,
         "sender_user_id": sender_user_id,
         "sender_email": sender_email,
         "sender_display_name": sender_display_name,
@@ -496,3 +510,96 @@ async def ensure_email_indexes() -> None:
     await db.email_outbox.create_index([("sender_type", 1), ("created_at", -1)])
     await db.email_outbox.create_index([("queued_by", 1), ("created_at", -1)])
     await db.email_outbox.create_index("created_at")
+
+
+# ---------------------------------------------------------------------------
+# System mailboxes (purpose-based senders: sales@, purchase@, noreply@ …)
+# ---------------------------------------------------------------------------
+class SystemMailboxIn(BaseModel):
+    purpose: str
+    email: str
+    display_name: Optional[str] = None
+    app_password: Optional[str] = None
+    active: bool = True
+
+
+def _require_super(user: dict):
+    if user.get("role") not in {"super_admin", "director"}:
+        raise HTTPException(status_code=403, detail="not allowed")
+
+
+def _mask_email(e: str) -> str:
+    try:
+        local, dom = e.split("@", 1)
+        return f"{local[0]}*****{local[-1]}@{dom}"
+    except Exception:
+        return "*****"
+
+
+@router.get("/system-mailboxes")
+async def list_system_mailboxes(user: dict = Depends(get_current_user)):
+    _require_super(user)
+    rows = await db.system_mailboxes.find({}, {"_id": 0, "encrypted_app_password": 0}).sort("purpose", 1).to_list(100)
+    return rows
+
+
+@router.post("/system-mailboxes")
+async def create_system_mailbox(payload: SystemMailboxIn, user: dict = Depends(get_current_user)):
+    _require_super(user)
+    if not fernet_ready():
+        raise HTTPException(status_code=500, detail="Encryption key (EMAIL_CRED_KEY) not configured")
+    purpose = payload.purpose.strip().lower().replace(" ", "_")
+    if not purpose or not payload.email or not payload.app_password:
+        raise HTTPException(status_code=400, detail="purpose, email and app_password are required")
+    if await db.system_mailboxes.find_one({"purpose": purpose}):
+        raise HTTPException(status_code=400, detail=f"Purpose '{purpose}' already exists — edit it instead")
+    rec = {"id": new_id(), "purpose": purpose, "email": payload.email.strip(),
+           "display_name": payload.display_name or "INDIAN TRADE LINKS",
+           "encrypted_app_password": encrypt_secret(payload.app_password.strip()),
+           "active": payload.active, "created_at": now_iso(),
+           "created_by": user.get("name") or user.get("email")}
+    await db.system_mailboxes.insert_one(rec)
+    return {"ok": True, "id": rec["id"], "purpose": purpose, "email": rec["email"]}
+
+
+@router.put("/system-mailboxes/{mid}")
+async def update_system_mailbox(mid: str, payload: SystemMailboxIn, user: dict = Depends(get_current_user)):
+    _require_super(user)
+    update = {"email": payload.email.strip(), "display_name": payload.display_name,
+              "active": payload.active, "updated_at": now_iso(),
+              "updated_by": user.get("name") or user.get("email")}
+    if payload.app_password:
+        if not fernet_ready():
+            raise HTTPException(status_code=500, detail="Encryption key not configured")
+        update["encrypted_app_password"] = encrypt_secret(payload.app_password.strip())
+    res = await db.system_mailboxes.update_one({"id": mid}, {"$set": update})
+    if not res.matched_count:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"ok": True}
+
+
+@router.delete("/system-mailboxes/{mid}")
+async def delete_system_mailbox(mid: str, user: dict = Depends(get_current_user)):
+    _require_super(user)
+    res = await db.system_mailboxes.delete_one({"id": mid})
+    if not res.deleted_count:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"ok": True}
+
+
+@router.post("/system-mailboxes/{mid}/test")
+async def test_system_mailbox(mid: str, body: SendTestRequest, user: dict = Depends(get_current_user)):
+    _require_super(user)
+    mb = await db.system_mailboxes.find_one({"id": mid}, {"_id": 0})
+    if not mb:
+        raise HTTPException(status_code=404, detail="Not found")
+    outbox_id = await _queue_outbox(
+        sender_type="system", sender_purpose=mb["purpose"], sender_user_id=user["id"],
+        sender_email=mb["email"], sender_display_name=mb.get("display_name"),
+        to=[body.to], cc=[], bcc=[],
+        subject=body.subject or f"ERP test — {mb['purpose']} mailbox",
+        body_text=body.body or f"Test email sent from the '{mb['purpose']}' system mailbox ({mb['email']}).",
+        body_html=None, reply_to=None, attachments_inline=[], file_ids=[],
+        related={"entity_type": "test", "entity_id": mb["purpose"]}, queued_by=user["id"])
+    result = await _send_and_log(outbox_id)
+    return {"outbox_id": outbox_id, "ok": result.get("ok"), "error": result.get("last_error")}

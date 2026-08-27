@@ -162,11 +162,92 @@ export default function EmailSettings() {
         </CardContent>
       </Card>
 
+      <SystemMailboxes />
+
       <div className="text-xs text-muted-foreground">
         <a href="/app/admin/email-outbox" className="text-primary inline-flex items-center gap-1 underline">
           Open Email Outbox <ExternalLink className="h-3 w-3" />
         </a>
       </div>
     </div>
+  );
+}
+
+function SystemMailboxes() {
+  const blank = { purpose: "", email: "", display_name: "INDIAN TRADE LINKS", app_password: "", active: true };
+  const [rows, setRows] = useState([]);
+  const [editing, setEditing] = useState(null);
+  const [testingId, setTestingId] = useState(null);
+  const load = async () => {
+    try { setRows((await api.get("/email/system-mailboxes")).data); } catch { /* non-admin */ }
+  };
+  useEffect(() => { load(); }, []);
+  const save = async () => {
+    if (!editing.purpose || !editing.email || (!editing.id && !editing.app_password)) {
+      toast.error("Purpose, email and app password are required"); return;
+    }
+    try {
+      if (editing.id) await api.put(`/email/system-mailboxes/${editing.id}`, editing);
+      else await api.post("/email/system-mailboxes", editing);
+      toast.success("Mailbox saved");
+      setEditing(null); load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Save failed"); }
+  };
+  const remove = async (r) => {
+    if (!window.confirm(`Delete '${r.purpose}' mailbox? Sends for this purpose will fall back to the default shared mailbox.`)) return;
+    try { await api.delete(`/email/system-mailboxes/${r.id}`); load(); } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+  };
+  const test = async (r) => {
+    const to = window.prompt("Send test email to:", r.email);
+    if (!to) return;
+    setTestingId(r.id);
+    try {
+      const { data } = await api.post(`/email/system-mailboxes/${r.id}/test`, { to });
+      data.ok ? toast.success(`Test sent from ${r.email}`) : toast.error(data.error || "Send failed");
+    } catch (e) { toast.error(e.response?.data?.detail || "Send failed"); }
+    finally { setTestingId(null); }
+  };
+  return (
+    <Card data-testid="system-mailboxes-card">
+      <CardHeader className="flex flex-row items-center pb-3">
+        <CardTitle className="text-sm font-display flex-1">Purpose-based System Mailboxes
+          <span className="block text-[11px] font-normal text-muted-foreground mt-1">Different sender for each purpose — e.g. sales@ for quotations, purchase@ for POs/RFQs, noreply@ for reminders. Add more anytime.</span>
+        </CardTitle>
+        <Button size="sm" onClick={() => setEditing({ ...blank })} data-testid="add-system-mailbox">+ Add Mailbox</Button>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {rows.length === 0 && <div className="text-xs text-muted-foreground">No purpose mailboxes yet — all system emails use the default shared mailbox from .env.</div>}
+        {rows.map((r) => (
+          <div key={r.id} className="flex items-center gap-3 border border-border rounded-sm px-3 py-2" data-testid={`mailbox-row-${r.purpose}`}>
+            <Badge variant="outline" className="rounded-sm text-[10px] uppercase">{r.purpose}</Badge>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold truncate">{r.email}</div>
+              <div className="text-[10px] text-muted-foreground">{r.display_name}</div>
+            </div>
+            <Badge variant="outline" className={`rounded-sm text-[10px] ${r.active ? "border-emerald-300 text-emerald-800 bg-emerald-50" : "border-slate-300 text-slate-500"}`}>{r.active ? "Active" : "Disabled"}</Badge>
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={testingId === r.id} onClick={() => test(r)} data-testid={`test-mailbox-${r.purpose}`}>{testingId === r.id ? "Sending…" : "Test"}</Button>
+            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditing({ ...r, app_password: "" })}>Edit</Button>
+            <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => remove(r)}>Delete</Button>
+          </div>
+        ))}
+        {editing && (
+          <div className="border border-primary/40 rounded-sm p-3 grid grid-cols-1 md:grid-cols-2 gap-3 mt-2" data-testid="mailbox-form">
+            <div><Label className="text-[10px] uppercase tracking-wider">Purpose (key) *</Label>
+              <Input value={editing.purpose} disabled={!!editing.id} placeholder="sales / procurement / noreply / hr…" onChange={(e) => setEditing({ ...editing, purpose: e.target.value })} className="h-9 mt-1" data-testid="mailbox-purpose" /></div>
+            <div><Label className="text-[10px] uppercase tracking-wider">Email Address *</Label>
+              <Input value={editing.email} placeholder="sales@indiantradelinks.in" onChange={(e) => setEditing({ ...editing, email: e.target.value })} className="h-9 mt-1" data-testid="mailbox-email" /></div>
+            <div><Label className="text-[10px] uppercase tracking-wider">Display Name</Label>
+              <Input value={editing.display_name || ""} onChange={(e) => setEditing({ ...editing, display_name: e.target.value })} className="h-9 mt-1" /></div>
+            <div><Label className="text-[10px] uppercase tracking-wider">M365 App Password {editing.id ? "(leave blank to keep current)" : "*"}</Label>
+              <Input type="password" value={editing.app_password} placeholder="16-character app password" onChange={(e) => setEditing({ ...editing, app_password: e.target.value })} className="h-9 mt-1" data-testid="mailbox-password" /></div>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editing.active} onChange={(e) => setEditing({ ...editing, active: e.target.checked })} /> Active</label>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" size="sm" onClick={() => setEditing(null)}>Cancel</Button>
+              <Button size="sm" onClick={save} data-testid="mailbox-save">Save</Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

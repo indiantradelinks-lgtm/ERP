@@ -5656,3 +5656,9 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 ### Iteration 187b (Aug 25, 2026) — noreply@ shared mailbox WORKING
 - M365_SMTP_SHARED_USERNAME=noreply@indiantradelinks.in + app password (label NOREPLYITL) configured in preview backend/.env. Live test email SENT successfully (status: sent, via shared). All system emails (billing reminders, notifications) now send from noreply@.
 - PRODUCTION: user must set the same two env vars in production environment settings and redeploy.
+
+### Iteration 188 (Aug 27, 2026) — Purpose-based system mailboxes
+- New `system_mailboxes` collection (purpose key → email + Fernet-encrypted app password + display name + active). CRUD (super_admin/director): GET/POST/PUT/DELETE /api/email/system-mailboxes (+ /{id}/test live send). _queue_outbox gained sender_purpose param; _send_and_log resolves sender_type="system" via purpose with graceful fallback to env shared mailbox.
+- Billing reminder now sends via purpose "noreply". Registered noreply@indiantradelinks.in in the registry and verified LIVE test send (ok:true).
+- Admin UI: "Purpose-based System Mailboxes" card on /app/admin/email-settings (add/edit/delete/test; purpose examples sales/procurement/noreply/hr). Screenshot verified.
+- NOTE: registry lives in DB → works in PRODUCTION without env changes once user adds mailboxes there (each mailbox needs its own M365 app password, same steps as noreply).
