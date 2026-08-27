@@ -5662,3 +5662,9 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Billing reminder now sends via purpose "noreply". Registered noreply@indiantradelinks.in in the registry and verified LIVE test send (ok:true).
 - Admin UI: "Purpose-based System Mailboxes" card on /app/admin/email-settings (add/edit/delete/test; purpose examples sales/procurement/noreply/hr). Screenshot verified.
 - NOTE: registry lives in DB → works in PRODUCTION without env changes once user adds mailboxes there (each mailbox needs its own M365 app password, same steps as noreply).
+
+### Iteration 189 (Aug 27, 2026) — Multi-employee Service/Payment Requests (manual + Excel + AI)
+- RequestIn.beneficiaries [{employee_id?, employee_code?, employee_name, amount, remarks}] — validated (name + amount>0), request amount auto = sum, stored with beneficiary_count. Paid-to validation skipped when beneficiaries present (frontend).
+- Endpoints (project_requests_router): GET /project-requests/beneficiaries/template (xlsx + Employee Master reference sheet), POST .../parse (xlsx upload → matched rows, flexible headers, errors list), POST .../ai-parse ({text} → gpt-5.4 via emergentintegrations extracts name/amount/remarks JSON → employee matching). _match_employees matches by employee_id/emp_code/name (case-insensitive), flags unmatched.
+- Frontend ProjectRequests.jsx: BeneficiariesSection in Service/Payment form (below Amount) — manual rows (code/name/amount/remarks, unmatched highlighted amber), Template / Bulk Upload / AI Paste buttons, auto-total locks Amount field. Detail dialog shows Beneficiaries table.
+- Tested: template + Excel parse (match/unmatch/neg-amount error), AI paste (messy text → 3 rows, ₹8,700), request create with 2 beneficiaries (amount 7500, count 2), UI screenshot (auto-total works). Test request cleaned.

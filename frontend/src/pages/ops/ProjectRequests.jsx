@@ -64,6 +64,7 @@ export default function ProjectRequests() {
   const [form, setForm] = useState(blank());
   const [attFiles, setAttFiles] = useState([]);
   const [stock, setStock] = useState(null);
+  const [benef, setBenef] = useState([]);
   const [detail, setDetail] = useState(null);
   const [attachFor, setAttachFor] = useState(null);
   const [ccList, setCcList] = useState([]);
@@ -193,12 +194,13 @@ export default function ProjectRequests() {
   };
 
   const estValue = useMemo(() => {
+    if (benef.length) return benef.reduce((a, b) => a + (Number(b.amount) || 0), 0);
     if (form.amount) return Number(form.amount);
     if (form.monthly_rate) return Number(form.monthly_rate) * Number(form.months || 1);
     const itemsTotal = (form.items || []).reduce((a, i) => a + (Number(i.quantity) || 0) * (Number(i.rate) || 0), 0);
     if (form.request_type === "manpower" && Number(form.months)) return itemsTotal * Number(form.months);
     return itemsTotal;
-  }, [form]);
+  }, [form, benef]);
 
   const setItem = (i, patch) => setForm((f) => ({ ...f, items: f.items.map((x, ix) => ix === i ? { ...x, ...patch } : x) }));
 
@@ -222,14 +224,16 @@ export default function ProjectRequests() {
     if (isStockable && !form.items.some((i) => (i.name || "").trim() && Number(i.quantity) > 0)) { toast.error("Add at least one item"); return; }
     if (estValue <= 0 && !isStockable && !isManpower) { toast.error("Enter amount / rate"); return; }
     if (!form.cost_center_id) { toast.error(isSelf ? "Select a Head Office Cost Center before submitting" : "Cost Center is mandatory — select a valid Cost Center before submitting"); return; }
-    if (isPayment && mode === "service" && !isSelf) {
+    if (isPayment && mode === "service" && !isSelf && benef.length === 0) {
       if (form.paid_to_type === "vendor" && !form.vendor) { toast.error("Select the approved vendor to be paid"); return; }
       if (form.paid_to_type === "person" && !form.employee_id) { toast.error("Select the employee (Emp ID) to be paid"); return; }
       if (!form.expense_date) { toast.error("Select expense date"); return; }
     }
     try {
       const payload = { ...form,
-        amount: form.amount ? Number(form.amount) : null,
+        amount: benef.length ? benef.reduce((a, b) => a + (Number(b.amount) || 0), 0) : (form.amount ? Number(form.amount) : null),
+        beneficiaries: benef.length ? benef.filter((b) => (b.employee_name || "").trim() && Number(b.amount) > 0)
+          .map((b) => ({ ...b, amount: Number(b.amount) })) : null,
         monthly_rate: form.monthly_rate ? Number(form.monthly_rate) : null,
         months: form.months ? Number(form.months) : null,
         items: form.items.filter((i) => (i.name || "").trim())
@@ -237,7 +241,7 @@ export default function ProjectRequests() {
                          unit_weight_kg: Number(i.unit_weight_kg) || 0 })) };
       const r = await api.post("/project-requests", payload);
       toast.success(`${r.data.request_no} raised → routes to ${r.data.owning_dept} after Project Head approval`);
-      setCreating(false); setForm(blank()); setAttFiles([]); setStock(null); load();
+      setCreating(false); setForm(blank()); setAttFiles([]); setStock(null); setBenef([]); load();
     } catch (e) { toast.error(e?.response?.data?.detail || "Failed"); }
   };
 
@@ -728,8 +732,16 @@ export default function ProjectRequests() {
             )}
             {!isStockable && !isManpower && (
               <div className="col-span-2"><Label className="text-[10px] uppercase tracking-wider">{form.request_type === "accommodation" ? "One-time / Deposit Amount (₹) *" : "Amount (₹) *"}</Label>
-                <Input type="number" min="0" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                  placeholder="Enter the required amount" className="h-10 rounded-sm mt-1 tabular text-base font-semibold" data-testid="req-form-amount" /></div>
+                <Input type="number" min="0" value={benef.length ? benef.reduce((a, b) => a + (Number(b.amount) || 0), 0) : form.amount}
+                  disabled={benef.length > 0}
+                  onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                  placeholder="Enter the required amount" className="h-10 rounded-sm mt-1 tabular text-base font-semibold" data-testid="req-form-amount" />
+                {benef.length > 0 && <div className="text-[10px] text-muted-foreground mt-0.5">Auto-total of {benef.length} employee(s) below</div>}
+              </div>
+            )}
+
+            {!isStockable && !isManpower && (
+              <BeneficiariesSection rows={benef} setRows={setBenef} />
             )}
 
             <div className="col-span-2"><Label className="text-[10px] uppercase tracking-wider">Description / Justification *</Label>
@@ -783,6 +795,21 @@ export default function ProjectRequests() {
                   ))}
                 </div>
                 {detail.description && <div className="text-xs bg-muted/30 rounded-sm p-2">{detail.description}</div>}
+                {(detail.beneficiaries || []).length > 0 && (
+                  <div className="border border-border rounded-sm">
+                    <div className="text-[10px] uppercase tracking-wider font-bold px-2 py-1.5 bg-muted/40">Beneficiaries ({detail.beneficiaries.length}) — Total ₹{Number(detail.amount || 0).toLocaleString("en-IN")}</div>
+                    <div className="max-h-48 overflow-y-auto">
+                      {detail.beneficiaries.map((b, i) => (
+                        <div key={i} className="flex items-center gap-2 px-2 py-1 text-xs border-t border-border/60" data-testid={`detail-benef-${i}`}>
+                          <span className="font-mono-data text-[10px] w-16 shrink-0">{b.employee_code || "—"}</span>
+                          <span className="flex-1 font-semibold truncate">{b.employee_name}</span>
+                          <span className="text-muted-foreground truncate max-w-[160px]">{b.remarks}</span>
+                          <span className="tabular font-bold">₹{Number(b.amount).toLocaleString("en-IN")}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {(detail.items || []).length > 0 && (
                   <div className="border border-border rounded-sm">
                     <div className="text-[10px] font-bold uppercase tracking-wider text-primary p-2 border-b">
@@ -892,3 +919,85 @@ export default function ProjectRequests() {
 }
 
 
+
+function BeneficiariesSection({ rows, setRows }) {
+  const [open, setOpen] = useState(rows.length > 0);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiText, setAiText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const setRow = (i, patch) => setRows(rows.map((r, ix) => ix === i ? { ...r, ...patch } : r));
+  const total = rows.reduce((a, b) => a + (Number(b.amount) || 0), 0);
+
+  const applyParsed = (d) => {
+    if (!d.beneficiaries?.length) { toast.error("No valid rows found"); return; }
+    setRows(d.beneficiaries);
+    setOpen(true);
+    const msg = `${d.beneficiaries.length} employee(s) loaded · Total ₹${d.total.toLocaleString("en-IN")}`;
+    d.unmatched > 0 ? toast.warning(`${msg} — ${d.unmatched} name(s) not found in Employee Master (highlighted)`) : toast.success(msg);
+    if (d.errors?.length) toast.warning(`${d.errors.length} row(s) skipped: ${d.errors.map((e) => `row ${e.row} (${e.error})`).join("; ")}`);
+  };
+  const uploadExcel = async (e) => {
+    const file = e.target.files?.[0]; e.target.value = "";
+    if (!file) return;
+    setBusy(true);
+    try {
+      const fd = new FormData(); fd.append("file", file);
+      const { data } = await api.post("/project-requests/beneficiaries/parse", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      applyParsed(data);
+    } catch (er) { toast.error(er?.response?.data?.detail || "Upload failed"); }
+    finally { setBusy(false); }
+  };
+  const aiParse = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post("/project-requests/beneficiaries/ai-parse", { text: aiText });
+      applyParsed(data); setAiOpen(false); setAiText("");
+    } catch (er) { toast.error(er?.response?.data?.detail || "AI extraction failed"); }
+    finally { setBusy(false); }
+  };
+  const downloadTemplate = async () => {
+    try {
+      const { data } = await api.get("/project-requests/beneficiaries/template", { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([data]));
+      const a = document.createElement("a"); a.href = url; a.download = "payment-beneficiaries-template.xlsx";
+      document.body.appendChild(a); a.click(); a.remove(); window.URL.revokeObjectURL(url);
+    } catch { toast.error("Template download failed"); }
+  };
+
+  return (
+    <div className="col-span-2 border border-border rounded-sm p-2.5 bg-muted/20" data-testid="beneficiaries-section">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Label className="text-[10px] uppercase tracking-wider flex-1">Multiple Employees (bulk payment){rows.length > 0 && ` — ${rows.length} · ₹${total.toLocaleString("en-IN")}`}</Label>
+        <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={downloadTemplate} data-testid="benef-template-btn">Template</Button>
+        <label className="inline-flex">
+          <input type="file" accept=".xlsx" className="hidden" onChange={uploadExcel} data-testid="benef-upload-input" />
+          <Button type="button" size="sm" variant="outline" className="h-7 text-xs" disabled={busy} asChild><span className="cursor-pointer">{busy ? "Working…" : "Bulk Upload"}</span></Button>
+        </label>
+        <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={() => setAiOpen(!aiOpen)} data-testid="benef-ai-btn">AI Paste</Button>
+        <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setRows([...rows, { employee_code: "", employee_name: "", amount: "", remarks: "", matched: true }]); setOpen(true); }} data-testid="benef-add-row">+ Add Employee</Button>
+        {rows.length > 0 && <Button type="button" size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => setRows([])}>Clear</Button>}
+      </div>
+      {aiOpen && (
+        <div className="mt-2 space-y-2">
+          <Textarea value={aiText} onChange={(e) => setAiText(e.target.value)} className="min-h-[90px] text-xs"
+            placeholder={"Paste any list, e.g.:\n1) Arjun Reddy - Rs 5,000 (hospital bill)\nDeepa Nair ₹2500\nRavi Kumar.... 1200 medicine"} data-testid="benef-ai-text" />
+          <Button type="button" size="sm" disabled={busy || !aiText.trim()} onClick={aiParse} data-testid="benef-ai-extract">{busy ? "Extracting…" : "Extract with AI"}</Button>
+        </div>
+      )}
+      {open && rows.length > 0 && (
+        <div className="mt-2 max-h-64 overflow-y-auto space-y-1">
+          {rows.map((r, i) => (
+            <div key={i} className="grid grid-cols-[90px_1fr_110px_1fr_28px] gap-1.5 items-center" data-testid={`benef-row-${i}`}>
+              <Input value={r.employee_code || ""} placeholder="Code" onChange={(e) => setRow(i, { employee_code: e.target.value })} className="h-8 text-xs" />
+              <Input value={r.employee_name || ""} placeholder="Employee name *" onChange={(e) => setRow(i, { employee_name: e.target.value, matched: true })}
+                className={`h-8 text-xs ${r.matched === false ? "border-amber-500 bg-amber-50" : ""}`} title={r.matched === false ? "Not found in Employee Master — verify spelling" : ""} />
+              <Input type="number" min="0" value={r.amount} placeholder="Amount *" onChange={(e) => setRow(i, { amount: e.target.value })} className="h-8 text-xs tabular" />
+              <Input value={r.remarks || ""} placeholder="Remarks" onChange={(e) => setRow(i, { remarks: e.target.value })} className="h-8 text-xs" />
+              <button type="button" onClick={() => setRows(rows.filter((_, ix) => ix !== i))} className="text-destructive text-sm font-bold" title="Remove">×</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

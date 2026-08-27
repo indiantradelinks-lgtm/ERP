@@ -175,6 +175,7 @@ class RequestIn(BaseModel):
     employee_id: Optional[str] = None      # HR master employee (service/payment requests)
     expense_type: Optional[str] = None     # override (defaults to routing meta)
     expense_date: Optional[str] = None
+    beneficiaries: Optional[List[Dict[str, Any]]] = None  # [{employee_id?, employee_code?, employee_name, amount, remarks?}]
     settlement_mode: Optional[str] = None  # petty_cash | employee_reimbursement | vendor_payable
     paid_to_type: Optional[str] = None     # vendor | person
 
@@ -307,6 +308,21 @@ async def create_request(p: RequestIn, request: Request,
     if p.request_type not in _rtypes:
         raise HTTPException(400, f"request_type must be one of {sorted(_rtypes)}")
     meta = _rtypes[p.request_type]
+    beneficiaries = None
+    if p.beneficiaries:
+        beneficiaries = []
+        for i, b in enumerate(p.beneficiaries, 1):
+            name = str(b.get("employee_name") or "").strip()
+            try:
+                amt = float(b.get("amount") or 0)
+            except (TypeError, ValueError):
+                amt = 0
+            if not name or amt <= 0:
+                raise HTTPException(400, f"Beneficiary row {i}: employee name and a positive amount are required")
+            beneficiaries.append({"employee_id": b.get("employee_id"), "employee_code": b.get("employee_code"),
+                                  "employee_name": name, "amount": round(amt, 2),
+                                  "remarks": str(b.get("remarks") or "").strip()})
+        p.amount = round(sum(x["amount"] for x in beneficiaries), 2)
     project = None
     if p.project_id:
         project = await db.projects.find_one({"id": p.project_id}, {"_id": 0})
@@ -397,6 +413,7 @@ async def create_request(p: RequestIn, request: Request,
         "monthly_rate": p.monthly_rate, "months": p.months,
         "from_location": p.from_location, "to_location": p.to_location,
         "amount": p.amount, "est_value": round(est, 2), "remarks": p.remarks,
+        "beneficiaries": beneficiaries, "beneficiary_count": len(beneficiaries) if beneficiaries else 0,
         "is_large_value": est > threshold,
         "status": "pending_approval", "chain": chain, "current_step": 0,
         "pr_id": None, "pr_number": None, "expense_id": None,
@@ -1077,3 +1094,135 @@ async def export_requests(fmt: str, project_code: Optional[str] = None, status: 
              if fmt == "xlsx" else "application/pdf")
     return StreamingResponse(io.BytesIO(data), media_type=media,
                              headers={"Content-Disposition": f'attachment; filename="project_requests.{fmt}"'})
+
+
+# ─── Multi-employee beneficiaries: template / excel parse / AI parse (Iter 189) ───
+async def _match_employees(rows: List[dict]) -> Dict[str, Any]:
+    """Attach employee_id/code by matching name or code against Employee Master."""
+    emp_by_key: Dict[str, dict] = {}
+    async for e in db.employees.find({}, {"_id": 0, "id": 1, "name": 1, "employee_id": 1, "emp_code": 1}):
+        for k in (e.get("employee_id"), e.get("emp_code")):
+            if k:
+                emp_by_key[str(k).strip().lower()] = e
+        if e.get("name"):
+            emp_by_key.setdefault(e["name"].strip().lower(), e)
+    out, errors = [], []
+    for i, r in enumerate(rows, 1):
+        name = str(r.get("employee_name") or "").strip()
+        code = str(r.get("employee_code") or "").strip()
+        try:
+            amt = float(str(r.get("amount") or 0).replace(",", ""))
+        except ValueError:
+            amt = 0
+        if not name and not code:
+            continue
+        if amt <= 0:
+            errors.append({"row": i, "name": name or code, "error": "Amount must be a positive number"})
+            continue
+        emp = emp_by_key.get(code.lower()) or emp_by_key.get(name.lower())
+        out.append({"employee_id": (emp or {}).get("id"),
+                    "employee_code": code or (emp or {}).get("employee_id") or (emp or {}).get("emp_code"),
+                    "employee_name": (emp or {}).get("name") or name,
+                    "amount": round(amt, 2),
+                    "remarks": str(r.get("remarks") or "").strip(),
+                    "matched": bool(emp)})
+    return {"beneficiaries": out, "errors": errors,
+            "total": round(sum(x["amount"] for x in out), 2),
+            "matched": sum(1 for x in out if x["matched"]),
+            "unmatched": sum(1 for x in out if not x["matched"])}
+
+
+@router.get("/project-requests/beneficiaries/template")
+async def beneficiaries_template(user: dict = Depends(require_permission("project_requests", "read"))):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    from io import BytesIO
+    from fastapi import Response
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Beneficiaries"
+    ws.append(["Employee Code", "Employee Name", "Amount", "Remarks"])
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="0F172A")
+    for i, w in enumerate([16, 30, 14, 40], start=1):
+        ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
+    ref = wb.create_sheet("Employee Master (reference)")
+    ref.append(["Employee Code", "Employee Name"])
+    async for e in db.employees.find({"active": {"$ne": False}}, {"_id": 0, "name": 1, "employee_id": 1, "emp_code": 1}).sort("name", 1):
+        ref.append([e.get("employee_id") or e.get("emp_code") or "", e.get("name") or ""])
+    ref.column_dimensions["A"].width = 16
+    ref.column_dimensions["B"].width = 32
+    buf = BytesIO()
+    wb.save(buf)
+    return Response(content=buf.getvalue(),
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": 'attachment; filename="payment-beneficiaries-template.xlsx"'})
+
+
+@router.post("/project-requests/beneficiaries/parse")
+async def beneficiaries_parse(file: UploadFile = File(...),
+                              user: dict = Depends(require_permission("project_requests", "write"))):
+    from openpyxl import load_workbook
+    from io import BytesIO
+    if not (file.filename or "").lower().endswith((".xlsx", ".xlsm")):
+        raise HTTPException(400, "Upload an .xlsx file (download the template)")
+    try:
+        wb = load_workbook(BytesIO(await file.read()), data_only=True)
+    except Exception:
+        raise HTTPException(400, "Could not read the Excel file")
+    ws = wb.worksheets[0]
+    header = [str(c.value or "").strip().lower() for c in ws[1]]
+
+    def col(names):
+        for n in names:
+            if n in header:
+                return header.index(n)
+        return None
+    ci_code = col(["employee code", "emp code", "code"])
+    ci_name = col(["employee name", "name", "employee"])
+    ci_amt = col(["amount", "amount (₹)", "amt"])
+    ci_rem = col(["remarks", "remark", "purpose"])
+    if ci_name is None and ci_code is None:
+        raise HTTPException(400, "Unrecognized format — first sheet needs 'Employee Name' (or Code) and 'Amount' columns")
+    rows = []
+    for r in ws.iter_rows(min_row=2, values_only=True):
+        rows.append({"employee_code": r[ci_code] if ci_code is not None and ci_code < len(r) else "",
+                     "employee_name": r[ci_name] if ci_name is not None and ci_name < len(r) else "",
+                     "amount": r[ci_amt] if ci_amt is not None and ci_amt < len(r) else 0,
+                     "remarks": r[ci_rem] if ci_rem is not None and ci_rem < len(r) else ""})
+    return await _match_employees(rows)
+
+
+class AiBeneficiariesIn(BaseModel):
+    text: str
+
+
+@router.post("/project-requests/beneficiaries/ai-parse")
+async def beneficiaries_ai_parse(p: AiBeneficiariesIn,
+                                 user: dict = Depends(require_permission("project_requests", "write"))):
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    key = os.environ.get("EMERGENT_LLM_KEY")
+    if not key:
+        raise HTTPException(500, "EMERGENT_LLM_KEY not configured")
+    if not (p.text or "").strip():
+        raise HTTPException(400, "Paste the employee payment list first")
+    chat = LlmChat(
+        api_key=key, session_id=f"benef-{new_id()[:8]}",
+        system_message=("You extract employee payment lists (e.g. medical reimbursements) from messy pasted text or tables. "
+                        "Return ONLY a JSON array (no markdown). Each element: "
+                        '{"employee_code": str, "employee_name": str, "amount": number, "remarks": str}. '
+                        "Skip headers/totals. Amounts are INR numbers (strip ₹, Rs, commas). Use empty string when unknown.")
+    ).with_model("openai", "gpt-5.4")
+    try:
+        resp = await chat.send_message(UserMessage(text=f"Extract the employee payment list:\n\n{p.text[:20000]}"))
+    except Exception as e:
+        raise HTTPException(502, f"AI extraction failed: {e}")
+    m = re.search(r"\[.*\]", str(resp).strip(), re.S)
+    if not m:
+        raise HTTPException(422, "AI could not find an employee payment list in the pasted text")
+    try:
+        rows = json.loads(m.group(0))
+    except Exception:
+        raise HTTPException(422, "AI returned unparseable data — try the Excel template instead")
+    return await _match_employees(rows)
