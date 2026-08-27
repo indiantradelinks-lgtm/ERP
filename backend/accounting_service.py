@@ -677,6 +677,8 @@ async def ar_aging(asof: Optional[str] = None) -> Dict[str, Any]:
     db.payments_received to subtract receipts. Buckets by invoice date."""
     asof_dt = datetime.fromisoformat(asof) if asof else datetime.now(timezone.utc)
     invoices = await db.invoices.find({}, {"_id": 0}).to_list(5000)
+    client_invoices = await db.client_invoices.find(
+        {"status": {"$nin": ["draft", "cancelled", "rejected"]}}, {"_id": 0}).to_list(5000)
     receipts = await db.payments_received.find({}, {"_id": 0}).to_list(10000)
     rcpt_by_inv: Dict[str, float] = {}
     for r in receipts:
@@ -711,6 +713,29 @@ async def ar_aging(asof: Optional[str] = None) -> Dict[str, Any]:
             "gross": gross, "paid": round(paid, 2), "outstanding": outstanding,
             "days_overdue": days, "bucket": bucket,
         })
+    for inv in client_invoices:
+        gross = float(inv.get("amount") or 0)
+        outstanding = inv.get("outstanding")
+        outstanding = round(float(outstanding), 2) if outstanding is not None else round(gross - float(inv.get("paid_amount") or 0), 2)
+        if outstanding <= 0.01:
+            continue
+        inv_date = inv.get("invoice_date") or inv.get("created_at") or asof_dt.date().isoformat()
+        try:
+            dt = datetime.fromisoformat(inv_date[:10])
+            days = max(0, (asof_dt.date() - dt.date()).days)
+        except Exception:
+            days = 0
+        bucket = _bucket_age(days)
+        bucket_totals[bucket] += outstanding
+        rows.append({
+            "invoice_id": inv.get("id"),
+            "invoice_no": inv.get("invoice_no"),
+            "date": inv_date[:10],
+            "client": inv.get("client_name"),
+            "project_id": inv.get("project_id"),
+            "gross": gross, "paid": round(float(inv.get("paid_amount") or 0), 2), "outstanding": outstanding,
+            "days_overdue": days, "bucket": bucket,
+        })
     rows.sort(key=lambda x: x["days_overdue"], reverse=True)
     return {
         "asof": asof_dt.date().isoformat(),
@@ -724,6 +749,8 @@ async def ap_aging(asof: Optional[str] = None) -> Dict[str, Any]:
     """Aged Accounts Payable from vendor_invoices vs vendor_payments."""
     asof_dt = datetime.fromisoformat(asof) if asof else datetime.now(timezone.utc)
     invoices = await db.vendor_invoices.find({}, {"_id": 0}).to_list(5000)
+    vendor_bills = await db.vendor_bills.find(
+        {"status": {"$nin": ["draft", "cancelled", "rejected"]}}, {"_id": 0}).to_list(5000)
     payments = await db.vendor_payments.find({}, {"_id": 0}).to_list(10000)
     pay_by_inv: Dict[str, float] = {}
     for p in payments:
@@ -756,6 +783,29 @@ async def ap_aging(asof: Optional[str] = None) -> Dict[str, Any]:
             "vendor": inv.get("vendor_name") or inv.get("vendor"),
             "project_id": inv.get("project_id"),
             "gross": gross, "paid": round(paid, 2), "outstanding": outstanding,
+            "days_overdue": days, "bucket": bucket,
+        })
+    for vb in vendor_bills:
+        gross = float((vb.get("totals") or {}).get("net_payable") or vb.get("amount") or 0)
+        outstanding = vb.get("outstanding")
+        outstanding = round(float(outstanding), 2) if outstanding is not None else round(gross - float(vb.get("paid_amount") or 0), 2)
+        if outstanding <= 0.01:
+            continue
+        inv_date = vb.get("invoice_date") or vb.get("created_at") or asof_dt.date().isoformat()
+        try:
+            dt = datetime.fromisoformat(inv_date[:10])
+            days = max(0, (asof_dt.date() - dt.date()).days)
+        except Exception:
+            days = 0
+        bucket = _bucket_age(days)
+        bucket_totals[bucket] += outstanding
+        rows.append({
+            "invoice_id": vb.get("id"),
+            "invoice_no": vb.get("invoice_no") or vb.get("bill_number") or vb.get("bill_no"),
+            "date": inv_date[:10],
+            "vendor": vb.get("vendor_name"),
+            "project_id": vb.get("project_id"),
+            "gross": gross, "paid": round(float(vb.get("paid_amount") or 0), 2), "outstanding": outstanding,
             "days_overdue": days, "bucket": bucket,
         })
     rows.sort(key=lambda x: x["days_overdue"], reverse=True)

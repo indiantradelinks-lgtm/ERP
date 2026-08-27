@@ -5679,3 +5679,10 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Frontend (`VendorBillingViews.jsx`): lines table has editable "GST %" column (placeholder = form default) + read-only "GST Amt" per line; totals useMemo computes GST line-wise (fallback to form.gst_rate when a line has no gst_pct); global field renamed "Default GST % (lines w/o PO GST)"; summary tile shows "GST (line-wise)".
 - Backend (`vendor_billing_router.py` compute_totals): already summed per-line gst_pct when present — unchanged.
 - Verified E2E: GRN-2026-0021 → PO-2026-0064 (5/18/28%): taxable 4500, GST 765 (75+270+420), gross 5265 (vs flat-18% 810). Test bill created via curl and deleted. UI screenshot confirmed prefilled 5/18/28 columns.
+
+## Bug Fix: Accounts Dashboard Receivables showing ₹0 (June 2026)
+- Root cause: `ar_aging` read legacy empty `db.invoices`; `ap_aging` read legacy `db.vendor_invoices` only; retention receivable relied solely on GL a/c 1210.
+- Fix (`accounting_service.py`): ar_aging now also aggregates `client_invoices` (status not draft/cancelled/rejected, uses `outstanding`/`paid_amount`); ap_aging also aggregates `vendor_bills` (net_payable − paid). Legacy collections still included.
+- Fix (`accounts_router.py` /accounts/dashboard): retention_receivable falls back to Σ(client_invoices.totals.retention_amount − retention_received) when GL 1210 = 0.
+- Verified: dashboard now shows Total Receivables ₹5,16,600, Total Payables ₹2,94,218, Retention Receivable ₹10,000 (curl + UI screenshot).
+- NOTE: user's screenshot values matched PRODUCTION; fix lives in preview → user must Redeploy.

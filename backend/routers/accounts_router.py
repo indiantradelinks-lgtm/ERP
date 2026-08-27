@@ -619,13 +619,24 @@ async def accounts_dashboard(user: dict = Depends(require_permission("accounting
 
     recent_tx = await db.journal_entries.find({}, {"_id": 0}).sort("created_at", -1).limit(10).to_list(10)
 
+    retention_recv = balance_for("1210")
+    if not retention_recv:
+        agg = await db.client_invoices.aggregate([
+            {"$match": {"status": {"$nin": ["draft", "cancelled", "rejected"]}}},
+            {"$project": {"pending": {"$subtract": [
+                {"$ifNull": ["$totals.retention_amount", 0]},
+                {"$ifNull": ["$retention_received", 0]}]}}},
+            {"$group": {"_id": None, "total": {"$sum": "$pending"}}},
+        ]).to_list(1)
+        retention_recv = round(float(agg[0]["total"]), 2) if agg else 0.0
+
     return {
         "as_of": now_iso(),
         "cards": {
             # Receivables / Payables
             "total_receivables":   ar_buckets.get("total_outstanding", 0),
             "total_payables":      ap_buckets.get("total_outstanding", 0),
-            "retention_receivable": balance_for("1210"),
+            "retention_receivable": retention_recv,
             "retention_payable":    balance_for("2110"),
             "vendor_payable":      balance_for("2100"),
             "client_advances":     balance_for("2500"),
