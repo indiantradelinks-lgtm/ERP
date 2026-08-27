@@ -5692,3 +5692,9 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Parent gets `split_into_children` [ids] + `split_child_nos`; excluded from Payment Processing queue (payment_processing_router query) and from Project P&L service-payments aggregation (project_expenses_router) to avoid double counting.
 - Each child is verified / bank-filed / marked paid independently (existing endpoints untouched, children are ordinary rows with employee bank prefill).
 - Verified E2E: 3-beneficiary request → 3 queue rows, verified one child independently, others unaffected. UI screenshot confirmed. Test data cleaned up.
+
+## Project-linked Self Expense (June 2026)
+- Self Expense form: checkbox "This expense was incurred for a specific project" → shows Project select + Project Cost Center dropdown; unchecked = Head Office CC flow unchanged.
+- Backend (project_requests_router create_request): self_expense with project → requires a project CC (rejects HO CC); without project → requires HO CC (rejects project CC). ensure_project_access skipped for self_expense (employee may expense on any project).
+- Approval chain unchanged (Project Head → GM/Director for large value); request carries project_id so it lands in the project's P&L (Service Payments — Self Expense) when paid, and Payment Processing shows project code/name/PM.
+- Verified E2E via curl (3 cases) + UI screenshot. Test data cleaned.

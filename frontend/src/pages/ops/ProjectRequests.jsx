@@ -28,7 +28,7 @@ const blankItem = () => ({ name: "", quantity: 1, unit: "Nos", rate: 0, specs: "
 const blank = () => ({ id: newId(), project_code: "", project_id: "", request_type: "", need_by: "",
   priority: "medium", description: "", items: [blankItem()], vendor: "", vehicle_ref: "",
   period_from: "", period_to: "", monthly_rate: "", months: "", from_location: "", to_location: "", amount: "", remarks: "",
-  cost_center_id: "", site_location: "", material_category_id: "", employee_id: "",
+  cost_center_id: "", site_location: "", material_category_id: "", employee_id: "", self_for_project: false,
   expense_type: "", expense_date: new Date().toISOString().slice(0, 10), settlement_mode: "vendor_payable", paid_to_type: "vendor" });
 
 const PAY_STAGE = {
@@ -219,11 +219,12 @@ export default function ProjectRequests() {
 
   const create = async () => {
     if (!form.project_code && !isSelf) { toast.error("Select a project"); return; }
+    if (isSelf && form.self_for_project && !form.project_code) { toast.error("Select the project this expense was incurred for"); return; }
     if (!form.request_type) { toast.error("Select request type"); return; }
     if (isManpower && !form.items.some((i) => i.name && Number(i.quantity) > 0)) { toast.error("Add at least one manpower line"); return; }
     if (isStockable && !form.items.some((i) => (i.name || "").trim() && Number(i.quantity) > 0)) { toast.error("Add at least one item"); return; }
     if (estValue <= 0 && !isStockable && !isManpower) { toast.error("Enter amount / rate"); return; }
-    if (!form.cost_center_id) { toast.error(isSelf ? "Select a Head Office Cost Center before submitting" : "Cost Center is mandatory — select a valid Cost Center before submitting"); return; }
+    if (!form.cost_center_id) { toast.error(isSelf ? (form.self_for_project ? "Select the project's Cost Center" : "Select a Head Office Cost Center before submitting") : "Cost Center is mandatory — select a valid Cost Center before submitting"); return; }
     if (isPayment && mode === "service" && !isSelf && benef.length === 0) {
       if (form.paid_to_type === "vendor" && !form.vendor) { toast.error("Select the approved vendor to be paid"); return; }
       if (form.paid_to_type === "person" && !form.employee_id) { toast.error("Select the employee (Emp ID) to be paid"); return; }
@@ -455,9 +456,22 @@ export default function ProjectRequests() {
             {!isSelf ? (
               <ProjectSelect label="Project *" value={form.project_code} onChange={(code, row) => { setForm({ ...form, project_code: code, project_id: row?.id || "", cost_center_id: "", employee_id: "" }); loadCostCenters(row?.id); }} testid="req-form-project" />
             ) : (
-              <div className="border border-amber-200 bg-amber-50 rounded-sm p-2 text-xs text-amber-800 self-end" data-testid="req-self-banner">
-                <b>Self Expense</b> — payable to you, booked & tracked against the <b>Head Office Cost Center</b> you select below.
-              </div>
+              <>
+                <div className="border border-amber-200 bg-amber-50 rounded-sm p-2 text-xs text-amber-800 self-end" data-testid="req-self-banner">
+                  <b>Self Expense</b> — payable to you, booked against the {form.self_for_project ? <b>selected Project's Cost Center</b> : <b>Head Office Cost Center</b>} below.
+                  <label className="flex items-center gap-1.5 mt-1.5 cursor-pointer font-medium">
+                    <input type="checkbox" checked={form.self_for_project}
+                      onChange={(e) => { setForm({ ...form, self_for_project: e.target.checked, project_code: "", project_id: "", cost_center_id: "" }); setCcList([]); }}
+                      data-testid="req-self-for-project" />
+                    This expense was incurred for a specific project
+                  </label>
+                </div>
+                {form.self_for_project && (
+                  <ProjectSelect label="Project *" value={form.project_code}
+                    onChange={(code, row) => { setForm({ ...form, project_code: code, project_id: row?.id || "", cost_center_id: "" }); loadCostCenters(row?.id); }}
+                    testid="req-self-project" />
+                )}
+              </>
             )}
             {mode === "service" && (
               <>
@@ -560,12 +574,12 @@ export default function ProjectRequests() {
                 </select>
               </div>
             )}
-            {!isSelf ? (
+            {!isSelf || form.self_for_project ? (
             <div>
-              <Label className="text-[10px] uppercase tracking-wider">Cost Center *</Label>
+              <Label className="text-[10px] uppercase tracking-wider">{isSelf ? "Project Cost Center *" : "Cost Center *"}</Label>
               <select value={form.cost_center_id} onChange={(e) => setForm({ ...form, cost_center_id: e.target.value })}
                 className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-costcenter">
-                <option value="">— select cost center —</option>
+                <option value="">{isSelf && !form.project_code ? "— select project first —" : "— select cost center —"}</option>
                 {ccList.map((cc) => <option key={cc.id} value={cc.id}>{cc.category_code} · {cc.category_name}{cc.budget ? ` (budget ${inr(cc.budget)})` : ""}</option>)}
               </select>
             </div>

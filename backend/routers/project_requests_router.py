@@ -333,7 +333,7 @@ async def create_request(p: RequestIn, request: Request,
             project = {"id": None, "code": "HEAD-OFFICE", "name": "Head Office", "client": None}
         else:
             raise HTTPException(400, "Select a valid project")
-    if project.get("id"):
+    if project.get("id") and p.request_type != "self_expense":
         await ensure_project_access(user, project["id"])
     est = _estimate_value(p)
 
@@ -360,11 +360,18 @@ async def create_request(p: RequestIn, request: Request,
              "$or": [{"category_id": mcat["id"]}, {"category_code": mcat.get("code")}]},
             {"_id": 0, "id": 1, "category_code": 1, "category_name": 1, "project_id": 1})
     if p.request_type == "self_expense":
-        # Mandatory HEAD OFFICE cost center selection (non-project CC)
-        if not p.cost_center_id or not cc:
-            raise HTTPException(400, "Select a Head Office Cost Center before submitting this self expense")
-        if cc.get("project_id"):
-            raise HTTPException(400, "Self expense must be booked against a Head Office cost center (not a project cost center)")
+        if project.get("id"):
+            # Project-linked self expense — must book against that project's cost center
+            if not p.cost_center_id or not cc:
+                raise HTTPException(400, "Select the project's Cost Center for this project-linked self expense")
+            if not cc.get("project_id"):
+                raise HTTPException(400, "This expense is for a project — select a project cost center, not a Head Office one")
+        else:
+            # Mandatory HEAD OFFICE cost center selection (non-project CC)
+            if not p.cost_center_id or not cc:
+                raise HTTPException(400, "Select a Head Office Cost Center before submitting this self expense")
+            if cc.get("project_id"):
+                raise HTTPException(400, "Self expense must be booked against a Head Office cost center (not a project cost center)")
     if not cc:
         raise HTTPException(400, "Cost Center is mandatory — select a valid Cost Center before submitting this request")
     steps = [("dept_head", "Project Head")]
