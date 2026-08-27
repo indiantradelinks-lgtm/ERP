@@ -358,8 +358,10 @@ async def create_receipt(payload: ReceiptIn, request: Request,
                          user: dict = Depends(require_permission("accounting", "write"))):
     if payload.amount <= 0 and payload.tds_deducted <= 0 and payload.retention_deducted <= 0:
         raise HTTPException(status_code=400, detail="At least one of amount/tds/retention must be > 0")
-    if payload.mode not in RECEIPT_MODES:
+    mode_norm = next((m for m in RECEIPT_MODES if m.lower() == (payload.mode or "").lower()), None)
+    if not mode_norm:
         raise HTTPException(status_code=400, detail=f"mode must be one of {RECEIPT_MODES}")
+    payload.mode = mode_norm
 
     total_adjusted = round(payload.amount + payload.tds_deducted + payload.retention_deducted + payload.other_deduction, 2)
 
@@ -372,6 +374,9 @@ async def create_receipt(payload: ReceiptIn, request: Request,
             inv = await db.client_invoices.find_one({"id": iid}, {"_id": 0})
             if not inv:
                 raise HTTPException(status_code=404, detail=f"Invoice {iid} not found")
+            if inv.get("source") == "ra_bill":
+                raise HTTPException(status_code=400,
+                                    detail=f"Invoice {inv['invoice_no']} is generated from an RA bill — record the receipt via Accounts → Payments In against the RA bill instead")
             if inv.get("status") not in ("approved", "partially_paid"):
                 raise HTTPException(status_code=400, detail=f"Invoice {inv['invoice_no']} not in receivable state ({inv.get('status')})")
             invs_cache.append(inv)

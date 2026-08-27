@@ -1,0 +1,32 @@
+{
+  "summary": "Iter 176 — Backend-only RETEST of the 4 sync gaps reported in iteration_175 (RA bill → client_invoices mirror). Created /app/backend/tests/test_iter176_invoice_sync_retest.py (6 pytest cases) and re-ran the previous suite. ALL 13 tests pass (6/6 new + 7/7 iter175). Verified: (1) POST /api/payments-in now calls _sync_client_invoice per allocation — a partial payment flips the mirror to 'partially_paid' with paid_amount=half and outstanding=net-half; the balancing payment flips it to 'paid' with outstanding=0 and paid_amount=net (tested on a bill with retention 5% + TDS 2% so net_payable < gross, which is exactly the case that previously broke). (2) PUT /api/ra-bills/{id} on a draft re-syncs the mirror — gross 590 → 2360 and taxable/outstanding all track the updated bill. (3) Outstanding formula is now net_receivable - paid clamped to 0 for paid/cancelled; swept ALL mirrored rows via GET /api/billing/invoices: 0 rows with status paid/cancelled and outstanding > 0, and 0 formula mismatches across every source='ra_bill' row (RA-2026-0010 residual ₹2,750 is gone). (4) POST /api/billing/receipts against a source='ra_bill' invoice is rejected with 400 and the message 'is generated from an RA bill — record the receipt via Accounts → Payments In against the RA bill instead'; the mirror's paid_amount/status stay untouched. Regression: GET /api/billing/invoices returns mirrored rows with no _id leakage, valid totals and valid statuses. No frontend testing (as requested).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/billing/receipts", "issue": "mode validation is case-SENSITIVE against ['Bank','Cash','UPI','NEFT','RTGS','IMPS','Cheque'] while POST /api/payments-in accepts lowercase ('neft'). 'neft' → 400 on receipts. Inconsistent contract across the two money-in endpoints; normalise casing (e.g. compare .title()/.upper())."},
+      {"endpoint": "DELETE /api/ra-bills/{id}", "issue": "Bills in 'approved'/'paid' cannot be deleted (expected), so test data created past draft can only be cleaned via DB. Not a defect — noted for future test hygiene."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter176_invoice_sync_retest.py",
+    "/app/backend/tests/test_iter175_client_invoice_sync.py",
+    "/app/test_reports/pytest/iter176_results.xml"
+  ],
+  "action_items": [
+    "Optional: normalise receipt `mode` casing in billing_router.create_receipt so 'neft'/'NEFT' both work (consistency with /payments-in).",
+    "Optional (from iter175 code review, still open): _sync_client_invoice is hooked at 7 manual call sites — wrap ra_bills mutations in a single helper so future write paths cannot drift again."
+  ],
+  "critical_code_review_comments": [
+    "receivables_router imports _sync_client_invoice inline from ra_bills_router inside the request handler (deferred import to dodge a circular dependency). Works, but the mirror logic should move to a shared service module (e.g. services/client_invoice_sync.py) imported by both routers.",
+    "Payment allocations still mutate ra_bills then re-derive client_invoices; there is no transaction, so a failure between the ra_bills.update_one loop and the sync loop leaves the mirror stale. Acceptable for now given the startup backfill, but worth a note."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter176_invoice_sync_retest.py"],
+  "success_rate": {"backend": "100% (13/13: 6 new iter176 + 7 iter175)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "Created 5 TEST_ITER176 RA bills against an existing project (edit case, payment case with retention/TDS, receipt-guard case) plus 5 payments_in rows. All 5 bills, their mirrored client_invoices and all TEST_ITER17* payments_in were deleted afterwards (2 were 'approved' and 3 'paid' so DELETE API refused them — removed directly from MongoDB). Post-cleanup sweep: 0 paid/cancelled mirrored invoices with outstanding > 0. No residual test data.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin)",
+  "context_for_next_testing_agent": "Run `pytest /app/backend/tests/test_iter176_invoice_sync_retest.py /app/backend/tests/test_iter175_client_invoice_sync.py -v` for the full RA bill ↔ client_invoices mirror regression (13 cases, all green as of iter 176). Mirror contract: client_invoices row keyed by source_bill_id, source='ra_bill', outstanding = net_receivable - paid_amount clamped to 0 when status is paid/cancelled. Receipts on mirrored rows are blocked by design — use POST /api/payments-in with allocations[].ra_bill_id. Receipt `mode` must be capitalised ('NEFT'). Frontend Client Invoices page was verified in iter175 and not re-tested here; its type/status filter selects still lack data-testid.",
+  "rca_of_the_issue": "Original RCA (iter175): the mirror was only refreshed at explicitly hooked mutation points inside ra_bills_router, so payment recording (receivables_router POST /payments-in) and draft edits (PUT /ra-bills/{id}) left the mirror stale, and outstanding was computed off gross_value while paid_amount accumulates against net_payable. All three code paths now call _sync_client_invoice and the formula uses net_receivable with a 0-clamp for paid/cancelled; receipts on mirrored rows are rejected so the two write paths no longer fight over the same money fields. Verified end-to-end against the public REACT_APP_BACKEND_URL."
+}

@@ -1,0 +1,43 @@
+{
+  "summary": "Iter 175 — Verified the RA bill → client_invoices mirror fix (Client Invoices page not updating after billing). Wrote /app/backend/tests/test_iter175_client_invoice_sync.py (7 pytest cases) and ran a Playwright UI pass on Accounts → Client Invoices as super_admin. Primary bug is FIXED: GET /api/billing/invoices returns 25 rows (16 mirrored source='ra_bill') and the UI table now renders them with invoice_no/client/taxable/gross/outstanding/status; type+status filters work (status=paid → 11 rows). Create → mirror, submit/approve → mirror status 'approved', issue-invoice → mirror, and DELETE draft → mirror removed all PASS. Two real sync gaps remain: (1) POST /api/payments-in (receivables_router) updates ra_bills paid_amount/status='paid' but never calls _sync_client_invoice, so the mirrored invoice stays 'approved' with full outstanding (reproduced in UI: RA-2026-0026 showed approved / ₹11,800 outstanding while the RA bill was fully paid); (2) PUT /api/ra-bills/{id} (edit draft amounts) does not re-sync — mirror kept gross 590 while bill became 2360. Also a formula defect: outstanding = gross_value - paid, but paid tracks net_payable (after retention/TDS), so fully-paid bills show residual outstanding (RA-2026-0010: status paid, outstanding ₹2,750) which inflates AR/Client Outstanding.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/payments-in", "issue": "Records payment on ra_bills (paid_amount, status→paid) without calling _sync_client_invoice → mirrored client invoice stays status 'approved' with outstanding = full gross. This is exactly the class of bug the user reported (billing/payment not reflected on Client Invoices).", "priority": "HIGH"},
+      {"endpoint": "PUT /api/ra-bills/{id}", "issue": "Draft/submitted bill edit recomputes totals but no _sync_client_invoice hook → mirrored invoice keeps stale gross/taxable/outstanding (observed 590 vs 2360).", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "_sync_client_invoice", "issue": "outstanding = gross_value - paid_amount, but ra_bills.paid_amount is measured against net_payable (retention/TDS deducted). Fully-paid bills therefore keep non-zero outstanding (RA-2026-0010 paid but outstanding ₹2,750). Use net_receivable - paid, and clamp to 0 when status == paid/cancelled."},
+      {"endpoint": "POST /api/billing/receipts", "issue": "Applies receipts directly to client_invoices (incl. ra_bill-mirrored rows) without touching the source ra_bills doc; the next _sync_client_invoice call will overwrite paid_amount/outstanding/status and silently lose the receipt. Reverse-sync or block receipts on source='ra_bill' rows."},
+      {"endpoint": "GET /api/billing/invoices", "issue": "Mirrored zero-value bill RA-2026-0021 shows ₹0 taxable/gross/outstanding with status approved — data hygiene only, no API error."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Client Invoices page after payment recorded on RA bill", "issue": "Row shows status 'approved' with full outstanding even though the RA bill is fully paid (backend payments-in does not sync the mirror)", "affected_selectors": ["[data-testid^='bill-inv-row-']"]}
+    ],
+    "design_issues": [
+      {"screen": "Accounts → Client Invoices", "issues": ["Type/Status filter <select> elements have no data-testid (used positional selectors in tests)", "Table has no loading/empty-vs-error distinction — an API failure renders the same 'No invoices.' text"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter175_client_invoice_sync.py"],
+  "action_items": [
+    "Add `await _sync_client_invoice(a.ra_bill_id)` after the ra_bills.update_one loop in receivables_router.record_payment (POST /payments-in).",
+    "Add `await _sync_client_invoice(bill_id)` at the end of PUT /ra-bills/{bill_id}.",
+    "Fix outstanding formula in _sync_client_invoice: base it on net_receivable (net_payable) and force 0 for paid/cancelled bills.",
+    "Decide ownership for payments on mirrored invoices: either reverse-sync /billing/receipts into ra_bills or reject receipts where source == 'ra_bill'.",
+    "Add data-testid to the Client Invoices type/status filter selects."
+  ],
+  "critical_code_review_comments": [
+    "_sync_client_invoice is hooked at 6 call sites manually — any new ra_bills mutation will silently drift (already happened in receivables_router and PUT). Centralise via a single helper that performs the update + sync.",
+    "Two write paths mutate the same money fields (ra_bills.paid_amount and client_invoices.paid_amount) with the mirror overwriting on next sync — single source of truth needed."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter175_client_invoice_sync.py"],
+  "success_rate": {"backend": "71% (5/7)", "frontend": "100% (page lists mirrored RA invoices, filters work)"},
+  "seed_data_creation": "Created 3 TEST_ITER175 RA bills against an existing project; 2 deleted via API, the paid one (RA-2026-0026) plus its payments_in and mirrored invoice were removed directly from MongoDB. No residual test data.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin)",
+  "context_for_next_testing_agent": "Re-run `pytest /app/backend/tests/test_iter175_client_invoice_sync.py -v`; the two failing cases are test_payment_in_updates_mirror_to_paid and test_edit_ra_bill_amount_updates_mirror. Login form inputs have no data-testid — use `form input` nth(0)/nth(1). Client Invoices UI: /app/accounts → click [data-testid='acc-nav-client_inv'], rows are [data-testid^='bill-inv-row-'].",
+  "rca_of_the_issue": "The fix mirrors ra_bills into client_invoices only at explicitly hooked mutation points inside ra_bills_router. Payment recording lives in receivables_router (POST /payments-in) and bill editing in PUT /ra-bills/{id} — neither calls _sync_client_invoice, so the mirror goes stale exactly when money moves. Additionally the mirror's outstanding uses gross_value while paid_amount is accumulated against net_payable, leaving residual outstanding on fully paid bills."
+}

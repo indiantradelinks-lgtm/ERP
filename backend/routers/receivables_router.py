@@ -108,6 +108,9 @@ async def record_payment(payload: PaymentIn, request: Request,
             "$push": {"payments": {"payment_id": doc["id"], "payment_no": doc["payment_no"], "date": doc["payment_date"], "amount": float(a.amount), "mode": payload.mode}}
         })
     doc.pop("_id", None)
+    from routers.ra_bills_router import _sync_client_invoice
+    for a in payload.allocations or []:
+        await _sync_client_invoice(a.ra_bill_id)
     await audit(user=user, action="create", resource="payments_in", record_id=doc["id"], after={"payment_no": doc["payment_no"], "amount": doc["amount"]}, ip=_ip(request))
     # Iter 71 — Auto-post customer receipt JE
     try:

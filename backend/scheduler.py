@@ -263,6 +263,23 @@ async def _billing_reminder_job():
         logger.exception(f"Billing reminder job failed: {e}")
 
 
+async def _client_invoice_backfill_job():
+    """One-shot at boot: mirror any RA bills missing from client_invoices (idempotent)."""
+    try:
+        from core import db as _db
+        from routers.ra_bills_router import _sync_client_invoice
+        synced = 0
+        async for b in _db.ra_bills.find({}, {"_id": 0, "id": 1}):
+            existing = await _db.client_invoices.find_one({"source_bill_id": b["id"]}, {"_id": 0, "id": 1})
+            if not existing:
+                await _sync_client_invoice(b["id"])
+                synced += 1
+        if synced:
+            logger.info(f"[client_invoice_backfill] mirrored {synced} RA bill(s) into client_invoices")
+    except Exception as e:
+        logger.exception(f"client invoice backfill failed: {e}")
+
+
 def start_scheduler() -> None:
     global _scheduler
     if _scheduler is not None:
@@ -280,6 +297,11 @@ def start_scheduler() -> None:
 
     _scheduler.add_job(_billing_reminder_job, CronTrigger(hour=9, minute=30),
                        id="billing_reminder", replace_existing=True)
+
+    from datetime import timedelta as _td
+    _scheduler.add_job(_client_invoice_backfill_job, "date",
+                       run_date=datetime.now() + _td(seconds=20),
+                       id="client_invoice_backfill", replace_existing=True)
 
     _scheduler.add_job(_vendor_payment_due_job, CronTrigger(hour=8, minute=15),
                        id="vendor_payment_due", replace_existing=True)

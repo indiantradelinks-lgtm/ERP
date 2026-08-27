@@ -540,8 +540,51 @@ async def create_from_measurements(payload: dict, request: Request,
     await stamp_dept_doc(doc, bill_dt)
     await db.ra_bills.insert_one(doc)
     doc.pop("_id", None)
+    await _sync_client_invoice(doc["id"])
     await audit(user=user, action="create", resource="ra_bills", record_id=doc["id"], after={"bill_number": doc["bill_number"], "net_payable": doc["net_payable"]}, ip=_ip(request))
     return doc
+
+
+async def _sync_client_invoice(bill_id: str):
+    """Mirror an RA bill into client_invoices so the Client Invoices page always reflects billing."""
+    b = await db.ra_bills.find_one({"id": bill_id}, {"_id": 0})
+    if not b:
+        return
+    it_map = {"running": "RA", "final": "FINAL", "credit_note": "CN", "debit_note": "DN"}
+    st = b.get("status") or "draft"
+    status = ("cancelled" if st == "cancelled" else
+              "paid" if st == "paid" else
+              "partially_paid" if float(b.get("paid_amount") or 0) > 0 else
+              "approved" if st in ("approved", "invoiced", "submitted") else "draft")
+    gross = float(b.get("gross_value") or 0)
+    net = float(b.get("net_payable") or gross)
+    paid = float(b.get("paid_amount") or 0)
+    outstanding = 0.0 if status in ("paid", "cancelled") else max(round(net - paid, 2), 0.0)
+    inv = {
+        "invoice_no": b.get("bill_number"),
+        "invoice_type": it_map.get(b.get("bill_type"), "RA"),
+        "invoice_date": b.get("bill_date") or (b.get("created_at") or "")[:10],
+        "client_id": b.get("client_id"),
+        "client_name": b.get("client_name"),
+        "project_code": b.get("project_code"),
+        "project_id": b.get("project_id"),
+        "work_order_no": b.get("po_number") or b.get("work_order_no"),
+        "totals": {"taxable_value": float(b.get("subtotal") or 0),
+                   "gst_total": float(b.get("gst_amount") or 0),
+                   "gross_value": gross,
+                   "net_receivable": net},
+        "amount": gross, "tax_amount": float(b.get("gst_amount") or 0),
+        "paid_amount": paid,
+        "outstanding": outstanding,
+        "net_receivable": net,
+        "status": status,
+        "source": "ra_bill", "source_bill_id": b["id"],
+        "updated_at": now_iso(),
+    }
+    await db.client_invoices.update_one(
+        {"source_bill_id": b["id"]},
+        {"$set": inv, "$setOnInsert": {"id": new_id(), "created_at": now_iso(), "created_by": "billing-sync"}},
+        upsert=True)
 
 
 @router.post("/ra-bills")
@@ -579,6 +622,7 @@ async def create_ra_bill(payload: RABillIn, request: Request,
     await stamp_dept_doc(doc, bill_dt)
     await db.ra_bills.insert_one(doc)
     doc.pop("_id", None)
+    await _sync_client_invoice(doc["id"])
     await audit(user=user, action="create", resource="ra_bills", record_id=doc["id"], after={"bill_number": doc["bill_number"], "net_payable": doc["net_payable"]}, ip=_ip(request))
     return doc
 
@@ -601,6 +645,7 @@ async def update_ra_bill(bill_id: str, payload: dict, request: Request,
             payload[k] = merged[k]
     payload["updated_at"] = now_iso()
     await db.ra_bills.update_one({"id": bill_id}, {"$set": payload})
+    await _sync_client_invoice(bill_id)
     row = await db.ra_bills.find_one({"id": bill_id}, {"_id": 0})
     await audit(user=user, action="update", resource="ra_bills", record_id=bill_id, after=row, ip=_ip(request))
     return row
@@ -615,6 +660,7 @@ async def submit_ra_bill(bill_id: str, request: Request,
     if row.get("status") not in ("draft",):
         raise HTTPException(status_code=400, detail="Only draft bills can be submitted")
     await db.ra_bills.update_one({"id": bill_id}, {"$set": {"status": "submitted", "submitted_at": now_iso(), "updated_at": now_iso()}})
+    await _sync_client_invoice(bill_id)
     return await db.ra_bills.find_one({"id": bill_id}, {"_id": 0})
 
 
@@ -633,6 +679,7 @@ async def approve_ra_bill(bill_id: str, request: Request,
         "status": "approved", "approved_by": user.get("name") or user.get("email"),
         "approved_by_id": user["id"], "approved_at": now, "updated_at": now,
     }})
+    await _sync_client_invoice(bill_id)
     # Flip linked measurements to `billed`
     if row.get("measurement_ids"):
         await db.measurements.update_many({"id": {"$in": row["measurement_ids"]}}, {"$set": {"status": "billed", "billed_at": now, "ra_bill_id": bill_id, "ra_bill_number": row.get("bill_number")}})
@@ -658,6 +705,7 @@ async def issue_invoice(bill_id: str, payload: dict | None = None, request: Requ
         "status": "invoiced", "invoice_no": invoice_no, "issue_date": issue_date,
         "due_date": due_date, "due_days": due_days, "updated_at": now_iso(),
     }})
+    await _sync_client_invoice(bill_id)
     updated = await db.ra_bills.find_one({"id": bill_id}, {"_id": 0})
     # Iter 71 — Auto-post sales-invoice JE
     try:
@@ -691,6 +739,7 @@ async def cancel_ra_bill(bill_id: str, payload: dict, request: Request,
         raise HTTPException(status_code=400, detail="Cannot cancel a paid bill — issue a credit note instead")
     reason = (payload or {}).get("reason") or "No reason given"
     await db.ra_bills.update_one({"id": bill_id}, {"$set": {"status": "cancelled", "cancel_reason": reason, "cancelled_at": now_iso(), "updated_at": now_iso()}})
+    await _sync_client_invoice(bill_id)
     # Roll back linked measurements if they had been marked `billed`
     if row.get("measurement_ids"):
         await db.measurements.update_many({"id": {"$in": row["measurement_ids"]}, "status": "billed", "ra_bill_id": bill_id}, {"$set": {"status": "approved_for_billing"}, "$unset": {"ra_bill_id": "", "ra_bill_number": "", "billed_at": ""}})
@@ -707,5 +756,6 @@ async def delete_ra_bill(bill_id: str, request: Request,
     if row.get("status") not in ("draft", "cancelled"):
         raise HTTPException(status_code=400, detail="Only draft or cancelled bills can be deleted — use Cancel for issued bills")
     await db.ra_bills.delete_one({"id": bill_id})
+    await db.client_invoices.delete_one({"source_bill_id": bill_id})
     await audit(user=user, action="delete", resource="ra_bills", record_id=bill_id, before=row, ip=_ip(request))
     return {"ok": True}
