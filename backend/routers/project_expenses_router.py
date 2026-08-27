@@ -411,6 +411,7 @@ async def _project_pnl(project: dict) -> dict:
     preqs = await db.project_requests.find(
         {"$or": [{"project_id": pid}, {"project_code": code}],
          "is_payment": True,
+         "split_into_children": {"$exists": False},
          "source": {"$nin": ["advance", "vendor_bill", "accounts_vendor_bill", "expense"]},
          "$and": [{"$or": [{"status": {"$in": ["paid", "payment_done"]}},
                            {"payment_utr": {"$nin": [None, ""]}},

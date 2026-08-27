@@ -43,6 +43,7 @@ async def payment_queue(stage: str = "", project_code: str = "",
         pass
     reqs = await db.project_requests.find(
         {"is_payment": True, "status": {"$in": QUEUE_STATUSES},
+         "split_into_children": {"$exists": False},
          **({"project_code": project_code} if project_code else {})},
         {"_id": 0}).sort("created_at", -1).to_list(1000)
     ver = {v["request_id"]: v async for v in db.payment_verifications.find(

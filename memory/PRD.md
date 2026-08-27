@@ -5686,3 +5686,9 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Fix (`accounts_router.py` /accounts/dashboard): retention_receivable falls back to Σ(client_invoices.totals.retention_amount − retention_received) when GL 1210 = 0.
 - Verified: dashboard now shows Total Receivables ₹5,16,600, Total Payables ₹2,94,218, Retention Receivable ₹10,000 (curl + UI screenshot).
 - NOTE: user's screenshot values matched PRODUCTION; fix lives in preview → user must Redeploy.
+
+## Multi-Beneficiary Payment Split (June 2026)
+- On FINAL approval of a payment-type project request with ≥2 beneficiaries, `_split_beneficiaries` (project_requests_router.py) spawns one child request per employee: request_no `<parent>-B01..`, amount = beneficiary amount, employee_id/code/name set, parent_request_id/no linked, status with_dept.
+- Parent gets `split_into_children` [ids] + `split_child_nos`; excluded from Payment Processing queue (payment_processing_router query) and from Project P&L service-payments aggregation (project_expenses_router) to avoid double counting.
+- Each child is verified / bank-filed / marked paid independently (existing endpoints untouched, children are ordinary rows with employee bank prefill).
+- Verified E2E: 3-beneficiary request → 3 queue rows, verified one child independently, others unaffected. UI screenshot confirmed. Test data cleaned up.

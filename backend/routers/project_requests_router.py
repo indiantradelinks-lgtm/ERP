@@ -430,6 +430,35 @@ def _can_act(user: dict, role: str) -> bool:
     return user.get("role") in (role, "super_admin")
 
 
+async def _split_beneficiaries(row: dict, patch: Dict[str, Any]) -> None:
+    """On final approval of a multi-beneficiary payment request, spawn one child
+    payment request per beneficiary so each employee is processed separately in
+    the Payment Processing Center. Parent is excluded from the queue."""
+    bens = row.get("beneficiaries") or []
+    if not row.get("is_payment") or len(bens) < 2:
+        return
+    child_ids, child_nos = [], []
+    for i, b in enumerate(bens, 1):
+        child_no = f"{row['request_no']}-B{i:02d}"
+        child = {**row,
+                 "id": new_id(), "request_no": child_no,
+                 "amount": float(b.get("amount") or 0), "est_value": float(b.get("amount") or 0),
+                 "employee_id": b.get("employee_id"), "employee_code": b.get("employee_code"),
+                 "employee_name": b.get("employee_name"),
+                 "description": " — ".join(x for x in [row.get("description"), b.get("remarks")] if x),
+                 "beneficiaries": None, "beneficiary_count": 0,
+                 "items": [], "stock_lines": [], "availability_lines": [],
+                 "parent_request_id": row["id"], "parent_request_no": row["request_no"],
+                 "status": patch.get("status") or "with_dept", "chain": patch.get("chain") or row.get("chain"),
+                 "approved_at": patch.get("approved_at") or now_iso(),
+                 "split_at": now_iso()}
+        child.pop("_id", None)
+        await db.project_requests.insert_one(child)
+        child_ids.append(child["id"]); child_nos.append(child_no)
+    patch["split_into_children"] = child_ids
+    patch["split_child_nos"] = child_nos
+
+
 @router.post("/project-requests/{rid}/approve")
 async def approve_request(rid: str, p: ActionIn, request: Request,
                           user: dict = Depends(require_permission("project_requests", "write"))):
@@ -462,6 +491,10 @@ async def approve_request(rid: str, p: ActionIn, request: Request,
                     patch["recruitment_nos"] = created
             except Exception as exc:  # noqa: BLE001
                 logger.warning("auto raise recruitment failed: %s", exc)
+        try:
+            await _split_beneficiaries(row, patch)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("beneficiary split failed: %s", exc)
     await db.project_requests.update_one({"id": rid}, {"$set": patch})
     await audit(user=user, action="req_approve", resource="project_requests", record_id=rid,
                 after={"step": step["label"]}, ip=_ip(request))
