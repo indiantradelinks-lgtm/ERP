@@ -5698,3 +5698,7 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Backend (project_requests_router create_request): self_expense with project → requires a project CC (rejects HO CC); without project → requires HO CC (rejects project CC). ensure_project_access skipped for self_expense (employee may expense on any project).
 - Approval chain unchanged (Project Head → GM/Director for large value); request carries project_id so it lands in the project's P&L (Service Payments — Self Expense) when paid, and Payment Processing shows project code/name/PM.
 - Verified E2E via curl (3 cases) + UI screenshot. Test data cleaned.
+
+## Bug Fix: Contract Handovers table clipped (June 2026)
+- ContractHandovers.jsx table wrapper had `overflow-hidden` → right columns (Status/Actions) were cut with no scroll on smaller/zoomed screens.
+- Changed to `overflow-x-auto` + `min-w-[1180px]` on table. Verified via screenshot: full table visible, horizontal scroll available when narrow.

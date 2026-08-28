@@ -206,7 +206,6 @@ class TestRetryFunction:
     def test_retry_skips_auth_and_returns_dict(self, mongo_db, admin_session):
         """Seed: 1 failed row with error_type='throttle' (eligible),
         1 failed row with error_type='auth' (must be skipped)."""
-        from datetime import datetime, timezone, timedelta
         import uuid
 
         # Use updated_at older than 0 minute cutoff (retry_after_minutes=0 in our call)

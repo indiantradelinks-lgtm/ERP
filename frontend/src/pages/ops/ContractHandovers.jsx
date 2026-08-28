@@ -193,8 +193,8 @@ export default function ContractHandovers() {
         </div>
       )}
 
-      <div className="border rounded-lg overflow-hidden bg-white">
-        <table className="w-full text-sm">
+      <div className="border rounded-lg overflow-x-auto bg-white">
+        <table className="w-full text-sm min-w-[1180px]">
           <thead className="bg-slate-50 text-xs uppercase text-slate-600">
             <tr>
               <th className="text-left px-3 py-2">Handover #</th>
