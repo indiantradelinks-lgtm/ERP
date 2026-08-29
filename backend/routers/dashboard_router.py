@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 
 from core import db, get_current_user
+from accounting_service import ar_aging
 
 router = APIRouter(tags=["dashboard"])
 
@@ -26,11 +27,9 @@ async def _sum_field(cursor) -> float:
     return total
 
 
-async def _monthly_chart(now: datetime) -> list[dict]:
-    # Build the last 6 calendar months (inclusive of current) at the YYYY-MM granularity.
-    base = now.replace(day=1)
+def _six_months(now: datetime) -> list[str]:
+    y, m = now.year, now.month
     months: list[str] = []
-    y, m = base.year, base.month
     for _ in range(6):
         months.append(f"{y:04d}-{m:02d}")
         m -= 1
@@ -38,9 +37,16 @@ async def _monthly_chart(now: datetime) -> list[dict]:
             m = 12
             y -= 1
     months.reverse()
+    return months
+
+
+def _six_month_lower(now: datetime) -> str:
+    return _six_months(now)[0] + "-01"
+
+
+async def _monthly_chart(now: datetime) -> list[dict]:
+    months = _six_months(now.replace(day=1))
     monthly = {mo: {"revenue": 0.0, "expense": 0.0} for mo in months}
-    # Scan only entries within the 6-month window (indexable on `date` YYYY-MM-DD strings).
-    # Prevents unbounded full-collection scans as journal_entries grows.
     date_lower = months[0] + "-01"
     async for e in db.journal_entries.find(
         {"date": {"$gte": date_lower}, "type": {"$in": ["revenue", "expense"]}},
@@ -50,6 +56,23 @@ async def _monthly_chart(now: datetime) -> list[dict]:
         m = d[:7] if isinstance(d, str) else ""
         if m in monthly:
             monthly[m][e["type"]] += float(e.get("amount") or 0)
+    # Operational fallback per series: client invoices → revenue, vendor bills → expense
+    ops = {mo: {"revenue": 0.0, "expense": 0.0} for mo in months}
+    for coll, key in ((db.client_invoices, "revenue"), (db.vendor_bills, "expense")):
+        async for r in coll.find(
+            {"status": {"$nin": ["draft", "cancelled", "rejected"]}, "invoice_date": {"$gte": date_lower}},
+            {"_id": 0, "invoice_date": 1, "amount": 1},
+        ):
+            m = (r.get("invoice_date") or "")[:7]
+            if m in ops:
+                ops[m][key] += float(r.get("amount") or 0)
+    je_rev_total = sum(v["revenue"] for v in monthly.values())
+    je_exp_total = sum(v["expense"] for v in monthly.values())
+    for mo in months:
+        if not je_rev_total:
+            monthly[mo]["revenue"] = ops[mo]["revenue"]
+        if not je_exp_total:
+            monthly[mo]["expense"] = ops[mo]["expense"]
     return [
         {"month": mo, "revenue": round(v["revenue"], 2), "expense": round(v["expense"], 2)}
         for mo, v in monthly.items()
@@ -89,9 +112,19 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
     pending_approvals = await _count("approvals", {"status": "pending"})
 
     revenue, expenses = await _journal_totals()
+    if not revenue:
+        # No legacy revenue journals — derive from client invoices (last 6 months)
+        date_lower = _six_month_lower(now)
+        agg = await db.client_invoices.aggregate([
+            {"$match": {"status": {"$nin": ["draft", "cancelled", "rejected"]},
+                        "invoice_date": {"$gte": date_lower}}},
+            {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$amount", 0]}}}},
+        ]).to_list(1)
+        revenue = float(agg[0]["total"]) if agg else 0.0
     profit = revenue - expenses
 
-    receivables = await _sum_field(db.quotations.find({"status": "invoiced"}, {"_id": 0, "total": 1}))
+    ar = await ar_aging()
+    receivables = float(ar.get("total_outstanding") or 0)
     payables = await _sum_field(
         db.purchase_orders.find(
             {"status": {"$in": ["approved", "received"]}, "paid": {"$ne": True}},

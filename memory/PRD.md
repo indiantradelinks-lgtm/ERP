@@ -5717,3 +5717,9 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - monthly_income falls back to Σ client_invoices.amount (invoice_date in current month, non-draft/cancelled/rejected) when GL revenue JEs = 0; monthly_expenses similarly falls back to vendor_bills; net_cash_flow uses the resolved values. No double counting — fallback only when GL total is 0.
 - Preview verified: GL values still shown (20,000 / 165,395); fallback aggregation pipeline validated directly against DB.
 - USER NOTE: the "Revenue & Receivables = 0" report is from PRODUCTION which still runs the old build — Redeploy required to pick up this + earlier receivables fixes.
+
+## Executive "Operations Control Room" Revenue/Receivables Fix (June 2026)
+- Page: /app (Dashboard.jsx) → GET /api/dashboard/summary (dashboard_router.py).
+- Root cause: revenue read legacy journal_entries `type:"revenue"` flat docs (absent in prod → ₹0); receivables summed quotations with defunct status "invoiced" (always ₹0).
+- Fix: receivables now uses accounting_service.ar_aging (same as Accounts dashboard, client_invoices outstanding). Revenue falls back to Σ client_invoices.amount (last 6 months) when legacy JE revenue = 0. Revenue vs Expense chart also overlays per-month client_invoices/vendor_bills when the respective JE series is entirely 0. Helpers _six_months/_six_month_lower added.
+- Verified: preview UI shows Revenue ₹5,34,00,000 + Receivables ₹5,16,600; fallback aggregation validated (₹18.29L 6M invoices). Requires REDEPLOY for production.
