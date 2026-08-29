@@ -300,17 +300,28 @@ async def update_full_quotation(q_id: str, payload: QuotationUpdate, request: Re
     existing = await db.quotations.find_one({"id": q_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Not found")
-    if existing.get("status") in ("won", "lost", "cancelled"):
-        raise HTTPException(status_code=400, detail=f"Cannot edit quotation in {existing['status']} state")
+    locked = existing.get("status") in ("won", "lost", "cancelled")
+    if locked and user.get("role") != "super_admin":
+        raise HTTPException(status_code=400, detail=f"Cannot edit quotation in {existing['status']} state — only a Super Admin can correct it.")
     patch = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
+    changes = {k: {"from": existing.get(k), "to": v} for k, v in patch.items()
+               if (existing.get(k) if existing.get(k) is not None else "") != (v if v is not None else "")}
     merged = {**existing, **patch}
     company = await _get_company()
     merged["company_state"] = company.get("state")
     recalc_quotation(merged)
     merged["updated_at"] = now_iso()
     merged["updated_by"] = user["id"]
+    merged["updated_by_name"] = user.get("name") or user.get("email")
+    if locked and changes:
+        merged["last_admin_edit"] = {
+            "by": user.get("name") or user.get("email"), "by_id": user.get("id"),
+            "at": merged["updated_at"], "fields": sorted(changes.keys()),
+            "status_at_edit": existing.get("status"),
+        }
     await db.quotations.update_one({"id": q_id}, {"$set": merged})
-    await audit(user=user, action="update", resource="quotations", record_id=q_id, after=patch, ip=_ip(request))
+    await audit(user=user, action="admin_override_update" if locked else "update", resource="quotations",
+                record_id=q_id, before={k: existing.get(k) for k in changes}, after=patch, ip=_ip(request))
     merged.pop("_id", None)
     return merged
 

@@ -14,6 +14,7 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@
 import { api, API } from "@/lib/api";
 import { toast } from "sonner";
 import SubmitWithDocsDialog from "@/components/SubmitWithDocsDialog";
+import { useAuth } from "@/contexts/AuthContext";
 
 const inr = (n) => "₹ " + Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const newSection = (service = "scaffolding", basis = "manpower_material") => ({
@@ -31,6 +32,8 @@ const emptyItem = (preset = {}) => ({
 
 export default function QuotationBuilder() {
   const { id } = useParams();
+  const { user: authUser } = useAuth();
+  const isSuperAdmin = authUser?.role === "super_admin";
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [quote, setQuote] = useState(null);
@@ -167,6 +170,7 @@ export default function QuotationBuilder() {
   }
 
   const isLocked = ["won", "lost", "cancelled"].includes(quote.status);
+  const sectionsEditable = !isLocked || isSuperAdmin;
   const statusTone = {
     draft: "bg-muted/40 text-muted-foreground border-border",
     under_review: "bg-amber-100 text-amber-900 border-amber-300",
@@ -231,7 +235,20 @@ export default function QuotationBuilder() {
         <HeaderForm quote={quote} update={updateAndRecalc} presets={presets} disabled={isLocked} />
       )}
       {tab === "sections" && (
-        <SectionsEditor quote={quote} update={updateAndRecalc} presets={presets} addSection={addSection} disabled={isLocked} />
+        <>
+          {isLocked && isSuperAdmin && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800" data-testid="qb-admin-override-banner">
+              <b>Super Admin override</b> — this quotation is <b>{quote.status?.toUpperCase()}</b>. You can correct Services &amp; Line Items;
+              every change is auto-saved and stamped with your name, date &amp; time in the audit log.
+              {quote.last_admin_edit && (
+                <span className="block mt-1 text-amber-700">
+                  Last corrected by <b>{quote.last_admin_edit.by}</b> on {new Date(quote.last_admin_edit.at).toLocaleString("en-IN")} (fields: {(quote.last_admin_edit.fields || []).join(", ")})
+                </span>
+              )}
+            </div>
+          )}
+          <SectionsEditor quote={quote} update={updateAndRecalc} presets={presets} addSection={addSection} disabled={!sectionsEditable} />
+        </>
       )}
       {tab === "conditions" && (
         <ConditionsEditor quote={quote} update={updateAndRecalc} conditions={conditions} disabled={isLocked} />
