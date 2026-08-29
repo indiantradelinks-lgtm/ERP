@@ -5702,3 +5702,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 ## Bug Fix: Contract Handovers table clipped (June 2026)
 - ContractHandovers.jsx table wrapper had `overflow-hidden` → right columns (Status/Actions) were cut with no scroll on smaller/zoomed screens.
 - Changed to `overflow-x-auto` + `min-w-[1180px]` on table. Verified via screenshot: full table visible, horizontal scroll available when narrow.
+
+## Super Admin Edit for Allocated Handovers + Change History (June 2026)
+- Backend (projects_ops_router.py update_handover): edit of non-draft handovers now allowed ONLY for super_admin (director removed). Field-level diff computed; activity log event `admin_edited` stores meta.changes {field: {from,to}} + status_at_edit; doc stamped updated_by/updated_by_id/updated_at + last_admin_edit {by, by_id, at, fields}; audit() stores before/after.
+- Frontend (ContractHandovers.jsx): amber "Edit" button for super_admin on allocated/active/submitted rows; override banner in dialog; "Last edited by X on date" line; new History tab (6th) rendering /ops/handovers/{id}/timeline with per-field from→to diffs, user, role, timestamp; Save&Submit hidden in locked-edit mode (button reads "Save Changes").
+- Verified E2E: super_admin edit OK + logged with diff; director & sales blocked (400); UI screenshot confirms button/banner/history. Test edit reverted.

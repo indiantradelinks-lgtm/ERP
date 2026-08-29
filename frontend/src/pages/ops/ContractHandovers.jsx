@@ -45,6 +45,7 @@ export default function ContractHandovers() {
   const role = user?.role;
   const canCreate = ["super_admin", "director", "general_manager", "dept_head", "sales_executive"].includes(role);
   const canAllocate = ["super_admin", "director", "general_manager", "dept_head"].includes(role);
+  const isSuperAdmin = role === "super_admin";
 
   const [rows, setRows] = useState([]);
   const [q, setQ] = useState("");
@@ -305,6 +306,10 @@ export default function ContractHandovers() {
                     {(r.status === "draft" || r.status === "sent_back") && canCreate && (
                       <Button size="sm" variant="outline" onClick={() => setEditing({ open: true, mode: "edit", data: r })} data-testid={`ops-edit-${r.id}`}>Edit</Button>
                     )}
+                    {!(r.status === "draft" || r.status === "sent_back") && isSuperAdmin && (
+                      <Button size="sm" variant="outline" className="border-amber-400 text-amber-700 hover:bg-amber-50"
+                        onClick={() => setEditing({ open: true, mode: "edit", data: r })} data-testid={`ops-admin-edit-${r.id}`}>Edit</Button>
+                    )}
                     {(r.status === "submitted" || r.status === "under_review" || r.status === "allocated" || r.status === "active") && canAllocate && (
                       <Button size="sm" onClick={() => setAllocFor(r)} data-testid={`ops-allocate-${r.id}`}>
                         <Users className="h-3.5 w-3.5 mr-1" /> {r.project_manager_id ? "Reassign" : "Allocate"}
@@ -345,9 +350,16 @@ function HandoverDialog({ mode, initial, onClose, onSaved }) {
   const [form, setForm] = useState({ ...emptyForm(), ...initial });
   const [tab, setTab] = useState("basic");
   const [docs, setDocs] = useState([]);
+  const [history, setHistory] = useState([]);
   const isView = mode === "view";
   const isEdit = mode === "edit";
   const isNew = mode === "create";
+  const isLockedEdit = isEdit && !["draft", "sent_back"].includes(initial?.status);
+
+  useEffect(() => {
+    if (!form.id) { setHistory([]); return; }
+    api.get(`/ops/handovers/${form.id}/timeline`).then((r) => setHistory(r.data || [])).catch(() => setHistory([]));
+  }, [form.id]);
 
   // Fetch existing attached files for this handover whenever id is known.
   const loadDocs = (id) => {
@@ -374,6 +386,7 @@ function HandoverDialog({ mode, initial, onClose, onSaved }) {
       delete payload.expected_start_date; delete payload.expected_completion_date;
       delete payload.allocation_remarks;
       delete payload.project_manager_label; delete payload.project_coordinator_label; delete payload.reporting_manager_label;
+      delete payload.last_admin_edit; delete payload.updated_by_id;
       payload.contract_value = Number(payload.contract_value || 0);
       let id = form.id;
       if (isNew) {
@@ -403,9 +416,20 @@ function HandoverDialog({ mode, initial, onClose, onSaved }) {
             )}
           </DialogTitle>
           <DialogDescription className="sr-only">Project handover detail</DialogDescription>
+          {form.updated_by && form.updated_at && (
+            <p className="text-xs text-slate-500 mt-1" data-testid="ho-last-edited">
+              Last edited by <b>{form.updated_by}</b> on {new Date(form.updated_at).toLocaleString("en-IN")}
+            </p>
+          )}
         </DialogHeader>
+        {isLockedEdit && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800" data-testid="ho-admin-override-banner">
+            <b>Super Admin override</b> — this handover is already {initial?.status?.replaceAll("_", " ")} to a Project Manager.
+            Every change you save is stamped with your name, date &amp; time in the History tab.
+          </div>
+        )}
         <Tabs value={tab} onValueChange={setTab} className="mt-2">
-          <TabsList className="grid grid-cols-5 w-full">
+          <TabsList className="grid grid-cols-6 w-full">
             <TabsTrigger value="basic">Project / Client</TabsTrigger>
             <TabsTrigger value="commercial">Commercial</TabsTrigger>
             <TabsTrigger value="ops">Operations</TabsTrigger>
@@ -415,6 +439,9 @@ function HandoverDialog({ mode, initial, onClose, onSaved }) {
               {docs.length > 0 && (
                 <span className="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] rounded-full bg-blue-100 text-blue-800 border border-blue-300">{docs.length}</span>
               )}
+            </TabsTrigger>
+            <TabsTrigger value="history" data-testid="ho-tab-history">
+              <Clock className="h-3.5 w-3.5 mr-1" /> History
             </TabsTrigger>
           </TabsList>
 
@@ -455,6 +482,38 @@ function HandoverDialog({ mode, initial, onClose, onSaved }) {
             <Area label="Asset Requirements (if known)" value={form.asset_requirements} onChange={(v) => set("asset_requirements", v)} disabled={isView} />
           </TabsContent>
 
+          <TabsContent value="history" className="mt-4">
+            {history.length === 0 ? (
+              <p className="text-sm text-slate-500 text-center py-6">No activity yet.</p>
+            ) : (
+              <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1" data-testid="ho-history-list">
+                {history.map((h) => (
+                  <div key={h.id} className={`border rounded-md p-2.5 text-xs ${h.event === "admin_edited" ? "border-amber-300 bg-amber-50/60" : "bg-white"}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-slate-800">{h.by_name} <span className="text-slate-400 font-normal">({(h.by_role || "").replaceAll("_", " ")})</span></span>
+                      <span className="text-slate-500 font-mono-data">{h.at ? new Date(h.at).toLocaleString("en-IN") : ""}</span>
+                    </div>
+                    <div className="mt-1 text-slate-600">{h.message}</div>
+                    {h.meta?.changes && Object.keys(h.meta.changes).length > 0 && (
+                      <table className="mt-1.5 w-full text-[11px]">
+                        <tbody>
+                          {Object.entries(h.meta.changes).map(([f, c]) => (
+                            <tr key={f} className="border-t border-dashed">
+                              <td className="py-0.5 pr-2 font-medium text-slate-700 whitespace-nowrap">{f.replaceAll("_", " ")}</td>
+                              <td className="py-0.5 text-red-600 line-through break-all">{String(c.from ?? "—")}</td>
+                              <td className="py-0.5 px-1 text-slate-400">→</td>
+                              <td className="py-0.5 text-emerald-700 break-all">{String(c.to ?? "—")}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
           <TabsContent value="docs" className="space-y-3 mt-4">
             <div className="rounded-md border border-amber-200 bg-amber-50/40 p-3 text-sm flex items-start gap-2" data-testid="ho-docs-policy">
               <Paperclip className="h-4 w-4 text-amber-700 mt-0.5 shrink-0" />
@@ -489,8 +548,8 @@ function HandoverDialog({ mode, initial, onClose, onSaved }) {
         <DialogFooter className="mt-4">
           {!isView && (
             <>
-              <Button variant="outline" onClick={() => save(false)} data-testid="ho-save-draft"><FileText className="h-4 w-4 mr-1" /> Save Draft</Button>
-              <Button onClick={() => save(true)} data-testid="ho-submit"><Send className="h-4 w-4 mr-1" /> Save & Submit to Project Head</Button>
+              <Button variant="outline" onClick={() => save(false)} data-testid="ho-save-draft"><FileText className="h-4 w-4 mr-1" /> {isLockedEdit ? "Save Changes" : "Save Draft"}</Button>
+              {!isLockedEdit && <Button onClick={() => save(true)} data-testid="ho-submit"><Send className="h-4 w-4 mr-1" /> Save & Submit to Project Head</Button>}
             </>
           )}
           <Button variant="outline" onClick={onClose}>Close</Button>

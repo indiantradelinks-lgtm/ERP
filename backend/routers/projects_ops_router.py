@@ -477,14 +477,33 @@ async def update_handover(hid: str, payload: HandoverUpdate, request: Request,
     existing = await db.project_handovers.find_one({"id": hid}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Handover not found")
-    if existing.get("status") not in EDITABLE_STATUSES and user.get("role") not in {"super_admin", "director"}:
-        raise HTTPException(status_code=400, detail=f"Cannot edit handover in '{existing.get('status')}' state.")
+    locked = existing.get("status") not in EDITABLE_STATUSES
+    if locked and user.get("role") != "super_admin":
+        raise HTTPException(status_code=400, detail=f"Cannot edit handover in '{existing.get('status')}' state — only a Super Admin can edit allocated/submitted handovers.")
     patch = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
+    changes = {}
+    for k, v in patch.items():
+        old = existing.get(k)
+        if (old if old is not None else "") != (v if v is not None else ""):
+            changes[k] = {"from": old, "to": v}
     patch["updated_at"] = now_iso()
     patch["updated_by"] = user.get("name") or user.get("email")
+    patch["updated_by_id"] = user.get("id")
+    if locked and changes:
+        patch["last_admin_edit"] = {
+            "by": user.get("name") or user.get("email"), "by_id": user.get("id"),
+            "at": patch["updated_at"], "fields": sorted(changes.keys()),
+        }
     await db.project_handovers.update_one({"id": hid}, {"$set": patch})
-    await _log_activity(hid, actor=user, event="updated", message="Handover updated", meta={"keys": list(patch.keys())})
-    await audit(user=user, action="update", resource="project_handovers", record_id=hid, after=patch, ip=_ip(request))
+    changed_list = ", ".join(sorted(changes.keys())) or "no field changes"
+    await _log_activity(
+        hid, actor=user,
+        event="admin_edited" if locked else "updated",
+        message=(f"{'SUPER ADMIN override edit' if locked else 'Handover updated'} by "
+                 f"{user.get('name') or user.get('email')} — changed: {changed_list}"),
+        meta={"changes": changes, "status_at_edit": existing.get("status")})
+    await audit(user=user, action="update", resource="project_handovers", record_id=hid,
+                before={k: existing.get(k) for k in changes}, after=patch, ip=_ip(request))
     fresh = await db.project_handovers.find_one({"id": hid}, {"_id": 0})
     return _strip(fresh)
 
