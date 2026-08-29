@@ -630,6 +630,27 @@ async def accounts_dashboard(user: dict = Depends(require_permission("accounting
         ]).to_list(1)
         retention_recv = round(float(agg[0]["total"]), 2) if agg else 0.0
 
+    # Revenue fallback: when no revenue journal entries exist for the month,
+    # derive MTD income from client invoices raised this month.
+    monthly_income = pl_mtd.get("total_revenue", 0)
+    if not monthly_income:
+        agg = await db.client_invoices.aggregate([
+            {"$match": {"status": {"$nin": ["draft", "cancelled", "rejected"]},
+                        "invoice_date": {"$gte": month_start, "$lte": today}}},
+            {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$amount", 0]}}}},
+        ]).to_list(1)
+        monthly_income = round(float(agg[0]["total"]), 2) if agg else 0.0
+
+    # Expense fallback: vendor bills booked this month when no expense JEs exist.
+    monthly_expenses = pl_mtd.get("total_expense", 0)
+    if not monthly_expenses:
+        agg = await db.vendor_bills.aggregate([
+            {"$match": {"status": {"$nin": ["draft", "cancelled", "rejected"]},
+                        "invoice_date": {"$gte": month_start, "$lte": today}}},
+            {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$amount", 0]}}}},
+        ]).to_list(1)
+        monthly_expenses = round(float(agg[0]["total"]), 2) if agg else 0.0
+
     return {
         "as_of": now_iso(),
         "cards": {
@@ -653,9 +674,9 @@ async def accounts_dashboard(user: dict = Depends(require_permission("accounting
             "employee_advances": balance_for("1500", signed=True),
             "vendor_advances":   balance_for("1510", signed=True),
             # Month-to-date P&L
-            "monthly_income":   pl_mtd.get("total_revenue", 0),
-            "monthly_expenses": pl_mtd.get("total_expense", 0),
-            "net_cash_flow":    round(pl_mtd.get("total_revenue", 0) - pl_mtd.get("total_expense", 0), 2),
+            "monthly_income":   monthly_income,
+            "monthly_expenses": monthly_expenses,
+            "net_cash_flow":    round(monthly_income - monthly_expenses, 2),
             # Operational counters
             "pending_vouchers": pending_vouchers + draft_vouchers,
             "missing_attachment_alerts": posted_no_att,

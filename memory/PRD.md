@@ -5712,3 +5712,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Backend (quotation_builder_router.py PUT /quotation-builder/{id}): won/lost/cancelled quotes editable ONLY by super_admin; field diff computed; doc stamped updated_by_name + last_admin_edit {by, by_id, at, fields, status_at_edit}; audit action `admin_override_update` with before/after. Totals recalced on save.
 - Frontend (QuotationBuilder.jsx): for super_admin, Services & Line Items tab stays editable on locked quotes with amber override banner showing "Last corrected by X on date (fields)". Header/Conditions tabs and action buttons (AI from RFQ / Approval / Send to Client) remain locked. Other roles fully locked (backend enforces 400).
 - Verified E2E: super_admin edited a WON quote line rate (totals recalced), sales blocked 400, edit reverted; UI screenshot confirmed banner + editable grid.
+
+## Revenue/Expense MTD Fallback on Accounts Dashboard (June 2026)
+- monthly_income falls back to Σ client_invoices.amount (invoice_date in current month, non-draft/cancelled/rejected) when GL revenue JEs = 0; monthly_expenses similarly falls back to vendor_bills; net_cash_flow uses the resolved values. No double counting — fallback only when GL total is 0.
+- Preview verified: GL values still shown (20,000 / 165,395); fallback aggregation pipeline validated directly against DB.
+- USER NOTE: the "Revenue & Receivables = 0" report is from PRODUCTION which still runs the old build — Redeploy required to pick up this + earlier receivables fixes.
