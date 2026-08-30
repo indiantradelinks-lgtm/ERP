@@ -18,6 +18,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { api, apiErrorMessage } from "@/lib/api";
+import { EmployeeSearchSelect } from "@/components/EmployeeSearchSelect";
 import { ProjectSelect } from "@/components/MasterSelect";
 import { toast } from "sonner";
 import {
@@ -95,6 +96,7 @@ function DashboardView() {
 function StructuresView() {
   const [rows, setRows] = useState([]);
   const [open, setOpen] = useState(false);
+  const [employees, setEmployees] = useState([]);
   const [form, setForm] = useState({
     wage_type: "monthly", pf_applicable: true, esic_applicable: false, tds_applicable: false,
     effective_from: today(), basic: 0, hra: 0, conveyance: 0, site_allowance: 0,
@@ -105,7 +107,12 @@ function StructuresView() {
     catch (e) { toast.error(apiErrorMessage(e)); }
   };
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (!open || employees.length) return;
+    api.get("/employees").then((r) => setEmployees(r.data || [])).catch(() => {});
+  }, [open]);
   const save = async () => {
+    if (!form.employee_id) { toast.error("Select an employee"); return; }
     try {
       await api.post("/hr4/salary-structures", form);
       toast.success("Salary structure created — pending approval");
@@ -170,7 +177,9 @@ function StructuresView() {
         <DialogContent className="max-w-3xl">
           <DialogHeader><DialogTitle>New Salary / Wage Structure</DialogTitle></DialogHeader>
           <div className="grid grid-cols-3 gap-3">
-            <Field label="Employee ID"><Input value={form.employee_id || ""} onChange={e => setForm({ ...form, employee_id: e.target.value })} data-testid="ss-emp-id" /></Field>
+            <EmployeeSearchSelect employees={employees} value={form.employee_id}
+              onChange={(id) => setForm({ ...form, employee_id: id })}
+              label="Employee" required testid="ss-emp-id" />
             <Field label="Wage Type">
               <Select value={form.wage_type} onValueChange={v => setForm({ ...form, wage_type: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>

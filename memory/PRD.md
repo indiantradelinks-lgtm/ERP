@@ -5728,3 +5728,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - POST /api/payroll/payslips/email-all?month=YYYY-MM (HR/Finance roles). For each committed payslip: renders payslip PDF (render_payslip_pdf + PAN from payroll_master), queues to email_outbox via email_router._queue_outbox (sender_type=system, purpose=noreply, inline base64 PDF attachment), then background-drains sequentially with 1.5s pacing (M365 throttle-safe). Employees without an email are returned in `skipped`.
 - Frontend (hr/Payroll.jsx PayslipsTab): "Email All" button (data-testid payslips-email-all-btn) with confirm + queued/skipped toasts.
 - Verified E2E: skip path (no emails) OK; real send to noreply self-address delivered — outbox status "sent" with 150KB PDF attachment; UI button confirmed via screenshot. Test employee email reverted.
+
+## Salary/Wage Structure — Employee Dropdown (June 2026)
+- HrPhase4.jsx StructuresView: replaced free-text "Employee ID" input with shared EmployeeSearchSelect (search by name/code/dept; loads GET /employees on dialog open; validates selection before save).
+- Also fixes latent bug: backend expects employee UUID (`db.employees.find_one({"id": ...})`) but users typed the employee code (EMPITL…) → "Employee not found". Dropdown sends the UUID.
+- Verified via screenshot: dialog shows searchable dropdown with filtered options. (Loans/Reimbursements/StoreRecoveries dialogs still use free-text id — candidate follow-up.)
