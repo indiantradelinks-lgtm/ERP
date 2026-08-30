@@ -5723,3 +5723,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Root cause: revenue read legacy journal_entries `type:"revenue"` flat docs (absent in prod → ₹0); receivables summed quotations with defunct status "invoiced" (always ₹0).
 - Fix: receivables now uses accounting_service.ar_aging (same as Accounts dashboard, client_invoices outstanding). Revenue falls back to Σ client_invoices.amount (last 6 months) when legacy JE revenue = 0. Revenue vs Expense chart also overlays per-month client_invoices/vendor_bills when the respective JE series is entirely 0. Helpers _six_months/_six_month_lower added.
 - Verified: preview UI shows Revenue ₹5,34,00,000 + Receivables ₹5,16,600; fallback aggregation validated (₹18.29L 6M invoices). Requires REDEPLOY for production.
+
+## One-Click Payslip Emails (June 2026)
+- POST /api/payroll/payslips/email-all?month=YYYY-MM (HR/Finance roles). For each committed payslip: renders payslip PDF (render_payslip_pdf + PAN from payroll_master), queues to email_outbox via email_router._queue_outbox (sender_type=system, purpose=noreply, inline base64 PDF attachment), then background-drains sequentially with 1.5s pacing (M365 throttle-safe). Employees without an email are returned in `skipped`.
+- Frontend (hr/Payroll.jsx PayslipsTab): "Email All" button (data-testid payslips-email-all-btn) with confirm + queued/skipped toasts.
+- Verified E2E: skip path (no emails) OK; real send to noreply self-address delivered — outbox status "sent" with 150KB PDF attachment; UI button confirmed via screenshot. Test employee email reverted.

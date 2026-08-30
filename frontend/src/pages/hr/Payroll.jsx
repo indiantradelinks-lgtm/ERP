@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Wallet, Play, Eye, Download, Upload, Users, Calculator, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Wallet, Play, Eye, Download, Upload, Users, Calculator, AlertCircle, CheckCircle2, Mail } from "lucide-react";
 import { toast } from "sonner";
 
 const inr = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
@@ -199,11 +199,25 @@ function PayslipsTab() {
   const [month, setMonth] = useState(currentMonth());
   const [rows, setRows] = useState([]);
   const [viewing, setViewing] = useState(null);
+  const [emailing, setEmailing] = useState(false);
   const load = async () => {
     try { const { data } = await api.get(`/payroll/payslips?month=${month}`); setRows(data); }
     catch (e) { toast.error(apiErrorMessage(e)); }
   };
   useEffect(() => { load(); }, [month]);
+  const emailAll = async () => {
+    if (!window.confirm(`Email each employee their ${month} payslip PDF (sent from noreply mailbox)?`)) return;
+    setEmailing(true);
+    try {
+      const { data } = await api.post(`/payroll/payslips/email-all?month=${month}`);
+      const skipped = data.skipped || [];
+      toast.success(`Queued ${data.queued} of ${data.total_payslips} payslip email(s) — sending in background`, { duration: 8000 });
+      if (skipped.length) {
+        toast.warning(`${skipped.length} skipped: ${skipped.map((s) => s.employee).join(", ")}`, { duration: 10000 });
+      }
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setEmailing(false); }
+  };
   return (
     <Card>
       <CardHeader className="flex flex-row items-center gap-3">
@@ -213,6 +227,11 @@ function PayslipsTab() {
         {rows.length > 0 && (
           <Button size="sm" variant="outline" onClick={() => downloadPdf(`/payroll/payslips/bulk-pdf?month=${month}`, `Payslips-${month}.pdf`)} data-testid="payslips-bulk-pdf-btn">
             <Download className="h-3 w-3 mr-1" /> All PDF
+          </Button>
+        )}
+        {rows.length > 0 && (
+          <Button size="sm" onClick={emailAll} disabled={emailing} data-testid="payslips-email-all-btn">
+            <Mail className="h-3 w-3 mr-1" /> {emailing ? "Queuing…" : "Email All"}
           </Button>
         )}
       </CardHeader>

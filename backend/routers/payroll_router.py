@@ -27,7 +27,7 @@ import logging
 from calendar import monthrange
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from core import db, get_current_user, now_iso, new_id
@@ -652,6 +652,74 @@ async def payslip_pdf(employee_id: str, month: str, user: dict = Depends(get_cur
     fname = f"Payslip-{doc.get('employee_code') or employee_id[:6]}-{month}.pdf"
     return Response(content=data, media_type="application/pdf", headers={
         "Content-Disposition": f'inline; filename="{fname}"'})
+
+
+@router.post("/payslips/email-all")
+async def email_payslips_all(month: str, background_tasks: BackgroundTasks,
+                             user: dict = Depends(get_current_user)):
+    """One-click: email every employee their payslip PDF for the month (HR/Finance)."""
+    if user.get("role") not in HR_ROLES | FINANCE_ROLES:
+        raise HTTPException(status_code=403, detail="not allowed")
+    slips = await db.payslips.find({"month": month}, {"_id": 0}).sort("employee_name", 1).to_list(1000)
+    if not slips:
+        raise HTTPException(status_code=404, detail=f"no payslips found for {month}")
+
+    import base64
+    from pdf_generator import render_payslip_pdf
+    from routers.email_router import _queue_outbox, _send_and_log
+
+    emp_ids = [s["employee_id"] for s in slips]
+    emps = {e["id"]: e async for e in db.employees.find(
+        {"id": {"$in": emp_ids}}, {"_id": 0, "id": 1, "name": 1, "email": 1})}
+    pans = {m["employee_id"]: m.get("pan") or "" async for m in db.payroll_master.find(
+        {"employee_id": {"$in": emp_ids}}, {"_id": 0, "employee_id": 1, "pan": 1})}
+
+    queued_ids: List[str] = []
+    queued_names: List[str] = []
+    skipped: List[Dict[str, str]] = []
+    for s in slips:
+        emp = emps.get(s["employee_id"]) or {}
+        email = (emp.get("email") or "").strip()
+        if not email:
+            skipped.append({"employee": s.get("employee_name") or s["employee_id"], "reason": "no email on employee record"})
+            continue
+        try:
+            pdf = render_payslip_pdf(s, pan=pans.get(s["employee_id"], ""))
+        except Exception as e:
+            skipped.append({"employee": s.get("employee_name") or s["employee_id"], "reason": f"PDF error: {e}"})
+            continue
+        fname = f"Payslip-{s.get('employee_code') or s['employee_id'][:6]}-{month}.pdf"
+        body = (f"Dear {s.get('employee_name') or 'Employee'},\n\n"
+                f"Please find attached your payslip for {month}. "
+                f"Net Pay: INR {float(s.get('net_pay') or 0):,.2f}.\n\n"
+                f"This is an auto-generated email from INDIAN TRADE LINKS ERP. Please do not reply.\n")
+        oid = await _queue_outbox(
+            sender_type="system", sender_purpose="noreply",
+            sender_user_id="", sender_email="", sender_display_name="INDIAN TRADE LINKS — Payroll",
+            to=[email], cc=[], bcc=[], reply_to=None,
+            subject=f"Payslip for {month} — {s.get('employee_name') or ''}".strip(),
+            body_text=body, body_html=None,
+            attachments_inline=[{"filename": fname, "content_b64": base64.b64encode(pdf).decode(),
+                                 "content_type": "application/pdf"}],
+            file_ids=[], related={"type": "payslip", "employee_id": s["employee_id"], "month": month},
+            queued_by=user.get("name") or user.get("email") or "",
+        )
+        queued_ids.append(oid)
+        queued_names.append(s.get("employee_name") or "")
+
+    async def _drain(ids: List[str]):
+        import asyncio as _aio
+        for oid in ids:
+            try:
+                await _send_and_log(oid)
+            except Exception as e:
+                logger.warning("payslip email %s failed: %s", oid, e)
+            await _aio.sleep(1.5)  # gentle pacing for M365 SMTP
+
+    if queued_ids:
+        background_tasks.add_task(_drain, queued_ids)
+    return {"month": month, "total_payslips": len(slips), "queued": len(queued_ids),
+            "queued_employees": queued_names, "skipped": skipped}
 
 
 @router.get("/runs")
