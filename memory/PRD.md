@@ -5733,3 +5733,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - HrPhase4.jsx StructuresView: replaced free-text "Employee ID" input with shared EmployeeSearchSelect (search by name/code/dept; loads GET /employees on dialog open; validates selection before save).
 - Also fixes latent bug: backend expects employee UUID (`db.employees.find_one({"id": ...})`) but users typed the employee code (EMPITL…) → "Employee not found". Dropdown sends the UUID.
 - Verified via screenshot: dialog shows searchable dropdown with filtered options. (Loans/Reimbursements/StoreRecoveries dialogs still use free-text id — candidate follow-up.)
+
+## Bug Fix: Payroll Attendance Preflight always failing (June 2026)
+- POST /api/dept-gov/payroll/check-attendance queried attendance with {month, status:"approved"} but rows are per-day (date "YYYY-MM-DD") and approval lives in `approval_status` — preflight failed for ALL employees always.
+- Fix: single aggregation on date-regex month; employee passes only when all filled days are approved. Blockers now include `reason` ("no attendance filled" / "N of M day(s) not approved"), rendered in Payroll.jsx.
+- Verified: month 2026-06 → 1 employee passes (has approved rows), others show precise reasons. Redeploy needed for production.

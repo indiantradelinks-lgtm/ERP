@@ -84,8 +84,8 @@ function RunTab() {
         {preview?.preflight_failed && (
           <div className="p-3 border rounded bg-rose-50 border-rose-200">
             <div className="flex items-center gap-2 font-medium text-rose-700"><AlertCircle className="h-4 w-4" /> Attendance preflight failed</div>
-            <div className="text-xs mt-1">{preview.blocker_count} employee(s) have no approved attendance for {month}:</div>
-            <ul className="text-xs mt-1 max-h-40 overflow-y-auto">{preview.blockers.map((b) => <li key={b.employee_id}>· {b.name} ({b.code}) — {b.department}</li>)}</ul>
+            <div className="text-xs mt-1">{preview.blocker_count} employee(s) lack fully-approved attendance for {month}:</div>
+            <ul className="text-xs mt-1 max-h-40 overflow-y-auto">{preview.blockers.map((b) => <li key={b.employee_id}>· {b.name} ({b.code}) — {b.department}{b.reason ? ` — ${b.reason}` : ""}</li>)}</ul>
           </div>
         )}
         {preview && !preview.preflight_failed && (

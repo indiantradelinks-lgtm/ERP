@@ -160,21 +160,33 @@ async def payroll_attendance_check(payload: PayrollPreflightIn, user: dict = Dep
     emps = await db.employees.find(
         {"active": {"$ne": False}}, {"_id": 0, "id": 1, "name": 1, "employee_id": 1, "departments": 1}
     ).to_list(5000)
+    # Per-day attendance rows: date "YYYY-MM-DD", approval_status pending/approved/rejected
+    agg = await db.attendance.aggregate([
+        {"$match": {"date": {"$regex": f"^{payload.month}-"}}},
+        {"$group": {"_id": "$employee_id",
+                    "total": {"$sum": 1},
+                    "approved": {"$sum": {"$cond": [{"$eq": ["$approval_status", "approved"]}, 1, 0]}}}},
+    ]).to_list(10000)
+    att_by_emp = {a["_id"]: a for a in agg}
     blockers: list[dict] = []
     ok_count = 0
     for e in emps:
-        att = await db.attendance.find_one(
-            {"employee_id": e["id"], "month": payload.month, "status": "approved"},
-            {"_id": 0, "id": 1},
-        )
-        if att:
-            ok_count += 1
+        a = att_by_emp.get(e["id"])
+        if not a:
+            reason = "no attendance filled"
+        elif a["approved"] == 0:
+            reason = f"{a['total']} day(s) filled, none approved"
+        elif a["approved"] < a["total"]:
+            reason = f"{a['total'] - a['approved']} of {a['total']} day(s) not approved"
         else:
-            blockers.append({
-                "employee_id": e["id"], "name": e.get("name"),
-                "code": e.get("employee_id"),
-                "department": (e.get("departments") or [None])[0],
-            })
+            ok_count += 1
+            continue
+        blockers.append({
+            "employee_id": e["id"], "name": e.get("name"),
+            "code": e.get("employee_id"),
+            "department": (e.get("departments") or [None])[0],
+            "reason": reason,
+        })
     return {
         "month": payload.month,
         "total_employees": len(emps),
