@@ -5746,3 +5746,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - HR4 salary structures: da + attendance bonus fields in model/dialog; approve-sync maps them to payroll_master with $setOnInsert {id, created_at}.
 - Data fixes: deduped 5 duplicate payroll_master docs, UNIQUE INDEX on payroll_master.employee_id, React key fallback, tbody added to slip dialog tables.
 - Tested: testing agent iteration_177 (16/17 → 17/17 after dedupe fix); pytest /app/backend/tests/test_iter177_payroll_da_bonus.py all pass.
+
+## Project Master Export — Contract Dates + PM Mapping Fix (June 2026)
+- exports.py COLUMNS["projects"]: added "Contract Start Date"/"Contract End Date"; "Manager" → "Project Manager". (PDF uses same COLUMNS.)
+- exports_router.py: _enrich_projects() joins project_handovers (prefer project.handover_id, else best non-draft/latest per project_code) for contract dates; PM name resolved as project_manager_name → users[project_manager_id] → handover.project_manager_label → users[handover.pm_id] → legacy manager.
+- Verified via curl: xlsx + pdf both 200; PRJ-2026-0015 (PM Dept Head HSE, 2026-07-01→2026-12-31 from handover), PRJ-2026-0027 (PM via handover pm_id→users), legacy rows fall back correctly.

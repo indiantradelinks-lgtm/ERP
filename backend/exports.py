@@ -123,7 +123,9 @@ COLUMNS: Dict[str, List[Dict[str, str]]] = {
     "projects": [
         {"key": "code", "label": "Code"}, {"key": "name", "label": "Project"},
         {"key": "client", "label": "Client"}, {"key": "type", "label": "Type"},
-        {"key": "site", "label": "Site"}, {"key": "manager", "label": "Manager"},
+        {"key": "site", "label": "Site"}, {"key": "manager", "label": "Project Manager"},
+        {"key": "contract_start_date", "label": "Contract Start Date"},
+        {"key": "contract_end_date", "label": "Contract End Date"},
         {"key": "budget", "label": "Budget"}, {"key": "progress", "label": "Progress %"},
         {"key": "status", "label": "Status"},
     ],

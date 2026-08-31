@@ -45,6 +45,39 @@ def _should_mask_pii(role: str | None, resource_key: str) -> bool:
     return (role or "") not in privileged
 
 
+async def _enrich_projects(rows: list[dict]) -> list[dict]:
+    """Fill contract dates from Contract Handover data and resolve the assigned PM name."""
+    codes = [r.get("code") for r in rows if r.get("code")]
+    ho_by_code: dict = {}
+    ho_by_id: dict = {}
+    async for h in db.project_handovers.find(
+            {"project_code": {"$in": codes}},
+            {"_id": 0, "id": 1, "project_code": 1, "status": 1, "updated_at": 1, "created_at": 1,
+             "contract_start_date": 1, "contract_end_date": 1,
+             "project_manager_label": 1, "project_manager_id": 1}):
+        ho_by_id[h.get("id")] = h
+        cur = ho_by_code.get(h.get("project_code"))
+        # prefer non-draft, then most recent
+        def rank(x):
+            return (0 if x.get("status") == "draft" else 1, x.get("updated_at") or x.get("created_at") or "")
+        if not cur or rank(h) > rank(cur):
+            ho_by_code[h["project_code"]] = h
+    pm_ids = {r.get("project_manager_id") for r in rows if r.get("project_manager_id")}
+    pm_ids |= {h.get("project_manager_id") for h in ho_by_code.values() if h.get("project_manager_id")}
+    users = {u["id"]: u.get("name") async for u in db.users.find(
+        {"id": {"$in": list(pm_ids)}}, {"_id": 0, "id": 1, "name": 1})} if pm_ids else {}
+    for r in rows:
+        h = ho_by_id.get(r.get("handover_id")) or ho_by_code.get(r.get("code")) or {}
+        r["contract_start_date"] = h.get("contract_start_date") or r.get("contract_start_date") or ""
+        r["contract_end_date"] = h.get("contract_end_date") or r.get("contract_end_date") or ""
+        r["manager"] = (r.get("project_manager_name")
+                        or users.get(r.get("project_manager_id"))
+                        or h.get("project_manager_label")
+                        or users.get(h.get("project_manager_id"))
+                        or r.get("manager") or "")
+    return rows
+
+
 @router.get("/export/{resource}.{fmt}")
 async def export_resource(resource: str, fmt: str,
                           master: str | None = None, project_code: str | None = None,
@@ -84,6 +117,8 @@ async def export_resource(resource: str, fmt: str,
         q["created_at"] = rng
 
     rows = await db[perm_key].find(q, {"_id": 0}).sort("created_at", -1).to_list(5000)
+    if perm_key == "projects":
+        rows = await _enrich_projects(rows)
     if perm_key == "enquiries":
         from exports import enrich_enquiries
         uids = list({r.get("created_by") for r in rows if r.get("created_by")})
