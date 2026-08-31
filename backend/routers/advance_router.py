@@ -139,6 +139,28 @@ class AdvanceCreateIn(BaseModel):
     submit: bool = True            # if False saves as draft
 
 
+class BulkAdvanceEmployee(BaseModel):
+    employee_id: str
+    amount: float = Field(gt=0)
+
+
+class BulkAdvanceCreateIn(BaseModel):
+    employees: list[BulkAdvanceEmployee]
+    advance_type: str
+    reason: str
+    emergency: bool = False
+    site: str = ""
+    project: str = ""
+    repayment_start_month: str = ""
+    installments: int = Field(ge=1, default=1)
+    remarks: str = ""
+    attachments: list[str] = []
+    documents: list = []
+    linked_attachments: list = []
+    documents_not_required: bool = False
+    documents_not_required_reason: str = ""
+
+
 class AdvancePaymentIn(BaseModel):
     mode: str          # bank_transfer | cash | cheque | upi
     paid_amount: float = Field(gt=0)
@@ -339,6 +361,115 @@ async def _submit_advance(advance_id: str, user: dict, docs_payload: Optional[di
     return out
 
 
+@router.post("/advances/bulk")
+async def create_bulk_advance(payload: BulkAdvanceCreateIn, user: dict = Depends(get_current_user)):
+    """Multiple Employee Advance — one form/request, ONE approval; on approval each
+    employee's advance is pushed to Payment Processing as a separate entry."""
+    if user.get("role") not in CREATE_ON_BEHALF_ROLES:
+        raise HTTPException(status_code=403, detail="not allowed to raise bulk advances")
+    seen: dict[str, float] = {}
+    for e in payload.employees:
+        seen[e.employee_id] = float(e.amount)
+    if len(seen) < 2:
+        raise HTTPException(status_code=400, detail="Select at least 2 employees (use the single form for one employee)")
+
+    atype = await db.advance_types.find_one(
+        {"$or": [{"code": payload.advance_type.upper()}, {"name": payload.advance_type}], "active": True},
+        {"_id": 0})
+    if not atype:
+        raise HTTPException(status_code=400, detail=f"unknown advance type '{payload.advance_type}'")
+    if atype.get("max_installments") and payload.installments > atype["max_installments"]:
+        raise HTTPException(status_code=400, detail=f"installments exceed cap ({atype['max_installments']}) for {atype['name']}")
+
+    tokens = await _pm_allowed_tokens(user)
+    proj_details = await _project_details(payload.project)
+    batch_id = new_id()
+    batch_no = await next_sequence("ADB")
+
+    advances: list[dict] = []
+    for emp_id, amount in seen.items():
+        emp = await _fetch_employee(emp_id)
+        if tokens is not None and (emp.get("current_project_code") or "") not in tokens:
+            raise HTTPException(status_code=403,
+                                detail=f"{emp.get('name')}: you can only raise advances for employees on your projects")
+        if atype.get("max_amount") and amount > atype["max_amount"]:
+            raise HTTPException(status_code=400,
+                                detail=f"{emp.get('name')}: amount exceeds cap (₹{atype['max_amount']:,.0f}) for {atype['name']}")
+        adv_no = await next_sequence("AD")
+        dept_no = await next_dept_doc("advance")
+        emi = round(amount / payload.installments, 2) if payload.installments else 0
+        advances.append({
+            "id": new_id(),
+            "advance_no": adv_no,
+            "dept_doc_no": dept_no["dept_doc_no"],
+            "ownership_department": dept_no["owner_dept"],
+            "batch_id": batch_id, "batch_no": batch_no,
+            "employee_id": emp["id"],
+            "employee_code": emp.get("employee_id") or emp.get("emp_code"),
+            "employee_name": emp.get("name"),
+            "department": (emp.get("departments") or [None])[0] or emp.get("department"),
+            "designation": emp.get("designation"),
+            "site": payload.site or emp.get("site"),
+            "project": payload.project,
+            **proj_details,
+            "reporting_manager": emp.get("reporting_manager"),
+            "salary": emp.get("salary"),
+            "joining_date": emp.get("joining_date"),
+            "advance_type": atype["name"],
+            "advance_type_code": atype["code"],
+            "request_date": now_iso()[:10],
+            "requested_amount": amount,
+            "approved_amount": 0, "paid_amount": 0, "recovered_amount": 0, "outstanding": 0,
+            "reason": payload.reason,
+            "emergency": payload.emergency,
+            "remarks": payload.remarks,
+            "repayment_start_month": payload.repayment_start_month,
+            "installments": payload.installments,
+            "remaining_installments": payload.installments,
+            "emi": emi,
+            "attachments": payload.attachments or [],
+            "status": "submitted",
+            "on_behalf_of": True,
+            "created_by_role": user.get("role"),
+            "created_by": user.get("name") or user.get("email"),
+            "created_by_id": user.get("id"),
+            "created_at": now_iso(),
+            "submitted_at": now_iso(),
+            "status_history": [{"at": now_iso(), "by": user.get("name") or user.get("email"),
+                                "by_role": user.get("role"), "from": None, "to": "submitted",
+                                "comment": f"Created via bulk advance {batch_no}"}],
+        })
+
+    total = round(sum(a["requested_amount"] for a in advances), 2)
+    chain = await build_chain("employee_advance")
+    approval = {
+        "id": new_id(),
+        "title": f"Bulk Advance {batch_no} — {len(advances)} employees (₹{total:,.0f})",
+        "type": "employee_advance",
+        "reference": batch_id,
+        "advance_ids": [a["id"] for a in advances],
+        "batch_no": batch_no,
+        "amount": total,
+        "requested_by": user.get("name") or user.get("email"),
+        "chain": chain,
+        "current_step": 0,
+        "history": [],
+        "status": "pending",
+        "created_at": now_iso(),
+    }
+    copy_approval_doc_fields(approval, payload.model_dump(exclude_none=True))
+    for a in advances:
+        a["approval_id"] = approval["id"]
+        await db.employee_advances.insert_one(a)
+    await insert_approval(approval)
+    for a in advances:
+        a.pop("_id", None)
+    return {"batch_id": batch_id, "batch_no": batch_no, "approval_id": approval["id"],
+            "total": total, "count": len(advances),
+            "advances": [{"id": a["id"], "advance_no": a["advance_no"],
+                          "employee_name": a["employee_name"], "amount": a["requested_amount"]} for a in advances]}
+
+
 @router.post("/advances/{advance_id}/submit")
 async def submit_advance(advance_id: str, body: Optional[dict] = None, user: dict = Depends(get_current_user)):
     return await _submit_advance(advance_id, user, body)
@@ -495,12 +626,17 @@ async def delete_advance(advance_id: str, user: dict = Depends(get_current_user)
 # ────────────────────────────────────────────────────────────────────────
 async def on_advance_approval_action(approval: dict) -> None:
     """Called by approvals_router.approval_action after apply_action persists.
-    Updates the linked advance based on the new approval status."""
+    Updates the linked advance(s) based on the new approval status.
+    Bulk advances carry `advance_ids` — each advance is updated (and pushed to
+    Payment Processing) individually."""
     if approval.get("type") != "employee_advance":
         return
-    advance_id = approval.get("reference")
-    if not advance_id:
-        return
+    advance_ids = approval.get("advance_ids") or ([approval.get("reference")] if approval.get("reference") else [])
+    for advance_id in advance_ids:
+        await _apply_approval_to_advance(advance_id, approval)
+
+
+async def _apply_approval_to_advance(advance_id: str, approval: dict) -> None:
     adv = await db.employee_advances.find_one({"id": advance_id}, {"_id": 0})
     if not adv:
         return

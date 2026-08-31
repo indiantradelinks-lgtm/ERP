@@ -5755,3 +5755,9 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 ## Project Master Export — S.No + Work Order Number (June 2026)
 - COLUMNS["projects"] now starts with "S. No." then "Work Order Number" (fetched from Contract Handover work_order_number, fallback to project's own). _enrich_projects enumerates s_no.
 - Verified: xlsx header order correct, WO values from handovers (PRJ-2026-0025 → ABCD, PRJ-2026-0015 → WO/2026/0091), PDF valid.
+
+## Multiple Employee Advance (June 2026)
+- POST /api/advances/bulk (roles: CREATE_ON_BEHALF_ROLES; PM project-scope enforced per employee): payload {employees:[{employee_id,amount}], advance_type, reason, installments, ...shared}. Creates one employee_advances doc per employee (batch_id + batch_no ADB-YYYY-####, status submitted) and ONE approval (type employee_advance, reference=batch_id, advance_ids list, total amount, doc-gate fields).
+- on_advance_approval_action now fans out over approval.advance_ids (single advances unchanged via reference). On approve: each advance → approved + _push_advance_to_accounts → SEPARATE Payment Processing entry per employee. On reject: all batch advances rejected.
+- Frontend (hr/Advances.jsx): "Multiple employees" checkbox in New Advance dialog → employee search-add list with per-row amount, total, remove; single-mode fields (amount, EMI, draft) hidden; submit posts /advances/bulk. Single Employee flow untouched.
+- Verified E2E via curl: ADB-2026-0002 (2 employees, ₹6,500) → 6-step approval chain approved → both advances approved → 2 separate payment queue rows (AD-2026-0093/94, pending_verification). Test data cleaned. UI screenshot confirmed multi panel.

@@ -296,6 +296,9 @@ function SummaryTile({ label, value, icon: Icon, tone = "slate" }) {
 
 function CreateAdvanceDialog({ open, onOpenChange, types, employees, canCreateOnBehalf, currentUser, onCreated }) {
   const [onBehalf, setOnBehalf] = useState(false);
+  const [multiMode, setMultiMode] = useState(false);
+  const [multiList, setMultiList] = useState([]); // [{employee_id, name, code, amount}]
+  const [multiPick, setMultiPick] = useState("");
   const [projFilter, setProjFilter] = useState("");
   const [form, setForm] = useState({
     employee_id: "", advance_type: "", requested_amount: "", reason: "",
@@ -332,6 +335,24 @@ function CreateAdvanceDialog({ open, onOpenChange, types, employees, canCreateOn
   const [docs, setDocs] = useState({ documents: [], linked_attachments: [], documents_not_required: false, documents_not_required_reason: "" });
 
   const submit = async (asDraft) => {
+    if (multiMode) {
+      if (!form.advance_type || !form.reason) { toast.error("Type and reason are required"); return; }
+      if (multiList.length < 2) { toast.error("Add at least 2 employees (use single mode for one)"); return; }
+      if (multiList.some((m) => !Number(m.amount) || Number(m.amount) <= 0)) { toast.error("Enter a valid amount for every employee"); return; }
+      setSaving(true);
+      try {
+        const { data } = await api.post("/advances/bulk", {
+          ...form, ...docs,
+          employees: multiList.map((m) => ({ employee_id: m.employee_id, amount: Number(m.amount) })),
+          installments: Number(form.installments),
+        });
+        toast.success(`Bulk advance ${data.batch_no} submitted — ${data.count} employees, total ${inr(data.total)}`);
+        onCreated();
+      } catch (e) {
+        toast.error(apiErrorMessage(e, "Failed to submit bulk advance"));
+      } finally { setSaving(false); }
+      return;
+    }
     if (!form.employee_id || !form.advance_type || !form.requested_amount || !form.reason) {
       toast.error("Employee, type, amount and reason are required");
       return;
@@ -354,15 +375,65 @@ function CreateAdvanceDialog({ open, onOpenChange, types, employees, canCreateOn
         </DialogHeader>
         <div className="space-y-4">
           {canCreateOnBehalf && (
-            <div className="flex items-center gap-2 p-2 border rounded bg-amber-50 border-amber-200">
-              <Checkbox id="on-behalf" checked={onBehalf} onCheckedChange={(v) => setOnBehalf(!!v)} data-testid="on-behalf-toggle" />
-              <Label htmlFor="on-behalf" className="cursor-pointer text-sm font-medium">
-                Create on behalf of another employee (site request) — Coordinator workflow
-              </Label>
+            <div className="flex flex-col gap-2 p-2 border rounded bg-amber-50 border-amber-200">
+              <div className="flex items-center gap-2">
+                <Checkbox id="on-behalf" checked={onBehalf} disabled={multiMode} onCheckedChange={(v) => setOnBehalf(!!v)} data-testid="on-behalf-toggle" />
+                <Label htmlFor="on-behalf" className="cursor-pointer text-sm font-medium">
+                  Create on behalf of another employee (site request) — Coordinator workflow
+                </Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox id="multi-mode" checked={multiMode}
+                  onCheckedChange={(v) => { setMultiMode(!!v); if (v) setOnBehalf(true); }}
+                  data-testid="multi-mode-toggle" />
+                <Label htmlFor="multi-mode" className="cursor-pointer text-sm font-medium">
+                  Multiple employees — one request, one approval, separate payment per employee
+                </Label>
+              </div>
             </div>
           )}
 
-          {onBehalf ? (
+          {multiMode ? (
+            <div className="space-y-2 p-3 border rounded bg-slate-50" data-testid="multi-emp-panel">
+              <div className="grid grid-cols-2 gap-3">
+                <ProjectSelect label="Project (filter)" value={projFilter} includeHeadOffice
+                  onChange={(v) => setProjFilter(v)} testid="multi-project-filter" placeholder="— all projects —" />
+                <EmployeeSearchSelect
+                  label="Add Employee"
+                  employees={filteredEmployees.filter((e) => !multiList.some((m) => m.employee_id === e.id))}
+                  value={multiPick}
+                  onChange={(id, row) => {
+                    if (!id || !row) return;
+                    setMultiList((l) => [...l, { employee_id: id, name: row.name, code: row.employee_id || row.emp_code, amount: "" }]);
+                    setMultiPick("");
+                  }}
+                  testid="multi-emp-select"
+                />
+              </div>
+              {multiList.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No employees added yet — search and pick above.</p>
+              ) : (
+                <div className="border rounded bg-white divide-y" data-testid="multi-emp-list">
+                  {multiList.map((m, i) => (
+                    <div key={m.employee_id} className="flex items-center gap-2 px-2 py-1.5 text-sm">
+                      <span className="w-5 text-xs text-muted-foreground">{i + 1}.</span>
+                      <span className="flex-1">{m.name} <span className="text-xs text-muted-foreground">({m.code})</span></span>
+                      <Input type="number" placeholder="Amount ₹" value={m.amount} className="w-32 h-8"
+                        onChange={(e) => setMultiList((l) => l.map((x) => x.employee_id === m.employee_id ? { ...x, amount: e.target.value } : x))}
+                        data-testid={`multi-amount-${i}`} />
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-rose-600"
+                        onClick={() => setMultiList((l) => l.filter((x) => x.employee_id !== m.employee_id))}
+                        data-testid={`multi-remove-${i}`}>✕</Button>
+                    </div>
+                  ))}
+                  <div className="flex justify-between px-2 py-1.5 text-sm font-semibold bg-slate-50">
+                    <span>{multiList.length} employee(s)</span>
+                    <span data-testid="multi-total">Total: {inr(multiList.reduce((a, m) => a + (Number(m.amount) || 0), 0))}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : onBehalf ? (
             <div className="grid grid-cols-2 gap-3">
               <ProjectSelect label="Project (filter)" value={projFilter} includeHeadOffice
                 onChange={(v) => setProjFilter(v)} testid="emp-project-filter" placeholder="— all projects —" />
@@ -386,7 +457,7 @@ function CreateAdvanceDialog({ open, onOpenChange, types, employees, canCreateOn
             </div>
           )}
 
-          {selectedEmp && (
+          {selectedEmp && !multiMode && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 p-3 rounded border bg-slate-50 text-xs">
               <KV label="Code" value={selectedEmp.employee_id || selectedEmp.emp_code} />
               <KV label="Designation" value={selectedEmp.designation} />
@@ -405,10 +476,12 @@ function CreateAdvanceDialog({ open, onOpenChange, types, employees, canCreateOn
                 ))}</SelectContent>
               </Select>
             </div>
+            {!multiMode && (
             <div>
               <Label>Requested Amount *</Label>
               <Input type="number" value={form.requested_amount} onChange={(e) => setForm({ ...form, requested_amount: e.target.value })} data-testid="amount" />
             </div>
+            )}
             <div>
               <Label>Installments</Label>
               <Input type="number" min={1} value={form.installments} onChange={(e) => setForm({ ...form, installments: e.target.value })} data-testid="installments" />
@@ -435,7 +508,7 @@ function CreateAdvanceDialog({ open, onOpenChange, types, employees, canCreateOn
             <Label htmlFor="emerg" className="cursor-pointer text-sm flex items-center gap-1"><AlertTriangle className="h-3 w-3 text-rose-600" /> Mark as Emergency (skip-line approval)</Label>
           </div>
 
-          {emi > 0 && (
+          {emi > 0 && !multiMode && (
             <div className="p-3 rounded border bg-blue-50 border-blue-200 text-sm">
               <strong>Computed EMI:</strong> {inr(emi)} × {form.installments} starting {form.repayment_start_month}
             </div>
@@ -444,8 +517,8 @@ function CreateAdvanceDialog({ open, onOpenChange, types, employees, canCreateOn
           <ApprovalDocsGate parentType="employee_advances" value={docs} onChange={setDocs} testidPrefix="advance-docs" />
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => submit(true)} disabled={saving} data-testid="save-draft-btn"><FileText className="h-4 w-4 mr-1" />Save as Draft</Button>
-          <Button onClick={() => submit(false)} disabled={saving} data-testid="submit-btn"><Send className="h-4 w-4 mr-1" />{saving ? "Submitting…" : "Submit for Approval"}</Button>
+          {!multiMode && <Button variant="outline" onClick={() => submit(true)} disabled={saving} data-testid="save-draft-btn"><FileText className="h-4 w-4 mr-1" />Save as Draft</Button>}
+          <Button onClick={() => submit(false)} disabled={saving} data-testid="submit-btn"><Send className="h-4 w-4 mr-1" />{saving ? "Submitting…" : multiMode ? `Submit ${multiList.length || ""} Advances for Approval` : "Submit for Approval"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
