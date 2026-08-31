@@ -99,8 +99,9 @@ function StructuresView() {
   const [employees, setEmployees] = useState([]);
   const [form, setForm] = useState({
     wage_type: "monthly", pf_applicable: true, esic_applicable: false, tds_applicable: false,
-    effective_from: today(), basic: 0, hra: 0, conveyance: 0, site_allowance: 0,
+    effective_from: today(), basic: 0, hra: 0, da: 0, conveyance: 0, site_allowance: 0,
     food_allowance: 0, other_allowance: 0, overtime_rate: 0, professional_tax: 200,
+    attendance_bonus_applicable: false, attendance_bonus_amount: 0,
   });
   const load = async () => {
     try { setRows((await api.get("/hr4/salary-structures")).data || []); }
@@ -152,7 +153,7 @@ function StructuresView() {
                 <TableCell>{inr(r.basic)}</TableCell>
                 <TableCell>{inr(r.hra)}</TableCell>
                 <TableCell className="text-xs">
-                  Site {inr(r.site_allowance)} · Food {inr(r.food_allowance)} · Other {inr(r.other_allowance)}
+                  {r.da > 0 && <>DA {inr(r.da)} · </>}Site {inr(r.site_allowance)} · Food {inr(r.food_allowance)} · Other {inr(r.other_allowance)}{r.attendance_bonus_applicable && <> · Att.Bonus {inr(r.attendance_bonus_amount)}</>}
                 </TableCell>
                 <TableCell>{inr(r.overtime_rate)}</TableCell>
                 <TableCell className="text-xs">
@@ -189,6 +190,7 @@ function StructuresView() {
             <Field label="Effective From"><Input type="date" value={form.effective_from} onChange={e => setForm({ ...form, effective_from: e.target.value })} /></Field>
             <Field label="Basic"><Input type="number" value={form.basic} onChange={e => setForm({ ...form, basic: parseFloat(e.target.value) || 0 })} data-testid="ss-basic" /></Field>
             <Field label="HRA"><Input type="number" value={form.hra} onChange={e => setForm({ ...form, hra: parseFloat(e.target.value) || 0 })} /></Field>
+            <Field label="DA (Dearness Allowance)"><Input type="number" value={form.da} onChange={e => setForm({ ...form, da: parseFloat(e.target.value) || 0 })} data-testid="ss-da" /></Field>
             <Field label="Conveyance"><Input type="number" value={form.conveyance} onChange={e => setForm({ ...form, conveyance: parseFloat(e.target.value) || 0 })} /></Field>
             <Field label="Site Allowance"><Input type="number" value={form.site_allowance} onChange={e => setForm({ ...form, site_allowance: parseFloat(e.target.value) || 0 })} /></Field>
             <Field label="Food Allowance"><Input type="number" value={form.food_allowance} onChange={e => setForm({ ...form, food_allowance: parseFloat(e.target.value) || 0 })} /></Field>
@@ -196,6 +198,19 @@ function StructuresView() {
             <Field label="Overtime Rate / hour"><Input type="number" value={form.overtime_rate} onChange={e => setForm({ ...form, overtime_rate: parseFloat(e.target.value) || 0 })} /></Field>
             <Field label="Professional Tax"><Input type="number" value={form.professional_tax} onChange={e => setForm({ ...form, professional_tax: parseFloat(e.target.value) || 0 })} /></Field>
             <Field label="Effective To"><Input type="date" value={form.effective_to || ""} onChange={e => setForm({ ...form, effective_to: e.target.value })} /></Field>
+            <div className="col-span-3 p-2 border rounded bg-amber-50/60 border-amber-200 grid grid-cols-2 gap-3 items-center">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={!!form.attendance_bonus_applicable}
+                  onChange={e => setForm({ ...form, attendance_bonus_applicable: e.target.checked })}
+                  data-testid="ss-att-bonus-flag" />
+                Attendance Bonus Applicable
+              </label>
+              <Field label="Bonus Amount (₹/month, paid when zero LOP)">
+                <Input type="number" value={form.attendance_bonus_amount || 0} disabled={!form.attendance_bonus_applicable}
+                  onChange={e => setForm({ ...form, attendance_bonus_amount: parseFloat(e.target.value) || 0 })}
+                  data-testid="ss-att-bonus-amount" />
+              </Field>
+            </div>
             <div className="col-span-3 grid grid-cols-3 gap-2">
               {["pf_applicable", "esic_applicable", "tds_applicable"].map(k => (
                 <label key={k} className="flex items-center gap-2 text-sm">

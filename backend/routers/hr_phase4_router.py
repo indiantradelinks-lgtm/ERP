@@ -97,10 +97,13 @@ class SalaryStructureIn(BaseModel):
     wage_type: str = "monthly"   # monthly | daily | hourly | shift | piece_rate
     basic: float = 0
     hra: float = 0
+    da: float = 0
     conveyance: float = 0
     site_allowance: float = 0
     food_allowance: float = 0
     other_allowance: float = 0
+    attendance_bonus_applicable: bool = False
+    attendance_bonus_amount: float = 0
     overtime_rate: float = 0
     pf_applicable: bool = True
     esic_applicable: bool = False
@@ -196,13 +199,17 @@ async def approve_structure(sid: str, p: ApprovalIn, request: Request,
     if p.decision == "approve":
         await db.payroll_master.update_one(
             {"employee_id": row["employee_id"]},
-            {"$set": {
+            {"$setOnInsert": {"id": new_id(), "created_at": now_iso()},
+             "$set": {
                 "employee_id": row["employee_id"],
                 "basic": row["basic"], "hra": row["hra"],
+                "da": row.get("da", 0),
                 "conveyance": row["conveyance"],
                 "site_allowance": row["site_allowance"],
                 "food_allowance": row.get("food_allowance", 0),
                 "other_allowance": row.get("other_allowance", 0),
+                "attendance_bonus_applicable": row.get("attendance_bonus_applicable", False),
+                "attendance_bonus_amount": row.get("attendance_bonus_amount", 0),
                 "overtime_rate": row.get("overtime_rate", 0),
                 "pf_applicable": row["pf_applicable"],
                 "esi_applicable": row["esic_applicable"],

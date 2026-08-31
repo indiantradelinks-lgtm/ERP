@@ -5738,3 +5738,11 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - POST /api/dept-gov/payroll/check-attendance queried attendance with {month, status:"approved"} but rows are per-day (date "YYYY-MM-DD") and approval lives in `approval_status` — preflight failed for ALL employees always.
 - Fix: single aggregation on date-regex month; employee passes only when all filled days are approved. Blockers now include `reason` ("no attendance filled" / "N of M day(s) not approved"), rendered in Payroll.jsx.
 - Verified: month 2026-06 → 1 employee passes (has approved rows), others show precise reasons. Redeploy needed for production.
+
+## DA + Attendance Bonus + Enhanced Bulk Salary Upload (June 2026)
+- payroll_master new fields: da, attendance_bonus_applicable, attendance_bonus_amount (PayrollMasterIn, PUT /master, master dialog, master table DA column + AB badge).
+- _compute_payslip: da prorated in base_earn (key omitted when 0 for legacy slips); OT auto-rate includes da; "Attendance Bonus" added to extra_earnings only when applicable AND lop_days = 0. Payslip PDF/dialog label "DA (Dearness Allowance)".
+- Bulk upload: template has DA + Attendance Bonus (Y/N) + Amount columns; shared _parse_master_workbook; NEW POST /payroll/master/bulk/validate (dry run: counts create/update/unchanged/skip/error, per-row diff) → UI Validation Preview dialog → Confirm Update → /bulk/import (upsert, no duplicates). Old templates without DA columns preserve existing values. AB 'Y' with 0 amount = validation error.
+- HR4 salary structures: da + attendance bonus fields in model/dialog; approve-sync maps them to payroll_master with $setOnInsert {id, created_at}.
+- Data fixes: deduped 5 duplicate payroll_master docs, UNIQUE INDEX on payroll_master.employee_id, React key fallback, tbody added to slip dialog tables.
+- Tested: testing agent iteration_177 (16/17 → 17/17 after dedupe fix); pytest /app/backend/tests/test_iter177_payroll_da_bonus.py all pass.

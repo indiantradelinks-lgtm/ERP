@@ -1,0 +1,44 @@
+{
+  "summary": "Iter 177 — Payroll DA + Attendance Bonus + Enhanced Bulk Salary Breakup Upload tested end-to-end. Backend: 17 pytest cases (16 pass / 1 fail) covering bulk template header (DA + Attendance Bonus cols, 51 prefilled rows), /master/bulk/validate dry-run (counts, per-row action, da/gross/attendance_bonus display, changed_fields, verified ZERO DB writes), /master/bulk/import upsert (no duplicates created on repeated import, error rows for bad number / unknown code / bonus Y with amount 0 not written), PUT /master/{id} persistence of da+bonus, payroll run preview (da present & prorated by paid_days/total_days, Attendance Bonus paid only when lop_days=0, legacy masters without DA get no 'da' key), payslip PDF label mapping 'DA (Dearness Allowance)' + 'Attendance Bonus', payslip list + single payslip PDF regression, HR4 salary-structure create+approve syncing da/attendance_bonus into payroll_master. Frontend: verified Payroll Master DA column, + Add dialog (master-da, master-att-bonus-flag, master-att-bonus-amount disabled until ticked), Template button, Bulk Upload → validation preview dialog (counts tiles + per-row UPDATE/ERROR rows + changed field 'da') → Confirm Update → import result dialog, Cancel closes without importing, HrPhase4 New Structure dialog (ss-da, ss-att-bonus-flag/amount), Monthly Run preview (16 slips, slip dialog shows 'DA (Dearness Allowance)'), Payslips tab with All PDF + Email All. Only failure is a pre-existing DB data-integrity issue (duplicate payroll_master docs) — NOT caused by the new bulk import (verified: re-import returned created=0 and doc count unchanged).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/payroll/master (data) + hr_phase4 approve-sync", "issue": "5 employee_ids have 2 payroll_master docs each (36d17794…, 33703dfb…, f404e271…, f88314ab…, 59dfad8a… — all 'PYTEST HR4 Emp' test employees). One doc of each pair was written by hr_phase4 approve `update_one(..., upsert=True)` WITHOUT `id`/`created_at`; the other by the bulk upload. Consequence: GET /payroll/master returns duplicate rows, PUT/import update_one touches only one doc (stale twin), UI shows duplicate rows + React duplicate/undefined key warning. Fix: dedupe collection, add $setOnInsert {id, created_at} in hr_phase4 upsert, and add a unique index on payroll_master.employee_id."},
+      {"endpoint": "POST /api/hr4/salary-structures", "issue": "No delete/void endpoint, so QA/test structures accumulate (4 leftover SS rows from repeated test runs were removed manually via DB). Consider a void/cancel endpoint."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Payroll MasterTab table", "issue": "React console error: 'Each child in a list should have a unique key prop' — rows keyed by r.id, but legacy payroll_master docs (hr4 upsert) have no id (undefined/duplicate keys). Row data-testid master-row-{employee_code} also duplicates for the duplicated employees.", "selector": "[data-testid^=\"master-row-\"]", "priority": "MEDIUM"},
+      {"component": "Payroll SlipDialog", "issue": "DOM nesting console error: '<tr> cannot be a child of <table>' — raw <table> at Payroll.jsx:152/164 has <tr> without <tbody>.", "selector": "[role=\"dialog\"] table", "priority": "LOW"},
+      {"component": "MasterDialog employee picker", "issue": "Console DOM-nesting error '<span> cannot be a child of <option>' triggered when the dialog opens; picker uses a native <select> instead of the shadcn Select used elsewhere (inconsistent with the rest of the app).", "selector": "[data-testid=\"master-emp-select\"]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Payroll → Payroll Master", "issues": ["Table shows DA but no Attendance Bonus column — bonus config is only visible after opening Edit; consider an 'Att. Bonus' column/badge", "Monthly Run slip rows' view (eye) button has no data-testid"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter177_payroll_da_bonus.py", "/app/test_reports/pytest/iter177_payroll_da.xml"],
+  "action_items": [
+    "Dedupe payroll_master (5 employee_ids with 2 docs), add unique index on employee_id, and add $setOnInsert {id, created_at} to the hr_phase4 approve-sync upsert so future syncs never create id-less/duplicate docs",
+    "Fix React key warning in MasterTab (fallback key r.id || r.employee_id)",
+    "Add <tbody> to the raw tables in Payroll.jsx SlipDialog (lines ~152/164)",
+    "Optional: migrate MasterDialog employee <select> to shadcn Select; add 'Att. Bonus' column to the master table"
+  ],
+  "critical_code_review_comments": [
+    "payroll_router bulk import/PUT rely on update_one({employee_id}) — with no unique index a duplicate doc silently keeps stale salary data and can be picked up by _compute_payslip (find_one order is undefined). Add the unique index.",
+    "_compute_payslip attendance fallback: employees with only a couple of attendance rows in the month get paid_days=2/31 (E-1001 preview showed 2/31) — DA/basic proration and bonus suppression are technically correct, but the 'partial attendance rows' case may need a business rule (treat missing days as weekly-off/absent explicitly).",
+    "payroll_router.py is 829 lines — consider splitting master/bulk-upload endpoints into their own module."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter177_payroll_da_bonus.py (new)",
+    "/app/frontend/src/pages/hr/Payroll.jsx (added missing data-testid=\"master-add-btn\" to the + Add button)"
+  ],
+  "success_rate": {"backend": "94% (16/17)", "frontend": "100% of tested flows"},
+  "seed_data_creation": "Set payroll_master via API for E-1001 (basic 30000, hra 6000, da ~4104, attendance bonus Y ₹1500), E-1004 (da 3500, bonus ₹1200), E-1005 (da 3100, bonus ₹1000), E-1006 (basic only, no DA — legacy regression case), E-1007 (via HR4 approved structure: da 2800, bonus ₹900). 4 leftover test salary structures deleted. Upload fixture generated at /tmp/ui_master_upload.xlsx (regenerate with the template if needed). No payroll runs were committed.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin) — cookie+bearer session",
+  "context_for_next_testing_agent": "Run `pytest /app/backend/tests/test_iter177_payroll_da_bonus.py`. The only failing test (test_no_duplicate_master_rows_in_collection) is a pre-existing data-integrity check that will pass once the duplicate payroll_master docs are removed; the new bulk import itself was verified NOT to create duplicates (re-import → created=0, per-employee doc count unchanged). Payroll run preview for 2026-07 with skip_attendance_check=true is fast when employee_ids filter is passed. Do NOT commit payroll runs.",
+  "rca_of_the_issue": "Duplicate payroll_master documents: hr_phase4_router.approve_structure uses update_one(..., upsert=True) with only $set fields, so upserted docs lack `id`/`created_at`. There is no unique index on payroll_master.employee_id, so any code path (or an older build of the bulk importer, which stamped these twins on 2026-08-24 09:05) can insert a second doc for the same employee. Current bulk import code is correct (existing-row detection + update_one), reproduced with an import for one of the affected employees: doc count stayed at 2, created=0. Impact: duplicate rows in the Payroll Master UI, React key warning, and risk of payslips reading a stale twin."
+}

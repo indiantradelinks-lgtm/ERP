@@ -150,18 +150,21 @@ function SlipDialog({ slip, onClose }) {
             <div>
               <Label className="font-semibold">Earnings</Label>
               <table className="w-full text-xs">
+                <tbody>
                 {Object.entries(slip.earnings).map(([k, v]) => (
-                  <tr key={k} className="border-b"><td className="py-1 capitalize">{k.replace(/_/g, " ")}</td><td className="text-right">{inr(v)}</td></tr>
+                  <tr key={k} className="border-b"><td className="py-1 capitalize">{k === "da" ? "DA (Dearness Allowance)" : k === "hra" ? "HRA" : k.replace(/_/g, " ")}</td><td className="text-right">{inr(v)}</td></tr>
                 ))}
                 {slip.extra_earnings.map((e, i) => (
                   <tr key={i} className="border-b"><td className="py-1">{e.label}</td><td className="text-right">{inr(e.amount)}</td></tr>
                 ))}
                 <tr className="font-bold"><td className="py-1">Total</td><td className="text-right">{inr(slip.total_earnings)}</td></tr>
+                </tbody>
               </table>
             </div>
             <div>
               <Label className="font-semibold">Deductions</Label>
               <table className="w-full text-xs">
+                <tbody>
                 {Object.entries(slip.statutory_deductions).map(([k, v]) => (
                   <tr key={k} className="border-b"><td className="py-1 uppercase">{k}</td><td className="text-right">{inr(v)}</td></tr>
                 ))}
@@ -170,6 +173,7 @@ function SlipDialog({ slip, onClose }) {
                   <tr key={i} className="border-b"><td className="py-1">{d.label}</td><td className="text-right">{inr(d.amount)}</td></tr>
                 ))}
                 <tr className="font-bold"><td className="py-1">Total</td><td className="text-right">{inr(slip.total_deductions)}</td></tr>
+                </tbody>
               </table>
             </div>
           </div>
@@ -259,6 +263,7 @@ function MasterTab() {
   const [editing, setEditing] = useState(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [pendingUpload, setPendingUpload] = useState(null); // { file, preview }
   const load = async () => {
     try {
       const [m, e] = await Promise.all([api.get("/payroll/master"), api.get("/employees")]);
@@ -284,7 +289,19 @@ function MasterTab() {
     try {
       const fd = new FormData();
       fd.append("file", file);
+      const { data } = await api.post("/payroll/master/bulk/validate", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      setPendingUpload({ file, preview: data });
+    } catch (er) { toast.error(apiErrorMessage(er)); }
+    finally { setImporting(false); }
+  };
+  const confirmImport = async () => {
+    if (!pendingUpload?.file) return;
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", pendingUpload.file);
       const { data } = await api.post("/payroll/master/bulk/import", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      setPendingUpload(null);
       setImportResult(data);
       if (data.error_count === 0) toast.success(`Imported: ${data.created} created · ${data.updated} updated`);
       else toast.warning(`${data.error_count} row(s) had errors — see details`);
@@ -306,24 +323,25 @@ function MasterTab() {
             <span className="cursor-pointer"><Upload className="h-3 w-3 mr-1" /> {importing ? "Uploading…" : "Bulk Upload"}</span>
           </Button>
         </label>
-        <Button size="sm" onClick={() => setEditing({ employee_id: "", basic: 0, hra: 0, special_allowance: 0, pf_applicable: true, esi_applicable: false, pt_state: "GJ", fixed_other_earnings: [], fixed_other_deductions: [] })}>+ Add</Button>
+        <Button size="sm" onClick={() => setEditing({ employee_id: "", basic: 0, hra: 0, da: 0, special_allowance: 0, attendance_bonus_applicable: false, attendance_bonus_amount: 0, pf_applicable: true, esi_applicable: false, pt_state: "GJ", fixed_other_earnings: [], fixed_other_deductions: [] })} data-testid="master-add-btn">+ Add</Button>
       </CardHeader>
       <CardContent>
         <div className="border rounded overflow-x-auto">
           <Table>
-            <TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Dept</TableHead><TableHead className="text-right">Basic</TableHead><TableHead className="text-right">HRA</TableHead><TableHead className="text-right">Special</TableHead><TableHead className="text-right">CTC</TableHead><TableHead>PF/ESI</TableHead><TableHead></TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Dept</TableHead><TableHead className="text-right">Basic</TableHead><TableHead className="text-right">HRA</TableHead><TableHead className="text-right">DA</TableHead><TableHead className="text-right">Special</TableHead><TableHead className="text-right">CTC</TableHead><TableHead>PF/ESI/Bonus</TableHead><TableHead></TableHead></TableRow></TableHeader>
             <TableBody>
               {rows.map((r) => {
-                const ctc = r.basic + r.hra + r.special_allowance + r.site_allowance + r.conveyance + r.medical;
+                const ctc = r.basic + r.hra + (r.da || 0) + r.special_allowance + r.site_allowance + r.conveyance + r.medical;
                 return (
-                  <TableRow key={r.id} data-testid={`master-row-${r.employee_code}`}>
+                  <TableRow key={r.id || r.employee_id} data-testid={`master-row-${r.employee_code}`}>
                     <TableCell>{r.employee_name}<div className="text-xs text-muted-foreground">{r.employee_code}</div></TableCell>
                     <TableCell>{r.department}</TableCell>
                     <TableCell className="text-right">{inr(r.basic)}</TableCell>
                     <TableCell className="text-right">{inr(r.hra)}</TableCell>
+                    <TableCell className="text-right">{inr(r.da || 0)}</TableCell>
                     <TableCell className="text-right">{inr(r.special_allowance)}</TableCell>
                     <TableCell className="text-right font-semibold">{inr(ctc)}</TableCell>
-                    <TableCell className="text-xs">{r.pf_applicable && <Badge variant="outline" className="mr-1">PF</Badge>}{r.esi_applicable && <Badge variant="outline">ESI</Badge>}</TableCell>
+                    <TableCell className="text-xs">{r.pf_applicable && <Badge variant="outline" className="mr-1">PF</Badge>}{r.esi_applicable && <Badge variant="outline" className="mr-1">ESI</Badge>}{r.attendance_bonus_applicable && <Badge variant="outline" className="bg-amber-50 border-amber-300 text-amber-700">AB {inr(r.attendance_bonus_amount || 0)}</Badge>}</TableCell>
                     <TableCell><Button size="sm" variant="ghost" onClick={() => setEditing(r)}>Edit</Button></TableCell>
                   </TableRow>
                 );
@@ -332,9 +350,60 @@ function MasterTab() {
           </Table>
         </div>
         {editing && <MasterDialog initial={editing} employees={employees} existingIds={rows.map((r) => r.employee_id)} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
+        {pendingUpload && <BulkPreviewDialog preview={pendingUpload.preview} importing={importing} onConfirm={confirmImport} onClose={() => setPendingUpload(null)} />}
         {importResult && <ImportResultDialog result={importResult} onClose={() => setImportResult(null)} />}
       </CardContent>
     </Card>
+  );
+}
+
+function BulkPreviewDialog({ preview, importing, onConfirm, onClose }) {
+  const c = preview.counts || {};
+  const actionable = (c.create || 0) + (c.update || 0);
+  const tone = { create: "text-emerald-700 bg-emerald-50", update: "text-blue-700 bg-blue-50", unchanged: "text-slate-500 bg-slate-50", skip: "text-slate-500 bg-slate-50", error: "text-red-700 bg-red-50" };
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-4xl max-h-[88vh] overflow-y-auto" data-testid="master-bulk-preview">
+        <DialogHeader><DialogTitle>Bulk Upload — Validation Preview</DialogTitle></DialogHeader>
+        <div className="grid grid-cols-5 gap-2">
+          <Tile label="New" value={c.create || 0} tone="emerald" />
+          <Tile label="Will Update" value={c.update || 0} tone="emerald" />
+          <Tile label="Unchanged" value={c.unchanged || 0} />
+          <Tile label="Skipped" value={c.skip || 0} />
+          <Tile label="Errors" value={c.error || 0} />
+        </div>
+        <div className="border rounded max-h-[46vh] overflow-y-auto">
+          <Table>
+            <TableHeader><TableRow>
+              <TableHead className="w-12">Row</TableHead><TableHead>Employee</TableHead><TableHead>Action</TableHead>
+              <TableHead className="text-right">Basic</TableHead><TableHead className="text-right">DA</TableHead>
+              <TableHead className="text-right">Gross</TableHead><TableHead>Att. Bonus</TableHead><TableHead>Changes / Error</TableHead>
+            </TableRow></TableHeader>
+            <TableBody>
+              {(preview.rows || []).map((r, i) => (
+                <TableRow key={i} className={r.action === "error" ? "bg-red-50/50" : ""}>
+                  <TableCell className="text-xs">{r.row}</TableCell>
+                  <TableCell className="text-xs">{r.employee_name || r.employee}<div className="text-[10px] text-muted-foreground font-mono">{r.employee}</div></TableCell>
+                  <TableCell><span className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-semibold ${tone[r.action] || ""}`}>{r.action}</span></TableCell>
+                  <TableCell className="text-right text-xs">{r.basic != null ? inr(r.basic) : "—"}</TableCell>
+                  <TableCell className="text-right text-xs">{r.da != null ? inr(r.da) : "—"}</TableCell>
+                  <TableCell className="text-right text-xs font-semibold">{r.gross != null ? inr(r.gross) : "—"}</TableCell>
+                  <TableCell className="text-xs">{r.attendance_bonus ?? "—"}</TableCell>
+                  <TableCell className="text-xs">{r.action === "error" ? <span className="text-red-600">{r.error}</span> : (r.changed_fields || []).join(", ").replaceAll("_", " ") || "—"}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+        {c.error > 0 && <p className="text-xs text-amber-700">Rows with errors will be reported and NOT imported. You can fix the file and re-upload, or proceed with the valid rows.</p>}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={onConfirm} disabled={importing || actionable === 0} data-testid="master-bulk-confirm">
+            {importing ? "Updating…" : `Confirm Update (${actionable} row${actionable === 1 ? "" : "s"})`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -379,7 +448,7 @@ function MasterDialog({ initial, employees, existingIds, onClose, onSaved }) {
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setSaving(false); }
   };
-  const ctc = (form.basic || 0) + (form.hra || 0) + (form.special_allowance || 0) + (form.site_allowance || 0) + (form.conveyance || 0) + (form.medical || 0);
+  const ctc = (form.basic || 0) + (form.hra || 0) + (form.da || 0) + (form.special_allowance || 0) + (form.site_allowance || 0) + (form.conveyance || 0) + (form.medical || 0);
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -397,12 +466,26 @@ function MasterDialog({ initial, employees, existingIds, onClose, onSaved }) {
             </div>
           )}
           <div className="grid grid-cols-3 gap-3">
-            {["basic", "hra", "special_allowance", "site_allowance", "conveyance", "medical"].map((k) => (
+            {["basic", "hra", "da", "special_allowance", "site_allowance", "conveyance", "medical"].map((k) => (
               <div key={k}>
-                <Label className="capitalize text-xs">{k.replace(/_/g, " ")}</Label>
+                <Label className="capitalize text-xs">{k === "da" ? "DA (Dearness Allowance)" : k.replace(/_/g, " ")}</Label>
                 <Input type="number" value={form[k] || 0} onChange={(e) => setForm({ ...form, [k]: Number(e.target.value) })} data-testid={`master-${k}`} />
               </div>
             ))}
+          </div>
+          <div className="p-2 border rounded bg-amber-50/60 border-amber-200 grid grid-cols-2 gap-3 items-center">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={!!form.attendance_bonus_applicable}
+                onChange={(e) => setForm({ ...form, attendance_bonus_applicable: e.target.checked })}
+                data-testid="master-att-bonus-flag" />
+              Attendance Bonus Applicable
+            </label>
+            <div>
+              <Label className="text-xs">Bonus Amount (₹/month, paid when zero LOP)</Label>
+              <Input type="number" value={form.attendance_bonus_amount || 0} disabled={!form.attendance_bonus_applicable}
+                onChange={(e) => setForm({ ...form, attendance_bonus_amount: Number(e.target.value) })}
+                data-testid="master-att-bonus-amount" />
+            </div>
           </div>
           <div className="p-2 border rounded bg-emerald-50 text-sm"><strong>Monthly CTC:</strong> {inr(ctc)}</div>
           <div className="grid grid-cols-3 gap-3">

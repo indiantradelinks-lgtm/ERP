@@ -738,8 +738,9 @@ def _payslip_body(slip: Dict[str, Any], pan: str = "") -> str:
     """HTML body for one payslip (used standalone and in bundles)."""
     bank = slip.get("bank") or {}
     earn_rows = ""
+    _earn_labels = {"hra": "HRA", "da": "DA (Dearness Allowance)"}
     for k, v in (slip.get("earnings") or {}).items():
-        earn_rows += f"<tr><td>{_esc(k.replace('_', ' ').title())}</td><td class='num'>{_money(v)}</td></tr>"
+        earn_rows += f"<tr><td>{_esc(_earn_labels.get(k, k.replace('_', ' ').title()))}</td><td class='num'>{_money(v)}</td></tr>"
     for e in slip.get("extra_earnings") or []:
         earn_rows += f"<tr><td>{_esc(e.get('label'))}</td><td class='num'>{_money(e.get('amount'))}</td></tr>"
 

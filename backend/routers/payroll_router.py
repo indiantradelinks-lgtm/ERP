@@ -49,10 +49,13 @@ class PayrollMasterIn(BaseModel):
     employee_id: str
     basic: float = 0
     hra: float = 0
+    da: float = 0
     special_allowance: float = 0
     site_allowance: float = 0
     conveyance: float = 0
     medical: float = 0
+    attendance_bonus_applicable: bool = False
+    attendance_bonus_amount: float = 0
     pf_applicable: bool = True
     esi_applicable: bool = False
     pt_state: str = "GJ"   # Gujarat by default for ITL
@@ -120,8 +123,10 @@ async def upsert_master(employee_id: str, payload: PayrollMasterIn, user: dict =
 
 
 # ── Bulk upload: template + import ───────────────────────────────────────
-MASTER_COLS = ["Employee Code", "Employee Name", "Basic", "HRA", "Special Allowance",
-               "Site Allowance", "Conveyance", "Medical", "PF Applicable (Y/N)",
+MASTER_COLS = ["Employee Code", "Employee Name", "Basic", "HRA", "DA", "Special Allowance",
+               "Site Allowance", "Conveyance", "Medical",
+               "Attendance Bonus (Y/N)", "Attendance Bonus Amount",
+               "PF Applicable (Y/N)",
                "ESI Applicable (Y/N)", "PT State", "TDS Override %", "OT Rate/Hour",
                "OT Multiplier", "PAN", "Bank Name", "Bank Account", "Bank IFSC"]
 
@@ -148,8 +153,10 @@ async def master_template(user: dict = Depends(get_current_user)):
         ws.append([
             emp.get("employee_id") or emp.get("emp_code") or emp["id"][:8],
             emp.get("name") or "",
-            m.get("basic") or 0, m.get("hra") or 0, m.get("special_allowance") or 0,
+            m.get("basic") or 0, m.get("hra") or 0, m.get("da") or 0, m.get("special_allowance") or 0,
             m.get("site_allowance") or 0, m.get("conveyance") or 0, m.get("medical") or 0,
+            "Y" if m.get("attendance_bonus_applicable") else "N",
+            m.get("attendance_bonus_amount") or 0,
             "Y" if m.get("pf_applicable", True) else "N",
             "Y" if m.get("esi_applicable") else "N",
             m.get("pt_state") or "GJ", m.get("tds_override_pct") or 0,
@@ -157,7 +164,7 @@ async def master_template(user: dict = Depends(get_current_user)):
             m.get("pan") or "", m.get("bank_name") or "", m.get("bank_account") or "",
             m.get("bank_ifsc") or "",
         ])
-    for i, w in enumerate([14, 26, 10, 10, 16, 14, 12, 10, 18, 18, 9, 14, 12, 12, 13, 18, 18, 13], start=1):
+    for i, w in enumerate([14, 26, 10, 10, 10, 16, 14, 12, 10, 20, 22, 18, 18, 9, 14, 12, 12, 13, 18, 18, 13], start=1):
         ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
     notes = wb.create_sheet("Instructions")
     for line in [
@@ -165,8 +172,9 @@ async def master_template(user: dict = Depends(get_current_user)):
         "1. Employee Code must match the code in Employee Master (column is pre-filled — do not edit).",
         "2. All amount columns are MONTHLY figures in ₹ (numbers only, no commas).",
         "3. PF/ESI Applicable: Y or N. PT State: 2-letter state code (GJ, MH, DL...).",
-        "4. Rows already mapped are pre-filled with current values — edit and re-upload to update.",
-        "5. Leave a row unchanged (all zeros, new employee) to skip it, or delete the row.",
+        "4. Attendance Bonus (Y/N): Y pays the bonus amount when the employee has ZERO LOP days in the month.",
+        "5. Rows already mapped are pre-filled with current values — edit and re-upload to update.",
+        "6. Leave a row unchanged (all zeros, new employee) to skip it, or delete the row.",
     ]:
         notes.append([line])
     notes.column_dimensions["A"].width = 110
@@ -193,17 +201,12 @@ def _num(v, field: str, row: int) -> float:
     return n
 
 
-@router.post("/master/bulk/import")
-async def master_bulk_import(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
-    """Upsert payroll_master rows from the uploaded template. Returns per-row results."""
-    if user.get("role") not in HR_ROLES:
-        raise HTTPException(status_code=403, detail="hr only")
-    if not (file.filename or "").lower().endswith(".xlsx"):
-        raise HTTPException(status_code=400, detail="Upload the .xlsx template file")
+async def _parse_master_workbook(content: bytes) -> List[Dict[str, Any]]:
+    """Shared parser for bulk validate + import. Returns one item per data row."""
     from openpyxl import load_workbook
     from io import BytesIO
     try:
-        wb = load_workbook(BytesIO(await file.read()), data_only=True)
+        wb = load_workbook(BytesIO(content), data_only=True)
     except Exception:
         raise HTTPException(status_code=400, detail="Could not read the Excel file — is it a valid .xlsx?")
     ws = wb.worksheets[0]
@@ -221,42 +224,62 @@ async def master_bulk_import(file: UploadFile = File(...), user: dict = Depends(
         for k in (e.get("employee_id"), e.get("emp_code"), e["id"][:8]):
             if k:
                 emp_by_code[str(k).strip().lower()] = e
+    masters = {m["employee_id"]: m async for m in db.payroll_master.find({}, {"_id": 0})}
 
-    created = updated = skipped = 0
-    errors: List[Dict[str, Any]] = []
+    items: List[Dict[str, Any]] = []
     for rno, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         code = str(cell(row, "Employee Code") or "").strip()
         if not code:
             continue
+        item: Dict[str, Any] = {"row": rno, "employee": code,
+                                "employee_name": str(cell(row, "Employee Name") or "").strip()}
         emp = emp_by_code.get(code.lower())
         if not emp:
-            errors.append({"row": rno, "employee": code, "error": "Employee code not found in Employee Master"})
+            item.update(action="error", error="Employee code not found in Employee Master")
+            items.append(item)
             continue
+        item["employee_name"] = emp.get("name") or item["employee_name"]
+        existing = masters.get(emp["id"])
         try:
             basic = _num(cell(row, "Basic"), "Basic", rno)
             hra = _num(cell(row, "HRA"), "HRA", rno)
+            da = _num(cell(row, "DA"), "DA", rno) if "DA" in idx else float((existing or {}).get("da") or 0)
             special = _num(cell(row, "Special Allowance"), "Special Allowance", rno)
             site = _num(cell(row, "Site Allowance"), "Site Allowance", rno)
             conv = _num(cell(row, "Conveyance"), "Conveyance", rno)
             med = _num(cell(row, "Medical"), "Medical", rno)
+            if "Attendance Bonus Amount" in idx:
+                ab_amt = _num(cell(row, "Attendance Bonus Amount"), "Attendance Bonus Amount", rno)
+                ab_flag = _yn(cell(row, "Attendance Bonus (Y/N)"))
+            else:
+                ab_amt = float((existing or {}).get("attendance_bonus_amount") or 0)
+                ab_flag = bool((existing or {}).get("attendance_bonus_applicable"))
             tds = _num(cell(row, "TDS Override %"), "TDS Override %", rno)
             ot_rate = _num(cell(row, "OT Rate/Hour"), "OT Rate/Hour", rno)
             ot_mult = _num(cell(row, "OT Multiplier"), "OT Multiplier", rno) or 1.0
         except ValueError as e:
-            errors.append({"row": rno, "employee": code, "error": str(e)})
+            item.update(action="error", error=str(e))
+            items.append(item)
             continue
         if tds > 100:
-            errors.append({"row": rno, "employee": code, "error": f"Row {rno}: TDS Override % cannot exceed 100"})
+            item.update(action="error", error=f"Row {rno}: TDS Override % cannot exceed 100")
+            items.append(item)
             continue
-        existing = await db.payroll_master.find_one({"employee_id": emp["id"]}, {"_id": 0, "id": 1})
-        if basic + hra + special + site + conv + med <= 0 and not existing:
-            skipped += 1
+        if ab_flag and ab_amt <= 0:
+            item.update(action="error", error=f"Row {rno}: Attendance Bonus is 'Y' but the bonus amount is 0")
+            items.append(item)
+            continue
+        if basic + hra + da + special + site + conv + med <= 0 and not existing:
+            item.update(action="skip", error="")
+            items.append(item)
             continue
         pt_state = str(cell(row, "PT State") or "GJ").strip().upper()[:3] or "GJ"
         update = {
             "employee_id": emp["id"],
-            "basic": basic, "hra": hra, "special_allowance": special,
+            "basic": basic, "hra": hra, "da": da, "special_allowance": special,
             "site_allowance": site, "conveyance": conv, "medical": med,
+            "attendance_bonus_applicable": ab_flag,
+            "attendance_bonus_amount": ab_amt,
             "pf_applicable": _yn(cell(row, "PF Applicable (Y/N)")),
             "esi_applicable": _yn(cell(row, "ESI Applicable (Y/N)")),
             "pt_state": pt_state,
@@ -266,11 +289,68 @@ async def master_bulk_import(file: UploadFile = File(...), user: dict = Depends(
             "bank_name": str(cell(row, "Bank Name") or "").strip(),
             "bank_account": str(cell(row, "Bank Account") or "").strip(),
             "bank_ifsc": str(cell(row, "Bank IFSC") or "").strip().upper(),
-            "updated_at": now_iso(),
-            "updated_by": f"{user.get('name') or user.get('email')} (bulk upload)",
         }
-        if existing:
-            await db.payroll_master.update_one({"employee_id": emp["id"]}, {"$set": update})
+        changes = {}
+        for k, v in update.items():
+            if k == "employee_id":
+                continue
+            old = (existing or {}).get(k)
+            if (old if old is not None else ("" if isinstance(v, str) else 0)) != v:
+                changes[k] = {"from": old, "to": v}
+        item.update(action="update" if existing else "create", update=update, changes=changes)
+        items.append(item)
+    return items
+
+
+@router.post("/master/bulk/validate")
+async def master_bulk_validate(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    """Dry-run: parse + validate the uploaded template, return a preview. No DB writes."""
+    if user.get("role") not in HR_ROLES:
+        raise HTTPException(status_code=403, detail="hr only")
+    if not (file.filename or "").lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Upload the .xlsx template file")
+    items = await _parse_master_workbook(await file.read())
+    counts = {"create": 0, "update": 0, "skip": 0, "error": 0, "unchanged": 0}
+    rows = []
+    for it in items:
+        action = it["action"]
+        if action == "update" and not it.get("changes"):
+            action = "unchanged"
+        counts[action] += 1
+        u = it.get("update") or {}
+        rows.append({
+            "row": it["row"], "employee": it["employee"], "employee_name": it.get("employee_name"),
+            "action": action, "error": it.get("error") or "",
+            "basic": u.get("basic"), "hra": u.get("hra"), "da": u.get("da"),
+            "gross": round(sum(float(u.get(k) or 0) for k in
+                               ("basic", "hra", "da", "special_allowance", "site_allowance", "conveyance", "medical")), 2) if u else None,
+            "attendance_bonus": (f"₹{u.get('attendance_bonus_amount'):,.0f}" if u.get("attendance_bonus_applicable") else "No") if u else None,
+            "changed_fields": sorted((it.get("changes") or {}).keys()),
+        })
+    return {"ok": counts["error"] == 0, "counts": counts, "total_rows": len(rows), "rows": rows[:500]}
+
+
+@router.post("/master/bulk/import")
+async def master_bulk_import(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    """Confirm step: upsert payroll_master rows from the uploaded template (no duplicates)."""
+    if user.get("role") not in HR_ROLES:
+        raise HTTPException(status_code=403, detail="hr only")
+    if not (file.filename or "").lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Upload the .xlsx template file")
+    items = await _parse_master_workbook(await file.read())
+    created = updated = skipped = 0
+    errors: List[Dict[str, Any]] = []
+    stamp = {"updated_at": now_iso(), "updated_by": f"{user.get('name') or user.get('email')} (bulk upload)"}
+    for it in items:
+        if it["action"] == "error":
+            errors.append({"row": it["row"], "employee": it["employee"], "error": it["error"]})
+            continue
+        if it["action"] == "skip":
+            skipped += 1
+            continue
+        update = {**it["update"], **stamp}
+        if it["action"] == "update":
+            await db.payroll_master.update_one({"employee_id": update["employee_id"]}, {"$set": update})
             updated += 1
         else:
             update["id"] = new_id()
@@ -322,11 +402,14 @@ async def _compute_payslip(month: str, emp: dict, master: dict) -> dict:
     base_earn = {
         "basic": round(_m("basic") * factor, 2),
         "hra": round(_m("hra") * factor, 2),
+        "da": round(_m("da") * factor, 2),
         "special_allowance": round(_m("special_allowance") * factor, 2),
         "site_allowance": round(_m("site_allowance") * factor, 2),
         "conveyance": round(_m("conveyance") * factor, 2),
         "medical": round(_m("medical") * factor, 2),
     }
+    if not base_earn["da"]:
+        base_earn.pop("da")  # keep legacy payslips unchanged when DA not configured
     extra_earnings = []
     for r in master.get("fixed_other_earnings", []):
         extra_earnings.append({"label": r.get("label", "Other"), "amount": round(float(r.get("amount", 0)) * factor, 2)})
@@ -337,7 +420,7 @@ async def _compute_payslip(month: str, emp: dict, master: dict) -> dict:
     if ot_hours > 0:
         rate = float(master.get("ot_rate_per_hour") or 0)
         if rate <= 0:
-            monthly_fixed = (_m("basic") + _m("hra") + _m("special_allowance")
+            monthly_fixed = (_m("basic") + _m("hra") + _m("da") + _m("special_allowance")
                              + _m("site_allowance") + _m("conveyance") + _m("medical"))
             rate = monthly_fixed / (total_days * 8) if monthly_fixed > 0 else 0
         ot_amount = round(ot_hours * rate * float(master.get("ot_multiplier") or 1.0), 2)
@@ -347,6 +430,11 @@ async def _compute_payslip(month: str, emp: dict, master: dict) -> dict:
                                                         {"_id": 0, "ot_amount": 1}) or {}).get("ot_amount", 0)) if not att_rows else 0.0
     if ot_amount > 0:
         extra_earnings.append({"label": f"Overtime ({ot_hours} hrs)" if ot_hours else "Overtime", "amount": ot_amount})
+
+    # Attendance Bonus: full amount when applicable and ZERO LOP days in the month
+    ab_amt = float(master.get("attendance_bonus_amount") or 0)
+    if master.get("attendance_bonus_applicable") and ab_amt > 0 and lop_days <= 0:
+        extra_earnings.append({"label": "Attendance Bonus", "amount": round(ab_amt, 2)})
 
     total_earnings = sum(base_earn.values()) + sum(e["amount"] for e in extra_earnings)
 
