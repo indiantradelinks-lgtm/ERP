@@ -53,7 +53,7 @@ async def _enrich_projects(rows: list[dict]) -> list[dict]:
     async for h in db.project_handovers.find(
             {"project_code": {"$in": codes}},
             {"_id": 0, "id": 1, "project_code": 1, "status": 1, "updated_at": 1, "created_at": 1,
-             "contract_start_date": 1, "contract_end_date": 1,
+             "contract_start_date": 1, "contract_end_date": 1, "work_order_number": 1,
              "project_manager_label": 1, "project_manager_id": 1}):
         ho_by_id[h.get("id")] = h
         cur = ho_by_code.get(h.get("project_code"))
@@ -66,8 +66,10 @@ async def _enrich_projects(rows: list[dict]) -> list[dict]:
     pm_ids |= {h.get("project_manager_id") for h in ho_by_code.values() if h.get("project_manager_id")}
     users = {u["id"]: u.get("name") async for u in db.users.find(
         {"id": {"$in": list(pm_ids)}}, {"_id": 0, "id": 1, "name": 1})} if pm_ids else {}
-    for r in rows:
+    for i, r in enumerate(rows, start=1):
         h = ho_by_id.get(r.get("handover_id")) or ho_by_code.get(r.get("code")) or {}
+        r["s_no"] = i
+        r["work_order_number"] = h.get("work_order_number") or r.get("work_order_number") or ""
         r["contract_start_date"] = h.get("contract_start_date") or r.get("contract_start_date") or ""
         r["contract_end_date"] = h.get("contract_end_date") or r.get("contract_end_date") or ""
         r["manager"] = (r.get("project_manager_name")

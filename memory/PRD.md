@@ -5751,3 +5751,7 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - exports.py COLUMNS["projects"]: added "Contract Start Date"/"Contract End Date"; "Manager" → "Project Manager". (PDF uses same COLUMNS.)
 - exports_router.py: _enrich_projects() joins project_handovers (prefer project.handover_id, else best non-draft/latest per project_code) for contract dates; PM name resolved as project_manager_name → users[project_manager_id] → handover.project_manager_label → users[handover.pm_id] → legacy manager.
 - Verified via curl: xlsx + pdf both 200; PRJ-2026-0015 (PM Dept Head HSE, 2026-07-01→2026-12-31 from handover), PRJ-2026-0027 (PM via handover pm_id→users), legacy rows fall back correctly.
+
+## Project Master Export — S.No + Work Order Number (June 2026)
+- COLUMNS["projects"] now starts with "S. No." then "Work Order Number" (fetched from Contract Handover work_order_number, fallback to project's own). _enrich_projects enumerates s_no.
+- Verified: xlsx header order correct, WO values from handovers (PRJ-2026-0025 → ABCD, PRJ-2026-0015 → WO/2026/0091), PDF valid.
