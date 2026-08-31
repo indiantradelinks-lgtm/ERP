@@ -9,6 +9,7 @@
  *   • Sub-contract → Vendors        (/api/vendors)
  * Backend: /api/proj-phase2/resources/{project_id}
  */
+import { SiteLocationSelect } from "@/components/MasterSelect";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
@@ -724,7 +725,7 @@ function ConvertDialog({ projectId, rows, type, onClose, onSaved }) {
               {["low", "medium", "high", "critical"].map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
           </F>
-          <F label="Site Location"><Input value={head.site_location} onChange={(e) => setH("site_location", e.target.value)} /></F>
+          <F label="Site Location"><SiteLocationSelect label="" value={head.site_location} onChange={(v) => setH("site_location", v)} testid="pr-site-location" /></F>
           <F label="Justification / Remarks"><Input value={head.justification} onChange={(e) => setH("justification", e.target.value)} placeholder="As per project resource plan" /></F>
         </div>
         {head.submit && (

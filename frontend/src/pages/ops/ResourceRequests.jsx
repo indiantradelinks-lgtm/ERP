@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { toast } from "sonner";
+import { SiteLocationSelect } from "@/components/MasterSelect";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import SubmitWithDocsDialog from "@/components/SubmitWithDocsDialog";
@@ -345,8 +346,8 @@ function MultiRRDialog({ projects, onClose, onSaved }) {
             </select>
           </div>
           <div className="col-span-2">
-            <Label className="text-[10px] uppercase tracking-wider">Site Location</Label>
-            <Input value={head.site_location} onChange={(e) => setHeadF("site_location", e.target.value)} className="h-9 mt-1" data-testid="rr-form-site" />
+            <SiteLocationSelect label="Site Location" value={head.site_location}
+              onChange={(v) => setHeadF("site_location", v)} testid="rr-form-site" />
           </div>
           <div className="col-span-2">
             <Label className="text-[10px] uppercase tracking-wider">Justification / Remarks</Label>
@@ -505,7 +506,7 @@ function EditRRDialog({ initial, onClose, onSaved }) {
           <div><Label className="text-[10px] uppercase tracking-wider">Quantity</Label><Input type="number" value={form.quantity} onChange={(e) => set("quantity", e.target.value)} className="h-9 mt-1" data-testid="rr-form-qty" /></div>
           <div><Label className="text-[10px] uppercase tracking-wider">Unit</Label><Input value={form.unit} onChange={(e) => set("unit", e.target.value)} className="h-9 mt-1" /></div>
           <div><Label className="text-[10px] uppercase tracking-wider">Required Date</Label><Input type="date" value={form.required_date || ""} onChange={(e) => set("required_date", e.target.value)} className="h-9 mt-1" /></div>
-          <div><Label className="text-[10px] uppercase tracking-wider">Site Location</Label><Input value={form.site_location || ""} onChange={(e) => set("site_location", e.target.value)} className="h-9 mt-1" /></div>
+          <div><SiteLocationSelect label="Site Location" value={form.site_location || ""} onChange={(v) => set("site_location", v)} testid="rr-edit-site" /></div>
           <div>
             <Label className="text-[10px] uppercase tracking-wider">Priority</Label>
             <select value={form.priority} onChange={(e) => set("priority", e.target.value)}

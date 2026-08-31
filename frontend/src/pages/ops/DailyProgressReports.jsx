@@ -8,6 +8,7 @@
  *
  * Backend: /api/proj-phase3/dprs ...
  */
+import { SiteLocationSelect } from "@/components/MasterSelect";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, API } from "@/lib/api";
 import { toast } from "sonner";
@@ -514,7 +515,7 @@ function HeaderForm({ form, setForm, projects, disableProject }) {
       </F>
       <F label="DPR Date *"><Input type="date" value={form.dpr_date} onChange={(e) => setForm({ ...form, dpr_date: e.target.value })} data-testid="dpr-form-date" /></F>
       <F label="DPR #"><Input value={form.dpr_no} onChange={(e) => setForm({ ...form, dpr_no: e.target.value })} placeholder="auto" /></F>
-      <F label="Site Location"><Input value={form.site_location} onChange={(e) => setForm({ ...form, site_location: e.target.value })} /></F>
+      <F label="Site Location"><SiteLocationSelect label="" value={form.site_location} onChange={(v) => setForm({ ...form, site_location: v })} testid="dpr-site-location" /></F>
       <F label="Service Type"><Input value={form.service_type} onChange={(e) => setForm({ ...form, service_type: e.target.value })} /></F>
       <F label="Weather Condition"><Input value={form.weather_condition} onChange={(e) => setForm({ ...form, weather_condition: e.target.value })} placeholder="Clear / Rain / Hot" /></F>
       <F label="Site In-charge"><Input value={form.site_incharge} onChange={(e) => setForm({ ...form, site_incharge: e.target.value })} /></F>

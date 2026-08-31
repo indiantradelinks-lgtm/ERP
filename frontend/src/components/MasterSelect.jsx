@@ -211,17 +211,18 @@ export function SiteSelect({ value, onChange, clientId, label = "Site", testid =
   return <BaseSelect {...{ value, onChange, options, label, testid, disabled, required, hint, includeBlank, placeholder, className }} />;
 }
 
-// ─── Site Location (centralized, value = human label from Site Master) ──────
+// ─── Site Location (centralized: Site Master + handovers + projects) ────────
+const _siteLocations = makeGlobalList("/sites/locations");
 export function SiteLocationSelect({ value, onChange, clientId, label = "Site Location",
                                      testid = "site-location-select", disabled = false, required = false,
                                      hint, includeBlank = true, placeholder = "— select site location —",
                                      className = "" }) {
-  const rows = useSites(clientId);
-  const options = rows.map((s) => {
-    const display = [s.site_code, s.name || s.site_name || [s.client_name, s.city].filter(Boolean).join(" — ")]
-      .filter(Boolean).join(" · ") || s.id;
-    return { value: display, label: display, row: s };
-  });
+  const rows = _siteLocations.useList();
+  const options = rows.map((s) => ({ value: s.location, label: s.location, row: s }));
+  // keep a manually-typed / legacy value selectable
+  if (value && !options.some((o) => o.value === value)) {
+    options.unshift({ value, label: value, row: { location: value } });
+  }
   return <BaseSelect {...{ value, onChange, options, label, testid, disabled, required, hint, includeBlank, placeholder, className }} />;
 }
 

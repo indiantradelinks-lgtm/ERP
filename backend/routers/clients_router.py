@@ -434,6 +434,25 @@ async def list_sites(client_id: str | None = Query(default=None),
     return rows
 
 
+@router.get("/sites/locations")
+async def site_locations(user: dict = Depends(get_current_user)):
+    """All site locations in the system (Site Master + handovers + projects) for dropdowns."""
+    out: set[str] = set()
+    async for s in db.sites.find({}, {"_id": 0, "site_code": 1, "name": 1, "site_name": 1,
+                                      "client_name": 1, "city": 1}):
+        name = s.get("name") or s.get("site_name") or ", ".join(
+            x for x in [s.get("client_name"), s.get("city")] if x)
+        disp = " · ".join(x for x in [s.get("site_code"), name] if x)
+        if disp:
+            out.add(disp)
+    for coll, field in ((db.project_handovers, "site_location"), (db.projects, "site")):
+        for v in await coll.distinct(field):
+            v = str(v or "").strip()
+            if v:
+                out.add(v)
+    return [{"location": v} for v in sorted(out, key=str.lower)]
+
+
 @router.get("/sites/map")
 async def sites_map(user: dict = Depends(require_permission("clients", "read"))):
     """Return all geo-tagged sites for the Client Map view."""

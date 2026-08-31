@@ -5761,3 +5761,9 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - on_advance_approval_action now fans out over approval.advance_ids (single advances unchanged via reference). On approve: each advance → approved + _push_advance_to_accounts → SEPARATE Payment Processing entry per employee. On reject: all batch advances rejected.
 - Frontend (hr/Advances.jsx): "Multiple employees" checkbox in New Advance dialog → employee search-add list with per-row amount, total, remove; single-mode fields (amount, EMI, draft) hidden; submit posts /advances/bulk. Single Employee flow untouched.
 - Verified E2E via curl: ADB-2026-0002 (2 employees, ₹6,500) → 6-step approval chain approved → both advances approved → 2 separate payment queue rows (AD-2026-0093/94, pending_verification). Test data cleaned. UI screenshot confirmed multi panel.
+
+## Site Location Dropdown Fix (June 2026)
+- NEW GET /api/sites/locations (any authenticated user; clients_router): deduped sorted union of Site Master entries (code · name), project_handovers.site_location, projects.site.
+- SiteLocationSelect (MasterSelect.jsx) now sources from /sites/locations (was Site-Master-only → empty when db.sites unpopulated, e.g. production); legacy/typed values stay selectable.
+- Converted free-text Site Location inputs to the dropdown: ResourceRequests (create+edit), DailyProgressReports, ProjectResources. ProjectRequests already used the dropdown.
+- Verified as test_mop@erp.com (Manager OP): 20 locations from API, 21 options in dialog, selection works (screenshot).
