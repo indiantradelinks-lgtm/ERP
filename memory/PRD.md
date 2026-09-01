@@ -5772,3 +5772,10 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - RaBills.jsx: "Tally" paperclip button per row → RowAttachments dialog (parent_type ra_bill_tally_invoice, parent_id = bill id) with upload/view/download/delete; "ra_bill_tally_invoice" added to files_router ALLOWED_FOLDERS. Files also flow to OneDrive queue like other uploads.
 - GET /ra-bills now enriches rows with project_manager_name (projects.project_manager_name → users[pm_id] → legacy manager); UI shows "PM: <name>" under Client · Project.
 - Verified: upload/list/download via curl (200s, test file cleaned); UI screenshot shows PM names + Tally dialog. No workflow/calc/permission changes.
+
+## Bulk Advance Fixes + Excel/CSV Upload (June 2026, iter 178-179)
+- FIX: /advances/bulk permission now mirrors single on-behalf rule (tokens=_pm_allowed_tokens; PM-scoped roles like manager_o_p allowed for their project employees) — resolves "not allowed to raise bulk advances" 403.
+- NEW: GET /advances/bulk/template (xlsx: Employee Code/Name/Amount/Remarks) + POST /advances/bulk/parse (xlsx/csv validation, no writes: unknown code, duplicate, non-numeric/zero amount, PM-scope errors per row). UI: Template + Upload Excel/CSV buttons in multi-employee panel; valid rows populate list, skipped rows toasted; submit uses existing /advances/bulk (approval workflow unchanged).
+- FIX (found by testing): approval inserted BEFORE advances so doc-gate 400 leaves no orphan advances; insert loop rolls back approval+advances on failure.
+- FIX: EmployeeSearchSelect re-opens dropdown on click/typing after a selection.
+- Tested: iteration_178 (found 2 bugs) + iteration_179 retest — 4/4 backend, UI dropdown + upload flows pass. Known minor: deleting a bulk advance leaves its batch approval doc (backlog).

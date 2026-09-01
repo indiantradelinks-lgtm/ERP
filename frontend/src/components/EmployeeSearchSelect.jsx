@@ -26,8 +26,9 @@ export function EmployeeSearchSelect({ employees = [], value, onChange, label = 
       {label && <Label className="text-[10px] uppercase tracking-wider">{label}{required && " *"}</Label>}
       <input
         value={open ? q : (selected ? `${selected.name}${code(selected) ? ` (${code(selected)})` : ""}` : "")}
-        onChange={(e) => setQ(e.target.value)}
+        onChange={(e) => { setQ(e.target.value); if (!open) setOpen(true); }}
         onFocus={() => { setOpen(true); setQ(""); }}
+        onClick={() => { if (!open) { setOpen(true); setQ(""); } }}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         placeholder={placeholder}
         disabled={disabled}

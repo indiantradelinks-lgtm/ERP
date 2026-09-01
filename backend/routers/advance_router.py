@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from core import db, get_current_user, now_iso, new_id
@@ -365,8 +365,11 @@ async def _submit_advance(advance_id: str, user: dict, docs_payload: Optional[di
 async def create_bulk_advance(payload: BulkAdvanceCreateIn, user: dict = Depends(get_current_user)):
     """Multiple Employee Advance — one form/request, ONE approval; on approval each
     employee's advance is pushed to Payment Processing as a separate entry."""
-    if user.get("role") not in CREATE_ON_BEHALF_ROLES:
-        raise HTTPException(status_code=403, detail="not allowed to raise bulk advances")
+    tokens = await _pm_allowed_tokens(user)
+    if tokens is not None:
+        from pm_scope import is_pm_scoped
+        if not (is_pm_scoped(user) or user.get("role") in CREATE_ON_BEHALF_ROLES):
+            raise HTTPException(status_code=403, detail="not allowed to create on behalf of another employee")
     seen: dict[str, float] = {}
     for e in payload.employees:
         seen[e.employee_id] = float(e.amount)
@@ -381,7 +384,6 @@ async def create_bulk_advance(payload: BulkAdvanceCreateIn, user: dict = Depends
     if atype.get("max_installments") and payload.installments > atype["max_installments"]:
         raise HTTPException(status_code=400, detail=f"installments exceed cap ({atype['max_installments']}) for {atype['name']}")
 
-    tokens = await _pm_allowed_tokens(user)
     proj_details = await _project_details(payload.project)
     batch_id = new_id()
     batch_no = await next_sequence("ADB")
@@ -458,16 +460,140 @@ async def create_bulk_advance(payload: BulkAdvanceCreateIn, user: dict = Depends
         "created_at": now_iso(),
     }
     copy_approval_doc_fields(approval, payload.model_dump(exclude_none=True))
-    for a in advances:
-        a["approval_id"] = approval["id"]
-        await db.employee_advances.insert_one(a)
+    # Insert the approval FIRST (its doc-gate can raise 400) so failures leave no orphan advances
     await insert_approval(approval)
+    try:
+        for a in advances:
+            a["approval_id"] = approval["id"]
+            await db.employee_advances.insert_one(a)
+    except Exception:
+        await db.approvals.delete_one({"id": approval["id"]})
+        await db.employee_advances.delete_many({"batch_id": batch_id})
+        raise HTTPException(status_code=500, detail="Failed to save bulk advances — nothing was created")
     for a in advances:
         a.pop("_id", None)
     return {"batch_id": batch_id, "batch_no": batch_no, "approval_id": approval["id"],
             "total": total, "count": len(advances),
             "advances": [{"id": a["id"], "advance_no": a["advance_no"],
                           "employee_name": a["employee_name"], "amount": a["requested_amount"]} for a in advances]}
+
+
+@router.get("/advances/bulk/template")
+async def bulk_advance_template(user: dict = Depends(get_current_user)):
+    """Excel template for bulk advance upload."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    from io import BytesIO
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Bulk Advances"
+    cols = ["Employee Code", "Employee Name", "Amount", "Remarks"]
+    for i, cname in enumerate(cols, start=1):
+        cell = ws.cell(row=1, column=i, value=cname)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="1E3A5F")
+    for i, w in enumerate([16, 28, 12, 30], start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
+    guide = wb.create_sheet("Guide")
+    for i, t in enumerate([
+        "1. Employee Code: as per Employee Master (e.g. EMPITL3347). Name is for reference only.",
+        "2. Amount: advance amount per employee (must be > 0).",
+        "3. Shared details (advance type, reason, installments) are filled in the form before submitting.",
+        "4. Upload this file in New Advance → Multiple employees → Upload Excel/CSV.",
+    ], start=1):
+        guide.cell(row=i, column=1, value=t)
+    buf = BytesIO()
+    wb.save(buf)
+    return Response(content=buf.getvalue(),
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": 'attachment; filename="Bulk-Advance-Template.xlsx"'})
+
+
+@router.post("/advances/bulk/parse")
+async def bulk_advance_parse(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    """Validate an uploaded Excel/CSV of employees + amounts. Returns rows for review — no writes."""
+    fname = (file.filename or "").lower()
+    content = await file.read()
+    raw_rows: list[list] = []
+    if fname.endswith(".csv"):
+        import csv
+        from io import StringIO
+        try:
+            text = content.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = content.decode("latin-1")
+        raw_rows = [r for r in csv.reader(StringIO(text))]
+    elif fname.endswith(".xlsx"):
+        from openpyxl import load_workbook
+        from io import BytesIO
+        try:
+            wb = load_workbook(BytesIO(content), data_only=True)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Could not read the Excel file — is it a valid .xlsx?")
+        raw_rows = [list(r) for r in wb.worksheets[0].iter_rows(values_only=True)]
+    else:
+        raise HTTPException(status_code=400, detail="Upload a .xlsx or .csv file")
+    if not raw_rows:
+        raise HTTPException(status_code=400, detail="The file is empty")
+
+    header = [str(c or "").strip().lower() for c in raw_rows[0]]
+    def col(*names):
+        for n in names:
+            if n in header:
+                return header.index(n)
+        return None
+    code_i = col("employee code", "employee_code", "emp code", "code", "employee id", "employee_id")
+    amt_i = col("amount", "advance amount", "requested amount")
+    rem_i = col("remarks", "remark", "reason")
+    if code_i is None or amt_i is None:
+        raise HTTPException(status_code=400, detail="File must have 'Employee Code' and 'Amount' columns — download the template")
+
+    emp_by_code: dict[str, dict] = {}
+    async for e in db.employees.find({}, {"_id": 0, "id": 1, "name": 1, "employee_id": 1,
+                                          "emp_code": 1, "current_project_code": 1}):
+        for k in (e.get("employee_id"), e.get("emp_code"), e["id"][:8], e["id"]):
+            if k:
+                emp_by_code[str(k).strip().lower()] = e
+    tokens = await _pm_allowed_tokens(user)
+
+    rows, valid, seen_ids = [], 0, set()
+    for rno, r in enumerate(raw_rows[1:], start=2):
+        code = str((r[code_i] if code_i < len(r) else "") or "").strip()
+        if not code:
+            continue
+        item = {"row": rno, "employee_code": code, "employee_name": "", "employee_id": None,
+                "amount": None, "remarks": str((r[rem_i] if rem_i is not None and rem_i < len(r) else "") or "").strip(),
+                "error": ""}
+        emp = emp_by_code.get(code.lower())
+        if not emp:
+            item["error"] = "Employee code not found"
+            rows.append(item)
+            continue
+        item["employee_id"] = emp["id"]
+        item["employee_name"] = emp.get("name") or ""
+        if emp["id"] in seen_ids:
+            item["error"] = "Duplicate employee in file"
+            rows.append(item)
+            continue
+        try:
+            amount = float(str((r[amt_i] if amt_i < len(r) else "") or "").replace(",", "").strip() or 0)
+        except ValueError:
+            item["error"] = "Amount is not a number"
+            rows.append(item)
+            continue
+        if amount <= 0:
+            item["error"] = "Amount must be greater than 0"
+            rows.append(item)
+            continue
+        if tokens is not None and (emp.get("current_project_code") or "") not in tokens:
+            item["error"] = "Employee is not on your projects"
+            rows.append(item)
+            continue
+        item["amount"] = amount
+        seen_ids.add(emp["id"])
+        valid += 1
+        rows.append(item)
+    return {"total": len(rows), "valid": valid, "errors": len(rows) - valid, "rows": rows[:500]}
 
 
 @router.post("/advances/{advance_id}/submit")
@@ -1203,7 +1329,6 @@ async def report_aging(user: dict = Depends(get_current_user)):
 # ════════════════════════════════════════════════════════════════════════
 import csv
 import io
-from fastapi import UploadFile, File
 
 
 @router.post("/advances/bulk-import")

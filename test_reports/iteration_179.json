@@ -1,0 +1,38 @@
+{
+  "summary": "Iter 179 focused RETEST of the two iter-178 bulk-advance bugs. Backend: 4/4 pytest tests pass — (a) POST /api/advances/bulk with documents_not_required=false and no documents returns 400 and leaves ZERO orphan employee_advances rows AND creates NO approvals doc (approval-first reorder verified); (b) happy path (documents_not_required=true + reason) returns 200 with batch_no ADB-2026-00xx, both advances persisted with the correct approval_id/batch_no, and exactly one approval doc exists whose advance_ids match; (c) regression Manager OP (test_mop@erp.com) bulk with E-1001 + E-MOP-01 still returns 200 (no 403); (d) regression POST /api/advances/bulk/parse with a valid xlsx returns 2 valid rows and writes nothing. Frontend: verified the EmployeeSearchSelect re-open fix on /app/hr/advances — New Advance Request -> multi-mode-toggle -> multi-emp-select opened (51 options), picked Arjun Reddy (E-1001), then WITHOUT blurring clicked the same input: dropdown re-opened immediately (50 options), picked Deepa Nair (E-1004), multi-emp-list shows 2 rows; typing in the input also re-opens/filters the list (41 options for 'a'). All test data created this run was deleted (advances via API, 4 dangling bulk approvals via cleanup script, 0 payment-queue rows).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "DELETE /api/advances/{id}", "issue": "Deleting a bulk advance does not clean up (or re-point) its batch approval — after deleting both advances of a batch, the 'Bulk Advance ADB-…' approval doc survives with advance_ids pointing to non-existent rows. Reproduced twice this run; had to purge 4 dangling approvals manually. Low user impact but pollutes /app/approvals."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter179_bulk_advance_retest.py",
+    "/app/backend/tests/cleanup_iter179.py",
+    "/app/backend/tests/cleanup_iter179_approvals.py",
+    "/app/test_reports/pytest/iter179_results.xml"
+  ],
+  "action_items": [
+    "Optional (minor): when an advance is deleted, delete/adjust its bulk approval doc so no dangling 'Bulk Advance ADB-…' approvals remain."
+  ],
+  "critical_code_review_comments": [
+    "advance_router.bulk_advance: approval-first ordering is correct now, but the write is still not atomic — if any db.employee_advances.insert_one fails mid-loop, the approval and a partial set of advances persist. Consider inserting the advances with insert_many after the gate, or wrap in a try/except that deletes the approval on failure."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter179_bulk_advance_retest.py",
+    "/app/backend/tests/cleanup_iter179.py",
+    "/app/backend/tests/cleanup_iter179_approvals.py"
+  ],
+  "success_rate": {"backend": "100% (4/4)", "frontend": "100% (dropdown re-open flow)"},
+  "seed_data_creation": "No new seed data. Temporary: 2 bulk batches (admin ADB happy-path, mop ADB) + 1 rejected gate call; all advances and their approvals deleted after the run (verified 0 remaining TEST_iter179 rows, 0 dangling bulk approvals).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin@erp.com/Admin@123, test_mop@erp.com/Mop@12345 — both worked",
+  "context_for_next_testing_agent": "Both iter-178 bugs are FIXED and verified (backend orphan-advance gate + EmployeeSearchSelect onClick re-open). Reusable regression file: /app/backend/tests/test_iter179_bulk_advance_retest.py (self-cleaning via API delete; run /app/backend/tests/cleanup_iter179_approvals.py afterwards to purge dangling bulk approvals). UI testids: advance-new-btn, advance-create-dialog, multi-mode-toggle, multi-emp-panel, multi-emp-select, multi-emp-select-list, multi-remove-{i}, multi-total. Login testids: login-email / login-password / login-submit (email field is not type=email).",
+  "rca_of_the_issue": "Iter178 bug 1: advances were inserted before insert_approval(), whose documents gate raises ApprovalDocumentsRequired -> 400, leaving orphan 'submitted' advances with a dangling approval_id. Fix (insert approval first) confirmed: after a 400 the advance count is unchanged and no approvals doc is added. Iter178 bug 2: EmployeeSearchSelect only opened on onFocus; after picking via onMouseDown(preventDefault) the input kept focus, so a subsequent click fired no focus event and the list stayed closed. Fix (onClick + open-on-change) confirmed in the browser."
+}

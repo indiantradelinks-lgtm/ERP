@@ -395,6 +395,44 @@ function CreateAdvanceDialog({ open, onOpenChange, types, employees, canCreateOn
 
           {multiMode ? (
             <div className="space-y-2 p-3 border rounded bg-slate-50" data-testid="multi-emp-panel">
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" className="h-7 text-xs" data-testid="multi-template-btn"
+                  onClick={async () => {
+                    try {
+                      const res = await api.get("/advances/bulk/template", { responseType: "blob" });
+                      const url = URL.createObjectURL(res.data);
+                      const a = document.createElement("a");
+                      a.href = url; a.download = "Bulk-Advance-Template.xlsx"; a.click();
+                      URL.revokeObjectURL(url);
+                    } catch (e) { toast.error(apiErrorMessage(e)); }
+                  }}>Template</Button>
+                <label className="inline-flex">
+                  <input type="file" accept=".xlsx,.csv" className="hidden" data-testid="multi-upload-input"
+                    onChange={async (ev) => {
+                      const f = ev.target.files?.[0];
+                      ev.target.value = "";
+                      if (!f) return;
+                      try {
+                        const fd = new FormData();
+                        fd.append("file", f);
+                        const { data } = await api.post("/advances/bulk/parse", fd, { headers: { "Content-Type": "multipart/form-data" } });
+                        const good = data.rows.filter((r) => !r.error);
+                        setMultiList((l) => {
+                          const have = new Set(l.map((x) => x.employee_id));
+                          return [...l, ...good.filter((r) => !have.has(r.employee_id))
+                            .map((r) => ({ employee_id: r.employee_id, name: r.employee_name, code: r.employee_code, amount: r.amount }))];
+                        });
+                        toast.success(`${data.valid} employee(s) loaded from file`);
+                        const bad = data.rows.filter((r) => r.error);
+                        if (bad.length) toast.warning(`${bad.length} row(s) skipped: ${bad.slice(0, 5).map((b) => `${b.employee_code} (${b.error})`).join("; ")}${bad.length > 5 ? "…" : ""}`, { duration: 10000 });
+                      } catch (e) { toast.error(apiErrorMessage(e)); }
+                    }} />
+                  <span className="inline-flex items-center h-7 px-3 text-xs border rounded-md bg-white hover:bg-slate-100 cursor-pointer" data-testid="multi-upload-btn">
+                    Upload Excel/CSV
+                  </span>
+                </label>
+                <span className="text-[11px] text-muted-foreground">or add employees one by one below</span>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <ProjectSelect label="Project (filter)" value={projFilter} includeHeadOffice
                   onChange={(v) => setProjFilter(v)} testid="multi-project-filter" placeholder="— all projects —" />
