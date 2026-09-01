@@ -5767,3 +5767,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - SiteLocationSelect (MasterSelect.jsx) now sources from /sites/locations (was Site-Master-only → empty when db.sites unpopulated, e.g. production); legacy/typed values stay selectable.
 - Converted free-text Site Location inputs to the dropdown: ResourceRequests (create+edit), DailyProgressReports, ProjectResources. ProjectRequests already used the dropdown.
 - Verified as test_mop@erp.com (Manager OP): 20 locations from API, 21 options in dialog, selection works (screenshot).
+
+## RA/Running Bills — Tally Invoice Attachments + PM Name (June 2026)
+- RaBills.jsx: "Tally" paperclip button per row → RowAttachments dialog (parent_type ra_bill_tally_invoice, parent_id = bill id) with upload/view/download/delete; "ra_bill_tally_invoice" added to files_router ALLOWED_FOLDERS. Files also flow to OneDrive queue like other uploads.
+- GET /ra-bills now enriches rows with project_manager_name (projects.project_manager_name → users[pm_id] → legacy manager); UI shows "PM: <name>" under Client · Project.
+- Verified: upload/list/download via curl (200s, test file cleaned); UI screenshot shows PM names + Tally dialog. No workflow/calc/permission changes.

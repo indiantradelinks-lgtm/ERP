@@ -153,6 +153,23 @@ async def list_ra_bills(client_id: Optional[str] = None,
     if po_id:
         q["po_id"] = po_id
     rows = await db.ra_bills.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    codes = {r.get("project_code") for r in rows if r.get("project_code")}
+    if codes:
+        pm_by_code: dict = {}
+        pm_ids = set()
+        projs = await db.projects.find(
+            {"code": {"$in": list(codes)}},
+            {"_id": 0, "code": 1, "project_manager_name": 1, "project_manager_id": 1, "manager": 1}).to_list(2000)
+        for p in projs:
+            pm_ids.add(p.get("project_manager_id"))
+        users = {u["id"]: u.get("name") async for u in db.users.find(
+            {"id": {"$in": [x for x in pm_ids if x]}}, {"_id": 0, "id": 1, "name": 1})}
+        for p in projs:
+            pm_by_code[p["code"]] = (p.get("project_manager_name")
+                                     or users.get(p.get("project_manager_id"))
+                                     or p.get("manager") or "")
+        for r in rows:
+            r["project_manager_name"] = pm_by_code.get(r.get("project_code"), "")
     return rows
 
 

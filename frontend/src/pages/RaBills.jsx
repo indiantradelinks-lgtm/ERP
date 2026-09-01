@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Plus, Search, FileText, CheckCircle2, XCircle, Send, Trash2, Eye, RefreshCw, X, Receipt, Banknote, Mail } from "lucide-react";
+import { Plus, Search, FileText, CheckCircle2, XCircle, Send, Trash2, Eye, RefreshCw, X, Receipt, Banknote, Mail, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +12,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import SendEmailDialog from "@/components/SendEmailDialog";
+import RowAttachments from "@/components/RowAttachments";
 import { ClientSelect, ProjectSelect, SiteSelect, POSelect } from "@/components/MasterSelect";
 
 const STATUS_TONE = {
@@ -45,6 +46,7 @@ export default function RaBills() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(blankBill());
   const [viewing, setViewing] = useState(null);
+  const [tallyFor, setTallyFor] = useState(null);
   const [fromMeasOpen, setFromMeasOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(null);
   const [emailFor, setEmailFor] = useState(null);
@@ -182,6 +184,7 @@ export default function RaBills() {
                   <TableCell className="text-xs">
                     <div className="font-semibold">{b.client_name || "—"}</div>
                     <div className="text-muted-foreground">{b.project_code || "—"}</div>
+                    {b.project_manager_name && <div className="text-[10px] text-muted-foreground" data-testid={`ra-pm-${b.id}`}>PM: {b.project_manager_name}</div>}
                   </TableCell>
                   <TableCell className="text-xs">{(b.bill_type || "running").replaceAll("_", " ")}</TableCell>
                   <TableCell className="font-mono-data text-sm tabular">{inr(b.gross_value)}</TableCell>
@@ -190,6 +193,8 @@ export default function RaBills() {
                   <TableCell className="text-right">
                     <div className="inline-flex gap-1 flex-wrap justify-end">
                       <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={() => setViewing(b)} data-testid={`ra-view-${b.id}`}><Eye className="h-3 w-3" /></Button>
+                      <Button size="sm" variant="outline" className="h-7 rounded-sm" title="Tally Invoice — upload / view"
+                        onClick={() => setTallyFor(b)} data-testid={`ra-tally-${b.id}`}><Paperclip className="h-3 w-3 mr-1" />Tally</Button>
                       <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={() => setEmailFor(b)} data-testid={`ra-email-${b.id}`}><Mail className="h-3 w-3 mr-1" />Email</Button>
                       {b.status === "draft" && <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={() => submit(b)} data-testid={`ra-submit-${b.id}`}><Send className="h-3 w-3 mr-1" />Submit</Button>}
                       {canApprove && b.status === "submitted" && <Button size="sm" className="h-7 rounded-sm bg-success text-success-foreground hover:bg-success/90" onClick={() => approve(b)} data-testid={`ra-approve-${b.id}`}><CheckCircle2 className="h-3 w-3 mr-1" />Approve</Button>}
@@ -207,6 +212,11 @@ export default function RaBills() {
       </div>
 
       {open && <FormDialog form={form} setForm={setForm} onClose={() => setOpen(false)} onSave={create} />}
+      {tallyFor && (
+        <RowAttachments open onOpenChange={(v) => !v && setTallyFor(null)}
+          parentType="ra_bill_tally_invoice" parentId={tallyFor.id}
+          recordTitle={`Tally Invoice — ${tallyFor.bill_number}`} testidPrefix="ra-tally-attach" />
+      )}
       {fromMeasOpen && <FromMeasurementsDialog defaults={defaults} onClose={() => { setFromMeasOpen(false); load(); }} />}
       {viewing && <ViewDialog bill={viewing} onClose={() => setViewing(null)} />}
       {paymentOpen && <PaymentDialog bill={paymentOpen} onClose={() => { setPaymentOpen(null); load(); }} />}
