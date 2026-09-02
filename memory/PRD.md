@@ -5779,3 +5779,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - FIX (found by testing): approval inserted BEFORE advances so doc-gate 400 leaves no orphan advances; insert loop rolls back approval+advances on failure.
 - FIX: EmployeeSearchSelect re-opens dropdown on click/typing after a selection.
 - Tested: iteration_178 (found 2 bugs) + iteration_179 retest — 4/4 backend, UI dropdown + upload flows pass. Known minor: deleting a bulk advance leaves its batch approval doc (backlog).
+
+## PPC Exports + Salary Advance Monthly Report (June 2026)
+- GET /api/accounts/payment-queue/export/{fmt}?stage=pending|verified|bank|paid&search= → Excel/PDF of the tab (COLUMNS "payment_queue" in exports.py: S.No, Request No, Date, Type, Project, Payee, Amount, Verified Amt, Net Payable, Stage, UTR, Paid Date, Raised By). UI: Excel/PDF buttons on Pending Verification / Bank Files & Mark Paid / Paid History tabs.
+- GET /api/advances/report/monthly?fmt=json|xlsx|pdf&month=YYYY-MM&status_filter=paid|unpaid|pending (status groups: pending=submitted/under_approval; unpaid=approved; paid=paid/under_recovery/closed; PM-scope respected). Columns include EMI, Installments, EMIs Left, Recovered, Outstanding (EMI Basis)=emi×remaining for payroll deduction. UI: AdvanceReportBar on Employee Advance Register (month + status + Excel/PDF + live totals).
+- Verified via curl (all 200s, headers correct, valid xlsx/pdf) + UI screenshot.

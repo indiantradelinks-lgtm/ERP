@@ -478,6 +478,71 @@ async def create_bulk_advance(payload: BulkAdvanceCreateIn, user: dict = Depends
                           "employee_name": a["employee_name"], "amount": a["requested_amount"]} for a in advances]}
 
 
+@router.get("/advances/report/monthly")
+async def advance_monthly_report(fmt: str = "json", month: str = "", status_filter: str = "",
+                                 user: dict = Depends(get_current_user)):
+    """Monthly Salary Advance Report. status_filter: paid | unpaid | pending (blank = all).
+    Includes EMI details and EMI-basis outstanding for payroll deduction."""
+    q: dict = {"status": {"$ne": "draft"}}
+    if month:
+        q["request_date"] = {"$regex": f"^{month}"}
+    groups = {
+        "pending": ["submitted", "under_approval", "pending_approval"],
+        "unpaid": ["approved"],
+        "paid": ["paid", "under_recovery", "closed"],
+    }
+    if status_filter:
+        if status_filter not in groups:
+            raise HTTPException(400, "status_filter must be paid, unpaid or pending")
+        q["status"] = {"$in": groups[status_filter]}
+    tokens = await _pm_allowed_tokens(user)
+    rows = await db.employee_advances.find(q, {"_id": 0}).sort("request_date", -1).to_list(5000)
+    if tokens is not None:
+        rows = [r for r in rows if (r.get("project") or "") in tokens or (r.get("project_code") or "") in tokens]
+    data = []
+    for i, r in enumerate(rows, start=1):
+        emi = float(r.get("emi") or 0)
+        rem = int(r.get("remaining_installments") or 0)
+        outstanding_emi = round(emi * rem, 2) if emi and rem else round(float(r.get("outstanding") or 0), 2)
+        st = r.get("status")
+        report_status = next((g for g, sts in groups.items() if st in sts), st)
+        data.append({
+            "s_no": i,
+            "advance_no": r.get("advance_no"),
+            "request_date": r.get("request_date"),
+            "employee_code": r.get("employee_code"),
+            "employee_name": r.get("employee_name"),
+            "project": r.get("project") or "",
+            "advance_type": r.get("advance_type"),
+            "requested_amount": r.get("requested_amount") or 0,
+            "approved_amount": r.get("approved_amount") or 0,
+            "paid_amount": r.get("paid_amount") or 0,
+            "emi": emi,
+            "installments": r.get("installments") or 0,
+            "remaining_installments": rem,
+            "recovered_amount": r.get("recovered_amount") or 0,
+            "outstanding_emi": outstanding_emi,
+            "report_status": report_status,
+        })
+    if fmt == "json":
+        totals = {"count": len(data),
+                  "total_paid": round(sum(d["paid_amount"] for d in data), 2),
+                  "total_outstanding_emi": round(sum(d["outstanding_emi"] for d in data), 2)}
+        return {"month": month or "all", "status_filter": status_filter or "all", "totals": totals, "rows": data}
+    if fmt not in ("xlsx", "pdf"):
+        raise HTTPException(400, "fmt must be json, xlsx or pdf")
+    from exports import to_excel, to_pdf
+    suffix = f"{month or 'All'}{('-' + status_filter) if status_filter else ''}"
+    if fmt == "xlsx":
+        content = to_excel("salary_advance_report", data)
+        mt = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        content = to_pdf("salary_advance_report", data)
+        mt = "application/pdf"
+    return Response(content=content, media_type=mt,
+                    headers={"Content-Disposition": f'attachment; filename="Salary-Advance-Report-{suffix}.{fmt}"'})
+
+
 @router.get("/advances/bulk/template")
 async def bulk_advance_template(user: dict = Depends(get_current_user)):
     """Excel template for bulk advance upload."""

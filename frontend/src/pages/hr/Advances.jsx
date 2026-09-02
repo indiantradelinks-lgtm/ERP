@@ -124,6 +124,8 @@ export default function Advances() {
         </Button>
       </div>
 
+      <AdvanceReportBar />
+
       {/* Summary widgets */}
       {summary && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -290,6 +292,51 @@ function SummaryTile({ label, value, icon: Icon, tone = "slate" }) {
     <div className={`p-3 rounded border ${TONE[tone]}`}>
       <div className="flex items-center justify-between text-xs uppercase text-muted-foreground"><span>{label}</span><Icon className="h-3 w-3" /></div>
       <div className="text-xl font-bold mt-1">{value}</div>
+    </div>
+  );
+}
+
+function AdvanceReportBar() {
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [status, setStatus] = useState("");
+  const [totals, setTotals] = useState(null);
+  useEffect(() => {
+    api.get(`/advances/report/monthly?fmt=json&month=${month}&status_filter=${status}`)
+      .then((r) => setTotals(r.data.totals)).catch(() => setTotals(null));
+  }, [month, status]);
+  const dl = async (fmt) => {
+    try {
+      const res = await api.get(`/advances/report/monthly?fmt=${fmt}&month=${month}&status_filter=${status}`, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url; a.download = `Salary-Advance-Report-${month || "All"}${status ? "-" + status : ""}.${fmt}`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { toast.error("Export failed"); }
+  };
+  return (
+    <div className="flex flex-wrap items-end gap-3 p-3 border rounded-md bg-slate-50" data-testid="advance-report-bar">
+      <div className="text-sm font-semibold mr-1">Monthly Salary Advance Report</div>
+      <div>
+        <Label className="text-[10px] uppercase tracking-wider">Month</Label>
+        <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="h-8 w-40" data-testid="adv-report-month" />
+      </div>
+      <div>
+        <Label className="text-[10px] uppercase tracking-wider">Status</Label>
+        <select value={status} onChange={(e) => setStatus(e.target.value)}
+          className="block h-8 rounded-sm border border-input bg-background px-2 text-sm" data-testid="adv-report-status">
+          <option value="">All</option>
+          <option value="paid">Paid</option>
+          <option value="unpaid">Unpaid (approved)</option>
+          <option value="pending">Pending approval</option>
+        </select>
+      </div>
+      <Button size="sm" variant="outline" className="h-8" onClick={() => dl("xlsx")} data-testid="adv-report-xlsx">Excel</Button>
+      <Button size="sm" variant="outline" className="h-8" onClick={() => dl("pdf")} data-testid="adv-report-pdf">PDF</Button>
+      {totals && (
+        <span className="text-xs text-muted-foreground ml-auto" data-testid="adv-report-totals">
+          {totals.count} advance(s) · Paid {inr(totals.total_paid)} · Outstanding (EMI) {inr(totals.total_outstanding_emi)}
+        </span>
+      )}
     </div>
   );
 }

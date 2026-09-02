@@ -52,6 +52,24 @@ function Kpi({ label, value, sub, icon: Icon, testid }) {
   );
 }
 
+function ExportButtons({ stage }) {
+  const dl = async (fmt) => {
+    try {
+      const res = await api.get(`/accounts/payment-queue/export/${fmt}?stage=${stage}`, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url; a.download = `Payment-${stage}.${fmt}`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { toast.error("Export failed"); }
+  };
+  return (
+    <div className="flex justify-end gap-2 mb-2">
+      <Button size="sm" variant="outline" className="h-7 rounded-sm text-xs" onClick={() => dl("xlsx")} data-testid={`ppc-export-xlsx-${stage}`}>Excel</Button>
+      <Button size="sm" variant="outline" className="h-7 rounded-sm text-xs" onClick={() => dl("pdf")} data-testid={`ppc-export-pdf-${stage}`}>PDF</Button>
+    </div>
+  );
+}
+
 function QueueTable({ rows, cols, renderActions, emptyText, testid }) {
   return (
     <div className="border rounded-sm bg-white overflow-x-auto" data-testid={testid}>
@@ -281,6 +299,7 @@ export default function PaymentProcessingCenter() {
         </TabsList>
 
         <TabsContent value="pending" className="mt-3">
+          <ExportButtons stage="pending" />
           <QueueTable testid="ppc-pending-table" emptyText="No payments awaiting verification"
             cols={["Request No", "Type", "Project", "Paid To", "Est. Value", "Stage", "Docs", "Action"]}
             rows={byStage.pending}
@@ -339,6 +358,7 @@ export default function PaymentProcessingCenter() {
         </TabsContent>
 
         <TabsContent value="bank" className="mt-3 space-y-4">
+          <ExportButtons stage="bank" />
           <QueueTable testid="ppc-bank-table" emptyText="No payments in bank files awaiting UTR"
             cols={["Request No", "Type", "Project", "Paid To", "Net Payable", "Bank File", "Docs", "Action"]}
             rows={byStage.bank}
@@ -382,6 +402,7 @@ export default function PaymentProcessingCenter() {
         </TabsContent>
 
         <TabsContent value="paid" className="mt-3">
+          <ExportButtons stage="paid" />
           <QueueTable testid="ppc-paid-table" emptyText="No payments completed yet"
             cols={["Request No", "Type", "Project", "Paid To", "Paid Amt", "UTR", "Paid Date", "Voucher", "Advice", "Docs"]}
             rows={byStage.paid}

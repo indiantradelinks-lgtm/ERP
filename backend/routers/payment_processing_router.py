@@ -9,7 +9,7 @@ Attachments live on parent_type 'payment_request' visible to all linked users.
 from io import BytesIO
 from typing import Optional, List, Dict, Any
 
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -114,6 +114,59 @@ class VerifyIn(BaseModel):
     advance_adjusted: float = 0.0
     expense_account_code: str = "5150"
     remarks: str = ""
+
+
+@router.get("/export/{fmt}")
+async def export_payment_queue(fmt: str, stage: str = "pending", search: str = "",
+                               user: dict = Depends(require_permission("accounting", "read"))):
+    """Excel/PDF export of a Payment Processing tab (pending | verified | bank | paid)."""
+    if fmt not in ("xlsx", "pdf"):
+        raise HTTPException(400, "fmt must be xlsx or pdf")
+    rows = await payment_queue(stage="", project_code="", user=user)
+    def tab_of(r):
+        s = r.get("pay_stage")
+        if s == "verified":
+            return "verified"
+        if s == "in_bank_file":
+            return "bank"
+        if s == "paid":
+            return "paid"
+        return "pending"
+    rows = [r for r in rows if tab_of(r) == stage]
+    if search:
+        s = search.lower()
+        rows = [r for r in rows if s in " ".join(str(r.get(k) or "") for k in
+                ("request_no", "employee_name", "vendor_name", "project_code", "project_name",
+                 "description", "request_type")).lower()]
+    data = []
+    for i, r in enumerate(rows, start=1):
+        v = r.get("verification") or {}
+        data.append({
+            "s_no": i,
+            "request_no": r.get("request_no"),
+            "date": str(r.get("created_at") or "")[:10],
+            "source": (r.get("source") or r.get("request_type") or "").replace("_", " "),
+            "project": " ".join(x for x in [r.get("project_code"), r.get("project_name")] if x),
+            "payee": r.get("employee_name") or r.get("vendor_name") or v.get("vendor_name") or "",
+            "description": r.get("description") or "",
+            "amount": r.get("amount") or r.get("est_value") or 0,
+            "verified_amount": v.get("verified_amount") or "",
+            "net_payable": v.get("net_payable") or "",
+            "stage": (r.get("pay_stage") or "").replace("_", " "),
+            "utr_no": v.get("utr_no") or r.get("utr_no") or "",
+            "paid_date": v.get("paid_date") or r.get("paid_date") or "",
+            "raised_by": r.get("raised_by") or r.get("created_by") or "",
+        })
+    from exports import to_excel, to_pdf
+    label = {"pending": "Pending-Verification", "verified": "Verified", "bank": "Bank-Files", "paid": "Paid-History"}.get(stage, stage)
+    if fmt == "xlsx":
+        content = to_excel("payment_queue", data)
+        mt = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        content = to_pdf("payment_queue", data)
+        mt = "application/pdf"
+    return Response(content=content, media_type=mt,
+                    headers={"Content-Disposition": f'attachment; filename="Payment-{label}.{fmt}"'})
 
 
 @router.post("/{rid}/verify")
