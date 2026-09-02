@@ -5784,3 +5784,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - GET /api/accounts/payment-queue/export/{fmt}?stage=pending|verified|bank|paid&search= → Excel/PDF of the tab (COLUMNS "payment_queue" in exports.py: S.No, Request No, Date, Type, Project, Payee, Amount, Verified Amt, Net Payable, Stage, UTR, Paid Date, Raised By). UI: Excel/PDF buttons on Pending Verification / Bank Files & Mark Paid / Paid History tabs.
 - GET /api/advances/report/monthly?fmt=json|xlsx|pdf&month=YYYY-MM&status_filter=paid|unpaid|pending (status groups: pending=submitted/under_approval; unpaid=approved; paid=paid/under_recovery/closed; PM-scope respected). Columns include EMI, Installments, EMIs Left, Recovered, Outstanding (EMI Basis)=emi×remaining for payroll deduction. UI: AdvanceReportBar on Employee Advance Register (month + status + Excel/PDF + live totals).
 - Verified via curl (all 200s, headers correct, valid xlsx/pdf) + UI screenshot.
+
+## Azure Assessment Docs (June 2026)
+- /app/AZURE_ASSESSMENT.md — full data sheet (verified vs TO BE CONFIRMED, no secrets).
+- /app/Azure-Assessment-Executive-Summary.pdf + copy in /app/frontend/public/ (downloadable at {preview_url}/Azure-Assessment-Executive-Summary.pdf). Generator script: /app/backend/tests/gen_azure_summary_pdf.py.
+- /app/ARCHITECTURE.md — architecture doc created earlier.
