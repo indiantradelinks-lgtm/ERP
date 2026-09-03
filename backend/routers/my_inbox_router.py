@@ -154,12 +154,44 @@ async def _ra_bills(role: str) -> List[dict]:
                   link="/app/ra-bills") for r in rows]
 
 
+async def _service_requests(role: str, user_id: str) -> List[dict]:
+    """Service Requests awaiting the current user's step per the Approval Matrix."""
+    rows = await db.svc_requests.find(
+        {"status": {"$in": ["submitted", "under_review"]}},
+        {"_id": 0, "history": 0}).sort("created_at", -1).limit(200).to_list(200)
+    if not rows:
+        return []
+    from approval_engine import get_chain_template
+    default_chain = await get_chain_template("service_request")
+    out = []
+    for r in rows:
+        chain = r.get("approval_chain") or default_chain
+        idx = int(r.get("approval_step") or 0)
+        step = chain[idx] if 0 <= idx < len(chain) else None
+        if not step or not (role == "super_admin" or step.get("role") == role):
+            continue
+        if r.get("requester_id") == user_id and role != "super_admin":
+            continue
+        out.append(_item("service_request", "Service Request", r,
+                         ref=r.get("sr_no"),
+                         title=f"{r.get('service_category') or 'Service'} — {(r.get('service_description') or '')[:70]}",
+                         subtitle=" · ".join(x for x in [r.get("project_code"), r.get("site_location"),
+                                                         f"Priority: {r.get('priority')}" if r.get("priority") else ""] if x),
+                         amount=r.get("estimated_budget"),
+                         step_label=step.get("label") or step.get("role"),
+                         link=f"/app/services/requests/{r['id']}",
+                         approve_path=f"/service-workflow/requests/{r['id']}/inbox-approve",
+                         reject_path=f"/service-workflow/requests/{r['id']}/inbox-reject"))
+    return out
+
+
 @router.get("/my-inbox")
 async def my_inbox(user: dict = Depends(get_current_user)):
     role = user.get("role")
     results = await asyncio.gather(
         _central_approvals(role), _project_requests(role), _daily_expenses(role),
-        _expense_payments(role), _scaffolding(role), _dprs(role), _ra_bills(role))
+        _expense_payments(role), _scaffolding(role), _dprs(role), _ra_bills(role),
+        _service_requests(role, user.get("id")))
     items: List[dict] = [it for group in results for it in group]
     items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
     counts: Dict[str, int] = {}

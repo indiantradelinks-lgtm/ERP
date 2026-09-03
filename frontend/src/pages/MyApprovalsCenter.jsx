@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Inbox, RefreshCw, CheckCircle2, XCircle, ExternalLink, ClipboardCheck, Wallet, Layers, FileText, HardHat, Receipt, Banknote } from "lucide-react";
+import { Inbox, RefreshCw, CheckCircle2, XCircle, ExternalLink, ClipboardCheck, Wallet, Layers, FileText, HardHat, Receipt, Banknote, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,7 @@ const inr = (v) => `₹ ${Number(v || 0).toLocaleString("en-IN")}`;
 const SOURCES = {
   approval: { label: "Approvals", icon: ClipboardCheck, tone: "border-blue-300 text-blue-900 bg-blue-50" },
   project_request: { label: "Project Requests", icon: FileText, tone: "border-violet-300 text-violet-900 bg-violet-50" },
+  service_request: { label: "Service Requests", icon: Wrench, tone: "border-indigo-300 text-indigo-900 bg-indigo-50" },
   expense: { label: "Daily Expenses", icon: Wallet, tone: "border-amber-300 text-amber-900 bg-amber-50" },
   expense_payment: { label: "Payments Due", icon: Banknote, tone: "border-emerald-300 text-emerald-900 bg-emerald-50" },
   scaffolding: { label: "Scaffolding Transfers", icon: Layers, tone: "border-cyan-300 text-cyan-900 bg-cyan-50" },
@@ -141,7 +142,7 @@ export default function MyApprovalsCenter() {
         </div>
       ) : (
       <>
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-9 gap-3">
         <button onClick={() => setFilter("")}
           className={`text-left bg-card border rounded-sm p-3 transition-colors ${filter === "" ? "border-primary ring-1 ring-primary/30" : "border-border hover:border-primary/50"}`}
           data-testid="inbox-kpi-total">

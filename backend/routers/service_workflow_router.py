@@ -332,6 +332,25 @@ async def approve_request(sr_id: str, p: ActionIn, request: Request,
     return await _sr(sr_id)
 
 
+class InboxActionIn(BaseModel):
+    remarks: Optional[str] = ""
+
+
+@router.post("/requests/{sr_id}/inbox-approve")
+async def inbox_approve(sr_id: str, p: InboxActionIn, request: Request,
+                        user: dict = Depends(get_current_user)):
+    """Approve wrapper for the unified My Pending Approvals inbox."""
+    return await approve_request(sr_id, ActionIn(action="approve", remarks=p.remarks or ""), request, user)
+
+
+@router.post("/requests/{sr_id}/inbox-reject")
+async def inbox_reject(sr_id: str, p: InboxActionIn, request: Request,
+                       user: dict = Depends(get_current_user)):
+    if not (p.remarks or "").strip():
+        raise HTTPException(400, "Rejection reason is required")
+    return await approve_request(sr_id, ActionIn(action="reject", remarks=p.remarks or ""), request, user)
+
+
 @router.post("/requests/{sr_id}/close")
 async def close_request(sr_id: str, p: ActionIn, request: Request,
                         user: dict = Depends(get_current_user)):

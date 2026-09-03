@@ -40,12 +40,8 @@ export default function ServiceRequests() {
   const [rows, setRows] = useState([]);
   const [f, setF] = useState({ status: sp.get("status") || "", department: "", category: "", q: "" });
   const [editing, setEditing] = useState(null);
-  const [reviewing, setReviewing] = useState(null);
-  const [reviewAction, setReviewAction] = useState("approve");
-  const [reviewRemarks, setReviewRemarks] = useState("");
   const [docsFor, setDocsFor] = useState(null);
   const [busy, setBusy] = useState(false);
-  const isApprover = meta?.role_caps?.sr_approver;
 
   const load = useCallback(async () => {
     try {
@@ -80,27 +76,10 @@ export default function ServiceRequests() {
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
-  const review = async () => {
-    setBusy(true);
-    try {
-      await api.post(`/service-workflow/requests/${reviewing.id}/action`, { action: reviewAction, remarks: reviewRemarks });
-      toast.success(`${reviewing.sr_no} — ${reviewAction.replace("_", " ")}d`);
-      setReviewing(null); setReviewRemarks("");
-      load();
-    } catch (e) { toast.error(apiErrorMessage(e)); } finally { setBusy(false); }
-  };
-
   const canEdit = (r) => ["draft", "sent_back", "rejected"].includes(r.status) && (r.requester_id === user?.id || user?.role === "super_admin");
   const pendingStep = (r) => {
     const c = r.approval_chain || [];
     return c[Math.min(r.approval_step ?? 0, c.length - 1)];
-  };
-  const canReview = (r) => {
-    if (!["submitted", "under_review"].includes(r.status)) return false;
-    if (r.requester_id === user?.id && user?.role !== "super_admin") return false;
-    const s = pendingStep(r);
-    if (!s) return isApprover; // legacy rows without a stored chain
-    return user?.role === s.role || user?.role === "super_admin";
   };
 
   return (
@@ -108,7 +87,7 @@ export default function ServiceRequests() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2"><ClipboardList className="h-5 w-5" /> Service Requests</h1>
-          <p className="text-xs text-muted-foreground">Raise any service requirement from one place — auto-numbered, approval-gated, fully tracked to payment</p>
+          <p className="text-xs text-muted-foreground">Raise any service requirement from one place — approvals happen in <b>My Pending Approvals</b> as per the Approval Matrix</p>
         </div>
         <Button onClick={() => setEditing(blank())} data-testid="svc-req-new-btn"><Plus className="h-4 w-4 mr-1" /> New Service Request</Button>
       </div>
@@ -166,10 +145,8 @@ export default function ServiceRequests() {
                   <Button variant="ghost" size="icon" className="h-7 w-7" title="View full trail" onClick={() => nav(`/app/services/requests/${r.id}`)} data-testid={`svc-req-view-${r.sr_no}`}><Eye className="h-3.5 w-3.5" /></Button>
                   {canEdit(r) && <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={() => setEditing({ ...blank(), ...r })} data-testid={`svc-req-edit-${r.sr_no}`}><Pencil className="h-3.5 w-3.5" /></Button>}
                   {canEdit(r) && <Button variant="ghost" size="icon" className="h-7 w-7" title="Submit for approval" onClick={() => submitRow(r)} data-testid={`svc-req-submit-${r.sr_no}`}><Send className="h-3.5 w-3.5" /></Button>}
-                  {canReview(r) &&
-                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setReviewing(r); setReviewAction("approve"); setReviewRemarks(""); }} data-testid={`svc-req-review-${r.sr_no}`}>Review</Button>}
-                  {["submitted", "under_review"].includes(r.status) && !canReview(r) && pendingStep(r) &&
-                    <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-700 border-amber-300" data-testid={`svc-req-awaiting-${r.sr_no}`}>Awaiting: {pendingStep(r).label || pendingStep(r).role}</Badge>}
+                  {["submitted", "under_review"].includes(r.status) &&
+                    <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-700 border-amber-300" title="Approve from My Pending Approvals" data-testid={`svc-req-awaiting-${r.sr_no}`}>Awaiting: {pendingStep(r)?.label || pendingStep(r)?.role || "Approver"}</Badge>}
                   <Button variant="ghost" size="icon" className="h-7 w-7" title="Attachments" onClick={() => setDocsFor(r)} data-testid={`svc-req-docs-${r.sr_no}`}><Paperclip className="h-3.5 w-3.5" /></Button>
                 </TableCell>
               </TableRow>
@@ -216,46 +193,6 @@ export default function ServiceRequests() {
             <Button variant="outline" onClick={() => setEditing(null)} data-testid="svc-req-form-cancel">Cancel</Button>
             <Button variant="secondary" disabled={busy} onClick={() => save(false)} data-testid="svc-req-form-save-draft">Save as Draft</Button>
             <Button disabled={busy} onClick={() => save(true)} data-testid="svc-req-form-submit">Submit for Approval</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Review dialog */}
-      <Dialog open={!!reviewing} onOpenChange={(o) => !o && setReviewing(null)}>
-        <DialogContent className="max-w-lg rounded-sm" data-testid="svc-req-review-dialog">
-          <DialogHeader><DialogTitle>Review {reviewing?.sr_no}</DialogTitle></DialogHeader>
-          {reviewing && (
-            <div className="space-y-3">
-              <div className="text-sm border rounded-md p-3 bg-muted/30">
-                <div><span className="text-muted-foreground">Category:</span> {reviewing.service_category}</div>
-                <div><span className="text-muted-foreground">Description:</span> {reviewing.service_description}</div>
-                <div><span className="text-muted-foreground">Budget:</span> {inr(reviewing.estimated_budget)} · <span className="text-muted-foreground">Priority:</span> {reviewing.priority}</div>
-              </div>
-              {(reviewing.approval_chain || []).length > 0 && (
-                <div className="text-xs border rounded-md p-2 space-y-1" data-testid="svc-req-review-chain">
-                  <div className="text-muted-foreground uppercase text-[10px]">Approval chain (Approval Matrix)</div>
-                  {reviewing.approval_chain.map((s, i) => (
-                    <div key={i} className="flex items-center justify-between">
-                      <span className={i === (reviewing.approval_step ?? 0) && s.status === "pending" ? "font-semibold" : ""}>{i + 1}. {s.label || s.role}</span>
-                      <span className={s.status === "approved" ? "text-emerald-700" : s.status === "pending" ? "text-muted-foreground" : "text-red-700"}>
-                        {s.status}{s.approver ? ` · ${s.approver}` : ""}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="flex gap-2">
-                {["approve", "reject", "send_back"].map((a) => (
-                  <Button key={a} variant={reviewAction === a ? "default" : "outline"} size="sm" onClick={() => setReviewAction(a)} data-testid={`svc-req-review-${a}`}>{a.replace("_", " ")}</Button>
-                ))}
-              </div>
-              <div><Label className="text-xs">Remarks {reviewAction !== "approve" ? "*" : ""}</Label>
-                <Textarea rows={2} value={reviewRemarks} onChange={(e) => setReviewRemarks(e.target.value)} data-testid="svc-req-review-remarks" /></div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setReviewing(null)}>Cancel</Button>
-            <Button disabled={busy} onClick={review} data-testid="svc-req-review-confirm">Confirm</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
