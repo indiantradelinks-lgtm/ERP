@@ -15,7 +15,7 @@ import RowAttachments from "@/components/RowAttachments";
 import { StatusChip, inr, dt, useSvcMeta } from "./shared";
 
 const blankQuote = () => ({ vendor_id: "", amount: "", tax_pct: 18, other_charges: 0, timeline_days: "", validity_date: "", payment_terms: "", commercial_terms: "", technical_compliance: "compliant", remarks: "" });
-const blankPo = () => ({ rate: "", quantity: 1, unit: "Lot", tax_pct: 18, other_charges: 0, service_period_from: "", service_period_to: "", completion_date: "", payment_terms: "", terms_conditions: "", exception_override: false, exception_note: "" });
+const blankPo = () => ({ rate: "", quantity: 1, unit: "Lot", tax_pct: 18, other_charges: 0, service_period_from: "", service_period_to: "", completion_date: "", payment_terms: "", terms_conditions: "", terms_id: "", exception_override: false, exception_note: "" });
 
 export default function ServiceRfqs() {
   const nav = useNavigate();
@@ -34,6 +34,7 @@ export default function ServiceRfqs() {
   const [selRemarks, setSelRemarks] = useState("");
   const [poFor, setPoFor] = useState(null); // rfq
   const [po, setPo] = useState(blankPo());
+  const [terms, setTerms] = useState([]);
   const [docsFor, setDocsFor] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -169,7 +170,7 @@ export default function ServiceRfqs() {
                     {caps.sr_approver && r.status === "recommended" &&
                       <Button size="sm" className="h-7 text-xs ml-1" onClick={() => setSelecting(r)} data-testid={`svc-rfq-selection-${r.rfq_no}`}>Approve Selection</Button>}
                     {caps.procurement && r.status === "selection_approved" &&
-                      <Button size="sm" className="h-7 text-xs ml-1" onClick={() => { setPoFor(r); const q = selectedVendorQuote(r); setPo({ ...blankPo(), rate: q?.amount ?? "", tax_pct: q?.tax_pct ?? 18, other_charges: q?.other_charges ?? 0, payment_terms: q?.payment_terms || "" }); }} data-testid={`svc-rfq-create-po-${r.rfq_no}`}>Create PO</Button>}
+                      <Button size="sm" className="h-7 text-xs ml-1" onClick={async () => { setPoFor(r); const q = selectedVendorQuote(r); setPo({ ...blankPo(), rate: q?.amount ?? "", tax_pct: q?.tax_pct ?? 18, other_charges: q?.other_charges ?? 0, payment_terms: q?.payment_terms || "" }); try { setTerms((await api.get("/service-workflow/terms?active=true")).data); } catch { /* noop */ } }} data-testid={`svc-rfq-create-po-${r.rfq_no}`}>Create PO</Button>}
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDocsFor(r)} data-testid={`svc-rfq-docs-${r.rfq_no}`}><Paperclip className="h-3.5 w-3.5" /></Button>
                   </TableCell>
                 </TableRow>
@@ -348,7 +349,18 @@ export default function ServiceRfqs() {
             <div><Label className="text-xs">Service Period From</Label><Input type="date" value={po.service_period_from} onChange={(e) => setPo({ ...po, service_period_from: e.target.value })} data-testid="svc-po-from" /></div>
             <div><Label className="text-xs">Service Period To</Label><Input type="date" value={po.service_period_to} onChange={(e) => setPo({ ...po, service_period_to: e.target.value })} data-testid="svc-po-to" /></div>
             <div><Label className="text-xs">Payment Terms</Label><Input value={po.payment_terms} onChange={(e) => setPo({ ...po, payment_terms: e.target.value })} data-testid="svc-po-payterms" /></div>
-            <div className="md:col-span-3"><Label className="text-xs">Terms & Conditions</Label><Textarea rows={2} value={po.terms_conditions} onChange={(e) => setPo({ ...po, terms_conditions: e.target.value })} data-testid="svc-po-terms" /></div>
+            <div className="md:col-span-3">
+              <Label className="text-xs">Terms &amp; Conditions Template</Label>
+              <select className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm" value={po.terms_id}
+                onChange={(e) => {
+                  const t = terms.find((x) => x.id === e.target.value);
+                  setPo({ ...po, terms_id: e.target.value, terms_conditions: t ? t.body : po.terms_conditions });
+                }} data-testid="svc-po-terms-template">
+                <option value="">— select from T&amp;C master (optional) —</option>
+                {terms.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
+              </select>
+            </div>
+            <div className="md:col-span-3"><Label className="text-xs">Terms &amp; Conditions (printed on PO PDF — one clause per line)</Label><Textarea rows={4} value={po.terms_conditions} onChange={(e) => setPo({ ...po, terms_conditions: e.target.value })} data-testid="svc-po-terms" /></div>
             <p className="md:col-span-3 text-xs text-muted-foreground">
               PO value: <b>{inr((Number(po.rate) || 0) * (Number(po.quantity) || 1) * (1 + (Number(po.tax_pct) || 0) / 100) + (Number(po.other_charges) || 0))}</b> · PO is created as Draft → Submit → Approve → Issue to vendor.
             </p>

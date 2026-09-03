@@ -18,7 +18,8 @@ import { StatusChip, PRIORITY_STYLE, inr, dt, useSvcMeta } from "./shared";
 const blank = () => ({
   department: "", project_code: "", project_name: "", site_location: "", service_category: "",
   service_type: "", service_description: "", scope_of_work: "", required_date: "",
-  priority: "Medium", estimated_budget: 0, cost_center_id: "", cost_center_label: "", remarks: "",
+  priority: "Medium", estimated_budget: 0, cost_center_id: "", cost_center_label: "",
+  from_location: "", to_location: "", remarks: "",
 });
 
 const Sel = ({ label, value, onChange, options, testid, required }) => (
@@ -90,6 +91,9 @@ export default function ServiceRequests() {
   };
 
   const canEdit = (r) => ["draft", "sent_back", "rejected"].includes(r.status) && (r.requester_id === user?.id || user?.role === "super_admin");
+  const canReview = (r) => isApprover && ["submitted", "under_review"].includes(r.status)
+    && (r.approval_queue !== "director" || ["director", "super_admin"].includes(user?.role))
+    && (r.requester_id !== user?.id || user?.role === "super_admin");
 
   return (
     <div className="p-4 space-y-4" data-testid="svc-requests-page">
@@ -154,8 +158,10 @@ export default function ServiceRequests() {
                   <Button variant="ghost" size="icon" className="h-7 w-7" title="View full trail" onClick={() => nav(`/app/services/requests/${r.id}`)} data-testid={`svc-req-view-${r.sr_no}`}><Eye className="h-3.5 w-3.5" /></Button>
                   {canEdit(r) && <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={() => setEditing({ ...blank(), ...r })} data-testid={`svc-req-edit-${r.sr_no}`}><Pencil className="h-3.5 w-3.5" /></Button>}
                   {canEdit(r) && <Button variant="ghost" size="icon" className="h-7 w-7" title="Submit for approval" onClick={() => submitRow(r)} data-testid={`svc-req-submit-${r.sr_no}`}><Send className="h-3.5 w-3.5" /></Button>}
-                  {isApprover && ["submitted", "under_review"].includes(r.status) &&
+                  {isApprover && ["submitted", "under_review"].includes(r.status) && canReview(r) &&
                     <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setReviewing(r); setReviewAction("approve"); setReviewRemarks(""); }} data-testid={`svc-req-review-${r.sr_no}`}>Review</Button>}
+                  {["submitted", "under_review"].includes(r.status) && r.approval_queue === "director" && !canReview(r) &&
+                    <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-700 border-amber-300" data-testid={`svc-req-director-queue-${r.sr_no}`}>Director Queue</Badge>}
                   <Button variant="ghost" size="icon" className="h-7 w-7" title="Attachments" onClick={() => setDocsFor(r)} data-testid={`svc-req-docs-${r.sr_no}`}><Paperclip className="h-3.5 w-3.5" /></Button>
                 </TableCell>
               </TableRow>
@@ -175,6 +181,12 @@ export default function ServiceRequests() {
               <ProjectSelect label="Project" value={editing.project_code} onChange={(code, row) => setEditing({ ...editing, project_code: code, project_name: row?.name || "" })} testid="svc-req-form-project" />
               <SiteLocationSelect label="Site / Location" value={editing.site_location} onChange={(v) => setEditing({ ...editing, site_location: v })} testid="svc-req-form-site" />
               <Sel label="Service Category" required value={editing.service_category} onChange={(e) => setEditing({ ...editing, service_category: e.target.value })} options={meta?.service_categories || []} testid="svc-req-form-category" />
+              {/(transport|vehicle)/i.test(editing.service_category || "") && (
+                <>
+                  <div><Label className="text-xs">From Location *</Label><Input value={editing.from_location || ""} onChange={(e) => setEditing({ ...editing, from_location: e.target.value })} placeholder="Pickup / origin" data-testid="svc-req-form-from" /></div>
+                  <div><Label className="text-xs">To Location *</Label><Input value={editing.to_location || ""} onChange={(e) => setEditing({ ...editing, to_location: e.target.value })} placeholder="Drop / destination" data-testid="svc-req-form-to" /></div>
+                </>
+              )}
               <div><Label className="text-xs">Service Type</Label><Input value={editing.service_type} onChange={(e) => setEditing({ ...editing, service_type: e.target.value })} placeholder="e.g. Crane hire, AMC, Manpower supply" data-testid="svc-req-form-type" /></div>
               <div><Label className="text-xs">Required Date</Label><Input type="date" value={editing.required_date} onChange={(e) => setEditing({ ...editing, required_date: e.target.value })} data-testid="svc-req-form-required-date" /></div>
               <Sel label="Priority" value={editing.priority} onChange={(e) => setEditing({ ...editing, priority: e.target.value })} options={meta?.priorities || ["Low", "Medium", "High", "Urgent"]} testid="svc-req-form-priority" />

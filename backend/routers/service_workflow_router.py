@@ -12,7 +12,7 @@ on_service_invoice_paid() to cascade Paid → PO → SR closure.
 from datetime import datetime, timezone
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from core import db, get_current_user, require_permission, now_iso, new_id
@@ -37,6 +37,41 @@ SERVICE_CATEGORIES = ["Manpower Services", "Equipment Hire", "Transportation", "
                       "Calibration & Testing", "AMC / Maintenance", "Consultancy", "Other"]
 
 AMOUNT_TOL = 1.0  # ₹ tolerance in 3-way matching
+
+
+def _cat_key(label: str) -> str:
+    import re
+    return re.sub(r"[^a-z0-9]+", "_", (label or "").strip().lower()).strip("_")[:40]
+
+
+def _is_transport(category: str) -> bool:
+    c = (category or "").lower()
+    return "transport" in c or "vehicle" in c
+
+
+async def get_service_categories(active_only: bool = False) -> dict:
+    """Built-in SERVICE_CATEGORIES merged with the Service Category Master overrides."""
+    merged = {_cat_key(c): {"label": c, "active": True, "builtin": True} for c in SERVICE_CATEGORIES}
+    async for o in db.svc_category_options.find({}, {"_id": 0}):
+        k = o.get("key")
+        if not k:
+            continue
+        base = merged.get(k, {"label": o.get("label") or k, "builtin": False})
+        if o.get("label"):
+            base["label"] = o["label"]
+        base["active"] = o.get("active", True)
+        merged[k] = base
+    if active_only:
+        return {k: v for k, v in merged.items() if v.get("active", True)}
+    return merged
+
+
+def _validate_submit(d: dict):
+    if not (d.get("service_category") and (d.get("service_description") or "").strip()):
+        raise HTTPException(400, "Service Category and Description are required to submit")
+    if _is_transport(d.get("service_category")) and not (
+            (d.get("from_location") or "").strip() and (d.get("to_location") or "").strip()):
+        raise HTTPException(400, "From Location and To Location are required for Vehicle/Transport service requests")
 
 
 def _ip(request: Request | None) -> str:
@@ -82,12 +117,11 @@ async def workflow_meta(user: dict = Depends(get_current_user)):
     departments = sorted({d.get("name") or d.get("code") for d in dept_rows if d.get("name") or d.get("code")})
     vendors = await db.vendors.find({"status": {"$nin": ["inactive", "blacklisted"]}},
                                     {"_id": 0, "id": 1, "name": 1, "email": 1, "gstin": 1}).sort("name", 1).to_list(2000)
-    extra_cats = [d.get("value") or d.get("label") async for d in
-                  db.dropdown_options.find({"category": "service_category"}, {"_id": 0, "value": 1, "label": 1})]
+    extra_cats = sorted({v["label"] for v in (await get_service_categories(True)).values()})
     ccs = await db.cost_centers.find({}, {"_id": 0, "id": 1, "code": 1, "name": 1,
                                           "category_name": 1}).sort("code", 1).to_list(1000)
     return {"departments": departments, "vendors": vendors,
-            "service_categories": sorted(set(SERVICE_CATEGORIES + [c for c in extra_cats if c])),
+            "service_categories": extra_cats,
             "cost_centers": ccs, "priorities": ["Low", "Medium", "High", "Urgent"],
             "sr_statuses": SR_STATUSES,
             "role_caps": {"sr_approver": user.get("role") in SR_APPROVERS,
@@ -111,6 +145,8 @@ class SRIn(BaseModel):
     estimated_budget: float = 0.0
     cost_center_id: str = ""
     cost_center_label: str = ""
+    from_location: str = ""
+    to_location: str = ""
     remarks: str = ""
     submit: bool = False
 
@@ -118,14 +154,15 @@ class SRIn(BaseModel):
 @router.post("/requests")
 async def create_request(p: SRIn, request: Request,
                          user: dict = Depends(require_permission("service_workflow", "write"))):
-    if p.submit and not (p.service_category and p.service_description.strip()):
-        raise HTTPException(400, "Service Category and Description are required to submit")
+    if p.submit:
+        _validate_submit(p.dict())
     status = "submitted" if p.submit else "draft"
+    queue = "director" if user.get("role") == "manager_o_p" else "standard"
     doc = {**p.dict(exclude={"submit"}), "id": new_id(),
            "sr_no": await next_sequence("SVC"),
-           "request_date": now_iso()[:10], "status": status,
+           "request_date": now_iso()[:10], "status": status, "approval_queue": queue,
            "requester_id": user.get("id"), "requester_name": _uname(user), "requester_role": user.get("role"),
-           "current_owner": "Approver" if p.submit else _uname(user),
+           "current_owner": ("Director Approval" if queue == "director" else "Approver") if p.submit else _uname(user),
            "rfq_id": None, "po_ids": [],
            "history": [_hist(user, "created" if not p.submit else "created_and_submitted", "", "", status)],
            "created_by": _uname(user), "created_by_id": user.get("id"),
@@ -204,10 +241,11 @@ async def update_request(sr_id: str, p: SRIn, request: Request,
     if sr.get("requester_id") != user.get("id") and user.get("role") != "super_admin":
         raise HTTPException(403, "Only the requester can edit this request")
     status = "submitted" if p.submit else sr["status"]
-    if p.submit and not (p.service_category and p.service_description.strip()):
-        raise HTTPException(400, "Service Category and Description are required to submit")
-    upd = {**p.dict(exclude={"submit"}), "status": status, "updated_at": now_iso(),
-           "current_owner": "Approver" if p.submit else sr.get("current_owner")}
+    if p.submit:
+        _validate_submit(p.dict())
+    queue = sr.get("approval_queue") or ("director" if sr.get("requester_role") == "manager_o_p" else "standard")
+    upd = {**p.dict(exclude={"submit"}), "status": status, "approval_queue": queue, "updated_at": now_iso(),
+           "current_owner": ("Director Approval" if queue == "director" else "Approver") if p.submit else sr.get("current_owner")}
     await db.svc_requests.update_one({"id": sr_id}, {
         "$set": upd,
         "$push": {"history": _hist(user, "resubmitted" if p.submit else "updated", "", sr["status"], status)}})
@@ -222,9 +260,11 @@ async def submit_request(sr_id: str, request: Request,
     sr = await _sr(sr_id)
     if sr["status"] not in ("draft", "sent_back", "rejected"):
         raise HTTPException(400, f"Cannot submit from status '{sr['status']}'")
-    if not (sr.get("service_category") and (sr.get("service_description") or "").strip()):
-        raise HTTPException(400, "Service Category and Description are required to submit")
-    await _set_sr_status(sr_id, "submitted", user, "submitted", extra={"current_owner": "Approver"})
+    _validate_submit(sr)
+    queue = sr.get("approval_queue") or ("director" if sr.get("requester_role") == "manager_o_p" else "standard")
+    await _set_sr_status(sr_id, "submitted", user, "submitted",
+                         extra={"approval_queue": queue,
+                                "current_owner": "Director Approval" if queue == "director" else "Approver"})
     await audit(user=user, action="svc_request_submit", resource="service_workflow",
                 record_id=sr_id, after={"sr_no": sr["sr_no"]}, ip=_ip(request))
     return await _sr(sr_id)
@@ -240,6 +280,10 @@ async def approve_request(sr_id: str, p: ActionIn, request: Request,
                           user: dict = Depends(get_current_user)):
     _require_role(user, SR_APPROVERS, "approve service requests")
     sr = await _sr(sr_id)
+    if sr.get("requester_id") == user.get("id") and user.get("role") != "super_admin":
+        raise HTTPException(403, "You cannot approve your own service request — it is routed to the approval queue")
+    if sr.get("approval_queue") == "director" and user.get("role") not in ("director", "super_admin"):
+        raise HTTPException(403, "This request is in the Director approval queue — only a Director can act on it")
     if sr["status"] not in ("submitted", "under_review"):
         raise HTTPException(400, f"Request is not awaiting approval (status '{sr['status']}')")
     if p.action not in ("approve", "reject", "send_back"):
@@ -469,6 +513,7 @@ class PoIn(BaseModel):
     completion_date: str = ""
     payment_terms: str = ""
     terms_conditions: str = ""
+    terms_id: str = ""
     exception_override: bool = False
     exception_note: str = ""
 
@@ -497,6 +542,15 @@ async def create_po(rfq_id: str, p: PoIn, request: Request, user: dict = Depends
     other = p.other_charges if p.rate else float(q.get("other_charges") or 0)
     total = round(subtotal + tax_amount + other, 2)
     sr = await _sr(rfq["sr_id"])
+    terms_text = p.terms_conditions
+    terms_title = ""
+    if p.terms_id:
+        t = await db.svc_terms_master.find_one({"id": p.terms_id}, {"_id": 0})
+        if not t:
+            raise HTTPException(400, "Selected Terms & Conditions template not found")
+        terms_title = t.get("title") or ""
+        if not terms_text.strip():
+            terms_text = t.get("body") or ""
     doc = {"id": new_id(), "po_no": await next_sequence("SPO"), "po_date": now_iso()[:10],
            "rfq_id": rfq_id, "rfq_no": rfq["rfq_no"], "sr_id": rfq["sr_id"], "sr_no": rfq["sr_no"],
            "vendor_id": vid, "vendor_name": v["vendor_name"],
@@ -509,7 +563,7 @@ async def create_po(rfq_id: str, p: PoIn, request: Request, user: dict = Depends
            "service_period_from": p.service_period_from, "service_period_to": p.service_period_to,
            "completion_date": p.completion_date or rfq.get("required_completion_date") or "",
            "payment_terms": p.payment_terms or q.get("payment_terms") or "",
-           "terms_conditions": p.terms_conditions,
+           "terms_conditions": terms_text, "terms_id": p.terms_id, "terms_title": terms_title,
            "exception_note": p.exception_note if rfq["status"] != "selection_approved" else "",
            "status": "draft", "accepted_pct_total": 0.0, "invoiced_total": 0.0,
            "paid_amount": 0.0, "payment_status": "unpaid",
@@ -595,6 +649,71 @@ async def issue_po(po_id: str, request: Request, user: dict = Depends(get_curren
     await audit(user=user, action="svc_po_issue", resource="service_workflow",
                 record_id=po_id, after={"po_no": po["po_no"]}, ip=_ip(request))
     return await _po(po_id)
+
+
+# ══════════════════════════════ TERMS & CONDITIONS MASTER ══════════════════════════════
+class TermIn(BaseModel):
+    title: str
+    body: str
+    active: bool = True
+
+
+@router.get("/terms")
+async def list_terms(active: bool = False,
+                     user: dict = Depends(require_permission("service_workflow", "read"))):
+    fl = {"active": True} if active else {}
+    return await db.svc_terms_master.find(fl, {"_id": 0}).sort("title", 1).to_list(200)
+
+
+@router.post("/terms")
+async def create_term(p: TermIn, request: Request, user: dict = Depends(get_current_user)):
+    _require_role(user, PROC_ROLES, "manage the Terms & Conditions master")
+    if not p.title.strip() or not p.body.strip():
+        raise HTTPException(400, "Title and Terms body are required")
+    doc = {"id": new_id(), "title": p.title.strip(), "body": p.body.strip(), "active": p.active,
+           "created_by": _uname(user), "created_at": now_iso(), "updated_at": now_iso()}
+    await db.svc_terms_master.insert_one(dict(doc))
+    await audit(user=user, action="svc_terms_create", resource="service_workflow",
+                record_id=doc["id"], after={"title": doc["title"]}, ip=_ip(request))
+    return doc
+
+
+@router.put("/terms/{tid}")
+async def update_term(tid: str, p: TermIn, request: Request, user: dict = Depends(get_current_user)):
+    _require_role(user, PROC_ROLES, "manage the Terms & Conditions master")
+    if not p.title.strip() or not p.body.strip():
+        raise HTTPException(400, "Title and Terms body are required")
+    r = await db.svc_terms_master.update_one({"id": tid}, {"$set": {
+        "title": p.title.strip(), "body": p.body.strip(), "active": p.active,
+        "updated_by": _uname(user), "updated_at": now_iso()}})
+    if not r.matched_count:
+        raise HTTPException(404, "Terms template not found")
+    await audit(user=user, action="svc_terms_update", resource="service_workflow",
+                record_id=tid, after={"title": p.title}, ip=_ip(request))
+    return await db.svc_terms_master.find_one({"id": tid}, {"_id": 0})
+
+
+@router.delete("/terms/{tid}")
+async def delete_term(tid: str, request: Request, user: dict = Depends(get_current_user)):
+    _require_role(user, PROC_ROLES, "manage the Terms & Conditions master")
+    r = await db.svc_terms_master.delete_one({"id": tid})
+    if not r.deleted_count:
+        raise HTTPException(404, "Terms template not found")
+    await audit(user=user, action="svc_terms_delete", resource="service_workflow",
+                record_id=tid, ip=_ip(request))
+    return {"ok": True}
+
+
+@router.get("/pos/{po_id}/pdf")
+async def service_po_pdf(po_id: str,
+                         user: dict = Depends(require_permission("service_workflow", "read"))):
+    po = await _po(po_id)
+    vendor = await db.vendors.find_one({"id": po.get("vendor_id")}, {"_id": 0})
+    sr = await db.svc_requests.find_one({"id": po.get("sr_id")}, {"_id": 0})
+    from pdf_generator import render_service_po_pdf
+    pdf = render_service_po_pdf(po, vendor, sr)
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{po["po_no"]}.pdf"'})
 
 
 # ══════════════════════════════ SRN ══════════════════════════════

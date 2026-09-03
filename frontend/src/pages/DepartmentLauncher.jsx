@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Briefcase, FileText, Wallet, Boxes, ShieldAlert, Car, HardHat, Truck, LayoutGrid } from "lucide-react";
+import { Briefcase, FileText, Wallet, Boxes, ShieldAlert, Car, HardHat, Truck, LayoutGrid, ClipboardList, Zap } from "lucide-react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 import MyAdvancesWidget from "@/components/MyAdvancesWidget";
 
 const ICONS = { Briefcase, FileText, Wallet, Boxes, ShieldAlert, Car, HardHat, Truck };
@@ -27,6 +28,7 @@ const TONE_FG = {
 
 export default function DepartmentLauncher() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -50,6 +52,34 @@ export default function DepartmentLauncher() {
           <MyAdvancesWidget />
         </div>
       </div>
+
+      {user?.role === "manager_o_p" && (
+        <div data-testid="mop-shortcuts">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary mb-2 flex items-center gap-2">
+            <Zap className="h-3 w-3" /> Quick Actions
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl">
+            <button type="button" onClick={() => navigate("/app/services/requests?new=1")}
+              className="bg-card border border-primary/30 hover:border-primary/70 hover:bg-primary/5 rounded-sm p-4 flex items-center gap-3 text-left transition-colors"
+              data-testid="mop-shortcut-new-service-request">
+              <ClipboardList className="h-6 w-6 text-primary shrink-0" />
+              <div>
+                <div className="font-semibold text-sm">New Service Request</div>
+                <div className="text-xs text-muted-foreground">Raise a service requirement — routed to Director approval</div>
+              </div>
+            </button>
+            <button type="button" onClick={() => navigate("/app/vendors")}
+              className="bg-card border border-chart-3/30 hover:border-chart-3/70 hover:bg-chart-3/5 rounded-sm p-4 flex items-center gap-3 text-left transition-colors"
+              data-testid="mop-shortcut-vendor-master">
+              <Truck className="h-6 w-6 text-chart-3 shrink-0" />
+              <div>
+                <div className="font-semibold text-sm">Vendor Master</div>
+                <div className="text-xs text-muted-foreground">Browse and manage the vendor directory</div>
+              </div>
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger" data-testid="department-grid">
         {loading && Array.from({ length: 9 }).map((_, i) => (

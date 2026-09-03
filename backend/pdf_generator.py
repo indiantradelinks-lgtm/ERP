@@ -877,3 +877,108 @@ def render_billing_pending_pdf(rows: List[Dict[str, Any]], summary: Dict[str, An
 <div class="note">ARC projects require one bill per month; one-time supply projects require final/partial billing.</div>
 """
     return _render(_wrap(f"Pending Billing Report — {month}", body))
+
+
+# ───────────────────────────── SERVICE PO (Service Workflow) ─────────────────────────────
+def render_service_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None,
+                          sr: Optional[Dict[str, Any]] = None) -> bytes:
+    v = vendor or {}
+    s = sr or {}
+    addr_lines: List[str] = []
+    for a in (v.get("addresses") or [])[:1]:
+        addr_lines += [a.get("line1"), a.get("line2"), f"{a.get('city','')} {a.get('pin','')}", a.get("state")]
+    addr_html = "<br/>".join([_esc(x) for x in addr_lines if x]) or _esc(v.get("address") or "—")
+    contact_bits = [x for x in [v.get("contact_person") or v.get("contact"), v.get("phone"), v.get("email")] if x]
+    contact_html = " · ".join(_esc(x) for x in contact_bits) or "—"
+    qty = float(po.get("quantity") or 1)
+    rate = float(po.get("rate") or 0)
+    subtotal = float(po.get("subtotal") or 0)
+    tax_pct = float(po.get("tax_pct") or 0)
+    tax_amt = float(po.get("tax_amount") or 0)
+    other = float(po.get("other_charges") or 0)
+    total = float(po.get("total_value") or 0)
+    period = " to ".join([x for x in [po.get("service_period_from"), po.get("service_period_to")] if x]) or "—"
+    route = ""
+    if s.get("from_location") or s.get("to_location"):
+        route = (f"<div><b>Route</b></div><div>{_esc(s.get('from_location') or '—')} → "
+                 f"{_esc(s.get('to_location') or '—')}</div>")
+    exc = ""
+    if po.get("exception_note"):
+        exc = (f"<div style='border:1.5px solid #b45309;background:#fef3c7;padding:6px 10px;margin:8px 0;'>"
+               f"<b>EXCEPTION PO</b> — {_esc(po['exception_note'])}</div>")
+    terms_body = (po.get("terms_conditions") or "").strip()
+    tnc_items = [t.strip() for t in terms_body.replace("\r", "").split("\n") if t.strip()]
+    tnc_html = "".join(
+        f"<div class='tnc-item'><span class='tnc-num'>{i + 1}.</span><span class='tnc-body'>{_esc(t)}</span></div>"
+        for i, t in enumerate(tnc_items)) or "<div class='note'>As mutually agreed.</div>"
+    tnc_title = f" — {_esc(po.get('terms_title'))}" if po.get("terms_title") else ""
+    approval = po.get("po_approval") or {}
+    body = f"""
+{exc}
+<div class="kv" style="grid-template-columns: 130px 1fr 130px 1fr;">
+  <div><b>Service PO No.</b></div><div>{_esc(po.get('po_no'))}</div>
+  <div><b>PO Date</b></div><div>{_esc(po.get('po_date') or str(po.get('created_at',''))[:10])}</div>
+  <div><b>Service Request</b></div><div>{_esc(po.get('sr_no') or '—')}</div>
+  <div><b>RFQ Reference</b></div><div>{_esc(po.get('rfq_no') or '—')}</div>
+  <div><b>Project</b></div><div>{_esc(po.get('project_code') or '—')} {_esc(po.get('project_name') or '')}</div>
+  <div><b>Site / Location</b></div><div>{_esc(po.get('site_location') or '—')}</div>
+  <div><b>Service Period</b></div><div>{_esc(period)}</div>
+  <div><b>Completion Date</b></div><div>{_esc(po.get('completion_date') or '—')}</div>
+  {route}
+  <div><b>Status</b></div><div>{_esc(str(po.get('status') or '').replace('_',' ').upper())}</div>
+  <div><b>Approved By</b></div><div>{_esc(approval.get('by') or '—')} {f"({_esc(str(approval.get('at',''))[:10])})" if approval.get('at') else ''}</div>
+</div>
+<div class="fromto">
+  <div class="party">
+    <div class="ph">From</div>
+    <div class="pname">{_esc(BRAND)}</div>
+    <div class="prow"><b>Regd. Office:</b> {_esc(REGISTERED_ADDRESS)}</div>
+    <div class="prow"><b>Corporate Office:</b> {_esc(CORPORATE_ADDRESS.replace('Corporate Address - ', ''))}</div>
+    <div class="prow"><b>GST No.:</b> {COMPANY_GST}</div>
+    <div class="prow"><b>PAN No.:</b> {COMPANY_PAN}</div>
+  </div>
+  <div class="party">
+    <div class="ph">To — Service Vendor</div>
+    <div class="pname">{_esc(v.get('name') or po.get('vendor_name') or '—')}</div>
+    <div class="prow">{addr_html}</div>
+    <div class="prow"><b>GST No.:</b> {_esc(v.get('gst') or v.get('gstin') or '—')} &nbsp;·&nbsp; <b>PAN No.:</b> {_esc(v.get('pan') or '—')}</div>
+    <div class="prow"><b>Contact:</b> {contact_html}</div>
+  </div>
+</div>
+<div class="section-title">Scope of Service</div>
+<div class="note">{_esc(po.get('scope_of_work') or po.get('service_details') or '—')}</div>
+<div class="section-title">Service Value</div>
+<table><thead><tr><th>#</th><th>Service Description</th><th class="num">Qty</th><th>Unit</th><th class="num">Rate</th><th class="num">Amount</th><th class="num">GST %</th><th class="num">GST Amt</th><th class="num">Total</th></tr></thead>
+<tbody><tr>
+<td>1</td>
+<td><b>{_esc(s.get('service_category') or 'Service')}</b><div class="note">{_esc(po.get('service_details') or s.get('service_description') or '')}</div></td>
+<td class="num">{_money(qty)}</td>
+<td>{_esc(po.get('unit') or 'Lot')}</td>
+<td class="num">{_money(rate)}</td>
+<td class="num">{_money(subtotal)}</td>
+<td class="num">{tax_pct:g}%</td>
+<td class="num">{_money(tax_amt)}</td>
+<td class="num">{_money(subtotal + tax_amt)}</td>
+</tr></tbody></table>
+<table class="totals">
+<tr><td>Sub-total</td><td class="num">₹ {_money(subtotal)}</td></tr>
+<tr><td>GST @ {tax_pct:g}%</td><td class="num">₹ {_money(tax_amt)}</td></tr>
+{f"<tr><td>Other Charges</td><td class='num'>₹ {_money(other)}</td></tr>" if other else ""}
+<tr class="grand"><td>Grand Total</td><td class="num">₹ {_money(total)}</td></tr>
+</table>
+<div style="display:flex; gap:14px; clear:both; margin-top:14px;">
+  <div style="flex:2;">
+    <div class="section-title" style="margin-top:0;">Terms &amp; Conditions{tnc_title}</div>
+    {tnc_html}
+  </div>
+  <div style="flex:1;">
+    <div class="section-title" style="margin-top:0;">Payment Terms</div>
+    <div class="pt-box" style="margin-top:4px;">{_esc(po.get('payment_terms') or 'As mutually agreed')}</div>
+  </div>
+</div>
+<div class="signs">
+  <div class="box">For {_esc(BRAND)}</div>
+  <div class="box">Vendor Acknowledgement</div>
+</div>
+"""
+    return _render(_wrap(f"Service Purchase Order — {po.get('po_no','')}", body, logo=True))

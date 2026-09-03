@@ -6,10 +6,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Paperclip, Send, FileSignature, PackageCheck } from "lucide-react";
+import { Paperclip, Send, FileSignature, PackageCheck, Printer, BookText } from "lucide-react";
 import { toast } from "sonner";
-import { api, apiErrorMessage } from "@/lib/api";
+import { api, apiErrorMessage, API } from "@/lib/api";
 import RowAttachments from "@/components/RowAttachments";
+import TermsMasterDialog from "./TermsMasterDialog";
 import { StatusChip, inr, dt, useSvcMeta } from "./shared";
 
 const PO_STATUSES = ["draft", "pending_approval", "approved", "issued", "in_progress", "completed", "closed"];
@@ -26,6 +27,7 @@ export default function ServicePos() {
   const [srnFor, setSrnFor] = useState(null);
   const [srn, setSrn] = useState(blankSrn());
   const [docsFor, setDocsFor] = useState(null);
+  const [tncOpen, setTncOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -70,6 +72,8 @@ export default function ServicePos() {
           <p className="text-xs text-muted-foreground">Draft → Pending Approval → Approved → Issued → In Progress → Completed / Closed</p>
         </div>
         <div className="flex items-end gap-2">
+          {caps.procurement &&
+            <Button variant="outline" size="sm" className="h-8" onClick={() => setTncOpen(true)} data-testid="svc-po-manage-tnc"><BookText className="h-3.5 w-3.5 mr-1" /> Manage T&amp;C</Button>}
           <select className="h-8 rounded-sm border border-input bg-background px-2 text-sm" value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })} data-testid="svc-po-status-filter">
             <option value="">All statuses</option>
             {PO_STATUSES.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
@@ -100,6 +104,8 @@ export default function ServicePos() {
                 <TableCell><StatusChip status={r.status} testid={`svc-po-status-${r.po_no}`} /></TableCell>
                 <TableCell><StatusChip status={r.payment_status} />{(r.paid_amount || 0) > 0 && <div className="text-[10px] text-muted-foreground tabular-nums">{inr(r.paid_amount)} paid</div>}</TableCell>
                 <TableCell className="text-right whitespace-nowrap">
+                  {!["draft", "pending_approval"].includes(r.status) &&
+                    <Button variant="ghost" size="icon" className="h-7 w-7" title="Print / View PO PDF" onClick={() => window.open(`${API}/service-workflow/pos/${r.id}/pdf`, "_blank")} data-testid={`svc-po-pdf-${r.po_no}`}><Printer className="h-3.5 w-3.5" /></Button>}
                   {caps.procurement && r.status === "draft" &&
                     <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => act(`/service-workflow/pos/${r.id}/submit`, `${r.po_no} submitted for approval`)} data-testid={`svc-po-submit-${r.po_no}`}>Submit</Button>}
                   {caps.sr_approver && r.status === "pending_approval" &&
@@ -176,6 +182,7 @@ export default function ServicePos() {
 
       <RowAttachments open={!!docsFor} onOpenChange={(o) => !o && setDocsFor(null)}
         parentType="service_pos" parentId={docsFor?.id} recordTitle={docsFor?.po_no} testidPrefix="svc-po-attach" />
+      <TermsMasterDialog open={tncOpen} onOpenChange={setTncOpen} />
     </div>
   );
 }

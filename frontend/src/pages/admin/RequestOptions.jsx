@@ -29,7 +29,7 @@ function OptionDialog({ kind, initial, expenseTypes, onClose, onSaved }) {
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md" data-testid="option-dialog">
-        <DialogHeader><DialogTitle>{isNew ? "Add" : "Edit"} {kind === "request_type" ? "Request Type" : kind === "service_type" ? "Service Type" : "Expense Type"}{initial.key ? ` — ${initial.key}` : ""}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{isNew ? "Add" : "Edit"} {kind === "request_type" ? "Request Type" : kind === "service_type" ? "Service Type" : kind === "service_category" ? "Service Category" : "Expense Type"}{initial.key ? ` — ${initial.key}` : ""}</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div><Label className="text-[10px] uppercase tracking-wider">Label *</Label>
             <Input value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} className="h-9 mt-1" data-testid="option-label" /></div>
@@ -82,7 +82,7 @@ function OptionsTable({ kind, rows, expenseTypes, onChanged }) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center">
-        <CardTitle className="text-base flex-1">{kind === "request_type" ? "Request Types (Routing)" : kind === "service_type" ? "Service Types" : "Expense Types"} <Badge variant="outline" className="ml-2">{rows.length}</Badge></CardTitle>
+        <CardTitle className="text-base flex-1">{kind === "request_type" ? "Request Types (Routing)" : kind === "service_type" ? "Service Types" : kind === "service_category" ? "Service Categories (Service Requests)" : "Expense Types"} <Badge variant="outline" className="ml-2">{rows.length}</Badge></CardTitle>
         <Button size="sm" onClick={() => setEditing({})} data-testid={`add-${kind}`}><ListPlus className="h-3.5 w-3.5 mr-1" /> Add</Button>
       </CardHeader>
       <CardContent>
@@ -133,13 +133,14 @@ export default function RequestOptions() {
       <div>
         <h1 className="font-display font-black text-3xl tracking-tight">Request &amp; Expense Type Master</h1>
         <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
-          Centrally manage the <b>Request Type (Routing)</b>, <b>Expense Type</b> and <b>Service Type</b> dropdowns used across the
-          Service / Payment Request form and Billing reports. Changes reflect immediately for all users. Built-in options can be renamed or hidden; custom options can be added freely.
+          Centrally manage the <b>Request Type (Routing)</b>, <b>Expense Type</b>, <b>Service Type</b> and <b>Service Category</b> dropdowns used across the
+          Service / Payment Request form, Billing reports and the Service Procurement (Service Request) form. Changes reflect immediately for all users. Built-in options can be renamed or hidden; custom options can be added freely.
         </p>
       </div>
       {data && <OptionsTable kind="request_type" rows={data.request_types} expenseTypes={data.expense_types.filter((t) => t.active !== false)} onChanged={load} />}
       {data && <OptionsTable kind="expense_type" rows={data.expense_types} expenseTypes={[]} onChanged={load} />}
       {data && <OptionsTable kind="service_type" rows={data.service_types || []} expenseTypes={[]} onChanged={load} />}
+      {data && <OptionsTable kind="service_category" rows={data.service_categories || []} expenseTypes={[]} onChanged={load} />}
     </div>
   );
 }
