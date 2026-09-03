@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from core import db, get_current_user, require_permission, now_iso, new_id
 from audit import audit
 from sequences import next_sequence
+from approval_engine import build_chain
 
 router = APIRouter(prefix="/service-workflow", tags=["service-workflow"])
 
@@ -64,6 +65,11 @@ async def get_service_categories(active_only: bool = False) -> dict:
     if active_only:
         return {k: v for k, v in merged.items() if v.get("active", True)}
     return merged
+
+
+async def _fresh_sr_chain() -> list:
+    """Approval chain for Service Requests, resolved from the Super Admin Approval Matrix."""
+    return await build_chain("service_request")
 
 
 def _validate_submit(d: dict):
@@ -157,12 +163,13 @@ async def create_request(p: SRIn, request: Request,
     if p.submit:
         _validate_submit(p.dict())
     status = "submitted" if p.submit else "draft"
-    queue = "director" if user.get("role") == "manager_o_p" else "standard"
+    chain = await _fresh_sr_chain() if p.submit else []
     doc = {**p.dict(exclude={"submit"}), "id": new_id(),
            "sr_no": await next_sequence("SVC"),
-           "request_date": now_iso()[:10], "status": status, "approval_queue": queue,
+           "request_date": now_iso()[:10], "status": status,
+           "approval_chain": chain, "approval_step": 0,
            "requester_id": user.get("id"), "requester_name": _uname(user), "requester_role": user.get("role"),
-           "current_owner": ("Director Approval" if queue == "director" else "Approver") if p.submit else _uname(user),
+           "current_owner": (chain[0]["label"] if chain else "Approver") if p.submit else _uname(user),
            "rfq_id": None, "po_ids": [],
            "history": [_hist(user, "created" if not p.submit else "created_and_submitted", "", "", status)],
            "created_by": _uname(user), "created_by_id": user.get("id"),
@@ -243,9 +250,11 @@ async def update_request(sr_id: str, p: SRIn, request: Request,
     status = "submitted" if p.submit else sr["status"]
     if p.submit:
         _validate_submit(p.dict())
-    queue = sr.get("approval_queue") or ("director" if sr.get("requester_role") == "manager_o_p" else "standard")
-    upd = {**p.dict(exclude={"submit"}), "status": status, "approval_queue": queue, "updated_at": now_iso(),
-           "current_owner": ("Director Approval" if queue == "director" else "Approver") if p.submit else sr.get("current_owner")}
+    upd = {**p.dict(exclude={"submit"}), "status": status, "updated_at": now_iso()}
+    if p.submit:
+        chain = await _fresh_sr_chain()
+        upd.update({"approval_chain": chain, "approval_step": 0,
+                    "current_owner": chain[0]["label"] if chain else "Approver"})
     await db.svc_requests.update_one({"id": sr_id}, {
         "$set": upd,
         "$push": {"history": _hist(user, "resubmitted" if p.submit else "updated", "", sr["status"], status)}})
@@ -261,10 +270,10 @@ async def submit_request(sr_id: str, request: Request,
     if sr["status"] not in ("draft", "sent_back", "rejected"):
         raise HTTPException(400, f"Cannot submit from status '{sr['status']}'")
     _validate_submit(sr)
-    queue = sr.get("approval_queue") or ("director" if sr.get("requester_role") == "manager_o_p" else "standard")
+    chain = await _fresh_sr_chain()
     await _set_sr_status(sr_id, "submitted", user, "submitted",
-                         extra={"approval_queue": queue,
-                                "current_owner": "Director Approval" if queue == "director" else "Approver"})
+                         extra={"approval_chain": chain, "approval_step": 0,
+                                "current_owner": chain[0]["label"] if chain else "Approver"})
     await audit(user=user, action="svc_request_submit", resource="service_workflow",
                 record_id=sr_id, after={"sr_no": sr["sr_no"]}, ip=_ip(request))
     return await _sr(sr_id)
@@ -278,25 +287,48 @@ class ActionIn(BaseModel):
 @router.post("/requests/{sr_id}/action")
 async def approve_request(sr_id: str, p: ActionIn, request: Request,
                           user: dict = Depends(get_current_user)):
-    _require_role(user, SR_APPROVERS, "approve service requests")
     sr = await _sr(sr_id)
-    if sr.get("requester_id") == user.get("id") and user.get("role") != "super_admin":
-        raise HTTPException(403, "You cannot approve your own service request — it is routed to the approval queue")
-    if sr.get("approval_queue") == "director" and user.get("role") not in ("director", "super_admin"):
-        raise HTTPException(403, "This request is in the Director approval queue — only a Director can act on it")
     if sr["status"] not in ("submitted", "under_review"):
         raise HTTPException(400, f"Request is not awaiting approval (status '{sr['status']}')")
     if p.action not in ("approve", "reject", "send_back"):
         raise HTTPException(400, "action must be approve | reject | send_back")
     if p.action in ("reject", "send_back") and not p.remarks.strip():
         raise HTTPException(400, "Remarks are required when rejecting or sending back")
-    to = {"approve": "approved", "reject": "rejected", "send_back": "sent_back"}[p.action]
-    extra = {"current_owner": "Procurement" if to == "approved" else sr.get("requester_name"),
-             "approval": {"action": p.action, "by": _uname(user), "role": user.get("role"),
-                          "at": now_iso(), "remarks": p.remarks}}
-    await _set_sr_status(sr_id, to, user, f"sr_{p.action}", p.remarks, extra)
+    if sr.get("requester_id") == user.get("id") and user.get("role") != "super_admin":
+        raise HTTPException(403, "You cannot approve your own service request — it is routed via the Approval Matrix")
+    # Chain resolved from the Super Admin Approval Matrix (type 'service_request')
+    chain = sr.get("approval_chain") or await _fresh_sr_chain()
+    idx = int(sr.get("approval_step") or 0)
+    if idx >= len(chain):
+        idx = max(len(chain) - 1, 0)
+    step = chain[idx]
+    if user.get("role") not in (step.get("role"), "super_admin"):
+        raise HTTPException(403, f"This request is awaiting '{step.get('label')}' ({step.get('role')}) "
+                                 f"per the Approval Matrix — your role '{user.get('role')}' cannot act on this step")
+    step.update({"status": {"approve": "approved", "reject": "rejected", "send_back": "sent_back"}[p.action],
+                 "approver": _uname(user), "approver_role": user.get("role"),
+                 "at": now_iso(), "comment": p.remarks})
+    chain[idx] = step
+    if p.action == "approve":
+        idx += 1
+        if idx >= len(chain):
+            to, owner = "approved", "Procurement"
+        else:
+            to, owner = "under_review", chain[idx].get("label") or chain[idx].get("role")
+    else:
+        to = "rejected" if p.action == "reject" else "sent_back"
+        owner = sr.get("requester_name")
+    extra = {"approval_chain": chain, "approval_step": idx, "current_owner": owner}
+    if to == "approved":
+        extra["approval"] = {"action": "approve", "by": _uname(user), "role": user.get("role"),
+                             "at": now_iso(), "remarks": p.remarks}
+    action_label = (f"sr_step_{idx}_approved" if (p.action == "approve" and to == "under_review")
+                    else f"sr_{p.action}")
+    remarks = p.remarks if p.remarks else (f"Step '{step.get('label')}' cleared" if p.action == "approve" else "")
+    await _set_sr_status(sr_id, to, user, action_label, remarks, extra)
     await audit(user=user, action=f"svc_request_{p.action}", resource="service_workflow",
-                record_id=sr_id, after={"sr_no": sr["sr_no"], "remarks": p.remarks}, ip=_ip(request))
+                record_id=sr_id, after={"sr_no": sr["sr_no"], "step": step.get("label"),
+                                        "remarks": p.remarks}, ip=_ip(request))
     return await _sr(sr_id)
 
 

@@ -86,8 +86,21 @@ export default function ServiceRequestDetail() {
           <Row k="Est. Budget" v={inr(sr.estimated_budget)} />
           <Row k="Cost Center" v={sr.cost_center_label} />
           {(sr.from_location || sr.to_location) && <Row k="From → To" v={`${sr.from_location || "—"} → ${sr.to_location || "—"}`} />}
-          {sr.approval_queue === "director" && ["submitted", "under_review"].includes(sr.status) &&
-            <Row k="Approval Queue" v="Director Approval" />}
+          {(sr.approval_chain || []).length > 0 && (
+            <div className="mt-2 pt-2 border-t" data-testid="svc-detail-approval-chain">
+              <div className="text-muted-foreground text-xs uppercase mb-1">Approval Chain (Approval Matrix)</div>
+              {sr.approval_chain.map((s, i) => (
+                <div key={i} className="flex items-center justify-between text-sm py-0.5">
+                  <span className={s.status === "pending" && i === (sr.approval_step ?? 0) && ["submitted", "under_review"].includes(sr.status) ? "font-semibold" : ""}>
+                    {i + 1}. {s.label || s.role}
+                  </span>
+                  <span className={`text-xs ${s.status === "approved" ? "text-emerald-700" : s.status === "pending" ? "text-muted-foreground" : "text-red-700"}`}>
+                    {s.status}{s.approver ? ` · ${s.approver}` : ""}{s.at ? ` · ${dt(s.at)}` : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="mt-2 pt-2 border-t text-sm">
             <div className="text-muted-foreground text-xs uppercase">Description</div>
             <p className="whitespace-pre-wrap">{sr.service_description || "—"}</p>

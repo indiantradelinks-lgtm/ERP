@@ -129,6 +129,10 @@ APPROVAL_CHAINS: Dict[str, List[Dict[str, str]]] = {
         {"role": "general_manager", "label": "General Manager"},
         {"role": "director", "label": "Director"},
     ],
+    # Service Procurement workflow — Service Request approval (configurable via Approval Matrix)
+    "service_request": [
+        {"role": "director", "label": "Director"},
+    ],
 }
 
 

@@ -91,9 +91,17 @@ export default function ServiceRequests() {
   };
 
   const canEdit = (r) => ["draft", "sent_back", "rejected"].includes(r.status) && (r.requester_id === user?.id || user?.role === "super_admin");
-  const canReview = (r) => isApprover && ["submitted", "under_review"].includes(r.status)
-    && (r.approval_queue !== "director" || ["director", "super_admin"].includes(user?.role))
-    && (r.requester_id !== user?.id || user?.role === "super_admin");
+  const pendingStep = (r) => {
+    const c = r.approval_chain || [];
+    return c[Math.min(r.approval_step ?? 0, c.length - 1)];
+  };
+  const canReview = (r) => {
+    if (!["submitted", "under_review"].includes(r.status)) return false;
+    if (r.requester_id === user?.id && user?.role !== "super_admin") return false;
+    const s = pendingStep(r);
+    if (!s) return isApprover; // legacy rows without a stored chain
+    return user?.role === s.role || user?.role === "super_admin";
+  };
 
   return (
     <div className="p-4 space-y-4" data-testid="svc-requests-page">
@@ -158,10 +166,10 @@ export default function ServiceRequests() {
                   <Button variant="ghost" size="icon" className="h-7 w-7" title="View full trail" onClick={() => nav(`/app/services/requests/${r.id}`)} data-testid={`svc-req-view-${r.sr_no}`}><Eye className="h-3.5 w-3.5" /></Button>
                   {canEdit(r) && <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={() => setEditing({ ...blank(), ...r })} data-testid={`svc-req-edit-${r.sr_no}`}><Pencil className="h-3.5 w-3.5" /></Button>}
                   {canEdit(r) && <Button variant="ghost" size="icon" className="h-7 w-7" title="Submit for approval" onClick={() => submitRow(r)} data-testid={`svc-req-submit-${r.sr_no}`}><Send className="h-3.5 w-3.5" /></Button>}
-                  {isApprover && ["submitted", "under_review"].includes(r.status) && canReview(r) &&
+                  {canReview(r) &&
                     <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setReviewing(r); setReviewAction("approve"); setReviewRemarks(""); }} data-testid={`svc-req-review-${r.sr_no}`}>Review</Button>}
-                  {["submitted", "under_review"].includes(r.status) && r.approval_queue === "director" && !canReview(r) &&
-                    <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-700 border-amber-300" data-testid={`svc-req-director-queue-${r.sr_no}`}>Director Queue</Badge>}
+                  {["submitted", "under_review"].includes(r.status) && !canReview(r) && pendingStep(r) &&
+                    <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-700 border-amber-300" data-testid={`svc-req-awaiting-${r.sr_no}`}>Awaiting: {pendingStep(r).label || pendingStep(r).role}</Badge>}
                   <Button variant="ghost" size="icon" className="h-7 w-7" title="Attachments" onClick={() => setDocsFor(r)} data-testid={`svc-req-docs-${r.sr_no}`}><Paperclip className="h-3.5 w-3.5" /></Button>
                 </TableCell>
               </TableRow>
@@ -223,6 +231,19 @@ export default function ServiceRequests() {
                 <div><span className="text-muted-foreground">Description:</span> {reviewing.service_description}</div>
                 <div><span className="text-muted-foreground">Budget:</span> {inr(reviewing.estimated_budget)} · <span className="text-muted-foreground">Priority:</span> {reviewing.priority}</div>
               </div>
+              {(reviewing.approval_chain || []).length > 0 && (
+                <div className="text-xs border rounded-md p-2 space-y-1" data-testid="svc-req-review-chain">
+                  <div className="text-muted-foreground uppercase text-[10px]">Approval chain (Approval Matrix)</div>
+                  {reviewing.approval_chain.map((s, i) => (
+                    <div key={i} className="flex items-center justify-between">
+                      <span className={i === (reviewing.approval_step ?? 0) && s.status === "pending" ? "font-semibold" : ""}>{i + 1}. {s.label || s.role}</span>
+                      <span className={s.status === "approved" ? "text-emerald-700" : s.status === "pending" ? "text-muted-foreground" : "text-red-700"}>
+                        {s.status}{s.approver ? ` · ${s.approver}` : ""}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="flex gap-2">
                 {["approve", "reject", "send_back"].map((a) => (
                   <Button key={a} variant={reviewAction === a ? "default" : "outline"} size="sm" onClick={() => setReviewAction(a)} data-testid={`svc-req-review-${a}`}>{a.replace("_", " ")}</Button>

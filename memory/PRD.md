@@ -5805,3 +5805,9 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 5. Vehicle/Transport SRs: from_location/to_location fields (conditional in form when category matches /transport|vehicle/i), required on submit (backend _validate_submit), shown on detail + PO PDF.
 6. Manager/OP quick shortcuts on DepartmentLauncher (/app/modules): New Service Request + Vendor Master cards (mop-shortcuts).
 - Tested: backend rules via curl (403s, 400s, PDF text via pypdf) + iteration_182 frontend 6/6 pass. QA data cleaned. Backlog (cosmetic): "<option> in <span>" React warning in select-bearing dialogs; window.open PDF may hit popup blockers; missing DialogDescription warnings.
+
+## SR Approval via Approval Matrix (Sept 2026)
+- "Service Request" added to Super Admin Approval Matrix (approval_engine.APPROVAL_CHAINS["service_request"], default: Director single step; DB-overridable via /admin/approval-matrix like all other types).
+- SR submit now snapshots the configured chain onto the doc (approval_chain[], approval_step); approvals are sequential — only the current step's role (or super_admin) can act; self-approval blocked; mid-chain status = under_review with current_owner = next step label; final approve → approved → RFQ eligible; reject/send_back returns to requester; resubmit rebuilds a FRESH chain from the current matrix. Replaced the earlier ad-hoc manager_o_p "director queue" logic entirely (approval_queue field deprecated).
+- UI: Review button gated by the pending chain step role; "Awaiting: <step>" badge for others; chain progress shown in the review dialog and SR detail card ("Approval Chain (Approval Matrix)", testid svc-detail-approval-chain).
+- Tested via curl: matrix default + custom 2-step override (dept_head→director sequential enforcement, wrong-role 403s), reset-to-default, RFQ from approved SR, send_back/resubmit chain rebuild; UI screenshots of matrix card + detail chain. QA data cleaned.
