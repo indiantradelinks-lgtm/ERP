@@ -134,6 +134,7 @@ export const MENU_ITEMS = [
   { department: "hr", parentLabel: "Core",      label: "HR Dashboard",            to: "/app/hr/command-center",     icon: LayoutDashboard, testid: "nav-hr-dashboard", perm: "hr_onboarding" },
   { department: "hr", parentLabel: "Core",      label: "Employee Master",         to: "/app/employees",             icon: HardHat,         testid: "nav-employees", perm: "employees" },
   { department: "hr", parentLabel: "Core",      label: "Worker / Labour Master",  to: "/app/workers",               icon: Users,           testid: "nav-workers", perm: "employees" },
+  { department: "hr", parentLabel: "Core",      label: "Labour Licenses",         to: "/app/hr/labour-licenses",    icon: ShieldCheck,     testid: "nav-labour-licenses", perm: "employees" },
   { department: "hr", parentLabel: "Core",      label: "Onboarding",              to: "/app/hr/onboarding",         icon: UserPlus,        testid: "nav-hr-onboarding", perm: "hr_onboarding" },
   { department: "hr", parentLabel: "Core",      label: "Employee 360",            to: "/app/hr/employee-360",       icon: UserCircle,      testid: "nav-hr-emp360", perm: "hr_employee_360" },
   { department: "hr", parentLabel: "Core",      label: "Department Master",       to: "/app/admin/department-master", icon: Building2,     testid: "nav-hr-dept", superAdminOnly: true },
@@ -218,6 +219,12 @@ export const MENU_ITEMS = [
 
   // ═══════════════ 6. PROCUREMENT & VENDORS ═══════════════
   { department: "procurement", label: "Procurement Dashboard", to: "/app/procurement-dashboard",   icon: Workflow,      testid: "nav-procurement-dashboard", perm: "purchase_requisitions" },
+  { department: "procurement", parentLabel: "Service Procurement", label: "Service Desk Dashboard", to: "/app/services/dashboard", icon: Workflow,      testid: "nav-svc-dashboard", perm: "service_workflow" },
+  { department: "procurement", parentLabel: "Service Procurement", label: "Service Requests",       to: "/app/services/requests",  icon: ClipboardList, testid: "nav-svc-requests",  perm: "service_workflow" },
+  { department: "procurement", parentLabel: "Service Procurement", label: "RFQs & Quotations",      to: "/app/services/rfqs",      icon: FileSearch,    testid: "nav-svc-rfqs",      perm: "service_workflow" },
+  { department: "procurement", parentLabel: "Service Procurement", label: "Service POs",            to: "/app/services/pos",       icon: FileSignature, testid: "nav-svc-pos",       perm: "service_workflow" },
+  { department: "procurement", parentLabel: "Service Procurement", label: "Service Receipt Notes",  to: "/app/services/srns",      icon: ClipboardCheck, testid: "nav-svc-srns",     perm: "service_workflow" },
+  { department: "procurement", parentLabel: "Service Procurement", label: "Invoices & Payments",    to: "/app/services/invoices",  icon: Receipt,       testid: "nav-svc-invoices",  perm: "service_workflow" },
   { department: "procurement", label: "Vendor Master",         to: "/app/vendors",                  icon: Truck,         testid: "nav-vendors", perm: "vendors" },
   { department: "procurement", label: "Vendor Onboarding",     to: "/app/vendors",                  icon: UserPlus,      testid: "nav-vendor-onboard", perm: "vendors" },
   { department: "procurement", label: "Vendor Documents",      to: "/app/procurement/compliance",   icon: FolderArchive, testid: "nav-vendor-docs", perm: "vendors" },

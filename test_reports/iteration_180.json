@@ -1,0 +1,42 @@
+{
+  "summary": "Iter 180 — Full backend + frontend testing of the new HR Labour License Compliance & Expiry Tracking module. Backend: 28 pytest cases (CRUD, status engine, status/form filters, daily check + in-app alerts + idempotency, renewal/history/audit, document upload-list-download, project scoping, RBAC 403s, dashboard, scheduler job, HR regression) — all 28 PASSED. Frontend as admin: page, 5 tiles, create dialog (native project + form-type selects), days-left + colored badges, Docs dialog, Run Expiry Check toast ('Checked 1 · alerts sent 1'), Renew → badge RENEWED · 365d, renewal-history dialog, status filter (expired=0 / renewed=1), project-wise status card, sidebar nav-labour-licenses — all working. ONE BLOCKING FRONTEND ISSUE: the project-scoped read-only manager (test_mop@erp.com, role manager_o_p) gets 'Access Denied — You don't have employees read permission' on /app/hr/labour-licenses, so the read-only/project-scoped UI requirement cannot be exercised even though the backend scoping is correct. All test data (2 licenses, 5 labour_license_expiry notifications, 3 audit rows, files) deleted; db.labour_licenses is now empty.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/labour-licenses", "issue": "project_code is not validated against db.projects — an arbitrary/typo code is accepted and creates a license with empty project_name (would create an orphan project bucket in the dashboard)."},
+      {"endpoint": "POST /api/labour-licenses", "issue": "No uniqueness check on (project_code, license_number, form_type) — the exact same license can be created repeatedly, inflating dashboard tiles."},
+      {"endpoint": "PUT /api/labour-licenses/{id}, POST /{id}/renew", "issue": "Only role is checked (_require_hr); no project-scope filter is applied on the lookup. Harmless today because all HR_WRITE_ROLES are global-visibility, but a future project-scoped HR role could mutate out-of-scope licenses."},
+      {"endpoint": "compute_status", "issue": "days_remaining uses datetime.now(timezone.utc).date() while dates entered by users are IST — near midnight IST the days-left/status can be off by one day."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Project-scoped read-only access (test_mop@erp.com / manager_o_p)", "issue": "Route /app/hr/labour-licenses is gated on perm 'employees' (App.js ProtectedShell + menuConfig.js item perm: 'employees'), so the manager sees the 'Access Denied — You don't have employees read permission' screen and the sidebar item is hidden. Backend GET /api/labour-licenses correctly returns only their PRJ-2025-01 license, so this is a pure permission-mapping gap. Fix: introduce a 'labour_licenses' permission (or allow the role via Role Register / use a perm the manager holds) and grant read to project-scoped manager roles.", "affected_selectors": ["nav-labour-licenses", "labour-licenses-page"]}
+    ],
+    "design_issues": [
+      {"screen": "Labour Licenses", "issues": ["Dashboard tiles double-count: a renewed license is counted in BOTH 'Active' and 'Renewed' tiles (backend cards.active includes status 'renewed'), so Total(1) vs Active(1)+Renewed(1) looks contradictory to users.", "Issue/Valid From/Expiry use native browser date inputs (mm/dd/yyyy) instead of the shadcn calendar used elsewhere; also renders US format while the rest of the app shows en-IN dates.", "Days-left column shows raw negative numbers for expired rows (e.g. -2) with no suffix/'expired' wording."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_labour_licenses_iter180.py", "/app/test_reports/pytest/ll_iter180.xml"],
+  "action_items": [
+    "HIGH: Grant project-scoped manager roles read access to /app/hr/labour-licenses (new 'labour_licenses' perm instead of 'employees' in App.js route guard + menuConfig.js), then re-verify read-only UI (no New/Edit/Renew buttons, only own-project rows).",
+    "Validate project_code against db.projects and add duplicate-license guard on POST /api/labour-licenses.",
+    "Decide tile semantics: exclude 'renewed' from the Active tile (or label it 'Active (incl. renewed)') to avoid double counting.",
+    "Optional: compute status against IST (Asia/Kolkata) date instead of UTC; remove unused `date` import and the redundant persisted `computed_status` field in labour_license_router.py."
+  ],
+  "critical_code_review_comments": [
+    "labour_license_router.py: route order is correct (/dashboard before /{lid}); _id excluded everywhere — good.",
+    "Alert idempotency via alert_sent_for == expiry_date works and is correctly reset on both update (expiry change) and renew — verified by running the daily check twice (alerted 1 → 0).",
+    "run_labour_license_daily_check pushes to hr_executive/hr_manager/super_admin; notification message contains license no, form type, project, days and renewal instruction, and meta carries action='Renewal action required' — verified.",
+    "Frontend LabourLicenses.jsx has good data-testid coverage; only the route/menu permission key is wrong for scoped managers."
+  ],
+  "updated_files": ["/app/backend/tests/test_labour_licenses_iter180.py"],
+  "success_rate": {"backend": "100% (28/28)", "frontend": "90% (admin flows all pass; scoped read-only view blocked by permission gate)"},
+  "seed_data_creation": "Created TEST_LL_180-* licenses (active/expiring/expired/other-project), TEST_LL_UI_180 (UI), TEST_LL_UI_OTHER (PRJ-2026-0034) + 1 uploaded doc. ALL DELETED at end along with labour_license_expiry notifications and labour_licenses audit rows; db.labour_licenses count = 0.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin@erp.com/Admin@123 (super_admin, HR write); test_mop@erp.com/Mop@12345 (manager_o_p, PRJ-2025-01 only)",
+  "context_for_next_testing_agent": "Reusable regression suite: /app/backend/tests/test_labour_licenses_iter180.py (self-seeding + self-cleaning, 28 tests, ~4s). Notifications list endpoint is GET /api/notifications/mine (approvals_router), audit viewer is GET /api/admin/audit-logs?resource=labour_licenses. Frontend project/form-type/status controls are NATIVE <select> — use page.select_option, not click-on-option. Login testids: login-email / login-password / login-submit. Remaining unverified: read-only UI for scoped managers (blocked by 'employees' perm gate).",
+  "rca_of_the_issue": "Access Denied for test_mop: /app/frontend/src/App.js wraps the route in ProtectedShell and /app/frontend/src/config/menuConfig.js declares the item with perm: 'employees'. Role manager_o_p has no 'employees' read permission, so the shell renders the Access Denied screen before LabourLicenses.jsx mounts. Backend scoping (project_filter on project_code) is correct — verified via API: mop sees only PRJ-2025-01 rows, 404 on out-of-scope id, 403 on create/renew/run-daily-check."
+}

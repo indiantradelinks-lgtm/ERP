@@ -150,6 +150,14 @@ import Exit from "@/pages/hr/Exit";
 import HrPhase2 from "@/pages/hr/HrPhase2";
 import HrPhase3 from "@/pages/hr/HrPhase3";
 import HrPhase4 from "@/pages/hr/HrPhase4";
+import LabourLicenses from "@/pages/hr/LabourLicenses";
+import ServiceWorkflowDashboard from "@/pages/services/ServiceWorkflowDashboard";
+import ServiceRequests from "@/pages/services/ServiceRequests";
+import ServiceRequestDetail from "@/pages/services/ServiceRequestDetail";
+import ServiceRfqs from "@/pages/services/ServiceRfqs";
+import ServicePos from "@/pages/services/ServicePos";
+import ServiceSrns from "@/pages/services/ServiceSrns";
+import ServiceInvoices from "@/pages/services/ServiceInvoices";
 import HrPhase5 from "@/pages/hr/HrPhase5";
 import AttendanceCenter from "@/pages/hr/AttendanceCenter";
 import AttendanceSummary from "@/pages/hr/AttendanceSummary";
@@ -345,6 +353,7 @@ export default function App() {
             <Route path="/app/hr/operations" element={<ProtectedShell><HrPhase2 /></ProtectedShell>}/>
             <Route path="/app/hr/manpower-planning" element={<ProtectedShell><HrPhase3 /></ProtectedShell>}/>
             <Route path="/app/hr/payroll-statutory" element={<ProtectedShell><HrPhase4 /></ProtectedShell>}/>
+            <Route path="/app/hr/labour-licenses" element={<ProtectedShell><LabourLicenses /></ProtectedShell>}/>
             <Route path="/app/hr/command-center" element={<ProtectedShell><HrPhase5 /></ProtectedShell>}/>
             <Route path="/app/accounts" element={<ProtectedShell><Accounts /></ProtectedShell>} />
             <Route path="/app/safety" element={<ProtectedShell><Safety /></ProtectedShell>} />
@@ -475,6 +484,13 @@ export default function App() {
             <Route path="/app/admin/sequences" element={<ProtectedShell><SequenceAdmin /></ProtectedShell>} />
             <Route path="/app/admin/audit-logs" element={<ProtectedShell><AuditLogs /></ProtectedShell>} />
             <Route path="/app/admin/sessions" element={<ProtectedShell><Sessions /></ProtectedShell>} />
+            <Route path="/app/services/dashboard" element={<ProtectedShell><ServiceWorkflowDashboard /></ProtectedShell>} />
+            <Route path="/app/services/requests" element={<ProtectedShell><ServiceRequests /></ProtectedShell>} />
+            <Route path="/app/services/requests/:id" element={<ProtectedShell><ServiceRequestDetail /></ProtectedShell>} />
+            <Route path="/app/services/rfqs" element={<ProtectedShell><ServiceRfqs /></ProtectedShell>} />
+            <Route path="/app/services/pos" element={<ProtectedShell><ServicePos /></ProtectedShell>} />
+            <Route path="/app/services/srns" element={<ProtectedShell><ServiceSrns /></ProtectedShell>} />
+            <Route path="/app/services/invoices" element={<ProtectedShell><ServiceInvoices /></ProtectedShell>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

@@ -393,6 +393,12 @@ PERMISSIONS_BASE = {
                   "sales_executive"},
         "delete": {"super_admin", "director"},
     },
+    # Service Request → Payment workflow (stage-level role gating lives in the router)
+    "service_workflow": {
+        "read": {"*"},
+        "write": {"*"},
+        "delete": {"super_admin"},
+    },
     # Iteration 29 — AI Quotation Builder (rich quotation + AI RFQ extraction)
     # Reuses 'quotations' permission. Builder-specific extras (company profile,
     # condition library) check 'quotations' write for create/edit.

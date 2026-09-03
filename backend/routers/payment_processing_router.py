@@ -418,6 +418,9 @@ async def mark_paid(rid: str, p: MarkPaidIn, request: Request,
                 "last_payment_utr": p.utr_no, "last_payment_date": p.paid_date,
                 "updated_at": now_iso()}})
             await db.alerts.delete_one({"id": f"vpd-{row['source_id']}"})
+    if row.get("source") == "service_invoice" and row.get("source_id"):
+        from routers.service_workflow_router import on_service_invoice_paid
+        await on_service_invoice_paid(row["source_id"], p.utr_no, p.paid_date, user)
     if row.get("source") == "advance" and row.get("source_id"):
         adv = await db.employee_advances.find_one({"id": row["source_id"]}, {"_id": 0})
         if adv and adv.get("status") == "approved":

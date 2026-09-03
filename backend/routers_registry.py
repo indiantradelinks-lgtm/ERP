@@ -19,6 +19,8 @@ from fastapi import APIRouter
 from routers.auth_router import router as auth_router
 from routers.allocation_router import router as allocation_router
 from routers.payroll_router import router as payroll_router
+from routers.labour_license_router import router as labour_license_router
+from routers.service_workflow_router import router as service_workflow_router
 from routers.vendors_router import router as vendors_router
 from routers.projects_ops_router import router as projects_ops_router
 from routers.resource_requests_router import router as resource_requests_router
@@ -148,6 +150,8 @@ ROUTERS_IN_ORDER: List[Tuple[str, APIRouter]] = [
     ("auth", auth_router),
     ("allocation", allocation_router),
     ("payroll", payroll_router),               # literal /payroll/master|runs|run/*
+    ("labour_licenses", labour_license_router),  # HR labour license compliance
+    ("service_workflow", service_workflow_router),  # Service Request → Payment workflow
     ("vendors", vendors_router),               # rich /vendors lifecycle
     ("projects_ops", projects_ops_router),     # Iter 60 — handover
     ("resource_requests", resource_requests_router),

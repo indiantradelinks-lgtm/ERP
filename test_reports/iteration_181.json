@@ -1,0 +1,64 @@
+{
+  "summary": "Iteration 181 — full E2E test of the new 'Service Request → Payment Management' module (frontend priority + backend RBAC/guard-rails/payment-queue). Created fresh records end-to-end through the UI: SVC-2026-0008 (create → send_back-validation → approve → detail/timeline → Create RFQ deep-link) → SRFQ-2026-0003 (2 vendors, issue, 2 quotes, comparison with L1 highlight, recommend, selection approval) → SPO-2026-0003 (draft → submit → approve → issue) → SSRN-2026-0004 (50/50 partial, verify → approve, PO Received% = 50%) → SVI-2026-0006 (3-way match 'Matched', approve → pushed to Accounts Payment Processing Center) → verified + marked paid via /api/accounts/payment-queue (UTRUI181006) → module Payment Queue tab shows PAID + UTR, PO payment_status=partially_paid, SR timeline shows invoice_paid/payment_recorded. Mismatch path (SVI-2026-0007, gross 1.77L over entitlement) correctly routed to exception_review with red mismatch badge + mismatch dialog and remarks-gated Resolve. Backend pytest suite (19 tests) covering meta/dashboard/_id-leak, RBAC scoping + 403s, guard rails (RFQ from non-approved SR, no-vendor RFQ, send_back w/o remarks, PO before selection_approved, SRN cumulative >100%, duplicate vendor_invoice_no, exception-approve block) and payment-queue round-trip: 19/19 PASS. RBAC in UI verified as sales@erp.com: Service Procurement menu visible, can create own SR (SVC-2026-0009), sees ONLY own 2 SRs, no Review / Create RFQ / Submit Vendor Invoice buttons. Sidebar: all 6 nav-svc-* items render under 'Service Procurement' inside 'Procurement & Vendors' and navigate correctly. Dashboard: 14 KPI tiles render with counts, tiles navigate, category/requester filters work. ONE HIGH-priority functional bug found (exception invoices permanently reserve PO invoiced_total and cannot be rejected from the UI).",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/service-workflow/invoices  (+ /invoices/{id}/action, /resolve-exception)",
+        "issue": "An invoice that FAILS the 3-way match (status=exception_review) still increments po.invoiced_total by its gross. On SPO-2026-0003 (total ₹1,18,000) the bogus ₹1,77,000 exception invoice pushed invoiced_total to ₹2,36,000, so the next fully legitimate invoice (₹59,000 against a freshly approved 50% SRN) was wrongly flagged 'Invoice gross ₹59,000 exceeds un-invoiced accepted value ₹0.00' and dumped into exception_review too (verified: SVI-2026-0008). The reservation is only released on invoice REJECT, and the Invoices UI offers no Reject button for exception_review rows (only 'Resolve Exception'), so Accounts can never clear it from the UI — the PO is permanently un-invoiceable, or the over-invoice has to be force-resolved into the payment queue. Fix: only reserve invoiced_total for non-exception (match-ok) invoices, or release the reservation when the exception is rejected/abandoned, AND expose Reject for exception_review invoices.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "GET /api/service-workflow/pos",
+        "issue": "paid_total is null/absent while payment_status flips to partially_paid — front-end cannot show paid-vs-invoiced value. Cosmetic/data-completeness only."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ServiceInvoices (Invoices tab, exception_review rows)",
+        "issue": "No Reject action for invoices in exception_review — only 'Resolve Exception' (which force-moves an over-invoice to pending_approval). Backend supports action=reject; UI must expose it so the PO invoiced_total reservation can be released.",
+        "selector": "[data-testid^=\"svc-inv-resolve-\"]",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "All service module dialogs",
+        "issues": [
+          "React console warning: 'Missing `Description` or `aria-describedby={undefined}` for DialogContent' on svc-req-form-dialog / review dialog (a11y only, no functional impact)"
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_service_workflow_iter181.py",
+    "/app/backend/tests/svc_iter181_probe.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "HIGH: Do not add exception_review invoice gross to po.invoiced_total (or release it when the exception is not resolved/approved) — currently a single bad invoice bricks all further invoicing on the PO (repro: SPO-2026-0003, SVI-2026-0007 then SVI-2026-0008).",
+    "HIGH: Add a Reject button for exception_review invoices in ServiceInvoices.jsx (backend POST /invoices/{id}/action action=reject already works and releases the reservation).",
+    "LOW: Populate paid_total on service POs alongside payment_status.",
+    "LOW: Add DialogDescription/aria-describedby to service module dialogs to clear the a11y console warning."
+  ],
+  "critical_code_review_comments": [
+    "service_workflow_router.py create_invoice(): `$inc invoiced_total` happens unconditionally, even when match['ok'] is False — this reserves value for invoices that were never accepted. Gate the increment on match['ok'] (or on approval) and decrement on exception abandonment.",
+    "ServiceRequests.jsx load(): the query-string build has a no-op `.replace(\"department=\",\"department=\")`/`.replace(\"category=\",\"category=\")` chain — dead code, remove.",
+    "svc list endpoints return history-stripped docs and exclude _id correctly; no ObjectId leaks found across requests/rfqs/pos/srns/invoices/payments."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_service_workflow_iter181.py",
+    "/app/backend/tests/svc_iter181_probe.py"
+  ],
+  "success_rate": {"backend": "100% (19/19 pytest; 1 functional design bug found via probe)", "frontend": "95% (every stage of the chain worked in UI; 1 missing Reject action on exception invoices)"},
+  "seed_data_creation": "UI-created: SVC-2026-0008 (chain, now payment_pending), SVC-2026-0009 (sales-owned), SRFQ-2026-0003, SPO-2026-0003, SSRN-2026-0004/0005, SVI-2026-0006 (paid, UTRUI181006), SVI-2026-0007 (exception, bogus 1.77L), SVI-2026-0008 (probe, wrongly exception). API-created by pytest: several TEST_<hex> SRs/RFQ/PO/SRN/invoices + one paid invoice with UTR (module has no delete endpoints, so records remain).",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "admin@erp.com/Admin@123 (super_admin), sales@erp.com/Sales@123 (sales_executive)",
+  "context_for_next_testing_agent": "Backend regression suite: /app/backend/tests/test_service_workflow_iter181.py (run with `python -m pytest tests/test_service_workflow_iter181.py -p no:randomly -q -o addopts=''`). It builds its own fresh chain each run and asserts guard rails + payment-queue round-trip. After the invoiced_total fix, re-verify: create an exception invoice on a PO, confirm po.invoiced_total unchanged, then create a valid invoice within entitlement and confirm it is 'Matched'; also confirm the new UI Reject button on exception rows. Do NOT reuse SPO-2026-0003 (its invoiced_total is corrupted at ₹2,95,000 vs total ₹1,18,000) — create a new PO.",
+  "rca_of_the_issue": "create_invoice() runs the 3-way match, sets status=exception_review when it fails, but unconditionally does `db.svc_pos.update_one($inc invoiced_total: match.gross)`. The entitlement formula (total_value * accepted_pct_total/100 - invoiced_total) therefore subtracts value that was never accepted. The reservation is only reversed in invoice_action() on reject; since the Invoices UI shows only 'Resolve Exception' for exception_review rows, there is no UI path to reject → the PO's remaining accepted value stays at 0 forever and every subsequent legitimate invoice is misclassified as a mismatch (reproduced end-to-end on SPO-2026-0003 → SVI-2026-0008)."
+}

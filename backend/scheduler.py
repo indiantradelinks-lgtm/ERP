@@ -321,6 +321,17 @@ def start_scheduler() -> None:
                        id="action_item_overdue", replace_existing=True)
     _scheduler.add_job(_premob_delay_job, CronTrigger(hour=7, minute=45),
                        id="premob_delay", replace_existing=True)
+
+    async def _labour_license_job():
+        try:
+            from routers.labour_license_router import run_labour_license_daily_check
+            res = await run_labour_license_daily_check()
+            logger.info(f"Labour license daily check: {res}")
+        except Exception as e:
+            logger.exception(f"Labour license daily check failed: {e}")
+
+    _scheduler.add_job(_labour_license_job, CronTrigger(hour=7, minute=15),
+                       id="labour_license_daily", replace_existing=True)
     _scheduler.start()
     logger.info(
         f"Scheduler started (tz={tz}). Jobs: expiry_scan@09:00, invoice_reminders@Mon 09:00, "

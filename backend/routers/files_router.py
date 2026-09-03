@@ -29,6 +29,12 @@ ALLOWED_FOLDERS = {
     "payments",
     "vendor_bills",
     "ra_bill_tally_invoice",
+    "labour_license",
+    "service_requests",
+    "service_rfqs",
+    "service_pos",
+    "service_srns",
+    "service_invoices",
 }
 CLIENT_DOC_CATEGORIES = {"PAN", "GST", "MSA", "NDA", "TradeLicense", "IncorporationCert", "AddressProof", "BankDetails", "Other"}
 
