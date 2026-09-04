@@ -61,7 +61,13 @@ async def payment_queue(stage: str = "", project_code: str = "",
     emp_ids = list({r.get("employee_id") for r in reqs if r.get("employee_id")})
     emap = {e["id"]: e async for e in db.employees.find(
         {"id": {"$in": emp_ids}},
-        {"_id": 0, "id": 1, "bank_account_no": 1, "bank_ifsc": 1, "bank_name": 1, "bank_branch": 1})} if emp_ids else {}
+        {"_id": 0, "id": 1, "name": 1, "bank_account_no": 1, "bank_ifsc": 1, "bank_name": 1,
+         "bank_branch": 1, "bank_beneficiary_name": 1})} if emp_ids else {}
+    emp_codes = list({r.get("employee_code") for r in reqs if r.get("employee_code") and not r.get("employee_id")})
+    ecmap = {e["emp_code"]: e async for e in db.employees.find(
+        {"emp_code": {"$in": emp_codes}},
+        {"_id": 0, "id": 1, "emp_code": 1, "name": 1, "bank_account_no": 1, "bank_ifsc": 1,
+         "bank_name": 1, "bank_branch": 1, "bank_beneficiary_name": 1})} if emp_codes else {}
     cc_ids = list({r.get("cost_center_id") for r in reqs if r.get("cost_center_id")})
     ccmap = {c["id"]: c async for c in db.cost_centers.find(
         {"id": {"$in": cc_ids}},
@@ -77,7 +83,7 @@ async def payment_queue(stage: str = "", project_code: str = "",
         raised_by = r.get("created_by") or r.get("requested_by")
         if adv and (not raised_by or raised_by == "approval_engine"):
             raised_by = adv.get("created_by") or raised_by
-        emp = emap.get(r.get("employee_id"))
+        emp = emap.get(r.get("employee_id")) or ecmap.get(r.get("employee_code"))
         cc = ccmap.get(r.get("cost_center_id"))
         cc_name = r.get("cost_center_label") or (
             (f"{cc.get('category_code') or ''} · {cc.get('category_name') or ''}".strip(" ·") or cc.get("name"))
@@ -89,8 +95,10 @@ async def payment_queue(stage: str = "", project_code: str = "",
                     "project_manager": r.get("project_manager") or proj.get("project_manager_name")
                                        or proj.get("manager") or (adv or {}).get("project_manager"),
                     "employee_bank": ({"account_no": emp.get("bank_account_no"), "ifsc": emp.get("bank_ifsc"),
-                                       "bank_name": emp.get("bank_name"), "branch": emp.get("bank_branch")}
-                                      if emp and emp.get("bank_account_no") else None)})
+                                       "bank_name": emp.get("bank_name"), "branch": emp.get("bank_branch"),
+                                       "beneficiary_name": emp.get("bank_beneficiary_name") or emp.get("name")}
+                                      if emp and emp.get("bank_account_no") else None),
+                    "employee_record_id": (emp or {}).get("id")})
     return out
 
 
@@ -114,6 +122,51 @@ class VerifyIn(BaseModel):
     advance_adjusted: float = 0.0
     expense_account_code: str = "5150"
     remarks: str = ""
+
+
+class BankDetailsIn(BaseModel):
+    beneficiary_name: str = ""
+    bank_name: str = ""
+    account_no: str
+    ifsc: str
+    branch: str = ""
+
+
+@router.post("/{rid}/save-bank-details")
+async def save_bank_details(rid: str, p: BankDetailsIn, request: Request,
+                            user: dict = Depends(require_permission("accounting", "write"))):
+    """Save manually-entered bank details back to the Employee/Worker master
+    so future payment verifications auto-fill them."""
+    import re
+    row = await db.project_requests.find_one({"id": rid}, {"_id": 0})
+    if not row:
+        raise HTTPException(404, "Payment queue row not found")
+    emp = None
+    if row.get("employee_id"):
+        emp = await db.employees.find_one({"id": row["employee_id"]}, {"_id": 0, "id": 1, "emp_code": 1, "name": 1})
+    if not emp and row.get("employee_code"):
+        emp = await db.employees.find_one({"emp_code": row["employee_code"]}, {"_id": 0, "id": 1, "emp_code": 1, "name": 1})
+    if not emp:
+        raise HTTPException(400, "This payment is not linked to an employee/worker record")
+    acct = (p.account_no or "").strip().replace(" ", "")
+    ifsc = (p.ifsc or "").strip().upper()
+    if not re.fullmatch(r"[A-Za-z0-9]{6,20}", acct):
+        raise HTTPException(400, "Account number must be 6–20 letters/digits")
+    if not re.fullmatch(r"[A-Z]{4}0[A-Z0-9]{6}", ifsc):
+        raise HTTPException(400, "IFSC must be 11 characters, e.g. HDFC0001234")
+    upd = {"bank_account_no": acct, "bank_ifsc": ifsc,
+           "bank_name": (p.bank_name or "").strip(),
+           "bank_branch": (p.branch or "").strip(),
+           "bank_beneficiary_name": (p.beneficiary_name or "").strip() or emp.get("name"),
+           "bank_updated_by": user.get("name") or user.get("email"),
+           "bank_updated_at": now_iso(), "updated_at": now_iso()}
+    await db.employees.update_one({"id": emp["id"]}, {"$set": upd})
+    await audit(user=user, action="employee_bank_update", resource="employees",
+                record_id=emp["id"],
+                after={"emp_code": emp.get("emp_code"), "account_no": acct, "ifsc": ifsc,
+                       "via": f"payment_verification:{row.get('request_no')}"},
+                ip=_ip(request))
+    return {"ok": True, "employee_id": emp["id"], "emp_code": emp.get("emp_code"), **upd}
 
 
 @router.get("/export/{fmt}")

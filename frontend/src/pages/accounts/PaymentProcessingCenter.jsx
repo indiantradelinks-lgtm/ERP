@@ -27,7 +27,8 @@ const STAGE_BADGE = {
 };
 
 const blankVerify = (row) => ({
-  decision: "verified", vendor_name: row?.vendor || row?.employee_name || "",
+  decision: "verified",
+  vendor_name: row?.vendor || row?.employee_bank?.beneficiary_name || row?.employee_name || "",
   vendor_account_no: row?.employee_bank?.account_no || "",
   ifsc: (row?.employee_bank?.ifsc || "").toUpperCase(),
   bank_name: row?.employee_bank?.bank_name || "",
@@ -99,6 +100,7 @@ export default function PaymentProcessingCenter() {
   const [loading, setLoading] = useState(true);
   const [verifyFor, setVerifyFor] = useState(null);
   const [vform, setVform] = useState(blankVerify(null));
+  const [saveBank, setSaveBank] = useState(false);
   const [attachFor, setAttachFor] = useState(null);
   const [selected, setSelected] = useState({});
   const [payFor, setPayFor] = useState(null);
@@ -152,6 +154,7 @@ export default function PaymentProcessingCenter() {
   const openVerify = (row) => {
     const v = row.verification;
     setVform(v ? { ...blankVerify(row), ...v, decision: "verified" } : blankVerify(row));
+    setSaveBank(!!(row.employee_record_id || row.employee_id || row.employee_code) && !row.employee_bank);
     setVerifyFor(row);
   };
 
@@ -173,6 +176,14 @@ export default function PaymentProcessingCenter() {
   const submitVerify = async (decision) => {
     setBusy(true);
     try {
+      if (decision === "verified" && saveBank &&
+          (verifyFor.employee_record_id || verifyFor.employee_id || verifyFor.employee_code)) {
+        await api.post(`/accounts/payment-queue/${verifyFor.id}/save-bank-details`, {
+          beneficiary_name: vform.vendor_name, bank_name: vform.bank_name,
+          account_no: vform.vendor_account_no, ifsc: vform.ifsc,
+        });
+        toast.success("Bank details saved to Employee Master");
+      }
       await api.post(`/accounts/payment-queue/${verifyFor.id}/verify`, {
         ...vform, decision,
         verified_amount: Number(vform.verified_amount || 0), gst_amount: Number(vform.gst_amount || 0),
@@ -457,13 +468,23 @@ export default function PaymentProcessingCenter() {
                 <Label className="text-[10px] uppercase tracking-wider">Account Number *</Label>
                 <Input value={vform.vendor_account_no} onChange={(e) => setVform({ ...vform, vendor_account_no: e.target.value })}
                   className="rounded-sm mt-1" data-testid="ppc-v-account" />
-                {verifyFor?.employee_bank && <p className="text-[10px] text-emerald-700 mt-0.5">Auto-filled from HR employee master</p>}
               </div>
               <div>
                 <Label className="text-[10px] uppercase tracking-wider">IFSC *</Label>
                 <Input value={vform.ifsc} onChange={(e) => setVform({ ...vform, ifsc: e.target.value.toUpperCase() })}
                   className="rounded-sm mt-1" data-testid="ppc-v-ifsc" />
               </div>
+              {(verifyFor?.employee_record_id || verifyFor?.employee_id || verifyFor?.employee_code) && (
+                <div className="col-span-2 border rounded-sm p-2 bg-slate-50" data-testid="ppc-v-bank-source">
+                  {verifyFor?.employee_bank
+                    ? <p className="text-[10px] text-emerald-700">Bank details auto-fetched from the Employee/Worker Master ({verifyFor.employee_code || verifyFor.employee_name}). Edit above if the bank has changed.</p>
+                    : <p className="text-[10px] text-amber-700">No bank details on the Employee/Worker Master for {verifyFor?.employee_code || verifyFor?.employee_name} — enter them above.</p>}
+                  <label className="flex items-center gap-2 text-xs mt-1 cursor-pointer">
+                    <input type="checkbox" checked={saveBank} onChange={(e) => setSaveBank(e.target.checked)} data-testid="ppc-v-save-bank" />
+                    Save/update these bank details on the Employee Master (auto-fills future payments)
+                  </label>
+                </div>
+              )}
               <div className="col-span-2">
                 <Label className="text-[10px] uppercase tracking-wider">Vendor Email (payment advice sent here on payment)</Label>
                 <Input type="email" value={vform.vendor_email} onChange={(e) => setVform({ ...vform, vendor_email: e.target.value })}

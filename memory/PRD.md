@@ -5818,3 +5818,9 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - MyApprovalsCenter.jsx: "Service Requests" KPI tile (Wrench icon, inbox-kpi-service_request), rows with Approve/✗/Open; KPI grid now lg:grid-cols-9.
 - Service Requests page: ALL approval actions removed (Review button + dialog deleted); pending rows show "Awaiting: <step>" badge only; header notes approvals happen in My Pending Approvals.
 - Tested via curl (director inbox counts, PM sees none, inbox-approve/reject + remarks 400) + UI screenshots (director inbox tile with Approve buttons; SR page 0 review buttons, 5 awaiting badges). Removed 20 leftover QA test SRs (kept demo SVC-2026-0001 closed + SVC-2026-0018 po_created).
+
+## Payment Verification — Bank Details Auto-Fetch & Save-Back (Sept 2026)
+- Queue enrichment (payment_processing_router.payment_queue): employee lookup now also falls back to emp_code (ecmap) when employee_id missing; employee_bank enriched with beneficiary_name (bank_beneficiary_name or employee name) + employee_record_id.
+- New endpoint POST /accounts/payment-queue/{rid}/save-bank-details (accounting:write): validates account (6–20 alnum) + IFSC (^[A-Z]{4}0[A-Z0-9]{6}$), writes bank_account_no/bank_ifsc/bank_name/bank_branch/bank_beneficiary_name (+bank_updated_by/at) onto db.employees; audited (action employee_bank_update).
+- Verify dialog (PaymentProcessingCenter.jsx): auto-fills beneficiary/account/IFSC/bank from Employee Master (green banner) or shows amber "no bank details on master" note; "Save/update on Employee Master" checkbox (ppc-v-save-bank, default-checked when master empty) — on Verify, details are saved back BEFORE verification (invalid IFSC/account blocks with toast).
+- Tested via curl (invalid IFSC/acct 400s, save-back, auto-fetch round-trip on AD-2026-0087 / E-1004) + UI screenshot of prefilled verify dialog.
