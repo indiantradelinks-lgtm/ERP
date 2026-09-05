@@ -23,7 +23,7 @@ from approval_engine import build_chain
 router = APIRouter(prefix="/service-workflow", tags=["service-workflow"])
 
 SR_APPROVERS = {"super_admin", "director", "general_manager", "dept_head", "project_manager"}
-PROC_ROLES = {"super_admin", "purchase_officer", "director", "general_manager"}
+PROC_ROLES = {"super_admin", "purchase_officer", "manager_log", "director", "general_manager"}
 SRN_ROLES = PROC_ROLES | {"project_manager", "site_engineer", "supervisor", "dept_head"}
 ACCOUNTS_ROLES = {"super_admin", "accounts_executive", "director"}
 VIEW_ALL_ROLES = SR_APPROVERS | PROC_ROLES | ACCOUNTS_ROLES | {"hr_executive"}
@@ -312,7 +312,7 @@ async def approve_request(sr_id: str, p: ActionIn, request: Request,
     if p.action == "approve":
         idx += 1
         if idx >= len(chain):
-            to, owner = "approved", "Procurement"
+            to, owner = "approved", "Logistics / Procurement"
         else:
             to, owner = "under_review", chain[idx].get("label") or chain[idx].get("role")
     else:
