@@ -178,6 +178,7 @@ class RequestIn(BaseModel):
     beneficiaries: Optional[List[Dict[str, Any]]] = None  # [{employee_id?, employee_code?, employee_name, amount, remarks?}]
     settlement_mode: Optional[str] = None  # petty_cash | employee_reimbursement | vendor_payable
     paid_to_type: Optional[str] = None     # vendor | person
+    payment_mode: Optional[str] = None     # UPI | Accounts (mandatory when priority=high on payment requests)
 
 
 class ActionIn(BaseModel):
@@ -308,6 +309,9 @@ async def create_request(p: RequestIn, request: Request,
     if p.request_type not in _rtypes:
         raise HTTPException(400, f"request_type must be one of {sorted(_rtypes)}")
     meta = _rtypes[p.request_type]
+    if meta.get("payment") and (p.priority or "").lower() == "high":
+        if p.payment_mode not in ("UPI", "Accounts"):
+            raise HTTPException(400, "Payment Mode (UPI or Accounts) is mandatory for HIGH priority payment requests")
     beneficiaries = None
     if p.beneficiaries:
         beneficiaries = []
@@ -401,6 +405,7 @@ async def create_request(p: RequestIn, request: Request,
         "settlement_mode": p.settlement_mode,
         "paid_to_type": ("person" if p.request_type == "self_expense" else p.paid_to_type),
         "need_by": p.need_by, "priority": p.priority, "description": p.description or "",
+        "payment_mode": p.payment_mode if meta["payment"] else None,
         "employee_id": (emp or {}).get("id"),
         "employee_code": (emp or {}).get("employee_id") or (emp or {}).get("emp_code"),
         "employee_name": (emp or {}).get("name") or ((user.get("name") or user.get("email")) if p.request_type == "self_expense" else None),
@@ -789,11 +794,17 @@ async def _do_raise_recruitment(row: dict, actor: str) -> List[str]:
         vac = int(a["shortfall"]) if a else int(float(it.get("quantity") or 0))
         if vac <= 0:
             continue
+        proj = None
+        if row.get("project_code"):
+            proj = await db.projects.find_one({"code": row["project_code"]},
+                                              {"_id": 0, "name": 1, "project_manager_name": 1, "manager": 1})
         rec = {
             "id": new_id(), "req_no": await next_sequence("REQ"),
             "position": it.get("name"), "department": "Operations",
             "vacancies": vac, "hired": 0, "needed_by": row.get("period_from") or row.get("need_by"),
             "project_code": row.get("project_code"), "site": row.get("site_location"),
+            "project_name": (proj or {}).get("name"),
+            "project_manager": (proj or {}).get("project_manager_name") or (proj or {}).get("manager"),
             "budget_monthly_per_head": float(it.get("rate") or 0),
             "deployment_from": row.get("period_from"), "deployment_to": row.get("period_to"),
             "skills": it.get("specs"), "status": "open",
@@ -851,6 +862,51 @@ async def raise_recruitment(rid: str, request: Request,
     await audit(user=user, action="req_raise_recruitment", resource="project_requests", record_id=rid,
                 after={"recruitment_nos": created}, ip=_ip(request))
     return {"recruitment_nos": created, "count": len(created)}
+
+
+class RecruitHrActionIn(BaseModel):
+    status: str  # approved | rejected | shortlisting | interview | offer | filled | completed | closed
+    pm_info_received: Optional[bool] = None
+    hired: Optional[int] = None
+    remarks: str = ""
+
+
+RECRUIT_HR_STATUSES = {"open", "approved", "rejected", "shortlisting", "interview", "offer",
+                       "filled", "completed", "closed"}
+
+
+@router.post("/recruitment-requests/{rid}/hr-action")
+async def recruitment_hr_action(rid: str, p: RecruitHrActionIn, request: Request,
+                                user: dict = Depends(require_permission("recruitment_requests", "write"))):
+    """HR updates recruitment outcome/status with a full status history trail."""
+    row = await db.recruitment_requests.find_one({"id": rid}, {"_id": 0})
+    if not row:
+        raise HTTPException(404, "Recruitment request not found")
+    if p.status not in RECRUIT_HR_STATUSES:
+        raise HTTPException(400, f"status must be one of {sorted(RECRUIT_HR_STATUSES)}")
+    if p.status == "rejected" and not p.remarks.strip():
+        raise HTTPException(400, "Remarks are required when rejecting a recruitment request")
+    patch: Dict[str, Any] = {"status": p.status, "updated_at": now_iso(),
+                             "hr_actioned_by": user.get("name") or user.get("email"),
+                             "hr_actioned_at": now_iso()}
+    if p.pm_info_received is not None:
+        patch["pm_info_received"] = p.pm_info_received
+    if p.hired is not None:
+        if p.hired < 0:
+            raise HTTPException(400, "Hired count cannot be negative")
+        patch["hired"] = int(p.hired)
+    if p.remarks.strip():
+        patch["hr_outcome_remarks"] = p.remarks.strip()
+    entry = {"at": now_iso(), "by": user.get("name") or user.get("email"), "role": user.get("role"),
+             "from": row.get("status"), "to": p.status,
+             "pm_info_received": p.pm_info_received, "hired": patch.get("hired", row.get("hired")),
+             "remarks": p.remarks}
+    await db.recruitment_requests.update_one({"id": rid}, {"$set": patch, "$push": {"history": entry}})
+    await audit(user=user, action=f"recruitment_hr_{p.status}", resource="recruitment_requests",
+                record_id=rid, after={"req_no": row.get("req_no"), "position": row.get("position"),
+                                      "status": p.status, "pm_info_received": p.pm_info_received,
+                                      "remarks": p.remarks}, ip=_ip(request))
+    return await db.recruitment_requests.find_one({"id": rid}, {"_id": 0})
 
 
 class LineFulfilIn(BaseModel):

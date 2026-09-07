@@ -26,7 +26,7 @@ const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${
 const STOCKABLE = new Set(["material", "ppe", "it_material"]);
 const blankItem = () => ({ name: "", quantity: 1, unit: "Nos", rate: 0, specs: "", size: "", make: "", item_type: "", tech_details: "", designation_id: "", item_id: "", item_code: "", custom: false });
 const blank = () => ({ id: newId(), project_code: "", project_id: "", request_type: "", need_by: "",
-  priority: "medium", description: "", items: [blankItem()], vendor: "", vehicle_ref: "",
+  priority: "medium", description: "", items: [blankItem()], vendor: "", vehicle_ref: "", payment_mode: "",
   period_from: "", period_to: "", monthly_rate: "", months: "", from_location: "", to_location: "", amount: "", remarks: "",
   cost_center_id: "", site_location: "", material_category_id: "", employee_id: "", self_for_project: false,
   expense_type: "", expense_date: new Date().toISOString().slice(0, 10), settlement_mode: "vendor_payable", paid_to_type: "vendor" });
@@ -231,7 +231,11 @@ export default function ProjectRequests() {
       if (!form.expense_date) { toast.error("Select expense date"); return; }
     }
     try {
+      if (isPayment && form.priority === "high" && !["UPI", "Accounts"].includes(form.payment_mode)) {
+        toast.error("Payment Mode (UPI or Accounts) is mandatory for HIGH priority payment requests"); return;
+      }
       const payload = { ...form,
+        payment_mode: form.payment_mode || null,
         amount: benef.length ? benef.reduce((a, b) => a + (Number(b.amount) || 0), 0) : (form.amount ? Number(form.amount) : null),
         beneficiaries: benef.length ? benef.filter((b) => (b.employee_name || "").trim() && Number(b.amount) > 0)
           .map((b) => ({ ...b, amount: Number(b.amount) })) : null,
@@ -314,7 +318,7 @@ export default function ProjectRequests() {
                   <Users className="h-4 w-4 mr-1.5" /> Manpower Request
                 </Button>
                 <Button variant="outline" className="h-9 rounded-sm" onClick={() => openDialog("service")} data-testid="req-new-service">
-                  <Truck className="h-4 w-4 mr-1.5" /> Service / Payment
+                  <Truck className="h-4 w-4 mr-1.5" /> Payment
                 </Button>
                 <Button variant="outline" className="h-9 rounded-sm" onClick={() => navigate("/app/hr/leave")} data-testid="req-shortcut-leave">
                   <CalendarDays className="h-4 w-4 mr-1.5" /> Leave Apply
@@ -444,7 +448,7 @@ export default function ProjectRequests() {
         <DialogContent className="max-w-3xl rounded-sm max-h-[88vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display">
-              {mode === "material" ? "Material Request" : mode === "manpower" ? "Manpower Request" : "Service / Payment Request"}
+              {mode === "material" ? "Material Request" : mode === "manpower" ? "Manpower Request" : "Payment Request"}
             </DialogTitle>
             <DialogDescription>
               {mode === "material" ? "Stock is checked first; shortfall converts to a Purchase Request after approval. Routed to Stores." :
@@ -605,6 +609,20 @@ export default function ProjectRequests() {
                 <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
               </select>
             </div>
+            {isPayment && form.priority === "high" && (
+              <div className="col-span-2 border border-amber-300 bg-amber-50 rounded-sm p-2" data-testid="req-form-payment-mode-block">
+                <Label className="text-[10px] uppercase tracking-wider text-amber-800">Payment Mode * (mandatory for HIGH priority)</Label>
+                <div className="flex gap-4 mt-1">
+                  {["UPI", "Accounts"].map((m) => (
+                    <label key={m} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                      <input type="radio" name="payment_mode" value={m} checked={form.payment_mode === m}
+                        onChange={() => setForm({ ...form, payment_mode: m })} data-testid={`req-form-payment-mode-${m.toLowerCase()}`} />
+                      {m}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Items (material requests) */}
             {isStockable && (
@@ -795,6 +813,7 @@ export default function ProjectRequests() {
                 <div className="grid grid-cols-3 gap-2">
                   {[["Status", (STATUS[detail.status] || [detail.status])[0]], ["Est. Value", inr(detail.est_value)],
                     ["Priority", detail.priority], ["Need By", detail.need_by || "—"],
+                    ...(detail.payment_mode ? [["Payment Mode", detail.payment_mode]] : []),
                     ["Cost Center", detail.cost_center_label || "Auto (project default)"],
                     ["Site Location", detail.site_location || "—"],
                     ["Paid To", detail.paid_to_type === "person" ? `Person${detail.employee_name ? ` — ${detail.employee_name}` : ""}` : (detail.vendor ? `Vendor — ${detail.vendor}` : detail.vendor || "—")],

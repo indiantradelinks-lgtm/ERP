@@ -134,7 +134,7 @@ export default function RequestOptions() {
         <h1 className="font-display font-black text-3xl tracking-tight">Request &amp; Expense Type Master</h1>
         <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
           Centrally manage the <b>Request Type (Routing)</b>, <b>Expense Type</b>, <b>Service Type</b> and <b>Service Category</b> dropdowns used across the
-          Service / Payment Request form, Billing reports and the Service Procurement (Service Request) form. Changes reflect immediately for all users. Built-in options can be renamed or hidden; custom options can be added freely.
+          Payment Request form, Billing reports and the Service Procurement (Service Request) form. Changes reflect immediately for all users. Built-in options can be renamed or hidden; custom options can be added freely.
         </p>
       </div>
       {data && <OptionsTable kind="request_type" rows={data.request_types} expenseTypes={data.expense_types.filter((t) => t.active !== false)} onChanged={load} />}
