@@ -5849,3 +5849,10 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Frontend: Input field inside the amber payment mode block, appears/disappears with UPI radio toggle. `data-testid="req-form-upi-any-name"`. For UPI mode, `Paid To (Person)` validation is bypassed when `upi_any_name` is filled — allowing form submission without selecting an employee from the database. For all other modes, `Paid To` remains mandatory.
 - Detail view: Shows "UPI Any Name" tile when the field is present.
 - Payment Processing Center: `upi_any_name` used as fallback name in both the UPI Quick Pay lane and the regular payment table. "Manual name (UPI)" sub-label shown when the name comes from this field.
+
+## Sales Module — Created Timestamp (Sept 2026)
+- Added a "Created" column to both **Enquiries** and **Quotations** list views showing the system-generated `created_at` date + time (e.g., `2026-07-29` / `10:34`).
+- Backend already stores `created_at` (ISO 8601) on document creation for both collections — no backend changes needed.
+- Enquiries: new `<TableHead>Created</TableHead>` + `<TableCell>` after Enquiry # column. `data-testid="enquiry-created-{id}"`.
+- Quotations: new `{ key: "created_at", label: "Created" }` column in DataTableShell after Quote #. `data-testid="quotation-created-{id}"`.
+- Timestamp is consistent across list views — sourced from the same `created_at` field used throughout the system.

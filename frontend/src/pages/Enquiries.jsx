@@ -247,6 +247,7 @@ export default function Enquiries() {
             <TableHeader>
               <TableRow className="bg-muted/40 hover:bg-muted/40">
                 <TableHead className="text-[10px] uppercase tracking-wider">Enquiry #</TableHead>
+                <TableHead className="text-[10px] uppercase tracking-wider">Created</TableHead>
                 <TableHead className="text-[10px] uppercase tracking-wider">Client / Site</TableHead>
                 <TableHead className="text-[10px] uppercase tracking-wider">RFQ Type</TableHead>
                 <TableHead className="text-[10px] uppercase tracking-wider">Services</TableHead>
@@ -259,11 +260,12 @@ export default function Enquiries() {
             </TableHeader>
             <TableBody>
               {filtered.length === 0 && (
-                <TableRow><TableCell colSpan={9} className="text-center text-sm text-muted-foreground py-10">No enquiries yet.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-10">No enquiries yet.</TableCell></TableRow>
               )}
               {filtered.map((r) => (
                 <TableRow key={r.id} className="hover:bg-muted/30" data-testid={`enquiry-row-${r.id}`}>
                   <TableCell className="font-mono-data text-sm">{r.enquiry_no}<div className="text-[10px] text-muted-foreground">{r.customer_enquiry_no || ""}</div></TableCell>
+                  <TableCell className="font-mono-data text-xs whitespace-nowrap" data-testid={`enquiry-created-${r.id}`}>{r.created_at ? r.created_at.slice(0, 10) : "—"}<div className="text-[10px] text-muted-foreground">{r.created_at ? r.created_at.slice(11, 16) : ""}</div></TableCell>
                   <TableCell className="text-sm font-semibold">
                     {r.customer}
                     <div className="text-[11px] text-muted-foreground font-normal">{r.site_code ? `${r.site_code} · ${r.site_location || ""}` : (r.site_location || "")}</div>

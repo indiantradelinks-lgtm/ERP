@@ -133,6 +133,7 @@ export default function Quotations() {
 
   const columns = [
     { key: "quote_number", label: "Quote #" },
+    { key: "created_at", label: "Created", render: (row) => row.created_at ? <span className="font-mono-data text-xs whitespace-nowrap" data-testid={`quotation-created-${row.id}`}>{row.created_at.slice(0, 10)}<div className="text-[10px] text-muted-foreground">{row.created_at.slice(11, 16)}</div></span> : "—" },
     { key: "enquiry_no", label: "Enquiry", render: (row) => row.enquiry_no ? <StatusBadge text={row.enquiry_no} tone="info" /> : "—" },
     { key: "revision_no", label: "Rev", render: (row) => <StatusBadge text={`R${row.revision_no || 0}`} tone={row.revision_no ? "primary" : "neutral"} /> },
     { key: "client", label: "Client" },
