@@ -227,7 +227,8 @@ export default function ProjectRequests() {
     if (!form.cost_center_id) { toast.error(isSelf ? (form.self_for_project ? "Select the project's Cost Center" : "Select a Head Office Cost Center before submitting") : "Cost Center is mandatory — select a valid Cost Center before submitting"); return; }
     if (isPayment && mode === "service" && !isSelf && benef.length === 0) {
       if (form.paid_to_type === "vendor" && !form.vendor) { toast.error("Select the approved vendor to be paid"); return; }
-      if (form.paid_to_type === "person" && !form.employee_id) { toast.error("Select the employee (Emp ID) to be paid"); return; }
+      const upiHasAnyName = form.payment_mode === "UPI" && (form.upi_any_name || "").trim();
+      if (form.paid_to_type === "person" && !form.employee_id && !upiHasAnyName) { toast.error("Select the employee (Emp ID) to be paid"); return; }
       if (!form.expense_date) { toast.error("Select expense date"); return; }
     }
     try {

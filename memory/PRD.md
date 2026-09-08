@@ -5845,7 +5845,7 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 ## UPI Any Name field (Sept 2026)
 - Added `upi_any_name` optional field to Payment Requests — visible only when Payment Mode = UPI.
 - Allows manual entry of payee names not in the employee/vendor database (e.g., ad-hoc drivers, casual workers).
-- Backend: `RequestIn.upi_any_name` accepted; persisted only when `payment_mode == "UPI"`, otherwise stored as null.
-- Frontend: Input field inside the amber payment mode block, appears/disappears with UPI radio toggle. `data-testid="req-form-upi-any-name"`.
+- Backend: `RequestIn.upi_any_name` accepted; persisted only when `payment_mode == "UPI"`, otherwise stored as null. When UPI + `upi_any_name` is provided and no `employee_id`, the `employee_name` field is populated from `upi_any_name` (fallback).
+- Frontend: Input field inside the amber payment mode block, appears/disappears with UPI radio toggle. `data-testid="req-form-upi-any-name"`. For UPI mode, `Paid To (Person)` validation is bypassed when `upi_any_name` is filled — allowing form submission without selecting an employee from the database. For all other modes, `Paid To` remains mandatory.
 - Detail view: Shows "UPI Any Name" tile when the field is present.
 - Payment Processing Center: `upi_any_name` used as fallback name in both the UPI Quick Pay lane and the regular payment table. "Manual name (UPI)" sub-label shown when the name comes from this field.
