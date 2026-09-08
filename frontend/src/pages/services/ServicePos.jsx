@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Paperclip, Send, FileSignature, PackageCheck, Printer, BookText } from "lucide-react";
+import { Paperclip, Send, FileSignature, PackageCheck, Printer, BookText, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { api, apiErrorMessage, API } from "@/lib/api";
 import RowAttachments from "@/components/RowAttachments";
@@ -28,6 +28,8 @@ export default function ServicePos() {
   const [srn, setSrn] = useState(blankSrn());
   const [docsFor, setDocsFor] = useState(null);
   const [tncOpen, setTncOpen] = useState(false);
+  const [mailFor, setMailFor] = useState(null);
+  const [mail, setMail] = useState({ to: "", message: "" });
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -49,6 +51,21 @@ export default function ServicePos() {
       await api.post(`/service-workflow/pos/${approving.id}/action`, { action, remarks });
       toast.success(`PO ${approving.po_no} ${action}d`);
       setApproving(null); setRemarks(""); load();
+    } catch (e) { toast.error(apiErrorMessage(e)); } finally { setBusy(false); }
+  };
+
+  const openMail = (r) => {
+    const v = (meta?.vendors || []).find((x) => x.id === r.vendor_id);
+    setMail({ to: v?.email || "", message: "" });
+    setMailFor(r);
+  };
+
+  const sendMail = async () => {
+    setBusy(true);
+    try {
+      const res = await api.post(`/service-workflow/pos/${mailFor.id}/email`, mail);
+      toast.success(`${mailFor.po_no} PDF emailed to ${res.data.to}`);
+      setMailFor(null); load();
     } catch (e) { toast.error(apiErrorMessage(e)); } finally { setBusy(false); }
   };
 
@@ -106,6 +123,8 @@ export default function ServicePos() {
                 <TableCell className="text-right whitespace-nowrap">
                   {!["draft", "pending_approval"].includes(r.status) &&
                     <Button variant="ghost" size="icon" className="h-7 w-7" title="Print / View PO PDF" onClick={() => window.open(`${API}/service-workflow/pos/${r.id}/pdf`, "_blank")} data-testid={`svc-po-pdf-${r.po_no}`}><Printer className="h-3.5 w-3.5" /></Button>}
+                  {caps.procurement && !["draft", "pending_approval"].includes(r.status) &&
+                    <Button variant="ghost" size="icon" className={`h-7 w-7 ${r.emailed_at ? "text-emerald-600" : ""}`} title={r.emailed_at ? `Emailed to ${r.emailed_to} on ${dt(r.emailed_at)} — send again` : "Email PO PDF to vendor"} onClick={() => openMail(r)} data-testid={`svc-po-email-${r.po_no}`}><Mail className="h-3.5 w-3.5" /></Button>}
                   {caps.procurement && r.status === "draft" &&
                     <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => act(`/service-workflow/pos/${r.id}/submit`, `${r.po_no} submitted for approval`)} data-testid={`svc-po-submit-${r.po_no}`}>Submit</Button>}
                   {caps.sr_approver && r.status === "pending_approval" &&
@@ -183,6 +202,23 @@ export default function ServicePos() {
       <RowAttachments open={!!docsFor} onOpenChange={(o) => !o && setDocsFor(null)}
         parentType="service_pos" parentId={docsFor?.id} recordTitle={docsFor?.po_no} testidPrefix="svc-po-attach" />
       <TermsMasterDialog open={tncOpen} onOpenChange={setTncOpen} />
+
+      <Dialog open={!!mailFor} onOpenChange={(o) => !o && setMailFor(null)}>
+        <DialogContent className="max-w-md rounded-sm" data-testid="svc-po-mail-dialog">
+          <DialogHeader><DialogTitle>Email {mailFor?.po_no} to {mailFor?.vendor_name}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div><Label className="text-xs">Recipient Email *</Label>
+              <Input type="email" value={mail.to} onChange={(e) => setMail({ ...mail, to: e.target.value })} placeholder="vendor@company.com" data-testid="svc-po-mail-to" /></div>
+            <div><Label className="text-xs">Message (optional, added to the email body)</Label>
+              <Textarea rows={2} value={mail.message} onChange={(e) => setMail({ ...mail, message: e.target.value })} data-testid="svc-po-mail-message" /></div>
+            <p className="text-[11px] text-muted-foreground">The PO PDF (with Terms &amp; Conditions) is attached automatically and sent from the company mailbox.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMailFor(null)}>Cancel</Button>
+            <Button disabled={busy || !mail.to.includes("@")} onClick={sendMail} data-testid="svc-po-mail-send"><Mail className="h-3.5 w-3.5 mr-1" /> Send PO</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

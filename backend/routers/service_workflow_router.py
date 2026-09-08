@@ -767,6 +767,62 @@ async def service_po_pdf(po_id: str,
                     headers={"Content-Disposition": f'inline; filename="{po["po_no"]}.pdf"'})
 
 
+class EmailPoIn(BaseModel):
+    to: str = ""
+    message: str = ""
+
+
+@router.post("/pos/{po_id}/email")
+async def email_service_po(po_id: str, p: EmailPoIn, request: Request,
+                           user: dict = Depends(get_current_user)):
+    """One-click: email the Service PO PDF to the vendor via the shared M365 mailbox."""
+    _require_role(user, PROC_ROLES, "email Service POs")
+    po = await _po(po_id)
+    if po["status"] in ("draft", "pending_approval"):
+        raise HTTPException(400, "Only approved/issued POs can be emailed to the vendor")
+    vendor = await db.vendors.find_one({"id": po.get("vendor_id")}, {"_id": 0})
+    to = (p.to or (vendor or {}).get("email") or "").strip()
+    if "@" not in to:
+        raise HTTPException(400, "No vendor email on record — enter a recipient email")
+    from m365_email import shared_mailbox_configured, SHARED_USERNAME, SHARED_DISPLAY_NAME
+    if not shared_mailbox_configured():
+        raise HTTPException(503, "Shared company mailbox is not configured — set it up under Email Settings")
+    sr = await db.svc_requests.find_one({"id": po.get("sr_id")}, {"_id": 0})
+    from pdf_generator import render_service_po_pdf
+    pdf = render_service_po_pdf(po, vendor, sr)
+    import base64
+    subject = f"Purchase Order {po['po_no']} — INDIAN TRADE LINKS"
+    extra = f"<p>{p.message.strip()}</p>" if p.message.strip() else ""
+    html = (f"<div style='font-family:Arial,sans-serif;font-size:14px;color:#1f2937'>"
+            f"<p>Dear {po.get('vendor_name')},</p>"
+            f"<p>Please find attached our Purchase Order <b>{po['po_no']}</b> dated {po.get('po_date')} "
+            f"for <b>{(sr or {}).get('service_category') or 'services'}</b> "
+            f"(total value ₹{float(po.get('total_value') or 0):,.2f}).</p>{extra}"
+            f"<p>Kindly acknowledge receipt and confirm the service schedule.</p>"
+            f"<p>Regards,<br/>Procurement Team<br/>INDIAN TRADE LINKS PRIVATE LIMITED</p></div>")
+    from routers.email_router import _queue_outbox, _send_and_log
+    outbox_id = await _queue_outbox(
+        sender_type="shared", sender_user_id=user["id"], sender_email=SHARED_USERNAME,
+        sender_display_name=SHARED_DISPLAY_NAME, to=[to], cc=[], bcc=[],
+        subject=subject, body_text=f"Purchase Order {po['po_no']} attached.", body_html=html,
+        reply_to=None,
+        attachments_inline=[{"filename": f"{po['po_no']}.pdf",
+                             "content_b64": base64.b64encode(pdf).decode(),
+                             "content_type": "application/pdf"}],
+        file_ids=[],
+        related={"entity_type": "service_po", "entity_id": po_id,
+                 "entity_ref": po["po_no"], "vendor_name": po.get("vendor_name")},
+        queued_by=user["id"])
+    import asyncio
+    asyncio.create_task(_send_and_log(outbox_id))
+    await db.svc_pos.update_one({"id": po_id}, {
+        "$set": {"emailed_to": to, "emailed_at": now_iso(), "updated_at": now_iso()},
+        "$push": {"history": _hist(user, "po_emailed", f"PO PDF emailed to {to}")}})
+    await audit(user=user, action="svc_po_email", resource="service_workflow",
+                record_id=po_id, after={"po_no": po["po_no"], "to": to}, ip=_ip(request))
+    return {"ok": True, "to": to, "outbox_id": outbox_id}
+
+
 # ══════════════════════════════ SRN ══════════════════════════════
 class SrnIn(BaseModel):
     receipt_date: str = ""

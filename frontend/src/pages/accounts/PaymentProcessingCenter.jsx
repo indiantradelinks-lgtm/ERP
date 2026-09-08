@@ -281,6 +281,8 @@ export default function PaymentProcessingCenter() {
   );
 
   const paidThisMonth = byStage.paid.reduce((s, r) => s + Number(r.verification?.verified_amount || 0), 0);
+  const upiRows = rows.filter((r) => r.payment_mode === "UPI" && String(r.priority || "").toLowerCase() === "high"
+    && ["pending_verification", "verified", "rejected"].includes(r.pay_stage));
 
   return (
     <div className="p-4 md:p-6 space-y-4" data-testid="payment-processing-center">
@@ -300,6 +302,42 @@ export default function PaymentProcessingCenter() {
         <Kpi label="In Bank File" value={byStage.bank.length} icon={FileSpreadsheet} testid="ppc-kpi-bank" />
         <Kpi label="Paid" value={byStage.paid.length} sub={inr(paidThisMonth)} icon={IndianRupee} testid="ppc-kpi-paid" />
       </div>
+
+      {upiRows.length > 0 && (
+        <div className="border-2 border-amber-400 rounded-sm bg-amber-50/60" data-testid="ppc-upi-lane">
+          <div className="px-3 py-2 border-b border-amber-300 flex items-center justify-between">
+            <div className="text-sm font-semibold text-amber-900">⚡ UPI Quick Pay — HIGH priority ({upiRows.length})</div>
+            <div className="text-[11px] text-amber-800">Requester chose UPI · verify &amp; mark paid directly with the UPI transaction reference — no bank file needed</div>
+          </div>
+          <Table>
+            <TableHeader><TableRow>
+              <TableHead>Request No</TableHead><TableHead>Project</TableHead><TableHead>Paid To</TableHead>
+              <TableHead>Amount</TableHead><TableHead>Stage</TableHead><TableHead className="text-right">Quick Action</TableHead>
+            </TableRow></TableHeader>
+            <TableBody>
+              {upiRows.map((r) => {
+                const v = r.verification || {};
+                const net = v.net_payable ?? v.verified_amount ?? r.est_value;
+                return (
+                  <TableRow key={r.id} data-testid={`ppc-upi-row-${r.request_no}`}>
+                    <TableCell className="font-mono text-xs">{r.request_no}<div className="text-[10px] text-amber-700 font-sans">UPI · HIGH</div></TableCell>
+                    <TableCell className="text-xs">{r.project_code}</TableCell>
+                    <TableCell className="text-xs">{v.vendor_name || r.vendor || r.employee_name || "—"}</TableCell>
+                    <TableCell className="text-xs font-semibold whitespace-nowrap">{inr(net)}</TableCell>
+                    <TableCell>{STAGE_BADGE[r.pay_stage] || r.pay_stage}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap">
+                      {canWrite && r.pay_stage !== "verified" &&
+                        <Button size="sm" className="rounded-sm h-7" onClick={() => openVerify(r)} data-testid={`ppc-upi-verify-${r.request_no}`}>Verify</Button>}
+                      {canWrite && r.pay_stage === "verified" &&
+                        <Button size="sm" className="rounded-sm h-7 bg-amber-600 hover:bg-amber-700" onClick={() => setPayFor(r)} data-testid={`ppc-upi-pay-${r.request_no}`}>Quick Pay (UPI)</Button>}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       <Tabs defaultValue="pending">
         <TabsList className="rounded-sm">
