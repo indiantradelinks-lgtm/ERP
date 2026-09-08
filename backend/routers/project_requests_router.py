@@ -179,6 +179,7 @@ class RequestIn(BaseModel):
     settlement_mode: Optional[str] = None  # petty_cash | employee_reimbursement | vendor_payable
     paid_to_type: Optional[str] = None     # vendor | person
     payment_mode: Optional[str] = None     # UPI | Accounts (mandatory when priority=high on payment requests)
+    upi_any_name: Optional[str] = None     # manual payee name for UPI mode (not in DB)
 
 
 class ActionIn(BaseModel):
@@ -406,6 +407,7 @@ async def create_request(p: RequestIn, request: Request,
         "paid_to_type": ("person" if p.request_type == "self_expense" else p.paid_to_type),
         "need_by": p.need_by, "priority": p.priority, "description": p.description or "",
         "payment_mode": p.payment_mode if meta["payment"] else None,
+        "upi_any_name": (p.upi_any_name.strip() if p.upi_any_name else None) if (meta["payment"] and p.payment_mode == "UPI") else None,
         "employee_id": (emp or {}).get("id"),
         "employee_code": (emp or {}).get("employee_id") or (emp or {}).get("emp_code"),
         "employee_name": (emp or {}).get("name") or ((user.get("name") or user.get("email")) if p.request_type == "self_expense" else None),

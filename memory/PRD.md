@@ -5840,3 +5840,12 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 1. Payment Processing Center: amber "⚡ UPI Quick Pay — HIGH priority" lane (ppc-upi-lane) above the stage tabs — filters queue rows with payment_mode=UPI & priority=high & stage pending_verification/verified/rejected; quick Verify + "Quick Pay (UPI)" (mark-paid direct from verified with UPI ref in UTR field, no bank file). Lane hidden when empty.
 2. POST /service-workflow/pos/{id}/email (PROC roles; blocked for draft/pending_approval): renders the Service PO PDF, sends via shared M365 mailbox (email_router._queue_outbox with attachments_inline b64 PDF + _send_and_log), records emailed_to/emailed_at + history entry + audit. UI: Mail icon on Service POs rows (green when already emailed, tooltip shows last send) → dialog svc-po-mail-dialog with recipient (prefilled from vendor master via meta) + optional message.
 - Tested: full curl chain (HIGH+UPI request → queue exposes mode/priority → verify → mark-paid with UPI ref) + real email SENT (outbox status 'sent', 1 PDF attachment, SPO-2026-0001) + UI screenshots of lane and dialog. Test queue rows cleaned.
+
+
+## UPI Any Name field (Sept 2026)
+- Added `upi_any_name` optional field to Payment Requests — visible only when Payment Mode = UPI.
+- Allows manual entry of payee names not in the employee/vendor database (e.g., ad-hoc drivers, casual workers).
+- Backend: `RequestIn.upi_any_name` accepted; persisted only when `payment_mode == "UPI"`, otherwise stored as null.
+- Frontend: Input field inside the amber payment mode block, appears/disappears with UPI radio toggle. `data-testid="req-form-upi-any-name"`.
+- Detail view: Shows "UPI Any Name" tile when the field is present.
+- Payment Processing Center: `upi_any_name` used as fallback name in both the UPI Quick Pay lane and the regular payment table. "Manual name (UPI)" sub-label shown when the name comes from this field.

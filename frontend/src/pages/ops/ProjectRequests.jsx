@@ -29,7 +29,7 @@ const blank = () => ({ id: newId(), project_code: "", project_id: "", request_ty
   priority: "medium", description: "", items: [blankItem()], vendor: "", vehicle_ref: "", payment_mode: "",
   period_from: "", period_to: "", monthly_rate: "", months: "", from_location: "", to_location: "", amount: "", remarks: "",
   cost_center_id: "", site_location: "", material_category_id: "", employee_id: "", self_for_project: false,
-  expense_type: "", expense_date: new Date().toISOString().slice(0, 10), settlement_mode: "vendor_payable", paid_to_type: "vendor" });
+  expense_type: "", expense_date: new Date().toISOString().slice(0, 10), settlement_mode: "vendor_payable", paid_to_type: "vendor", upi_any_name: "" });
 
 const PAY_STAGE = {
   pending_verification: ["Accounts: Pending Verification", "border-amber-300 text-amber-900 bg-amber-50"],
@@ -236,6 +236,7 @@ export default function ProjectRequests() {
       }
       const payload = { ...form,
         payment_mode: form.payment_mode || null,
+        upi_any_name: form.payment_mode === "UPI" && form.upi_any_name?.trim() ? form.upi_any_name.trim() : null,
         amount: benef.length ? benef.reduce((a, b) => a + (Number(b.amount) || 0), 0) : (form.amount ? Number(form.amount) : null),
         beneficiaries: benef.length ? benef.filter((b) => (b.employee_name || "").trim() && Number(b.amount) > 0)
           .map((b) => ({ ...b, amount: Number(b.amount) })) : null,
@@ -621,6 +622,13 @@ export default function ProjectRequests() {
                     </label>
                   ))}
                 </div>
+                {form.payment_mode === "UPI" && (
+                  <div className="mt-2">
+                    <Label className="text-[10px] uppercase tracking-wider text-amber-800">Any Name (manual entry — if payee is not in the database)</Label>
+                    <Input value={form.upi_any_name} onChange={(e) => setForm({ ...form, upi_any_name: e.target.value })}
+                      placeholder="Enter payee name manually…" className="h-9 rounded-sm mt-1" data-testid="req-form-upi-any-name" />
+                  </div>
+                )}
               </div>
             )}
 
@@ -814,6 +822,7 @@ export default function ProjectRequests() {
                   {[["Status", (STATUS[detail.status] || [detail.status])[0]], ["Est. Value", inr(detail.est_value)],
                     ["Priority", detail.priority], ["Need By", detail.need_by || "—"],
                     ...(detail.payment_mode ? [["Payment Mode", detail.payment_mode]] : []),
+                    ...(detail.upi_any_name ? [["UPI Any Name", detail.upi_any_name]] : []),
                     ["Cost Center", detail.cost_center_label || "Auto (project default)"],
                     ["Site Location", detail.site_location || "—"],
                     ["Paid To", detail.paid_to_type === "person" ? `Person${detail.employee_name ? ` — ${detail.employee_name}` : ""}` : (detail.vendor ? `Vendor — ${detail.vendor}` : detail.vendor || "—")],

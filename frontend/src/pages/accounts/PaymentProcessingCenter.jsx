@@ -28,7 +28,7 @@ const STAGE_BADGE = {
 
 const blankVerify = (row) => ({
   decision: "verified",
-  vendor_name: row?.vendor || row?.employee_bank?.beneficiary_name || row?.employee_name || "",
+  vendor_name: row?.vendor || row?.employee_bank?.beneficiary_name || row?.employee_name || row?.upi_any_name || "",
   vendor_account_no: row?.employee_bank?.account_no || "",
   ifsc: (row?.employee_bank?.ifsc || "").toUpperCase(),
   bank_name: row?.employee_bank?.bank_name || "",
@@ -269,8 +269,9 @@ export default function PaymentProcessingCenter() {
         {r.project_manager && <div className="text-[10px] text-slate-500 whitespace-nowrap">PM: {r.project_manager}</div>}
       </TableCell>
       <TableCell className="text-xs">
-        <div>{r.verification?.vendor_name || r.vendor || (r.employee_name ? "" : "—")}</div>
+        <div>{r.verification?.vendor_name || r.vendor || (r.employee_name ? "" : (r.upi_any_name || "—"))}</div>
         {r.employee_name && <div className="text-[10px] text-slate-500 whitespace-nowrap">{r.employee_code ? `${r.employee_code} · ` : ""}{r.employee_name}</div>}
+        {r.upi_any_name && !r.vendor && !r.employee_name && <div className="text-[10px] text-amber-600">Manual name (UPI)</div>}
       </TableCell>
     </>
   );
@@ -322,7 +323,7 @@ export default function PaymentProcessingCenter() {
                   <TableRow key={r.id} data-testid={`ppc-upi-row-${r.request_no}`}>
                     <TableCell className="font-mono text-xs">{r.request_no}<div className="text-[10px] text-amber-700 font-sans">UPI · HIGH</div></TableCell>
                     <TableCell className="text-xs">{r.project_code}</TableCell>
-                    <TableCell className="text-xs">{v.vendor_name || r.vendor || r.employee_name || "—"}</TableCell>
+                    <TableCell className="text-xs">{v.vendor_name || r.vendor || r.employee_name || r.upi_any_name || "—"}{r.upi_any_name && !r.vendor && !r.employee_name ? <div className="text-[10px] text-amber-600">Manual name (UPI)</div> : ""}</TableCell>
                     <TableCell className="text-xs font-semibold whitespace-nowrap">{inr(net)}</TableCell>
                     <TableCell>{STAGE_BADGE[r.pay_stage] || r.pay_stage}</TableCell>
                     <TableCell className="text-right whitespace-nowrap">
