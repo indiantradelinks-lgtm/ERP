@@ -270,15 +270,18 @@ export function ClientInvoicesView() {
 /* ═══════════════════ Receipts ═══════════════════ */
 export function ReceiptsView() {
   const [rows, setRows] = useState([]);
-  const [invoices, setInvoices] = useState([]);
+  const [receivable, setReceivable] = useState([]);
   const [clients, setClients] = useState([]);
   const [projects, setProjects] = useState([]);
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editFiles, setEditFiles] = useState([]);
   const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [form, setForm] = useState(newReceiptFormState());
+  const [tab, setTab] = useState("pending");
+  const [form, setForm] = useState(newForm());
 
-  function newReceiptFormState() {
+  function newForm() {
     return {
       receipt_date: new Date().toISOString().slice(0, 10),
       client_id: "", client_name: "", project_id: "", project_code: "",
@@ -290,23 +293,61 @@ export function ReceiptsView() {
   }
 
   const load = () => api.get("/billing/receipts").then(r => setRows(r.data || []));
-  const loadInvoices = () => api.get("/billing/invoices?status=approved").then(r => setInvoices(r.data || []));
+  const loadReceivable = () => api.get("/billing/invoices/receivable").then(r => setReceivable(r.data || [])).catch(() => {});
   const loadClients = () => api.get("/clients").then(r => setClients(r.data || [])).catch(() => {});
   const loadProjects = () => api.get("/projects").then(r => setProjects(r.data || [])).catch(() => {});
-  useEffect(() => { load(); loadClients(); loadProjects(); }, []);
+  useEffect(() => { load(); loadReceivable(); loadClients(); loadProjects(); }, []);
 
-  const openCreate = () => {
-    loadInvoices();
-    setForm(newReceiptFormState());
+  /* ── Open form pre-filled from a specific invoice ── */
+  const recordPayment = (inv) => {
+    setForm({
+      ...newForm(),
+      client_id: inv.client_id || "",
+      client_name: inv.client_name || "",
+      project_id: inv.project_id || "",
+      project_code: inv.project_code || "",
+      invoice_ids: [inv.id],
+      amount: inv.outstanding || 0,
+    });
     setUploadedFiles([]);
     setOpen(true);
   };
 
+  /* ── Open blank form ── */
+  const openBlank = () => {
+    setForm(newForm());
+    setUploadedFiles([]);
+    setOpen(true);
+  };
+
+  /* ── Detail view ── */
   const openDetail = async (r) => {
     try {
       const { data } = await api.get(`/billing/receipts/${r.id}`);
       setDetail(data);
     } catch { setDetail(r); }
+    setEditMode(false);
+    setEditFiles([]);
+  };
+
+  /* ── Edit / upload docs on existing receipt ── */
+  const saveEdit = async () => {
+    if (!detail) return;
+    try {
+      const body = {
+        txn_reference: detail.txn_reference || "",
+        mode: detail.mode || "Bank",
+        bank_account: detail.bank_account || "",
+        remarks: detail.remarks || "",
+        file_ids: [...(detail.file_ids || []), ...editFiles.map(f => f.id)],
+      };
+      await api.patch(`/billing/receipts/${detail.id}`, body);
+      toast.success("Receipt updated");
+      setEditMode(false); setEditFiles([]);
+      const { data } = await api.get(`/billing/receipts/${detail.id}`);
+      setDetail(data);
+      load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Update failed"); }
   };
 
   const totalAdj = Number(form.amount || 0) + Number(form.tds_deducted || 0) + Number(form.retention_deducted || 0) + Number(form.other_deduction || 0);
@@ -328,101 +369,206 @@ export function ReceiptsView() {
       const payload = { ...form, file_ids: uploadedFiles.map(f => f.id) };
       await api.post("/billing/receipts", payload);
       toast.success("Receipt posted + JE created");
-      setOpen(false); load();
+      setOpen(false); load(); loadReceivable();
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
 
   const clientProjects = projects.filter(p => !form.client_id || (p.client_id === form.client_id || p.client === form.client_name));
-  const eligibleInvoices = invoices.filter(i => {
+  const allInvoices = receivable;
+  const eligibleInvoices = allInvoices.filter(i => {
     if (form.client_id && i.client_id !== form.client_id && i.client_name !== form.client_name) return false;
     if (!form.client_id && form.client_name && i.client_name !== form.client_name) return false;
     return true;
   });
 
+  const totalReceivable = receivable.reduce((s, i) => s + (i.outstanding || 0), 0);
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-base">Receipts <span className="text-xs text-slate-500 font-normal">({rows.length})</span></CardTitle>
+        <CardTitle className="text-base">Receipts & Collections</CardTitle>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={load}><RefreshCcw className="h-3.5 w-3.5 mr-1" />Refresh</Button>
-          <Button size="sm" onClick={openCreate} data-testid="bill-rcpt-add"><Plus className="h-3.5 w-3.5 mr-1" />New Receipt</Button>
+          <Button size="sm" variant="outline" onClick={() => { load(); loadReceivable(); }}><RefreshCcw className="h-3.5 w-3.5 mr-1" />Refresh</Button>
+          <Button size="sm" onClick={openBlank} data-testid="bill-rcpt-add"><Plus className="h-3.5 w-3.5 mr-1" />New Receipt</Button>
         </div>
       </CardHeader>
       <CardContent>
-        <div className="border rounded-md overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-xs uppercase text-slate-600">
-              <tr>
-                <th className="text-left px-3 py-2">Receipt #</th>
-                <th className="text-left px-3 py-2">Created</th>
-                <th className="text-left px-3 py-2">Date</th>
-                <th className="text-left px-3 py-2">Client</th>
-                <th className="text-left px-3 py-2">Project</th>
-                <th className="text-left px-3 py-2">Mode</th>
-                <th className="text-left px-3 py-2">UTR/Ref</th>
-                <th className="text-right px-3 py-2">Amount</th>
-                <th className="text-right px-3 py-2">TDS</th>
-                <th className="text-right px-3 py-2">Retention</th>
-                <th className="text-right px-3 py-2">Adjusted</th>
-                <th className="text-center px-3 py-2">Files</th>
-                <th className="text-left px-3 py-2">JE</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(r => (
-                <tr key={r.id} className="border-t hover:bg-slate-50 cursor-pointer" data-testid={`bill-rcpt-row-${r.receipt_no}`} onClick={() => openDetail(r)}>
-                  <td className="px-3 py-1.5 font-mono text-xs text-blue-700 underline">{r.receipt_no}</td>
-                  <td className="px-3 py-1.5 text-xs whitespace-nowrap">{r.created_at ? <>{r.created_at.slice(0, 10)}<div className="text-[10px] text-muted-foreground">{r.created_at.slice(11, 16)}</div></> : "—"}</td>
-                  <td className="px-3 py-1.5 font-mono text-xs">{r.receipt_date}</td>
-                  <td className="px-3 py-1.5 text-xs">{r.client_name}</td>
-                  <td className="px-3 py-1.5 font-mono text-[10px]">{r.project_code || "—"}</td>
-                  <td className="px-3 py-1.5 text-xs">{r.mode}</td>
-                  <td className="px-3 py-1.5 font-mono text-xs">{r.txn_reference || "—"}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{fmt(r.amount)}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{fmt(r.tds_deducted)}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{fmt(r.retention_deducted)}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums font-semibold">{fmt(r.total_adjusted)}</td>
-                  <td className="px-3 py-1.5 text-center">{(r.file_ids?.length || 0) > 0 ? <Paperclip className="h-3.5 w-3.5 text-amber-600 inline" /> : "—"}</td>
-                  <td className="px-3 py-1.5 font-mono text-[10px]">{r.je_voucher_number || "—"}</td>
-                </tr>
-              ))}
-              {rows.length === 0 && <tr><td colSpan={13} className="text-center py-6 text-xs text-slate-400">No receipts yet. Click "New Receipt" to record a payment received.</td></tr>}
-            </tbody>
-          </table>
+        {/* Tabs */}
+        <div className="flex gap-1 mb-3 border-b">
+          {[["pending", `Pending Invoices (${receivable.length})`], ["posted", `Posted Receipts (${rows.length})`]].map(([k, lbl]) => (
+            <button key={k} onClick={() => setTab(k)} data-testid={`rcpt-tab-${k}`}
+              className={`px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${tab === k ? "border-amber-600 text-amber-700" : "border-transparent text-slate-500 hover:text-slate-700"}`}>
+              {lbl}
+            </button>
+          ))}
+          <div className="ml-auto text-xs text-slate-500 py-1.5">Total Receivable: <span className="font-bold text-amber-700 tabular-nums">{fmt(totalReceivable)}</span></div>
         </div>
+
+        {/* ── TAB: Pending Invoices ── */}
+        {tab === "pending" && (
+          <div className="border rounded-md overflow-hidden">
+            <table className="w-full text-sm" data-testid="rcpt-pending-table">
+              <thead className="bg-amber-50 text-xs uppercase text-amber-800">
+                <tr>
+                  <th className="text-left px-3 py-2">Invoice #</th>
+                  <th className="text-left px-3 py-2">Date</th>
+                  <th className="text-left px-3 py-2">Client</th>
+                  <th className="text-left px-3 py-2">Project</th>
+                  <th className="text-left px-3 py-2">Type</th>
+                  <th className="text-right px-3 py-2">Invoice Amt</th>
+                  <th className="text-right px-3 py-2">Paid</th>
+                  <th className="text-right px-3 py-2 text-amber-900 font-bold">Outstanding</th>
+                  <th className="text-left px-3 py-2">Status</th>
+                  <th className="text-center px-3 py-2">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {receivable.map(inv => (
+                  <tr key={inv.id} className="border-t hover:bg-amber-50/40" data-testid={`rcpt-inv-row-${inv.invoice_no}`}>
+                    <td className="px-3 py-1.5 font-mono text-xs font-semibold">{inv.invoice_no}</td>
+                    <td className="px-3 py-1.5 font-mono text-xs">{inv.invoice_date}</td>
+                    <td className="px-3 py-1.5 text-xs">{inv.client_name}</td>
+                    <td className="px-3 py-1.5 font-mono text-[10px]">{inv.project_code || "—"}</td>
+                    <td className="px-3 py-1.5 text-xs">{inv.invoice_type}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-xs">{fmt(inv.net_receivable || inv.amount)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-xs text-emerald-600">{fmt(inv.paid_amount || 0)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-xs font-bold text-amber-700">{fmt(inv.outstanding)}</td>
+                    <td className="px-3 py-1.5">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${inv.status === "partially_paid" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}`}>
+                        {inv.status === "partially_paid" ? "Partial" : "Unpaid"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-1.5 text-center">
+                      <Button size="sm" variant="default" className="h-7 text-[11px] px-3" onClick={() => recordPayment(inv)} data-testid={`rcpt-record-pay-${inv.invoice_no}`}>
+                        <CheckCircle2 className="h-3 w-3 mr-1" />Record Payment
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+                {receivable.length === 0 && <tr><td colSpan={10} className="text-center py-8 text-sm text-slate-400">All invoices are fully paid. No outstanding receivables.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* ── TAB: Posted Receipts ── */}
+        {tab === "posted" && (
+          <div className="border rounded-md overflow-hidden">
+            <table className="w-full text-sm" data-testid="rcpt-posted-table">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-600">
+                <tr>
+                  <th className="text-left px-3 py-2">Receipt #</th>
+                  <th className="text-left px-3 py-2">Created</th>
+                  <th className="text-left px-3 py-2">Date</th>
+                  <th className="text-left px-3 py-2">Client</th>
+                  <th className="text-left px-3 py-2">Project</th>
+                  <th className="text-left px-3 py-2">Mode</th>
+                  <th className="text-left px-3 py-2">UTR/Ref</th>
+                  <th className="text-right px-3 py-2">Amount</th>
+                  <th className="text-right px-3 py-2">TDS</th>
+                  <th className="text-right px-3 py-2">Retention</th>
+                  <th className="text-right px-3 py-2">Adjusted</th>
+                  <th className="text-center px-3 py-2">Files</th>
+                  <th className="text-left px-3 py-2">JE</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr key={r.id} className="border-t hover:bg-slate-50 cursor-pointer" data-testid={`bill-rcpt-row-${r.receipt_no}`} onClick={() => openDetail(r)}>
+                    <td className="px-3 py-1.5 font-mono text-xs text-blue-700 underline">{r.receipt_no}</td>
+                    <td className="px-3 py-1.5 text-xs whitespace-nowrap">{r.created_at ? <>{r.created_at.slice(0, 10)}<div className="text-[10px] text-muted-foreground">{r.created_at.slice(11, 16)}</div></> : "—"}</td>
+                    <td className="px-3 py-1.5 font-mono text-xs">{r.receipt_date}</td>
+                    <td className="px-3 py-1.5 text-xs">{r.client_name}</td>
+                    <td className="px-3 py-1.5 font-mono text-[10px]">{r.project_code || "—"}</td>
+                    <td className="px-3 py-1.5 text-xs">{r.mode}</td>
+                    <td className="px-3 py-1.5 font-mono text-xs">{r.txn_reference || "—"}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{fmt(r.amount)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{fmt(r.tds_deducted)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{fmt(r.retention_deducted)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums font-semibold">{fmt(r.total_adjusted)}</td>
+                    <td className="px-3 py-1.5 text-center">{(r.file_ids?.length || 0) > 0 ? <Paperclip className="h-3.5 w-3.5 text-amber-600 inline" /> : "—"}</td>
+                    <td className="px-3 py-1.5 font-mono text-[10px]">{r.je_voucher_number || "—"}</td>
+                  </tr>
+                ))}
+                {rows.length === 0 && <tr><td colSpan={13} className="text-center py-6 text-xs text-slate-400">No receipts posted yet.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
       </CardContent>
 
-      {/* ─── New Receipt Dialog ─── */}
+      {/* ─── New Receipt / Record Payment Dialog ─── */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>New Receipt</DialogTitle><DialogDescription>Record a payment received from a client against open invoices.</DialogDescription></DialogHeader>
-          <div className="grid grid-cols-3 gap-2">
-            <Field label="Date *"><Input type="date" value={form.receipt_date} onChange={e => setForm({ ...form, receipt_date: e.target.value })} data-testid="bill-rcpt-date" /></Field>
-            <Field label="Client *">
-              <select className="h-9 w-full rounded-sm border bg-background px-2 text-sm" value={form.client_id}
-                onChange={e => selectClient(e.target.value)} data-testid="bill-rcpt-client">
-                <option value="">— select client —</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </Field>
-            <Field label="Project">
-              <select className="h-9 w-full rounded-sm border bg-background px-2 text-sm" value={form.project_id}
-                onChange={e => selectProject(e.target.value)} data-testid="bill-rcpt-project">
-                <option value="">— select project —</option>
-                {clientProjects.map(p => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
-              </select>
-            </Field>
-            <Field label="Mode *">
+          <DialogHeader>
+            <DialogTitle>{form.invoice_ids.length > 0 ? "Record Payment Received" : "New Receipt"}</DialogTitle>
+            <DialogDescription>
+              {form.invoice_ids.length > 0
+                ? "Invoice details auto-filled. Enter payment details and upload receipt document below."
+                : "Record a payment received from a client against open invoices."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Auto-filled invoice summary (when opened from an invoice) */}
+          {form.invoice_ids.length > 0 && (
+            <div className="border rounded-md p-3 bg-amber-50/60 mb-2" data-testid="rcpt-invoice-summary">
+              <Label className="text-[10px] uppercase tracking-wider text-amber-800 mb-1.5 block">Invoice Details (Auto-filled)</Label>
+              {eligibleInvoices.filter(i => form.invoice_ids.includes(i.id)).map(inv => (
+                <div key={inv.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                  <span className="font-mono font-bold">{inv.invoice_no}</span>
+                  <span className="text-slate-500">{inv.invoice_date}</span>
+                  <span>{inv.client_name}</span>
+                  {inv.project_code && <span className="font-mono text-[10px] text-slate-500">{inv.project_code}</span>}
+                  <span className="text-slate-400">{inv.invoice_type}</span>
+                  <span className="ml-auto font-semibold tabular-nums">Invoice: {fmt(inv.net_receivable || inv.amount)}</span>
+                  <span className="text-emerald-600 tabular-nums">Paid: {fmt(inv.paid_amount || 0)}</span>
+                  <span className="text-amber-700 font-bold tabular-nums">Outstanding: {fmt(inv.outstanding)}</span>
+                </div>
+              ))}
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+                <span><strong>Client:</strong> {form.client_name}</span>
+                {form.project_code && <span><strong>Project:</strong> {form.project_code}</span>}
+              </div>
+            </div>
+          )}
+
+          {/* Client/Project selectors (only when no invoice pre-selected) */}
+          {form.invoice_ids.length === 0 && (
+            <div className="grid grid-cols-3 gap-2">
+              <Field label="Date *"><Input type="date" value={form.receipt_date} onChange={e => setForm({ ...form, receipt_date: e.target.value })} data-testid="bill-rcpt-date" /></Field>
+              <Field label="Client *">
+                <select className="h-9 w-full rounded-sm border bg-background px-2 text-sm" value={form.client_id}
+                  onChange={e => selectClient(e.target.value)} data-testid="bill-rcpt-client">
+                  <option value="">— select client —</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </Field>
+              <Field label="Project">
+                <select className="h-9 w-full rounded-sm border bg-background px-2 text-sm" value={form.project_id}
+                  onChange={e => selectProject(e.target.value)} data-testid="bill-rcpt-project">
+                  <option value="">— select project —</option>
+                  {clientProjects.map(p => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
+                </select>
+              </Field>
+            </div>
+          )}
+
+          {/* Date + Payment Details */}
+          <div className="grid grid-cols-3 gap-2 mt-2">
+            {form.invoice_ids.length > 0 && (
+              <Field label="Receipt Date *"><Input type="date" value={form.receipt_date} onChange={e => setForm({ ...form, receipt_date: e.target.value })} data-testid="bill-rcpt-date" /></Field>
+            )}
+            <Field label="Payment Mode *">
               <select className="h-9 w-full rounded-sm border bg-background px-2 text-sm" value={form.mode} onChange={e => setForm({ ...form, mode: e.target.value })} data-testid="bill-rcpt-mode">
                 {["Bank", "Cash", "UPI", "NEFT", "RTGS", "IMPS", "Cheque"].map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </Field>
-            <Field label="Bank Account"><Input value={form.bank_account} onChange={e => setForm({ ...form, bank_account: e.target.value })} data-testid="bill-rcpt-bank" /></Field>
-            <Field label="UTR / Cheque #"><Input value={form.txn_reference} onChange={e => setForm({ ...form, txn_reference: e.target.value })} data-testid="bill-rcpt-utr" /></Field>
+            <Field label="Bank Account"><Input value={form.bank_account} onChange={e => setForm({ ...form, bank_account: e.target.value })} placeholder="Account name or number" data-testid="bill-rcpt-bank" /></Field>
+            <Field label="UTR / Cheque / Txn Ref"><Input value={form.txn_reference} onChange={e => setForm({ ...form, txn_reference: e.target.value })} placeholder="Enter reference number" data-testid="bill-rcpt-utr" /></Field>
           </div>
 
-          {/* Invoice selection */}
-          {(form.client_id || form.client_name) && eligibleInvoices.length > 0 && (
+          {/* Invoice multi-select (only for blank form) */}
+          {form.invoice_ids.length === 0 && (form.client_id || form.client_name) && eligibleInvoices.length > 0 && (
             <div className="mt-3">
               <Label className="text-[10px] uppercase tracking-wider mb-1 block">Apply to invoices (unpaid / partially paid)</Label>
               <div className="max-h-40 overflow-y-auto border rounded-md text-xs">
@@ -440,8 +586,9 @@ export function ReceiptsView() {
             </div>
           )}
 
+          {/* Amounts */}
           <div className="grid grid-cols-4 gap-2 mt-3">
-            <Field label="Amount Received *"><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: Number(e.target.value) })} data-testid="bill-rcpt-amount" /></Field>
+            <Field label="Amount Received (₹) *"><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: Number(e.target.value) })} data-testid="bill-rcpt-amount" /></Field>
             <Field label="TDS Deducted"><Input type="number" value={form.tds_deducted} onChange={e => setForm({ ...form, tds_deducted: Number(e.target.value) })} data-testid="bill-rcpt-tds" /></Field>
             <Field label="Retention Held"><Input type="number" value={form.retention_deducted} onChange={e => setForm({ ...form, retention_deducted: Number(e.target.value) })} data-testid="bill-rcpt-retention" /></Field>
             <Field label="Other Deduction"><Input type="number" value={form.other_deduction} onChange={e => setForm({ ...form, other_deduction: Number(e.target.value) })} data-testid="bill-rcpt-other" /></Field>
@@ -453,9 +600,9 @@ export function ReceiptsView() {
           <Field label="Excess Reason (if total > outstanding)"><Input value={form.excess_reason} onChange={e => setForm({ ...form, excess_reason: e.target.value })} data-testid="bill-rcpt-excess" /></Field>
           <Field label="Remarks"><Input value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} data-testid="bill-rcpt-remarks" /></Field>
 
-          {/* File upload */}
-          <div className="mt-3">
-            <Label className="text-[10px] uppercase tracking-wider mb-1 block">Payment Proof / Receipt Attachment</Label>
+          {/* Upload payment receipt document */}
+          <div className="mt-3 border rounded-md p-3 bg-blue-50/30">
+            <Label className="text-[10px] uppercase tracking-wider mb-1 block text-blue-800">Upload Payment Receipt / Bank Statement</Label>
             <FileUploader folder="billing" parent_type="receipt" parent_id="new"
               accept=".pdf,.jpg,.jpeg,.png,.webp" files={uploadedFiles}
               onUploaded={(f) => setUploadedFiles(prev => [...prev, f])}
@@ -465,12 +612,12 @@ export function ReceiptsView() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={submit} data-testid="bill-rcpt-save">Post Receipt</Button>
+            <Button onClick={submit} data-testid="bill-rcpt-save"><CheckCircle2 className="h-4 w-4 mr-1" />Post Receipt</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ─── Receipt Detail Dialog ─── */}
+      {/* ─── Receipt Detail / Edit Dialog ─── */}
       <Dialog open={!!detail} onOpenChange={() => setDetail(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           {detail && (<>
@@ -517,7 +664,7 @@ export function ReceiptsView() {
                 <div className="border rounded-md mt-1 text-xs">
                   {detail.invoices.map(i => (
                     <div key={i.id} className="flex items-center justify-between px-3 py-1.5 border-b last:border-b-0">
-                      <span className="font-mono">{i.invoice_no}</span>
+                      <span className="font-mono font-semibold">{i.invoice_no}</span>
                       <span className="text-slate-400">{i.invoice_date}</span>
                       <span className={`font-semibold ${i.status === "paid" ? "text-emerald-600" : "text-amber-600"}`}>{i.status}</span>
                     </div>
@@ -529,7 +676,7 @@ export function ReceiptsView() {
             {/* Attached files */}
             {detail.files?.length > 0 && (
               <div className="mt-3">
-                <Label className="text-[10px] uppercase tracking-wider">Attached Files</Label>
+                <Label className="text-[10px] uppercase tracking-wider">Attached Payment Receipts</Label>
                 <div className="space-y-1 mt-1">
                   {detail.files.map(f => (
                     <a key={f.id} href={f.file_url} target="_blank" rel="noreferrer"
@@ -539,6 +686,37 @@ export function ReceiptsView() {
                       <ExternalLink className="h-3 w-3 text-slate-400" />
                     </a>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Edit / Upload more docs */}
+            {!editMode ? (
+              <Button size="sm" variant="outline" className="mt-3" onClick={() => setEditMode(true)} data-testid="rcpt-detail-edit">
+                <Upload className="h-3.5 w-3.5 mr-1" />Edit Payment Details / Upload Receipt
+              </Button>
+            ) : (
+              <div className="mt-3 border rounded-md p-3 bg-blue-50/40 space-y-2">
+                <Label className="text-[10px] uppercase tracking-wider text-blue-800">Update Payment Details</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  <Field label="Mode">
+                    <select className="h-9 w-full rounded-sm border bg-background px-2 text-sm" value={detail.mode} onChange={e => setDetail({ ...detail, mode: e.target.value })}>
+                      {["Bank", "Cash", "UPI", "NEFT", "RTGS", "IMPS", "Cheque"].map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="UTR / Ref"><Input value={detail.txn_reference || ""} onChange={e => setDetail({ ...detail, txn_reference: e.target.value })} /></Field>
+                  <Field label="Bank Account"><Input value={detail.bank_account || ""} onChange={e => setDetail({ ...detail, bank_account: e.target.value })} /></Field>
+                </div>
+                <Field label="Remarks"><Input value={detail.remarks || ""} onChange={e => setDetail({ ...detail, remarks: e.target.value })} /></Field>
+                <Label className="text-[10px] uppercase tracking-wider text-blue-800 mt-2 block">Upload Additional Payment Receipt</Label>
+                <FileUploader folder="billing" parent_type="receipt" parent_id={detail.id}
+                  accept=".pdf,.jpg,.jpeg,.png,.webp" files={editFiles}
+                  onUploaded={(f) => setEditFiles(prev => [...prev, f])}
+                  onDeleted={(fid) => setEditFiles(prev => prev.filter(x => x.id !== fid))}
+                  testidPrefix="rcpt-detail-upload" compact />
+                <div className="flex gap-2 mt-2">
+                  <Button size="sm" onClick={saveEdit} data-testid="rcpt-detail-save"><CheckCircle2 className="h-3.5 w-3.5 mr-1" />Save Changes</Button>
+                  <Button size="sm" variant="outline" onClick={() => { setEditMode(false); setEditFiles([]); }}>Cancel</Button>
                 </div>
               </div>
             )}

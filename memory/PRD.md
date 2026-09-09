@@ -5876,3 +5876,11 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 ### Testing
 - pytest: 10/10 backend tests passed (test_receipts_iter183.py)
 - Frontend: All views verified via Playwright (list, form, detail, reports)
+
+### Receipts Page Redesign — Invoice Auto-Fill + Payment Recording (Sept 2026)
+- **Two-tab layout**: "Pending Invoices" (outstanding > 0, with Record Payment buttons) + "Posted Receipts"
+- **Record Payment flow**: Click "Record Payment" on any pending invoice → form auto-fills client, project, amount from invoice. Accounts team only fills payment mode, UTR/bank reference, and uploads payment receipt document.
+- **New backend endpoint**: `GET /api/billing/invoices/receivable` returns all approved/partially_paid invoices with outstanding > 0.
+- **PATCH endpoint**: `PATCH /api/billing/receipts/{id}` allows accounts team to edit payment details (mode, UTR, bank, remarks) and upload additional file references after initial creation.
+- **Edit on existing receipts**: Detail dialog includes "Edit Payment Details / Upload Receipt" button expanding an inline edit form.
+- **Testing**: 15/15 backend pytest, 100% frontend verification (iteration_184).

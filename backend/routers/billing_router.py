@@ -278,6 +278,16 @@ async def list_invoices(invoice_type: Optional[str] = None,
     return rows
 
 
+@router.get("/invoices/receivable")
+async def list_receivable_invoices(user: dict = Depends(require_permission("accounting", "read"))):
+    """All invoices with outstanding > 0 (approved or partially_paid) — used by Receipts page."""
+    rows = await db.client_invoices.find(
+        {"status": {"$in": ["approved", "partially_paid"]}, "outstanding": {"$gt": 0}},
+        {"_id": 0}
+    ).sort("invoice_date", -1).to_list(500)
+    return rows
+
+
 @router.get("/invoices/{invoice_id}")
 async def get_invoice(invoice_id: str, user: dict = Depends(require_permission("accounting", "read"))):
     inv = await db.client_invoices.find_one({"id": invoice_id}, {"_id": 0})
@@ -523,6 +533,23 @@ async def get_receipt(receipt_id: str, user: dict = Depends(require_permission("
         ).to_list(50)
         rcpt["files"] = files
     return rcpt
+
+
+@router.patch("/receipts/{receipt_id}")
+async def update_receipt(receipt_id: str, body: dict, user: dict = Depends(require_permission("accounting", "write"))):
+    """Update receipt — primarily to add/edit payment details & upload file references after initial creation."""
+    rcpt = await db.client_receipts.find_one({"id": receipt_id})
+    if not rcpt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    allowed = {"txn_reference", "mode", "bank_account", "remarks", "file_ids"}
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if not updates:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    updates["updated_at"] = now_iso()
+    updates["updated_by"] = user.get("name") or user.get("email")
+    await db.client_receipts.update_one({"id": receipt_id}, {"$set": updates})
+    return {**{k: v for k, v in rcpt.items() if k != "_id"}, **updates}
+
 
 
 # ════════════════════════════════════════════════════════════════════════
