@@ -64,7 +64,8 @@ export default function Dashboard() {
         <KPICard testid="kpi-revenue" label="Revenue (6M)" value={inr(k.revenue || 0)} icon={TrendingUp} delta="+12.4%" deltaTone="up" sub="vs prev period" accent onClick={go("/app/accounts")} />
         <KPICard testid="kpi-expenses" label="Expenses (6M)" value={inr(k.expenses || 0)} icon={TrendingDown} delta="+8.1%" deltaTone="down" sub="vs prev period" onClick={go("/app/accounts")} />
         <KPICard testid="kpi-profit" label="Net Profit" value={inr(k.profit || 0)} icon={Wallet} delta="+18.6%" deltaTone="up" sub="margin healthy" onClick={go("/app/reports")} />
-        <KPICard testid="kpi-receivables" label="Receivables" value={inr(k.receivables || 0)} icon={ArrowUpRight} sub="open invoices" onClick={go("/app/quotations")} />
+        <KPICard testid="kpi-receivables" label="Receivables" value={inr(k.receivables || 0)} icon={ArrowUpRight} sub="open invoices" onClick={go("/app/accounts")} />
+        <KPICard testid="kpi-collections" label="Collections (MTD)" value={inr(k.collections_mtd || 0)} icon={Wallet} sub={`${k.collections_count || 0} receipts`} onClick={go("/app/accounts")} />
         <KPICard testid="kpi-payables" label="Vendor Payables" value={inr(k.payables || 0)} icon={ShoppingCart} sub="due to vendors" onClick={go("/app/purchase-orders")} />
       </div>
 

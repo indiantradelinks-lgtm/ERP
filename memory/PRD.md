@@ -5856,3 +5856,23 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Enquiries: new `<TableHead>Created</TableHead>` + `<TableCell>` after Enquiry # column. `data-testid="enquiry-created-{id}"`.
 - Quotations: new `{ key: "created_at", label: "Created" }` column in DataTableShell after Quote #. `data-testid="quotation-created-{id}"`.
 - Timestamp is consistent across list views — sourced from the same `created_at` field used throughout the system.
+
+
+## Receipts Module — Full Activation (Sept 2026)
+### Backend
+- `ReceiptIn` schema enhanced with `project_code` and `file_ids` fields.
+- `POST /api/billing/receipts` stores project_code + file_ids in receipt document, auto-allocates FIFO against selected invoices, auto-posts JE.
+- `GET /api/billing/receipts/{receipt_id}` — new detail endpoint enriching response with linked invoice details and uploaded file metadata.
+- `GET /api/billing/receipts/summary` — new endpoint returning MTD + lifetime collection totals/counts for dashboard KPIs.
+- `GET /api/dashboard/summary` — enhanced to return `collections_mtd` and `collections_count` in kpis object.
+
+### Frontend — Receipts View (BillingViews.jsx)
+- **List view** overhauled: CREATED (timestamp), PROJECT, FILES (paperclip indicator) columns added; rows clickable for detail.
+- **New Receipt form**: Client dropdown (from /api/clients), Project dropdown (filtered by client), Mode select, Amount/TDS/Retention/Other fields, File upload (FileUploader → /api/uploads), Invoice checkboxes showing outstanding.
+- **Detail dialog**: Shows all receipt metadata (date, client, project, mode, UTR, created_by), financial breakdown (amount/TDS/retention/adjusted), applied invoices list, attached files with links.
+- **Collection Report view**: Added CREATED and PROJECT columns.
+- **Dashboard**: Added "Collections (MTD)" KPI card showing month-to-date receipts amount and count.
+
+### Testing
+- pytest: 10/10 backend tests passed (test_receipts_iter183.py)
+- Frontend: All views verified via Playwright (list, form, detail, reports)

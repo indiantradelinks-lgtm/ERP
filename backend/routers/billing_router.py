@@ -98,6 +98,7 @@ class ReceiptIn(BaseModel):
     client_id: Optional[str] = None
     client_name: str
     project_id: Optional[str] = None
+    project_code: Optional[str] = None
     invoice_ids: List[str] = []          # invoices being adjusted
     mode: str = "Bank"                   # Bank/Cash/UPI/NEFT/RTGS/IMPS/Cheque
     bank_account: Optional[str] = None
@@ -108,6 +109,7 @@ class ReceiptIn(BaseModel):
     other_deduction: float = 0
     excess_reason: Optional[str] = None
     attachments: Optional[List[Dict[str, Any]]] = None
+    file_ids: Optional[List[str]] = None  # uploaded file references from /api/uploads
     remarks: Optional[str] = None
 
 
@@ -411,6 +413,7 @@ async def create_receipt(payload: ReceiptIn, request: Request,
         "client_id": payload.client_id,
         "client_name": payload.client_name,
         "project_id": payload.project_id,
+        "project_code": payload.project_code,
         "invoice_ids": payload.invoice_ids,
         "mode": payload.mode,
         "bank_account": payload.bank_account,
@@ -422,6 +425,7 @@ async def create_receipt(payload: ReceiptIn, request: Request,
         "total_adjusted": total_adjusted,
         "excess_reason": payload.excess_reason,
         "attachments": payload.attachments or [],
+        "file_ids": payload.file_ids or [],
         "remarks": payload.remarks,
         "status": "posted",
         "created_at": now_iso(),
@@ -472,6 +476,53 @@ async def list_receipts(client_id: Optional[str] = None, project_id: Optional[st
     if end:
           q["receipt_date"] = {**q.get("receipt_date", {}), "$lte": end}
     return await db.client_receipts.find(q, {"_id": 0}).sort("receipt_date", -1).limit(limit).to_list(limit)
+
+
+@router.get("/receipts/summary")
+async def receipts_summary(user: dict = Depends(require_permission("accounting", "read"))):
+    """Dashboard KPI: collections MTD + lifetime totals."""
+    today = datetime.now(timezone.utc)
+    mtd_start = today.replace(day=1).strftime("%Y-%m-%d")
+    mtd_agg = await db.client_receipts.aggregate([
+        {"$match": {"receipt_date": {"$gte": mtd_start}}},
+        {"$group": {"_id": None, "amount": {"$sum": "$amount"}, "adjusted": {"$sum": "$total_adjusted"}, "count": {"$sum": 1}}},
+    ]).to_list(1)
+    life_agg = await db.client_receipts.aggregate([
+        {"$group": {"_id": None, "amount": {"$sum": "$amount"}, "adjusted": {"$sum": "$total_adjusted"}, "count": {"$sum": 1}}},
+    ]).to_list(1)
+    mtd = mtd_agg[0] if mtd_agg else {"amount": 0, "adjusted": 0, "count": 0}
+    life = life_agg[0] if life_agg else {"amount": 0, "adjusted": 0, "count": 0}
+    return {
+        "mtd_amount": round(float(mtd.get("amount") or 0), 2),
+        "mtd_adjusted": round(float(mtd.get("adjusted") or 0), 2),
+        "mtd_count": mtd.get("count") or 0,
+        "lifetime_amount": round(float(life.get("amount") or 0), 2),
+        "lifetime_adjusted": round(float(life.get("adjusted") or 0), 2),
+        "lifetime_count": life.get("count") or 0,
+    }
+
+
+@router.get("/receipts/{receipt_id}")
+async def get_receipt(receipt_id: str, user: dict = Depends(require_permission("accounting", "read"))):
+    rcpt = await db.client_receipts.find_one({"id": receipt_id}, {"_id": 0})
+    if not rcpt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    # Enrich with invoice numbers
+    if rcpt.get("invoice_ids"):
+        invs = await db.client_invoices.find(
+            {"id": {"$in": rcpt["invoice_ids"]}},
+            {"_id": 0, "id": 1, "invoice_no": 1, "invoice_date": 1, "outstanding": 1,
+             "totals": 1, "client_name": 1, "status": 1}
+        ).to_list(100)
+        rcpt["invoices"] = invs
+    # Enrich with uploaded files
+    if rcpt.get("file_ids"):
+        files = await db.documents.find(
+            {"id": {"$in": rcpt["file_ids"]}},
+            {"_id": 0, "id": 1, "title": 1, "file_url": 1, "content_type": 1, "size": 1}
+        ).to_list(50)
+        rcpt["files"] = files
+    return rcpt
 
 
 # ════════════════════════════════════════════════════════════════════════

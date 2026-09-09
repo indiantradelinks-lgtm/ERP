@@ -137,6 +137,15 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
     safety_by_severity = await _group_count("safety_reports", "severity", default_key="low", key_alias="severity")
     present, absent = await _attendance_today(now)
 
+    # Collections MTD
+    mtd_start = now.replace(day=1).strftime("%Y-%m-%d")
+    coll_agg = await db.client_receipts.aggregate([
+        {"$match": {"receipt_date": {"$gte": mtd_start}}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}, "count": {"$sum": 1}}},
+    ]).to_list(1)
+    collections_mtd = float(coll_agg[0]["total"]) if coll_agg else 0.0
+    collections_count = int(coll_agg[0]["count"]) if coll_agg else 0
+
     return {
         "kpis": {
             "revenue": round(revenue, 2),
@@ -144,6 +153,8 @@ async def dashboard_summary(user: dict = Depends(get_current_user)):
             "profit": round(profit, 2),
             "receivables": round(receivables, 2),
             "payables": round(payables, 2),
+            "collections_mtd": round(collections_mtd, 2),
+            "collections_count": collections_count,
             "active_projects": projects_active,
             "total_projects": projects_total,
             "employees": employees,

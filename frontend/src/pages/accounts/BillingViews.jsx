@@ -11,8 +11,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, RefreshCcw, CheckCircle2, AlertCircle, FileSpreadsheet, X } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Plus, RefreshCcw, CheckCircle2, AlertCircle, FileSpreadsheet, X, Paperclip, Eye, Upload, ExternalLink, FileText } from "lucide-react";
+import FileUploader from "@/components/FileUploader";
 import { fmt } from "./AccountsViews";
 
 const INVOICE_TYPE_OPTS = [
@@ -270,13 +271,17 @@ export function ClientInvoicesView() {
 export function ReceiptsView() {
   const [rows, setRows] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [open, setOpen] = useState(false);
+  const [detail, setDetail] = useState(null);
+  const [uploadedFiles, setUploadedFiles] = useState([]);
   const [form, setForm] = useState(newReceiptFormState());
 
   function newReceiptFormState() {
     return {
       receipt_date: new Date().toISOString().slice(0, 10),
-      client_name: "", project_id: "",
+      client_id: "", client_name: "", project_id: "", project_code: "",
       invoice_ids: [], mode: "Bank", bank_account: "",
       txn_reference: "", amount: 0, tds_deducted: 0,
       retention_deducted: 0, other_deduction: 0,
@@ -286,26 +291,53 @@ export function ReceiptsView() {
 
   const load = () => api.get("/billing/receipts").then(r => setRows(r.data || []));
   const loadInvoices = () => api.get("/billing/invoices?status=approved").then(r => setInvoices(r.data || []));
-  useEffect(() => { load(); }, []);
+  const loadClients = () => api.get("/clients").then(r => setClients(r.data || [])).catch(() => {});
+  const loadProjects = () => api.get("/projects").then(r => setProjects(r.data || [])).catch(() => {});
+  useEffect(() => { load(); loadClients(); loadProjects(); }, []);
 
   const openCreate = () => {
     loadInvoices();
     setForm(newReceiptFormState());
+    setUploadedFiles([]);
     setOpen(true);
+  };
+
+  const openDetail = async (r) => {
+    try {
+      const { data } = await api.get(`/billing/receipts/${r.id}`);
+      setDetail(data);
+    } catch { setDetail(r); }
   };
 
   const totalAdj = Number(form.amount || 0) + Number(form.tds_deducted || 0) + Number(form.retention_deducted || 0) + Number(form.other_deduction || 0);
 
+  const selectClient = (cid) => {
+    const c = clients.find(x => x.id === cid);
+    setForm(prev => ({ ...prev, client_id: cid, client_name: c?.name || "", project_id: "", project_code: "", invoice_ids: [] }));
+  };
+
+  const selectProject = (pid) => {
+    const p = projects.find(x => x.id === pid);
+    setForm(prev => ({ ...prev, project_id: pid, project_code: p?.code || "" }));
+  };
+
   const submit = async () => {
-    if (!form.client_name) { toast.error("Client name required"); return; }
+    if (!form.client_name && !form.client_id) { toast.error("Select a client"); return; }
+    if (!form.amount && !form.tds_deducted && !form.retention_deducted) { toast.error("Enter amount or deduction"); return; }
     try {
-      await api.post("/billing/receipts", form);
+      const payload = { ...form, file_ids: uploadedFiles.map(f => f.id) };
+      await api.post("/billing/receipts", payload);
       toast.success("Receipt posted + JE created");
       setOpen(false); load();
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
 
-  const eligibleInvoices = invoices.filter(i => !form.client_name || i.client_name === form.client_name);
+  const clientProjects = projects.filter(p => !form.client_id || (p.client_id === form.client_id || p.client === form.client_name));
+  const eligibleInvoices = invoices.filter(i => {
+    if (form.client_id && i.client_id !== form.client_id && i.client_name !== form.client_name) return false;
+    if (!form.client_id && form.client_name && i.client_name !== form.client_name) return false;
+    return true;
+  });
 
   return (
     <Card>
@@ -320,78 +352,201 @@ export function ReceiptsView() {
         <div className="border rounded-md overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-600">
-              <tr><th className="text-left px-3 py-2">Receipt #</th><th className="text-left px-3 py-2">Date</th><th className="text-left px-3 py-2">Client</th><th className="text-left px-3 py-2">Mode</th><th className="text-left px-3 py-2">UTR/Ref</th><th className="text-right px-3 py-2">Amount</th><th className="text-right px-3 py-2">TDS</th><th className="text-right px-3 py-2">Retention</th><th className="text-right px-3 py-2">Adjusted</th><th className="text-left px-3 py-2">JE</th></tr>
+              <tr>
+                <th className="text-left px-3 py-2">Receipt #</th>
+                <th className="text-left px-3 py-2">Created</th>
+                <th className="text-left px-3 py-2">Date</th>
+                <th className="text-left px-3 py-2">Client</th>
+                <th className="text-left px-3 py-2">Project</th>
+                <th className="text-left px-3 py-2">Mode</th>
+                <th className="text-left px-3 py-2">UTR/Ref</th>
+                <th className="text-right px-3 py-2">Amount</th>
+                <th className="text-right px-3 py-2">TDS</th>
+                <th className="text-right px-3 py-2">Retention</th>
+                <th className="text-right px-3 py-2">Adjusted</th>
+                <th className="text-center px-3 py-2">Files</th>
+                <th className="text-left px-3 py-2">JE</th>
+              </tr>
             </thead>
             <tbody>
               {rows.map(r => (
-                <tr key={r.id} className="border-t hover:bg-slate-50" data-testid={`bill-rcpt-row-${r.receipt_no}`}>
-                  <td className="px-3 py-1.5 font-mono text-xs">{r.receipt_no}</td>
+                <tr key={r.id} className="border-t hover:bg-slate-50 cursor-pointer" data-testid={`bill-rcpt-row-${r.receipt_no}`} onClick={() => openDetail(r)}>
+                  <td className="px-3 py-1.5 font-mono text-xs text-blue-700 underline">{r.receipt_no}</td>
+                  <td className="px-3 py-1.5 text-xs whitespace-nowrap">{r.created_at ? <>{r.created_at.slice(0, 10)}<div className="text-[10px] text-muted-foreground">{r.created_at.slice(11, 16)}</div></> : "—"}</td>
                   <td className="px-3 py-1.5 font-mono text-xs">{r.receipt_date}</td>
-                  <td className="px-3 py-1.5">{r.client_name}</td>
+                  <td className="px-3 py-1.5 text-xs">{r.client_name}</td>
+                  <td className="px-3 py-1.5 font-mono text-[10px]">{r.project_code || "—"}</td>
                   <td className="px-3 py-1.5 text-xs">{r.mode}</td>
                   <td className="px-3 py-1.5 font-mono text-xs">{r.txn_reference || "—"}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums">{fmt(r.amount)}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums">{fmt(r.tds_deducted)}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums">{fmt(r.retention_deducted)}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums font-semibold">{fmt(r.total_adjusted)}</td>
+                  <td className="px-3 py-1.5 text-center">{(r.file_ids?.length || 0) > 0 ? <Paperclip className="h-3.5 w-3.5 text-amber-600 inline" /> : "—"}</td>
                   <td className="px-3 py-1.5 font-mono text-[10px]">{r.je_voucher_number || "—"}</td>
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={10} className="text-center py-6 text-xs text-slate-400">No receipts.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={13} className="text-center py-6 text-xs text-slate-400">No receipts yet. Click "New Receipt" to record a payment received.</td></tr>}
             </tbody>
           </table>
         </div>
       </CardContent>
 
+      {/* ─── New Receipt Dialog ─── */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader><DialogTitle>New Receipt</DialogTitle></DialogHeader>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>New Receipt</DialogTitle><DialogDescription>Record a payment received from a client against open invoices.</DialogDescription></DialogHeader>
           <div className="grid grid-cols-3 gap-2">
-            <Field label="Date *"><Input type="date" value={form.receipt_date} onChange={e => setForm({ ...form, receipt_date: e.target.value })} /></Field>
-            <Field label="Client *"><Input value={form.client_name} onChange={e => setForm({ ...form, client_name: e.target.value })} data-testid="bill-rcpt-client" /></Field>
+            <Field label="Date *"><Input type="date" value={form.receipt_date} onChange={e => setForm({ ...form, receipt_date: e.target.value })} data-testid="bill-rcpt-date" /></Field>
+            <Field label="Client *">
+              <select className="h-9 w-full rounded-sm border bg-background px-2 text-sm" value={form.client_id}
+                onChange={e => selectClient(e.target.value)} data-testid="bill-rcpt-client">
+                <option value="">— select client —</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Project">
+              <select className="h-9 w-full rounded-sm border bg-background px-2 text-sm" value={form.project_id}
+                onChange={e => selectProject(e.target.value)} data-testid="bill-rcpt-project">
+                <option value="">— select project —</option>
+                {clientProjects.map(p => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
+              </select>
+            </Field>
             <Field label="Mode *">
-              <select className="h-9 w-full rounded-sm border bg-background px-2" value={form.mode} onChange={e => setForm({ ...form, mode: e.target.value })}>
+              <select className="h-9 w-full rounded-sm border bg-background px-2 text-sm" value={form.mode} onChange={e => setForm({ ...form, mode: e.target.value })} data-testid="bill-rcpt-mode">
                 {["Bank", "Cash", "UPI", "NEFT", "RTGS", "IMPS", "Cheque"].map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </Field>
-            <Field label="Bank Account"><Input value={form.bank_account} onChange={e => setForm({ ...form, bank_account: e.target.value })} /></Field>
-            <Field label="UTR / Cheque #"><Input value={form.txn_reference} onChange={e => setForm({ ...form, txn_reference: e.target.value })} /></Field>
+            <Field label="Bank Account"><Input value={form.bank_account} onChange={e => setForm({ ...form, bank_account: e.target.value })} data-testid="bill-rcpt-bank" /></Field>
+            <Field label="UTR / Cheque #"><Input value={form.txn_reference} onChange={e => setForm({ ...form, txn_reference: e.target.value })} data-testid="bill-rcpt-utr" /></Field>
           </div>
 
-          {form.client_name && eligibleInvoices.length > 0 && (
-            <div className="mt-2">
-              <Label className="text-[10px] uppercase tracking-wider mb-1 block">Apply to invoices</Label>
-              <div className="max-h-32 overflow-y-auto border rounded-md text-xs">
+          {/* Invoice selection */}
+          {(form.client_id || form.client_name) && eligibleInvoices.length > 0 && (
+            <div className="mt-3">
+              <Label className="text-[10px] uppercase tracking-wider mb-1 block">Apply to invoices (unpaid / partially paid)</Label>
+              <div className="max-h-40 overflow-y-auto border rounded-md text-xs">
                 {eligibleInvoices.map(i => (
-                  <label key={i.id} className="flex items-center gap-2 px-2 py-1 hover:bg-slate-50 border-b">
+                  <label key={i.id} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 border-b" data-testid={`bill-rcpt-inv-${i.id}`}>
                     <input type="checkbox" checked={form.invoice_ids.includes(i.id)}
                       onChange={e => setForm({ ...form, invoice_ids: e.target.checked ? [...form.invoice_ids, i.id] : form.invoice_ids.filter(x => x !== i.id) })} />
                     <span className="font-mono">{i.invoice_no}</span>
                     <span className="text-slate-500">{i.invoice_date}</span>
-                    <span className="ml-auto tabular-nums">Outstanding: {fmt(i.outstanding)}</span>
+                    <span className="text-slate-400">{i.invoice_type}</span>
+                    <span className="ml-auto tabular-nums font-semibold text-emerald-700">Outstanding: {fmt(i.outstanding)}</span>
                   </label>
                 ))}
               </div>
             </div>
           )}
 
-          <div className="grid grid-cols-4 gap-2 mt-2">
+          <div className="grid grid-cols-4 gap-2 mt-3">
             <Field label="Amount Received *"><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: Number(e.target.value) })} data-testid="bill-rcpt-amount" /></Field>
-            <Field label="TDS Deducted"><Input type="number" value={form.tds_deducted} onChange={e => setForm({ ...form, tds_deducted: Number(e.target.value) })} /></Field>
-            <Field label="Retention Held"><Input type="number" value={form.retention_deducted} onChange={e => setForm({ ...form, retention_deducted: Number(e.target.value) })} /></Field>
-            <Field label="Other Deduction"><Input type="number" value={form.other_deduction} onChange={e => setForm({ ...form, other_deduction: Number(e.target.value) })} /></Field>
+            <Field label="TDS Deducted"><Input type="number" value={form.tds_deducted} onChange={e => setForm({ ...form, tds_deducted: Number(e.target.value) })} data-testid="bill-rcpt-tds" /></Field>
+            <Field label="Retention Held"><Input type="number" value={form.retention_deducted} onChange={e => setForm({ ...form, retention_deducted: Number(e.target.value) })} data-testid="bill-rcpt-retention" /></Field>
+            <Field label="Other Deduction"><Input type="number" value={form.other_deduction} onChange={e => setForm({ ...form, other_deduction: Number(e.target.value) })} data-testid="bill-rcpt-other" /></Field>
           </div>
           <div className="border rounded-md p-2 bg-slate-50 text-sm mt-2">
             <span className="text-[10px] uppercase text-slate-500">Total Adjusted Against Outstanding:</span>
             <span className="ml-2 font-bold tabular-nums">{fmt(totalAdj)}</span>
           </div>
-          <Field label="Excess Reason (if total > outstanding)"><Input value={form.excess_reason} onChange={e => setForm({ ...form, excess_reason: e.target.value })} /></Field>
-          <Field label="Remarks"><Input value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} /></Field>
+          <Field label="Excess Reason (if total > outstanding)"><Input value={form.excess_reason} onChange={e => setForm({ ...form, excess_reason: e.target.value })} data-testid="bill-rcpt-excess" /></Field>
+          <Field label="Remarks"><Input value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} data-testid="bill-rcpt-remarks" /></Field>
+
+          {/* File upload */}
+          <div className="mt-3">
+            <Label className="text-[10px] uppercase tracking-wider mb-1 block">Payment Proof / Receipt Attachment</Label>
+            <FileUploader folder="billing" parent_type="receipt" parent_id="new"
+              accept=".pdf,.jpg,.jpeg,.png,.webp" files={uploadedFiles}
+              onUploaded={(f) => setUploadedFiles(prev => [...prev, f])}
+              onDeleted={(fid) => setUploadedFiles(prev => prev.filter(x => x.id !== fid))}
+              testidPrefix="bill-rcpt-upload" compact />
+          </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
             <Button onClick={submit} data-testid="bill-rcpt-save">Post Receipt</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Receipt Detail Dialog ─── */}
+      <Dialog open={!!detail} onOpenChange={() => setDetail(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          {detail && (<>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                Receipt {detail.receipt_no}
+                <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-normal">{detail.status}</span>
+              </DialogTitle>
+              <DialogDescription>Receipt detail and allocation summary.</DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+              {[
+                ["Receipt Date", detail.receipt_date],
+                ["Created", detail.created_at ? `${detail.created_at.slice(0, 10)} ${detail.created_at.slice(11, 16)}` : "—"],
+                ["Client", detail.client_name],
+                ["Project", detail.project_code || "—"],
+                ["Mode", detail.mode],
+                ["Bank Account", detail.bank_account || "—"],
+                ["UTR / Ref", detail.txn_reference || "—"],
+                ["Created By", detail.created_by || "—"],
+              ].map(([k, v]) => (
+                <div key={k} className="flex justify-between border-b py-1">
+                  <span className="text-slate-500 text-xs">{k}</span>
+                  <span className="font-mono text-xs">{v}</span>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-4 gap-2 mt-3 p-3 rounded-md bg-slate-50 border">
+              {[["Amount Received", detail.amount], ["TDS Deducted", detail.tds_deducted], ["Retention", detail.retention_deducted], ["Total Adjusted", detail.total_adjusted]].map(([k, v]) => (
+                <div key={k}>
+                  <div className="text-[10px] uppercase text-slate-500">{k}</div>
+                  <div className="font-bold tabular-nums text-base">{fmt(v)}</div>
+                </div>
+              ))}
+            </div>
+            {detail.other_deduction > 0 && <div className="text-xs text-slate-600">Other Deduction: {fmt(detail.other_deduction)}</div>}
+            {detail.excess_reason && <div className="text-xs text-amber-700">Excess Reason: {detail.excess_reason}</div>}
+            {detail.remarks && <div className="text-xs text-slate-600 italic mt-1">Remarks: {detail.remarks}</div>}
+
+            {/* Applied invoices */}
+            {detail.invoices?.length > 0 && (
+              <div className="mt-3">
+                <Label className="text-[10px] uppercase tracking-wider">Applied Invoices</Label>
+                <div className="border rounded-md mt-1 text-xs">
+                  {detail.invoices.map(i => (
+                    <div key={i.id} className="flex items-center justify-between px-3 py-1.5 border-b last:border-b-0">
+                      <span className="font-mono">{i.invoice_no}</span>
+                      <span className="text-slate-400">{i.invoice_date}</span>
+                      <span className={`font-semibold ${i.status === "paid" ? "text-emerald-600" : "text-amber-600"}`}>{i.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Attached files */}
+            {detail.files?.length > 0 && (
+              <div className="mt-3">
+                <Label className="text-[10px] uppercase tracking-wider">Attached Files</Label>
+                <div className="space-y-1 mt-1">
+                  {detail.files.map(f => (
+                    <a key={f.id} href={f.file_url} target="_blank" rel="noreferrer"
+                      className="flex items-center gap-2 px-3 py-2 border rounded-md hover:bg-slate-50 text-xs">
+                      <FileText className="h-4 w-4 text-blue-600" />
+                      <span className="flex-1 truncate">{f.title}</span>
+                      <ExternalLink className="h-3 w-3 text-slate-400" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {detail.je_voucher_number && (
+              <div className="mt-3 text-xs text-slate-500">Journal Entry: <span className="font-mono">{detail.je_voucher_number}</span></div>
+            )}
+          </>)}
         </DialogContent>
       </Dialog>
     </Card>
@@ -598,14 +753,16 @@ export function CollectionReportView() {
         <div className="border rounded-md overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-600">
-              <tr><th className="text-left px-3 py-2">Receipt #</th><th className="text-left px-3 py-2">Date</th><th className="text-left px-3 py-2">Client</th><th className="text-left px-3 py-2">Mode</th><th className="text-right px-3 py-2">Amount</th><th className="text-right px-3 py-2">TDS</th><th className="text-right px-3 py-2">Retn</th><th className="text-right px-3 py-2">Total</th></tr>
+              <tr><th className="text-left px-3 py-2">Receipt #</th><th className="text-left px-3 py-2">Created</th><th className="text-left px-3 py-2">Date</th><th className="text-left px-3 py-2">Client</th><th className="text-left px-3 py-2">Project</th><th className="text-left px-3 py-2">Mode</th><th className="text-right px-3 py-2">Amount</th><th className="text-right px-3 py-2">TDS</th><th className="text-right px-3 py-2">Retn</th><th className="text-right px-3 py-2">Total</th></tr>
             </thead>
             <tbody>
               {(data.rows || []).map(r => (
                 <tr key={r.id} className="border-t hover:bg-slate-50">
                   <td className="px-3 py-1.5 font-mono text-xs">{r.receipt_no}</td>
+                  <td className="px-3 py-1.5 text-xs whitespace-nowrap">{r.created_at ? <>{r.created_at.slice(0, 10)}<div className="text-[10px] text-muted-foreground">{r.created_at.slice(11, 16)}</div></> : "—"}</td>
                   <td className="px-3 py-1.5 font-mono text-xs">{r.receipt_date}</td>
                   <td className="px-3 py-1.5">{r.client_name}</td>
+                  <td className="px-3 py-1.5 font-mono text-[10px]">{r.project_code || "—"}</td>
                   <td className="px-3 py-1.5 text-xs">{r.mode}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums">{fmt(r.amount)}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums">{fmt(r.tds_deducted)}</td>
@@ -613,7 +770,7 @@ export function CollectionReportView() {
                   <td className="px-3 py-1.5 text-right tabular-nums font-semibold">{fmt(r.total_adjusted)}</td>
                 </tr>
               ))}
-              {(data.rows || []).length === 0 && <tr><td colSpan={8} className="text-center py-6 text-xs text-slate-400">No collections.</td></tr>}
+              {(data.rows || []).length === 0 && <tr><td colSpan={10} className="text-center py-6 text-xs text-slate-400">No collections.</td></tr>}
             </tbody>
           </table>
         </div>
