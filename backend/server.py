@@ -27,7 +27,7 @@ from routers_registry import register_all, ROUTERS_IN_ORDER  # noqa: F401
 # the on_startup hooks need to call explicitly.
 from routers.crud_router import MODULES
 from routers.approvals_router import migrate_approvals_chain
-from routers.quotation_builder_router import seed_conditions_if_empty
+from routers.quotation_builder_router import seed_conditions_if_empty, ensure_standard_conditions
 from routers.admin_router import load_rbac_overrides_on_startup
 from routers.procurement_master_router import seed_master_if_empty
 from routers.hr import seed_leave_types_if_empty
@@ -195,6 +195,9 @@ async def seed_quotation_conditions_on_startup():
         n = await seed_conditions_if_empty()
         if n:
             logger.info(f"[quotation-builder] Seeded {n} condition library entries")
+        m = await ensure_standard_conditions()
+        if m:
+            logger.info(f"[quotation-builder] Added {m} standard technical conditions to library")
     except Exception as e:
         logger.warning(f"[quotation-builder] Condition seed skipped: {e}")
     try:

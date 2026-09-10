@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 
 from core import db, require_permission, get_current_user, now_iso, new_id, logger, attach_user_names, user_display_name
+from routers.quotation_builder_router import default_selected_conditions
 from audit import audit
 from sequences import next_sequence, stamp_dept_doc
 
@@ -208,6 +209,7 @@ async def create_enquiry(payload: EnquiryIn, request: Request, user: dict = Depe
             "created_by": user["id"],
             "created_by_name": user_display_name(user),
             "created_via": "auto_from_enquiry",
+            "technical_conditions": await default_selected_conditions("technical"),
         }
         await stamp_dept_doc(quote_doc, "quotation")
         await db.quotations.insert_one(quote_doc)

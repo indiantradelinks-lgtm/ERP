@@ -5904,3 +5904,9 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Enquiries list: new **Created By** column (`enquiry-created-by-{id}`) with "Upd. <name> · date" sub-line. Quotations list: **Created By** column (`quotation-created-by-{id}`). AI Quotation Builder header shows "Prepared by X on date · Last updated by Y" (`qb-prepared-by`).
 - Quotation PDF (`quotation_pdf.py`): footer line "Quotation Prepared By: <name> on <date>" (also in emailed PDF via send-to-client).
 - Verified: enquiry created as sales@erp.com → `created_by_name: Sales Demo` on enquiry, auto-quotation, and PDF text.
+
+## Quotation Builder — Standard Technical Conditions (Sept 2026)
+- Added 3 standard technical clauses (Contract Termination, Demobilization & Final Billing, Damage Clause — coastal corrosion) to `DEFAULT_CONDITIONS` in `quotation_data.py` with `standard_key` + `default_selected: True`.
+- `ensure_standard_conditions()` (quotation_builder_router) upserts them by `standard_key` on every backend startup → always present & active in the Condition Library even on existing DBs.
+- `default_selected_conditions("technical")` pre-ticks `default_selected` clauses on new quotations (builder create + auto-quotation from enquiry). Existing quotations can tick them from the library.
+- Verified: library returns orders 7–9; new enquiry auto-quotation QTN-2026-0091 has the 3 clauses pre-selected and visible in Conditions & Terms tab.

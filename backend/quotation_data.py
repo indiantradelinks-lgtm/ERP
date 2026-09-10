@@ -318,6 +318,13 @@ DEFAULT_CONDITIONS: List[Dict] = [
      "text": "Work completion shall depend on site clearance, access continuity, and timely availability of work front."},
     {"category": "technical", "service": "common", "order": 6,
      "text": "All statutory permits (height pass, hot work, confined space, etc.) shall be arranged before execution."},
+    # --- Technical · common · standard clauses (always ensured in the library, pre-selected on new quotations) ---
+    {"category": "technical", "service": "common", "order": 7, "standard_key": "contract_termination", "default_selected": True,
+     "text": "Contract Termination: Minimum one (1) month prior written notice is required before contract termination."},
+    {"category": "technical", "service": "common", "order": 8, "standard_key": "demob_final_billing", "default_selected": True,
+     "text": "Demobilization & Final Billing: Unloading, scaffolding dismantling, and loading periods during demobilization shall be included in final billing."},
+    {"category": "technical", "service": "common", "order": 9, "standard_key": "coastal_damage", "default_selected": True,
+     "text": "Damage Clause: Damage due to coastal conditions, including rusting/corrosion, shall be under the Client\u2019s scope and charged as per the applicable price list."},
     # --- Technical · scaffolding ---
     {"category": "technical", "service": "scaffolding", "order": 1,
      "text": "Scaffolding shall be erected as per site requirement and prevailing safety norms (BIS / OSHA / client standard)."},

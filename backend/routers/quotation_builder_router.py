@@ -226,7 +226,7 @@ async def create_quotation_full(payload: dict, request: Request,
         "service_categories": payload.get("service_categories") or [],
         "rfq_type": payload.get("rfq_type") or [],
         "sections": payload.get("sections") or [],
-        "technical_conditions": payload.get("technical_conditions") or [],
+        "technical_conditions": payload.get("technical_conditions") or await default_selected_conditions("technical"),
         "commercial_conditions": payload.get("commercial_conditions") or [],
         "inclusions": payload.get("inclusions") or [],
         "exclusions": payload.get("exclusions") or [],
@@ -541,3 +541,27 @@ async def seed_conditions_if_empty() -> int:
     if docs:
         await db.condition_library.insert_many(docs)
     return len(docs)
+
+
+async def ensure_standard_conditions() -> int:
+    """Upsert the standard clauses (by `standard_key`) so they are always present & active in the library."""
+    n = 0
+    for c in DEFAULT_CONDITIONS:
+        key = c.get("standard_key")
+        if not key:
+            continue
+        res = await db.condition_library.update_one(
+            {"standard_key": key},
+            {"$set": {**c, "active": True, "updated_at": now_iso()},
+             "$setOnInsert": {"id": new_id(), "created_at": now_iso(), "created_via": "seed"}},
+            upsert=True,
+        )
+        n += 1 if res.upserted_id else 0
+    return n
+
+
+async def default_selected_conditions(category: str = "technical") -> List[str]:
+    rows = await db.condition_library.find(
+        {"category": category, "default_selected": True, "active": True}, {"_id": 0, "text": 1}
+    ).sort("order", 1).to_list(50)
+    return [r["text"] for r in rows]
