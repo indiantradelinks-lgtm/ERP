@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 185 — Universal ERP Search (backend + frontend). Wrote pytest at /app/backend/tests/test_search_iter185.py (22 tests, 19 passed, 1 skipped, 2 failed — both revealing the SAME real RBAC leak). Frontend command-palette flow fully working: /login → dashboard bug fix verified, Ctrl+K + click open the palette, short-query hint, grouped results with <mark> highlights + stats + viewall rows, PAGES group for 'payroll', empty state, click-to-navigate with .search-hit highlight and hl param cleanup, RECENT group after navigation, and sidebar-search regression all PASS.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/search (RBAC)", "issue": "sales_executive can see 'employee_advances' group in search results because rbac.py sets hr_advances.read = {'*'} (rbac.py line 468). Review request explicitly stated sales must NOT see employee_advances. Either tighten rbac hr_advances.read to hr_executive/accounts scope, or add a search-registry-level allowlist. Confirmed via q=arjun as sales@erp.com and via GET /api/search/scope."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "CommandPalette dialog", "issues": ["Harmless a11y console warning: 'Missing Description or aria-describedby for DialogContent' — noted by main agent, low priority"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_search_iter185.py",
+    "/app/test_reports/pytest/iter185_search.xml"
+  ],
+  "action_items": [
+    "Decide whether to tighten rbac.py hr_advances.read (currently '*') so sales_executive/site_engineer/etc do NOT see Employee Advances in universal search, OR document that as intentional. Same collection is likely visible to every low-privilege role through the palette today."
+  ],
+  "critical_code_review_comments": [
+    "search_router.py routes via rbac.can(role, perm, 'read'). Perm 'hr_advances' is currently open to all roles — this leaks employee_advances into low-privilege palettes. Consider a stricter perm or explicit role-list per registry entry.",
+    "search_router.py catches broad Exception in _search_one() and returns None silently; a per-collection failure would be invisible. Consider logging.warning so ops can spot misconfigured collections/indexes.",
+    "No per-user rate limiting on /api/search — palette debounces at ~180ms client-side but a malicious caller could fan out 55 concurrent regex scans per request. Consider a small text-index or index on high-cardinality fields (po_number, invoice_no, name) for performance at scale."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_search_iter185.py (new)"
+  ],
+  "success_rate": {"backend": "86% (19/22, 1 skipped due to no data, 2 failures reveal the same RBAC leak)", "frontend": "100% (11/11 palette/nav/regression checks)"},
+  "test_credentials": "admin@erp.com/Admin@123 (super_admin), sales@erp.com/Sales@123 (sales_executive) — both worked via httpOnly-cookie login via requests.Session().",
+  "seed_data_creation": "None. Used existing DB records (Reliance Industries client, PO-2026-* purchase orders, projects, assets, service requests, dispatch requests).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_search_iter185.py can be reused as a regression suite for the search feature. The two failing RBAC assertions are strict interpretations of the review-request wording — main agent decides whether to fix rbac.py or relax the test. Skipped test (quotation detail route) needs a quotation with 'QUO' substring in the DB to become active. Login form is on /login (Landing page is at /).",
+  "rca_of_the_issue": "RBAC leak — sales_executive sees 'employee_advances' in /api/search results. Root cause: /app/backend/rbac.py line 467-472 defines hr_advances.read = {'*'} (wildcard). The search router filters registry entries with rbac.can(role, entry.perm, 'read'), so every collection whose perm is a wildcard-read leaks to every logged-in role. Reproduction: (1) POST /api/auth/login {sales@erp.com/Sales@123}, (2) GET /api/search?q=arjun, (3) observe groups[].key includes 'employee_advances'. Mitigation options: (a) tighten hr_advances.read to a role list ({super_admin, hr_executive, accounts_executive, general_manager, director, dept_head}), or (b) add a per-registry allow_roles/deny_roles field in search_router.REGISTRY that layers on top of rbac.can()."
+}

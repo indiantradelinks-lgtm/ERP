@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   LogOut, Menu, Search, ChevronLeft, ChevronRight, User2, Construction,
@@ -19,6 +19,7 @@ import NotificationBell from "@/components/NotificationBell";
 import PageHelp from "@/components/PageHelp";
 import AccessDeniedOverlay from "@/components/AccessDeniedOverlay";
 import RouteGuard from "@/components/RouteGuard";
+import CommandPalette from "@/components/CommandPalette";
 import useVisitTracker from "@/hooks/useVisitTracker";
 import {
   DEPARTMENTS, MENU_ITEMS, isItemVisible,
@@ -223,6 +224,18 @@ export default function Layout({ children }) {
   };
   const [mobileOpen, setMobileOpen] = useState(false);
   const [menuQuery, setMenuQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const initials = (user?.name || user?.email || "U")
     .split(" ")
@@ -351,15 +364,22 @@ export default function Layout({ children }) {
             <span className="text-foreground font-semibold">{breadcrumb}</span>
           </div>
           <div className="hidden md:flex items-center gap-2 ml-4 flex-1 max-w-md">
-            <div className="relative w-full">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search projects, clients, POs…"
-                className="pl-9 h-9 rounded-sm border-border bg-muted/40"
-                data-testid="global-search"
-              />
-            </div>
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              className="group relative w-full h-9 flex items-center gap-2 pl-9 pr-2 rounded-sm border border-border bg-muted/40 text-sm text-muted-foreground hover:border-primary/60 hover:bg-muted/60 transition-colors text-left"
+              data-testid="global-search"
+              aria-label="Open universal search"
+            >
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+              <span className="flex-1 truncate">Search anything — projects, clients, POs, employees, invoices…</span>
+              <kbd className="hidden lg:inline-flex h-5 items-center gap-0.5 rounded-sm border border-border bg-background px-1.5 font-mono text-[10px]">Ctrl K</kbd>
+            </button>
           </div>
+          <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setSearchOpen(true)} data-testid="global-search-mobile" aria-label="Search">
+            <Search className="h-5 w-5" />
+          </Button>
+          <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
           <div className="ml-auto flex items-center gap-2">
             <PageHelp />
             <NotificationBell />

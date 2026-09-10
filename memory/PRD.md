@@ -5884,3 +5884,17 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - **PATCH endpoint**: `PATCH /api/billing/receipts/{id}` allows accounts team to edit payment details (mode, UTR, bank, remarks) and upload additional file references after initial creation.
 - **Edit on existing receipts**: Detail dialog includes "Edit Payment Details / Upload Receipt" button expanding an inline edit form.
 - **Testing**: 15/15 backend pytest, 100% frontend verification (iteration_184).
+
+## Universal ERP Search — Command Palette (Sept 2026)
+### Backend
+- New `GET /api/search?q=&limit=` (`/app/backend/routers/search_router.py`): searches a REGISTRY of ~55 collections (Sales, Ops, HR, Store, Procurement, Service Workflow, Accounts, Logistics, Safety, Documents, Approvals, Users) with case-insensitive escaped-regex `$or` across configured fields, concurrently via asyncio.gather. Returns grouped results `{query, groups[{key,label,module,route,items[{id,title,subtitle,status,route}]}], total, took_ms}` (~15ms typical).
+- RBAC: each entry gated by `rbac.can(role, perm, action)`; `action` defaults to read, `employee_advances` requires write (read is `*` for self-scope).
+- Direct routes: detail pages for quotations (`/builder`), projects (`/project-dashboard/{id}`), assets (`/asset-lifecycle/{id}`), service requests, dispatch requests; all others → list page `?q=<title>&hl=<id>`.
+- `GET /api/search/scope` lists searchable collections for the caller's role.
+### Frontend
+- `CommandPalette.jsx` (cmdk + Dialog): opened via top-bar button (`global-search`), mobile icon (`global-search-mobile`) or Ctrl/⌘+K. Debounced server search, PAGES group from MENU_ITEMS (RBAC-filtered via isItemVisible), `<mark>` highlighting, per-group "Search “term” in X" row, RECENT group (localStorage `erp.search.recent.v1`), stats footer, keyboard navigation.
+- `hooks/useSearchLanding.js`: reads `?q`/`?hl`, seeds page filter, scrolls to and pulses the row with `data-row-id` (`.search-hit`, 6s), then strips `hl`. Wired into `DataTableShell` (covers ~53 pages) plus Clients, Vendors, Enquiries, PurchaseRequisitions, Challans.
+### Bug fix
+- `lib/api.js`: `/auth/me` 401 now rejects instead of returning a forever-pending promise — fixes the infinite "Loading control room…" after logging in from a direct `/login` visit. `_redirected` flag only set when an actual redirect happens.
+### Testing
+- iteration_185: backend pytest 21 passed / 1 skipped (`tests/test_search_iter185.py`), frontend 11/11 palette/navigation/regression checks pass.

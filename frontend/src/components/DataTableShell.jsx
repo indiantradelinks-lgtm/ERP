@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Plus, Search, Trash2, Pencil, FileSpreadsheet, FileText, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { downloadExport } from "@/lib/exports";
 import RowAttachments from "@/components/RowAttachments";
+import useSearchLanding from "@/hooks/useSearchLanding";
 
 /**
  * Generic data table with create/edit/delete dialog.
@@ -176,6 +177,7 @@ export default function DataTableShell({
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
+  useSearchLanding((q) => (onServerSearch ? onServerSearch(q) : setQuery(q)), [data]);
 
   const filtered = useMemo(() => {
     if (onServerSearch) return data;
@@ -331,7 +333,7 @@ export default function DataTableShell({
               </TableRow>
             )}
             {filtered.map((row) => (
-              <TableRow key={row.id} className="hover:bg-muted/30">
+              <TableRow key={row.id} className="hover:bg-muted/30" data-row-id={row.id}>
                 {columns.map((c) => {
                   let cellContent;
                   if (c.render) cellContent = c.render(row);

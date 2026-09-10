@@ -53,6 +53,7 @@ from routers.project_requests_router import router as project_requests_router
 from routers.project_budget_router import router as project_budget_router
 from routers.premob_router import router as premob_router
 from routers.help_router import router as help_router
+from routers.search_router import router as search_router
 from routers.assignment_router import router as assignment_router
 from routers.impersonation_router import router as impersonation_router
 from routers.attendance_plus_router import router as attendance_plus_router
@@ -194,6 +195,7 @@ ROUTERS_IN_ORDER: List[Tuple[str, APIRouter]] = [
     ("project_budget", project_budget_router),
     ("premob", premob_router),
     ("help", help_router),
+    ("search", search_router),               # Universal ERP search
     ("assignments", assignment_router),
     ("impersonation", impersonation_router),
     ("attendance-plus", attendance_plus_router),

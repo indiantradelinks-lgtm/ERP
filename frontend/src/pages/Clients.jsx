@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useEffect, useState, useRef } from "react";
+import useSearchLanding from "@/hooks/useSearchLanding";
 import { useNavigate } from "react-router-dom";
 
 const CONTACT_DEPTS = ["Purchase", "Accounts", "Technical", "User", "Stores", "Safety", "Project", "Management"];
@@ -28,6 +29,7 @@ export default function Clients() {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(new Set());
   const [query, setQuery] = useState("");
+  useSearchLanding(setQuery, [tree]);
   const [clientDialog, setClientDialog] = useState(null);   // {client?} for edit, {} for new
   const [siteDialog, setSiteDialog] = useState(null);       // {clientId, site?}
   const [contactDialog, setContactDialog] = useState(null); // {siteId, contact?}
@@ -218,7 +220,7 @@ function ClientNode({ client, isOpen, onToggle, onEdit, onAddSite, onOpenDocs, o
   const isPending = client.status === "pending_approval";
   const isRejected = client.status === "rejected";
   return (
-    <div className="border-b border-border last:border-b-0" data-testid={`client-node-${client.id}`}>
+    <div className="border-b border-border last:border-b-0" data-testid={`client-node-${client.id}`} data-row-id={client.id}>
       <div className="flex items-center gap-3 p-4 hover:bg-muted/30">
         <button onClick={onToggle} className="text-muted-foreground hover:text-foreground" data-testid={`client-toggle-${client.id}`}>
           {isOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}

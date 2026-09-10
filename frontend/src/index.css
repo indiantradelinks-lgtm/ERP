@@ -130,6 +130,15 @@
 }
 .fade-up { animation: fade-up 360ms ease both; }
 
+/* Universal search — landing row highlight */
+@keyframes search-hit-pulse {
+  0% { background-color: hsl(var(--primary) / 0.35); box-shadow: inset 3px 0 0 hsl(var(--primary)); }
+  100% { background-color: hsl(var(--primary) / 0.12); box-shadow: inset 3px 0 0 hsl(var(--primary)); }
+}
+.search-hit:not(tr), tr.search-hit > td { animation: search-hit-pulse 900ms ease-in-out infinite alternate; }
+tr.search-hit > td { box-shadow: none !important; }
+tr.search-hit > td:first-child { box-shadow: inset 3px 0 0 hsl(var(--primary)) !important; }
+
 /* Staggered children */
 .stagger > * { animation: fade-up 360ms ease both; }
 .stagger > *:nth-child(1) { animation-delay: 30ms; }

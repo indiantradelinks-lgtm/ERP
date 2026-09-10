@@ -27,17 +27,20 @@ api.interceptors.response.use(
     const status = error?.response?.status;
     const url = error?.config?.url || "";
     const isAuthCall = url.includes("/auth/login") || url.includes("/auth/register");
+    const isMeCall = url.includes("/auth/me");
 
     if (status === 401 && !isAuthCall) {
       if (!_redirected && typeof window !== "undefined") {
-        _redirected = true;
         const here = window.location.pathname + window.location.search;
         // Public token pages (e.g. vendor PO acknowledgement) must never bounce to /login.
         const isPublicPage = here.startsWith("/login") || here.startsWith("/po-ack");
         if (!isPublicPage) {
+          _redirected = true;
           window.location.href = `/login?next=${encodeURIComponent(here)}`;
         }
       }
+      // /auth/me must reject so AuthContext can finish its initial session check.
+      if (isMeCall) return Promise.reject(error);
       return _foreverPending;
     }
     // Friendly full-screen notice when a project-scoped user follows a link

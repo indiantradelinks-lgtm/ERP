@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import useSearchLanding from "@/hooks/useSearchLanding";
 import { useNavigate } from "react-router-dom";
 import { Plus, Search, Trash2, Send, ClipboardCheck, Briefcase, AlertTriangle, RefreshCw, X, Network, FileDown, ListTree } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,7 @@ export default function PurchaseRequisitions() {
     }).catch(() => {});
   }, []);
   const [query, setQuery] = useState("");
+  useSearchLanding(setQuery, [rows]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(blankForm());
   const [lineageFor, setLineageFor] = useState(null);
@@ -148,7 +150,7 @@ export default function PurchaseRequisitions() {
                 <TableRow><TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-10">No PRs yet.</TableCell></TableRow>
               )}
               {filtered.map((r) => (
-                <TableRow key={r.id} className="hover:bg-muted/30" data-testid={`pr-row-${r.id}`}>
+                <TableRow key={r.id} className="hover:bg-muted/30" data-testid={`pr-row-${r.id}`} data-row-id={r.id}>
                   <TableCell className="font-mono-data text-sm font-bold">{r.pr_number}</TableCell>
                   <TableCell className="font-mono-data text-xs">{r.pr_date}</TableCell>
                   <TableCell className="text-sm">

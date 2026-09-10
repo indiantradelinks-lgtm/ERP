@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import useSearchLanding from "@/hooks/useSearchLanding";
 import { Plus, Search, Truck, QrCode, Trash2, CheckSquare, Eye, X } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ export default function Challans() {
   const [rows, setRows] = useState([]);
   const [typeFilter, setTypeFilter] = useState("");
   const [query, setQuery] = useState("");
+  useSearchLanding(setQuery, [rows]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(blankForm());
   const [view, setView] = useState(null);
@@ -114,7 +116,7 @@ export default function Challans() {
             <TableBody>
               {filtered.length === 0 && <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-10 text-sm">No challans yet.</TableCell></TableRow>}
               {filtered.map((r) => (
-                <TableRow key={r.id} className="hover:bg-muted/30" data-testid={`challan-row-${r.id}`}>
+                <TableRow key={r.id} className="hover:bg-muted/30" data-testid={`challan-row-${r.id}`} data-row-id={r.id}>
                   <TableCell className="font-mono-data text-sm font-bold">{r.challan_no}</TableCell>
                   <TableCell><StatusBadge text={TYPE_LABEL[r.type] || r.type} tone={TYPE_TONE[r.type] || "neutral"} /></TableCell>
                   <TableCell className="text-xs">{r.from_location || "—"} → <span className="text-primary font-semibold">{r.to_location || "—"}</span></TableCell>

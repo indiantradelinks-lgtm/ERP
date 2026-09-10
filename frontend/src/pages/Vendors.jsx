@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import useSearchLanding from "@/hooks/useSearchLanding";
 import { Plus, Search, Send, ShieldCheck, Ban, RotateCcw, Edit, Trash2, FileText, X, Upload, FileEdit, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,6 +45,7 @@ export default function Vendors() {
   const [vendors, setVendors] = useState([]);
   const [cats, setCats] = useState([]);
   const [search, setSearch] = useState("");
+  useSearchLanding(setSearch, [vendors]);
   const [statusFilter, setStatusFilter] = useState("all");
   const [dlg, setDlg] = useState({ open: false, vendor: null });
 
@@ -143,7 +145,7 @@ export default function Vendors() {
           </thead>
           <tbody>
             {filtered.map((v) => (
-              <tr key={v.id} className="border-t hover:bg-slate-50" data-testid={`vendor-row-${v.id}`}>
+              <tr key={v.id} className="border-t hover:bg-slate-50" data-testid={`vendor-row-${v.id}`} data-row-id={v.id}>
                 <td className="px-3 py-2 font-mono text-xs">{v.vendor_code || v.code || "—"}</td>
                 <td className="px-3 py-2">
                   <div className="font-medium">{v.name}</div>

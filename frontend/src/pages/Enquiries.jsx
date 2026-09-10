@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import useSearchLanding from "@/hooks/useSearchLanding";
 import { Plus, Search, ChevronRight, ShoppingCart, FileText, AlertTriangle, Briefcase, Download, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,6 +57,7 @@ export default function Enquiries() {
   const [sites, setSites] = useState([]);
   const [pulse, setPulse] = useState(null);
   const [query, setQuery] = useState("");
+  useSearchLanding(setQuery, [rows]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(initialForm());
   const [convertOpen, setConvertOpen] = useState(false);
@@ -263,7 +265,7 @@ export default function Enquiries() {
                 <TableRow><TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-10">No enquiries yet.</TableCell></TableRow>
               )}
               {filtered.map((r) => (
-                <TableRow key={r.id} className="hover:bg-muted/30" data-testid={`enquiry-row-${r.id}`}>
+                <TableRow key={r.id} className="hover:bg-muted/30" data-testid={`enquiry-row-${r.id}`} data-row-id={r.id}>
                   <TableCell className="font-mono-data text-sm">{r.enquiry_no}<div className="text-[10px] text-muted-foreground">{r.customer_enquiry_no || ""}</div></TableCell>
                   <TableCell className="font-mono-data text-xs whitespace-nowrap" data-testid={`enquiry-created-${r.id}`}>{r.created_at ? r.created_at.slice(0, 10) : "—"}<div className="text-[10px] text-muted-foreground">{r.created_at ? r.created_at.slice(11, 16) : ""}</div></TableCell>
                   <TableCell className="text-sm font-semibold">
