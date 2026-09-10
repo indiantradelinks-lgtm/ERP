@@ -34,6 +34,26 @@ def new_id() -> str:
     return str(uuid.uuid4())
 
 
+def user_display_name(user: dict) -> str:
+    return (user or {}).get("name") or (user or {}).get("email") or "—"
+
+
+async def attach_user_names(rows, fields=("created_by", "updated_by")):
+    """Add `<field>_name` for user-id audit fields (resolved from users; non-id strings kept as-is)."""
+    items = rows if isinstance(rows, list) else [rows]
+    ids = {r.get(f) for r in items for f in fields if r.get(f) and not r.get(f"{f}_name")}
+    if not ids:
+        return rows
+    users = await db.users.find({"id": {"$in": list(ids)}}, {"_id": 0, "id": 1, "name": 1, "email": 1}).to_list(len(ids))
+    names = {u["id"]: user_display_name(u) for u in users}
+    for r in items:
+        for f in fields:
+            v = r.get(f)
+            if v and not r.get(f"{f}_name"):
+                r[f"{f}_name"] = names.get(v) or ("Unknown user" if len(str(v)) == 36 and str(v).count("-") == 4 else str(v))
+    return rows
+
+
 # ---------- password hashing ----------
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")

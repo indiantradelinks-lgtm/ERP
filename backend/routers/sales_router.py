@@ -11,7 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 
-from core import db, require_permission, get_current_user, now_iso, new_id, logger
+from core import db, require_permission, get_current_user, now_iso, new_id, logger, attach_user_names, user_display_name
 from audit import audit
 from sequences import next_sequence, stamp_dept_doc
 
@@ -121,7 +121,7 @@ class ConvertIn(BaseModel):
 @router.get("/enquiries")
 async def list_enquiries(user: dict = Depends(require_permission("quotations", "read"))):
     rows = await db.enquiries.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
-    return rows
+    return await attach_user_names(rows)
 
 
 @router.post("/enquiries")
@@ -168,6 +168,7 @@ async def create_enquiry(payload: EnquiryIn, request: Request, user: dict = Depe
     doc["status_history"] = [{"status": "open", "by": user.get("name") or user.get("email"), "at": now_iso(), "note": None}]
     doc["created_at"] = now_iso()
     doc["created_by"] = user["id"]
+    doc["created_by_name"] = user_display_name(user)
     await db.enquiries.insert_one(doc)
     doc.pop("_id", None)
 
@@ -205,6 +206,7 @@ async def create_enquiry(payload: EnquiryIn, request: Request, user: dict = Depe
             "status": "draft",
             "created_at": now_iso(),
             "created_by": user["id"],
+            "created_by_name": user_display_name(user),
             "created_via": "auto_from_enquiry",
         }
         await stamp_dept_doc(quote_doc, "quotation")
@@ -237,6 +239,7 @@ async def update_enquiry(enq_id: str, payload: dict, request: Request, user: dic
     payload.pop("status_history", None)
     payload["updated_at"] = now_iso()
     payload["updated_by"] = user["id"]
+    payload["updated_by_name"] = user_display_name(user)
     before = await db.enquiries.find_one({"id": enq_id}, {"_id": 0})
     if not before:
         raise HTTPException(status_code=404, detail="Not found")
@@ -265,7 +268,7 @@ async def change_status(enq_id: str, payload: StatusChange, request: Request, us
     })
     await db.enquiries.update_one(
         {"id": enq_id},
-        {"$set": {"status": payload.status, "status_history": history, "updated_at": now_iso(), "updated_by": user["id"]}},
+        {"$set": {"status": payload.status, "status_history": history, "updated_at": now_iso(), "updated_by": user["id"], "updated_by_name": user_display_name(user)}},
     )
     after = await db.enquiries.find_one({"id": enq_id}, {"_id": 0})
     await audit(user=user, action="status_change", resource="enquiries", record_id=enq_id, before={"status": current}, after={"status": payload.status, "note": payload.note}, ip=_ip(request))
@@ -452,6 +455,8 @@ async def revise_quotation(q_id: str, request: Request, user: dict = Depends(req
     new_doc["date"] = now_iso()[:10]
     new_doc["created_at"] = now_iso()
     new_doc["created_by"] = user["id"]
+    new_doc["created_by_name"] = user_display_name(user)
+    new_doc["updated_by_name"] = None
     await db.quotations.insert_one(new_doc)
     new_doc.pop("_id", None)
     await audit(user=user, action="revise", resource="quotations", record_id=new_doc["id"], before=parent, after=new_doc, ip=_ip(request))
@@ -531,6 +536,7 @@ async def update_quotation(q_id: str, payload: dict, request: Request, user: dic
         payload.pop(k, None)
     payload["updated_at"] = now_iso()
     payload["updated_by"] = user["id"]
+    payload["updated_by_name"] = user_display_name(user)
     before = await db.quotations.find_one({"id": q_id}, {"_id": 0})
     if not before:
         raise HTTPException(status_code=404, detail="Quotation not found")
@@ -664,7 +670,7 @@ async def change_quotation_status(q_id: str, payload: QuotationStatusIn, request
     await db.quotations.update_one(
         {"id": q_id},
         {"$set": {"status": payload.status, "status_history": history,
-                  "updated_at": now_iso(), "updated_by": user["id"]}},
+                  "updated_at": now_iso(), "updated_by": user["id"], "updated_by_name": user_display_name(user)}},
     )
     after = await db.quotations.find_one({"id": q_id}, {"_id": 0})
 
@@ -682,7 +688,7 @@ async def change_quotation_status(q_id: str, payload: QuotationStatusIn, request
             await db.enquiries.update_one(
                 {"id": enquiry_id},
                 {"$set": {"status": mirror, "status_history": enq_history,
-                          "updated_at": now_iso(), "updated_by": user["id"]}},
+                          "updated_at": now_iso(), "updated_by": user["id"], "updated_by_name": user_display_name(user)}},
             )
 
     await audit(user=user, action="status_change", resource="quotations", record_id=q_id,

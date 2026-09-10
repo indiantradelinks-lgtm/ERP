@@ -197,6 +197,11 @@ export default function QuotationBuilder() {
             <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-sm border ${statusTone}`} data-testid="qb-status">{quote.status?.replaceAll("_", " ")}</span>
             {saving && <span className="text-[10px] text-muted-foreground">saving…</span>}
           </h1>
+          <div className="text-[11px] text-muted-foreground mt-1" data-testid="qb-prepared-by">
+            Prepared by <b className="text-foreground">{quote.created_by_name || "—"}</b>
+            {quote.created_at && <> on {quote.created_at.slice(0, 10)}</>}
+            {quote.updated_by_name && quote.updated_at && <> · Last updated by <b className="text-foreground">{quote.updated_by_name}</b> on {quote.updated_at.slice(0, 10)}</>}
+          </div>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" className="h-9 rounded-sm" onClick={() => setAiOpen(true)} disabled={isLocked} data-testid="qb-ai-rfq">

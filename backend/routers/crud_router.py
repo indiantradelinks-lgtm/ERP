@@ -5,7 +5,7 @@ from typing import Dict, Any
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 
-from core import db, require_permission, get_current_user, now_iso, new_id, logger
+from core import db, require_permission, get_current_user, now_iso, new_id, logger, attach_user_names
 from approval_engine import build_chain, insert_approval, copy_approval_doc_fields
 from audit import audit
 from sequences import next_sequence
@@ -172,6 +172,8 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
                 for r in rows:
                     if not r.get("name") and r.get("employee_name"):
                         r["name"] = r["employee_name"]
+            if collection == "quotations":
+                await attach_user_names(rows)
             return {"rows": mask_list(rows, collection, user), "total": total,
                     "page": page, "page_size": page_size}
         try:
@@ -185,6 +187,8 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
             for r in rows:
                 if not r.get("name") and r.get("employee_name"):
                     r["name"] = r["employee_name"]
+        if collection == "quotations":
+            await attach_user_names(rows)
         return mask_list(rows, collection, user)
 
     @router.post(f"/{resource}")

@@ -341,7 +341,12 @@ def render_quotation_pdf(quote: Dict, company: Dict) -> bytes:
     ]], colWidths=[92 * mm, 92 * mm])
     sig.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LINEABOVE", (0, 0), (-1, 0), 0.5, BORDER),
                              ("TOPPADDING", (0, 0), (-1, -1), 12)]))
-    story.append(KeepTogether([notes_tbl, Spacer(1, 10), sig]))
+    prepared_by = quote.get("created_by_name") or "—"
+    prepared = Paragraph(
+        f"<font color='#64748b'>Quotation Prepared By:</font> <b>{prepared_by}</b>"
+        + (f" &nbsp;&nbsp;<font color='#64748b'>on {str(quote.get('created_at') or '')[:10]}</font>" if quote.get("created_at") else ""),
+        styles["Small"])
+    story.append(KeepTogether([notes_tbl, Spacer(1, 10), sig, Spacer(1, 8), prepared]))
 
     doc.build(story)
     pdf_bytes = buf.getvalue()

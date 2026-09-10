@@ -5898,3 +5898,9 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - `lib/api.js`: `/auth/me` 401 now rejects instead of returning a forever-pending promise — fixes the infinite "Loading control room…" after logging in from a direct `/login` visit. `_redirected` flag only set when an actual redirect happens.
 ### Testing
 - iteration_185: backend pytest 21 passed / 1 skipped (`tests/test_search_iter185.py`), frontend 11/11 palette/navigation/regression checks pass.
+
+## Sales — Created-By User Tracking (Sept 2026)
+- `core.attach_user_names(rows)` resolves `created_by`/`updated_by` user ids → `created_by_name`/`updated_by_name` (batch lookup in `users`; legacy rows covered). New writes also persist `created_by_name` / `updated_by_name` directly (enquiry create/update/status, auto-quotation, revise, builder create/update, quotation status).
+- Enquiries list: new **Created By** column (`enquiry-created-by-{id}`) with "Upd. <name> · date" sub-line. Quotations list: **Created By** column (`quotation-created-by-{id}`). AI Quotation Builder header shows "Prepared by X on date · Last updated by Y" (`qb-prepared-by`).
+- Quotation PDF (`quotation_pdf.py`): footer line "Quotation Prepared By: <name> on <date>" (also in emailed PDF via send-to-client).
+- Verified: enquiry created as sales@erp.com → `created_by_name: Sales Demo` on enquiry, auto-quotation, and PDF text.

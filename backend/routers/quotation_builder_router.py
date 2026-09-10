@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from core import db, require_permission, now_iso, new_id
+from core import db, require_permission, now_iso, new_id, attach_user_names, user_display_name
 from audit import audit
 from sequences import next_sequence
 from quotation_calc import recalc_quotation, compute_tax_mode
@@ -244,6 +244,7 @@ async def create_quotation_full(payload: dict, request: Request,
         "status": "draft",
         "created_at": now_iso(),
         "created_by": user["id"],
+        "created_by_name": user_display_name(user),
         "created_via": "builder",
     }
     company = await _get_company()
@@ -261,6 +262,7 @@ async def get_full_quotation(q_id: str, user: dict = Depends(require_permission(
     if not row:
         raise HTTPException(status_code=404, detail="Not found")
     # Ensure sections / totals are present even on legacy quotes
+    await attach_user_names(row)
     row.setdefault("sections", [])
     row.setdefault("technical_conditions", [])
     row.setdefault("commercial_conditions", [])
@@ -358,6 +360,7 @@ async def quotation_pdf(q_id: str, user: dict = Depends(require_permission("quot
     company = await _get_company()
     row["company_state"] = company.get("state")
     recalc_quotation(row)
+    await attach_user_names(row)
     pdf = render_quotation_pdf(row, company)
     filename = f"{row.get('quote_number', 'Quotation')}.pdf".replace(" ", "_")
     return StreamingResponse(
@@ -447,6 +450,7 @@ async def send_to_client(q_id: str, payload: SubmitToClientIn, request: Request,
     # Build attachments (PDF inline)
     attachments = []
     if payload.attach_pdf:
+        await attach_user_names(row)
         pdf = render_quotation_pdf(row, company)
         # Resend supports content base64
         import base64
