@@ -5910,3 +5910,11 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - `ensure_standard_conditions()` (quotation_builder_router) upserts them by `standard_key` on every backend startup → always present & active in the Condition Library even on existing DBs.
 - `default_selected_conditions("technical")` pre-ticks `default_selected` clauses on new quotations (builder create + auto-quotation from enquiry). Existing quotations can tick them from the library.
 - Verified: library returns orders 7–9; new enquiry auto-quotation QTN-2026-0091 has the 3 clauses pre-selected and visible in Conditions & Terms tab.
+
+## HR Employee Master — Bank Details Import Fix (Sept 2026)
+- Root cause: bulk Excel import (`employees_bulk_router.py`) wrote `bank_account` while the Employee form and Payment Processing Center read `bank_account_no` (also missing `bank_branch`/`bank_beneficiary_name` in the template).
+- Fix: template/ALLOWED_FIELDS now use canonical `bank_name, bank_account_no, bank_ifsc, bank_branch, bank_beneficiary_name`; `HEADER_ALIASES` accepts legacy headers (bank_account, ifsc, branch, account_no, beneficiary_name…); numeric Excel cells stored as clean strings; IFSC upper-cased.
+- Startup migration `migrate_legacy_bank_fields()` copies legacy `bank_account`/`ifsc`/`branch` into canonical fields (idempotent).
+- PPC (`payment_processing_router.py`): `_employee_bank()` helper with legacy fallback; employee-code lookup matches both `emp_code` and `employee_id`.
+- Employee form: added "Beneficiary Name (as per bank)" field.
+- Verified: legacy-header upload → canonical fields saved → visible in Edit form → PPC Verify dialog auto-fills beneficiary/bank/account/IFSC.

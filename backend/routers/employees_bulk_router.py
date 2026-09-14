@@ -35,7 +35,7 @@ ALLOWED_FIELDS = [
     "phone", "email", "status", "role", "employment_type",
     "date_of_joining", "date_of_birth", "gender",
     "pan", "aadhaar", "aadhaar_number", "pf_uan", "esic_no",
-    "bank_name", "bank_account", "bank_ifsc",
+    "bank_name", "bank_account_no", "bank_ifsc", "bank_branch", "bank_beneficiary_name",
     "address", "city", "state", "pincode",
     "contractor_name", "contractor_license_no",
     "contract_start_date", "contract_end_date",
@@ -46,6 +46,37 @@ ALLOWED_FIELDS = [
 
 # Columns added for display only — we skip them when applying updates.
 DISPLAY_ONLY = {"_status_hint", "_warning"}
+
+# Alternate / legacy header spellings → canonical employee field (bank columns were
+# previously imported as `bank_account`, which the Employee form & Payment Center never read).
+HEADER_ALIASES = {
+    "bank_account": "bank_account_no", "account_no": "bank_account_no", "account_number": "bank_account_no",
+    "bank_account_number": "bank_account_no", "bank account": "bank_account_no", "account no": "bank_account_no",
+    "ifsc": "bank_ifsc", "ifsc_code": "bank_ifsc", "ifsc code": "bank_ifsc", "bank_ifsc_code": "bank_ifsc",
+    "branch": "bank_branch", "bank branch": "bank_branch", "branch_name": "bank_branch",
+    "beneficiary_name": "bank_beneficiary_name", "beneficiary": "bank_beneficiary_name",
+    "account_holder_name": "bank_beneficiary_name", "bank name": "bank_name",
+}
+# Excel turns these into numbers/floats — always persist as clean strings.
+STRING_FIELDS = {"bank_account_no", "bank_ifsc", "phone", "aadhaar", "aadhaar_number", "pan", "pincode",
+                 "pf_uan", "esic_no", "employee_id", "contractor_license_no"}
+
+
+def _canon_header(h) -> str:
+    key = str(h or "").strip()
+    return HEADER_ALIASES.get(key.lower(), key)
+
+
+def _clean_value(field: str, val):
+    if field in STRING_FIELDS and isinstance(val, (int, float)):
+        val = str(int(val)) if float(val).is_integer() else str(val)
+    if isinstance(val, str):
+        val = val.strip()
+    if field == "bank_ifsc" and isinstance(val, str):
+        val = val.replace(" ", "").upper()
+    if field == "bank_account_no" and isinstance(val, str):
+        val = val.replace(" ", "")
+    return val
 
 # Accepted spellings for master_category → canonical value
 _MASTER_ALIASES = {
@@ -63,6 +94,19 @@ def _normalise_master_category(val) -> str:
     if not out:
         raise ValueError(f"invalid master_category '{val}' — use 'employee' or 'worker'")
     return out
+
+
+async def migrate_legacy_bank_fields() -> int:
+    """Copy legacy `bank_account`/`ifsc`/`branch` values (older bulk imports) into the canonical
+    bank_* fields read by the Employee form and the Payment Processing Center. Idempotent."""
+    n = 0
+    for legacy, canon in (("bank_account", "bank_account_no"), ("ifsc", "bank_ifsc"), ("branch", "bank_branch")):
+        res = await db.employees.update_many(
+            {legacy: {"$nin": [None, ""]}, "$or": [{canon: {"$exists": False}}, {canon: None}, {canon: ""}]},
+            [{"$set": {canon: {"$toString": f"${legacy}"}}}],
+        )
+        n += res.modified_count
+    return n
 
 
 @router.get("/template")
@@ -98,6 +142,9 @@ async def download_template(user: dict = Depends(require_permission("employees",
     inst.append(["5. Save as .xlsx and re-upload via the Employees page → Bulk Update."])
     inst.append(["6. master_category: 'employee' (Employee Master) or 'worker' (Worker/Labour Master)."])
     inst.append(["   Changing it moves the record to the other master instantly — no data is lost."])
+    inst.append(["7. Bank details: bank_name, bank_account_no, bank_ifsc, bank_branch, bank_beneficiary_name."])
+    inst.append(["   These show in the Employee form (Bank Account section) and auto-fill the Payment Processing Center."])
+    inst.append(["   Legacy headers bank_account / ifsc / branch are also accepted."])
     inst.append([])
     inst.append(["Allowed columns:"])
     for f in ALLOWED_FIELDS:
@@ -133,7 +180,7 @@ async def import_bulk(file: UploadFile = File(...),
     # Read header row
     headers: List[str] = []
     for cell in ws[1]:
-        headers.append((cell.value or "").strip())
+        headers.append(_canon_header(cell.value))
     if "id" not in headers:
         raise HTTPException(400, "Missing `id` column in header row")
 
@@ -170,7 +217,7 @@ async def import_bulk(file: UploadFile = File(...),
                     row_error = str(ve)
                     break
                 continue
-            patch[f] = val
+            patch[f] = _clean_value(f, val)
 
         if row_error:
             summary["skipped"] += 1

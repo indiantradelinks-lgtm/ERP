@@ -61,13 +61,18 @@ async def payment_queue(stage: str = "", project_code: str = "",
     emp_ids = list({r.get("employee_id") for r in reqs if r.get("employee_id")})
     emap = {e["id"]: e async for e in db.employees.find(
         {"id": {"$in": emp_ids}},
-        {"_id": 0, "id": 1, "name": 1, "bank_account_no": 1, "bank_ifsc": 1, "bank_name": 1,
+        {"_id": 0, "id": 1, "name": 1, "bank_account_no": 1, "bank_account": 1, "bank_ifsc": 1, "bank_name": 1,
          "bank_branch": 1, "bank_beneficiary_name": 1})} if emp_ids else {}
     emp_codes = list({r.get("employee_code") for r in reqs if r.get("employee_code") and not r.get("employee_id")})
-    ecmap = {e["emp_code"]: e async for e in db.employees.find(
-        {"emp_code": {"$in": emp_codes}},
-        {"_id": 0, "id": 1, "emp_code": 1, "name": 1, "bank_account_no": 1, "bank_ifsc": 1,
-         "bank_name": 1, "bank_branch": 1, "bank_beneficiary_name": 1})} if emp_codes else {}
+    ecmap: dict = {}
+    if emp_codes:
+        async for e in db.employees.find(
+                {"$or": [{"emp_code": {"$in": emp_codes}}, {"employee_id": {"$in": emp_codes}}]},
+                {"_id": 0, "id": 1, "emp_code": 1, "employee_id": 1, "name": 1, "bank_account_no": 1, "bank_account": 1,
+                 "bank_ifsc": 1, "bank_name": 1, "bank_branch": 1, "bank_beneficiary_name": 1}):
+            for k in (e.get("emp_code"), e.get("employee_id")):
+                if k:
+                    ecmap.setdefault(k, e)
     cc_ids = list({r.get("cost_center_id") for r in reqs if r.get("cost_center_id")})
     ccmap = {c["id"]: c async for c in db.cost_centers.find(
         {"id": {"$in": cc_ids}},
@@ -94,10 +99,7 @@ async def payment_queue(stage: str = "", project_code: str = "",
                     "raised_by": raised_by,
                     "project_manager": r.get("project_manager") or proj.get("project_manager_name")
                                        or proj.get("manager") or (adv or {}).get("project_manager"),
-                    "employee_bank": ({"account_no": emp.get("bank_account_no"), "ifsc": emp.get("bank_ifsc"),
-                                       "bank_name": emp.get("bank_name"), "branch": emp.get("bank_branch"),
-                                       "beneficiary_name": emp.get("bank_beneficiary_name") or emp.get("name")}
-                                      if emp and emp.get("bank_account_no") else None),
+                    "employee_bank": _employee_bank(emp),
                     "employee_record_id": (emp or {}).get("id")})
     return out
 
@@ -124,6 +126,17 @@ class VerifyIn(BaseModel):
     remarks: str = ""
 
 
+def _employee_bank(emp: Optional[dict]) -> Optional[dict]:
+    if not emp:
+        return None
+    acct = emp.get("bank_account_no") or emp.get("bank_account")
+    if not acct:
+        return None
+    return {"account_no": str(acct), "ifsc": (emp.get("bank_ifsc") or "").upper(),
+            "bank_name": emp.get("bank_name"), "branch": emp.get("bank_branch"),
+            "beneficiary_name": emp.get("bank_beneficiary_name") or emp.get("name")}
+
+
 class BankDetailsIn(BaseModel):
     beneficiary_name: str = ""
     bank_name: str = ""
@@ -145,7 +158,8 @@ async def save_bank_details(rid: str, p: BankDetailsIn, request: Request,
     if row.get("employee_id"):
         emp = await db.employees.find_one({"id": row["employee_id"]}, {"_id": 0, "id": 1, "emp_code": 1, "name": 1})
     if not emp and row.get("employee_code"):
-        emp = await db.employees.find_one({"emp_code": row["employee_code"]}, {"_id": 0, "id": 1, "emp_code": 1, "name": 1})
+        emp = await db.employees.find_one({"$or": [{"emp_code": row["employee_code"]}, {"employee_id": row["employee_code"]}]},
+                                          {"_id": 0, "id": 1, "emp_code": 1, "name": 1})
     if not emp:
         raise HTTPException(400, "This payment is not linked to an employee/worker record")
     acct = (p.account_no or "").strip().replace(" ", "")

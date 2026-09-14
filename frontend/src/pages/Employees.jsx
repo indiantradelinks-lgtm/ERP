@@ -190,6 +190,7 @@ export default function Employees({ master = "employee" }) {
     { key: "bank_account_no", label: "Account Number" },
     { key: "bank_ifsc", label: "IFSC Code", help: "11 chars, e.g. SBIN0001234" },
     { key: "bank_branch", label: "Branch" },
+    { key: "bank_beneficiary_name", label: "Beneficiary Name (as per bank)", help: "Defaults to employee name in payment files if blank" },
 
     // ─── Emergency Contact + Nominee ───
     { key: "_sec_emergency", type: "section", label: "Emergency Contact & Nominee" },
