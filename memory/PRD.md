@@ -5936,3 +5936,16 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Retention Receivable: error/loading states, CSV export.
 ### Testing
 - iteration_186: backend 20/20 pytest (`/app/backend/tests/test_iter186_receivables.py`), frontend 100% (filters, drill-down, cert save, 3 CSV downloads, RBAC 403 for sales role). No issues open.
+
+## Salary Structure — Excel Bulk Upload / Update (Jun 2026, iter187)
+**Request**: HR needs to upload salary breakups for many employees at once, matched on Employee ID, with validation + upload summary.
+**User choices**: new effective-dated version per row (history kept, previous version end-dated) · bulk rows AUTO-APPROVED and synced to payroll_master · bad rows skipped with reasons.
+### Backend — new `routers/hr_salary_bulk_router.py` (prefix `/api/hr4/salary-structures/bulk`)
+- `GET /template` → xlsx (`SalaryStructures` + `INSTRUCTIONS` sheets) pre-filled with every active employee (employee_id falls back to emp_code/id) and their current breakup. Columns: employee_id, employee_name, wage_type, basic, hra, da, conveyance, site_allowance, food_allowance, other_allowance, overtime_rate, professional_tax, attendance_bonus_amount, YES/NO flags (attendance_bonus/pf/esic/tds), effective_from, effective_to, remarks. Header aliases accepted (Employee ID, Basic Salary, PF, OT Rate…).
+- `POST /import` (multipart xlsx) → per row: match employee by employee_id / emp_code / id; validate numbers (non-negative), YES/NO flags, dates (YYYY-MM-DD, DD-MM-YYYY, DD/MM/YYYY), wage_type, effective_to >= effective_from, monthly requires basic > 0. Valid row → end-date previous open version (`effective_to` = day before, `status: superseded`, `superseded_by_batch`) then insert a new `approved`/`active` structure (`source: bulk_import`, `import_batch_id`) + audit row + `sync_structure_to_payroll_master()`. Returns `{batch_id, total_rows, created, superseded, skipped, errors[{row, employee_id, error}], rows[{row, employee_id, employee_name, structure_no, basic, gross, effective_from, action}]}`. Every run snapshotted in `hr_salary_bulk_imports`.
+- `GET /history` → last 20 import batches with counts.
+- `hr_phase4_router.sync_structure_to_payroll_master(row, sid)` extracted so single-approve and bulk import stay in lockstep.
+### Frontend — `pages/hr/HrPhase4.jsx`
+- `SalaryBulkUpload` component adds **Template** (`ss-bulk-template-btn`) + **Bulk Upload** (`ss-bulk-upload-btn`) on the Salary Structures tab. Dialog (`ss-bulk-dialog`): how-it-works panel, file picker (`ss-bulk-file`), submit (`ss-bulk-submit`), summary tiles (Rows Read / Created / Superseded / Skipped), failed-rows table (`ss-bulk-errors`) with row no + reason, imported table (`ss-bulk-created`) with SS no / basic / gross / eff-from. Refreshes the structures list on success.
+### Testing
+- iteration_187: backend 11/11 pytest (`/app/backend/tests/test_iter187_salary_bulk.py`), frontend 100%. Both minor review items fixed (employee_code fallback on insert; DialogDescription a11y). Test batches created during testing were purged afterwards.

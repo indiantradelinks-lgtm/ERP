@@ -1,0 +1,42 @@
+{
+  "summary": "Salary Structure bulk upload (iter 187) — 11/11 backend pytest cases pass and full frontend flow verified with Playwright. Template returns xlsx (SalaryStructures + INSTRUCTIONS sheets, employee_id never blank), import accepts multipart xlsx and returns {total_rows, created, superseded, skipped, errors[], rows[]} with structure_no/basic/gross/effective_from. Validation skips all bad rows (blank id, unknown id, negative amount, non-numeric amount, invalid date, invalid wage_type, effective_to<effective_from, monthly+basic=0) while good rows still import. Second upload with later effective_from produces superseded>=1 and newest is active/approved. History endpoint returns recent batches with counts. Payroll sync verified — hr_salary_structures listing shows newest bulk_import structure as active/approved with correct basic and prior version superseded. Bad file type / missing employee_id header / empty sheet all return 400. RBAC verified — sales@erp.com gets 403 on template, import, and history; UI hides the HR module entirely for sales. Frontend: /app/hr/payroll-statutory → hr4-tab-salary-structures shows Template + Bulk Upload buttons, template click triggers download with success toast, dialog with how-it-works panel opens, submit disabled until file chosen, uploading a 2-row test xlsx (1 good + 1 unknown id) yields the four summary tiles (Rows Read/Created/Superseded/Skipped), the failed-rows table with row# + reason, the imported table with new SS number (SS-2026-0034, ₹55,555 basic, ₹62,555 gross), and after closing the structures table refreshes with new SS number tagged approved.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/hr4/salary-structures/bulk/import", "issue": "Created structure doc has employee_code = None when the employee row has no employee_id field. Router stores `emp.get('employee_id')` verbatim while the template generator correctly falls back to emp_code/id. Suggest mirroring the template fallback: `emp.get('employee_id') or emp.get('emp_code') or emp['id']` so downstream filtering/reporting by code isn't broken for seed employees like Arjun Reddy/E-1001."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "ss-bulk-dialog", "issues": ["Missing DialogContent Description or aria-describedby (a11y warning in console) — add a DialogDescription for the how-it-works block."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter187_salary_bulk.py",
+    "/app/test_reports/pytest/iter187.xml"
+  ],
+  "action_items": [
+    "Optional: fix employee_code fallback in bulk router insert (see minor backend issue).",
+    "Optional a11y: add DialogDescription to ss-bulk-dialog."
+  ],
+  "critical_code_review_comments": [
+    "hr_salary_bulk_router._num rejects negatives with a clean message and _date accepts several formats — good.",
+    "Versioning is safe: previous open rows are only end-dated where effective_from < new eff_from AND effective_to is null/>=new; won't corrupt future-dated versions.",
+    "Bulk import auto-approves and syncs — matches user choice #2. Sync uses shared sync_structure_to_payroll_master so approve_structure and bulk import stay in lockstep.",
+    "employee_code fallback discrepancy between template (has fallback) and insert (no fallback) — noted above.",
+    "Router file is 324 lines, well below the 700-line threshold; no split needed.",
+    "MongoDB _id is projected out everywhere (verified) — no ObjectId leaks."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter187_salary_bulk.py (new)"
+  ],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% (all documented flows verified)"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin); sales@erp.com / Sales@123 (403 RBAC)",
+  "seed_data_creation": "Created 2 bulk_import batches for employees Arjun Reddy (E-1001) + Sneha Iyer with future effective_from (today+10 and today+30). Plus 1 UI-driven batch (SS-2026-0034, ₹55,555). Prior salary structure versions have been superseded. All are TEST_iter187 tagged in remarks.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bulk router is /api/hr4/salary-structures/bulk/{template,import,history}. Uses require_permission('hr_onboarding','write'). Employees table field naming: `employee_id` is the CODE (e.g. E-1001, EMPITL162) and `id` is the internal UUID; hr_salary_structures.employee_id stores the internal UUID while employee_code stores the code (currently None for seed employees — flagged). Payroll_master is upserted via sync_structure_to_payroll_master and keyed on internal employee_id.",
+  "rca of the issue": "N/A — feature works as specified. Only minor code-quality note about employee_code None on stored structure docs."
+}

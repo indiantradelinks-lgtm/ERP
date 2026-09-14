@@ -15,7 +15,7 @@ import {
   Table, TableHeader, TableRow, TableHead, TableBody, TableCell,
 } from "@/components/ui/table";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { api, apiErrorMessage } from "@/lib/api";
 import { EmployeeSearchSelect } from "@/components/EmployeeSearchSelect";
@@ -23,7 +23,7 @@ import { ProjectSelect } from "@/components/MasterSelect";
 import { toast } from "sonner";
 import {
   DollarSign, Banknote, Receipt, Wrench, Building2, FileText,
-  Plus, Check, X, RefreshCw, ShieldCheck,
+  Plus, Check, X, RefreshCw, ShieldCheck, Upload, Download,
 } from "lucide-react";
 
 const monthIso = () => new Date().toISOString().slice(0, 7);
@@ -92,6 +92,153 @@ function DashboardView() {
   );
 }
 
+// ─────────── SALARY STRUCTURE BULK UPLOAD ───────────
+function SalaryBulkUpload({ onDone }) {
+  const [open, setOpen] = useState(false);
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const downloadTemplate = async () => {
+    try {
+      const res = await api.get("/hr4/salary-structures/bulk/template", { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `salary-structure-template-${today()}.xlsx`;
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Template downloaded — every active employee is pre-filled");
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+  };
+
+  const upload = async () => {
+    if (!file) { toast.error("Choose the filled .xlsx file"); return; }
+    setBusy(true); setResult(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await api.post("/hr4/salary-structures/bulk/import", fd,
+        { headers: { "Content-Type": "multipart/form-data" } });
+      setResult(res.data);
+      toast.success(`${res.data.created} structure(s) created & synced to payroll · ${res.data.skipped} skipped`);
+      onDone?.();
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setBusy(false); }
+  };
+
+  const close = () => { setOpen(false); setFile(null); setResult(null); };
+
+  return (
+    <>
+      <Button size="sm" variant="outline" onClick={downloadTemplate} data-testid="ss-bulk-template-btn">
+        <Download className="h-4 w-4 mr-1" /> Template
+      </Button>
+      <Button size="sm" variant="outline" onClick={() => setOpen(true)} data-testid="ss-bulk-upload-btn">
+        <Upload className="h-4 w-4 mr-1" /> Bulk Upload
+      </Button>
+
+      <Dialog open={open} onOpenChange={(v) => (v ? setOpen(true) : close())}>
+        <DialogContent className="max-w-2xl max-h-[88vh] overflow-y-auto" data-testid="ss-bulk-dialog">
+          <DialogHeader>
+            <DialogTitle>Bulk Upload Salary Structures</DialogTitle>
+            <DialogDescription>
+              Upload one Excel file to create or update the salary breakup of many employees at once, matched on Employee ID.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 text-sm">
+            <div className="rounded-md border bg-slate-50 p-3 text-xs space-y-1">
+              <div className="font-semibold">How it works</div>
+              <div>1. Download the template — it lists every active employee with their current breakup.</div>
+              <div>2. Edit the amount columns. Match key is <span className="font-mono">employee_id</span> (e.g. EMPITL162).</div>
+              <div>3. Each row creates a NEW effective-dated version; the previous one is end-dated so history stays intact.</div>
+              <div>4. Uploaded structures are auto-approved and synced straight to the payroll master.</div>
+              <div>5. Bad rows (unknown Employee ID, negative amount, bad date) are skipped and listed below.</div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Input type="file" accept=".xlsx,.xlsm" data-testid="ss-bulk-file"
+                onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); }} />
+              <Button onClick={upload} disabled={busy || !file} data-testid="ss-bulk-submit">
+                {busy ? "Uploading…" : "Upload"}
+              </Button>
+            </div>
+
+            {result && (
+              <div className="space-y-2" data-testid="ss-bulk-summary">
+                <div className="grid grid-cols-4 gap-2">
+                  {[["Rows Read", result.total_rows, "text-slate-900"],
+                    ["Created", result.created, "text-emerald-700"],
+                    ["Superseded", result.superseded, "text-blue-700"],
+                    ["Skipped", result.skipped, "text-rose-700"]].map(([l, v, c]) => (
+                    <div key={l} className="rounded-md border p-2 bg-white">
+                      <div className="text-[10px] uppercase text-muted-foreground">{l}</div>
+                      <div className={`text-lg font-semibold ${c}`}>{v ?? 0}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {result.errors?.length > 0 && (
+                  <div className="rounded-md border border-rose-200 overflow-hidden" data-testid="ss-bulk-errors">
+                    <div className="bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-800">
+                      Failed rows ({result.errors.length})
+                    </div>
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-50 text-[10px] uppercase text-muted-foreground">
+                        <tr><th className="text-left px-3 py-1">Row</th><th className="text-left px-3 py-1">Employee ID</th><th className="text-left px-3 py-1">Reason</th></tr>
+                      </thead>
+                      <tbody>
+                        {result.errors.map((e, i) => (
+                          <tr key={i} className="border-t">
+                            <td className="px-3 py-1 font-mono">{e.row}</td>
+                            <td className="px-3 py-1 font-mono">{e.employee_id || "—"}</td>
+                            <td className="px-3 py-1 text-rose-700">{e.error}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {result.rows?.filter(r => r.action === "created").length > 0 && (
+                  <div className="rounded-md border overflow-hidden max-h-64 overflow-y-auto" data-testid="ss-bulk-created">
+                    <div className="bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
+                      Imported successfully ({result.created})
+                    </div>
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-50 text-[10px] uppercase text-muted-foreground">
+                        <tr><th className="text-left px-3 py-1">Row</th><th className="text-left px-3 py-1">Employee ID</th><th className="text-left px-3 py-1">Name</th><th className="text-left px-3 py-1">SS No</th><th className="text-right px-3 py-1">Basic</th><th className="text-right px-3 py-1">Gross</th><th className="text-left px-3 py-1 pl-4">Eff From</th></tr>
+                      </thead>
+                      <tbody>
+                        {result.rows.filter(r => r.action === "created").map((r, i) => (
+                          <tr key={i} className="border-t">
+                            <td className="px-3 py-1 font-mono">{r.row}</td>
+                            <td className="px-3 py-1 font-mono">{r.employee_id}</td>
+                            <td className="px-3 py-1">{r.employee_name}</td>
+                            <td className="px-3 py-1 font-mono">{r.structure_no}</td>
+                            <td className="px-3 py-1 text-right">{inr(r.basic)}</td>
+                            <td className="px-3 py-1 text-right font-semibold">{inr(r.gross)}</td>
+                            <td className="px-3 py-1 pl-4 font-mono">{r.effective_from}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={close} data-testid="ss-bulk-close">Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 // ─────────── SALARY STRUCTURES ───────────
 function StructuresView() {
   const [rows, setRows] = useState([]);
@@ -131,7 +278,10 @@ function StructuresView() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between flex-wrap gap-2">
         <CardTitle className="text-sm flex items-center gap-2"><DollarSign className="h-4 w-4" /> Salary / Wage Structures</CardTitle>
-        <Button size="sm" onClick={() => setOpen(true)} data-testid="hr4-ss-new"><Plus className="h-4 w-4 mr-1" /> New Structure</Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <SalaryBulkUpload onDone={load} />
+          <Button size="sm" onClick={() => setOpen(true)} data-testid="hr4-ss-new"><Plus className="h-4 w-4 mr-1" /> New Structure</Button>
+        </div>
       </CardHeader>
       <CardContent>
         <Table>

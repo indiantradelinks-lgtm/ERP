@@ -197,29 +197,34 @@ async def approve_structure(sid: str, p: ApprovalIn, request: Request,
     })
     # When approved, sync into payroll_master so existing run engine picks it up
     if p.decision == "approve":
-        await db.payroll_master.update_one(
-            {"employee_id": row["employee_id"]},
-            {"$setOnInsert": {"id": new_id(), "created_at": now_iso()},
-             "$set": {
-                "employee_id": row["employee_id"],
-                "basic": row["basic"], "hra": row["hra"],
-                "da": row.get("da", 0),
-                "conveyance": row["conveyance"],
-                "site_allowance": row["site_allowance"],
-                "food_allowance": row.get("food_allowance", 0),
-                "other_allowance": row.get("other_allowance", 0),
-                "attendance_bonus_applicable": row.get("attendance_bonus_applicable", False),
-                "attendance_bonus_amount": row.get("attendance_bonus_amount", 0),
-                "overtime_rate": row.get("overtime_rate", 0),
-                "pf_applicable": row["pf_applicable"],
-                "esi_applicable": row["esic_applicable"],
-                "tds_applicable": row.get("tds_applicable", False),
-                "wage_type": row.get("wage_type", "monthly"),
-                "effective_from": row["effective_from"],
-                "synced_structure_id": sid,
-                "updated_at": now_iso(),
-            }}, upsert=True)
+        await sync_structure_to_payroll_master(row, sid)
     return after
+
+
+async def sync_structure_to_payroll_master(row: Dict[str, Any], sid: str):
+    """Push an approved salary structure into `payroll_master` (the payroll run engine source)."""
+    await db.payroll_master.update_one(
+        {"employee_id": row["employee_id"]},
+        {"$setOnInsert": {"id": new_id(), "created_at": now_iso()},
+         "$set": {
+            "employee_id": row["employee_id"],
+            "basic": row.get("basic", 0), "hra": row.get("hra", 0),
+            "da": row.get("da", 0),
+            "conveyance": row.get("conveyance", 0),
+            "site_allowance": row.get("site_allowance", 0),
+            "food_allowance": row.get("food_allowance", 0),
+            "other_allowance": row.get("other_allowance", 0),
+            "attendance_bonus_applicable": row.get("attendance_bonus_applicable", False),
+            "attendance_bonus_amount": row.get("attendance_bonus_amount", 0),
+            "overtime_rate": row.get("overtime_rate", 0),
+            "pf_applicable": row.get("pf_applicable", True),
+            "esi_applicable": row.get("esic_applicable", False),
+            "tds_applicable": row.get("tds_applicable", False),
+            "wage_type": row.get("wage_type", "monthly"),
+            "effective_from": row.get("effective_from"),
+            "synced_structure_id": sid,
+            "updated_at": now_iso(),
+        }}, upsert=True)
 
 
 @router.get("/salary-structures/{sid}/audit")
