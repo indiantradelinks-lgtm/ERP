@@ -4,7 +4,7 @@
  * Sub-views rendered inside the Accounts module shell.
  * Endpoints under `/api/billing/*`.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +43,185 @@ function Field({ label, children, className = "" }) {
       <Label className="text-[10px] uppercase tracking-wider">{label}</Label>
       {children}
     </div>
+  );
+}
+
+/* ═══════════════════ Live report plumbing ═══════════════════
+ * Every receivable report below is a *derived* view of db.client_receipts —
+ * post a receipt under Billing → Receipts and it shows up here instantly.
+ * `useLiveReport` adds loading / error surfacing + 60s auto-refresh +
+ * refresh-on-tab-focus so the numbers are never stale.
+ */
+export function useLiveReport(path, params = {}) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [syncedAt, setSyncedAt] = useState(null);
+  const qs = JSON.stringify(params || {});
+
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const res = await api.get(path, { params: JSON.parse(qs) });
+      setData(res.data);
+      setError("");
+      setSyncedAt(new Date());
+    } catch (e) {
+      const status = e.response?.status;
+      setError(status === 403
+        ? "Your role does not have Accounts (accounting:read) permission for this report. Ask a super admin to grant Accounts access."
+        : (e.response?.data?.detail || "Could not load this report right now. Hit Refresh to retry."));
+    } finally { setLoading(false); }
+  }, [path, qs]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const timer = setInterval(() => load(true), 60000);
+    const onFocus = () => { if (!document.hidden) load(true); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [load]);
+
+  return { data, loading, error, syncedAt, reload: load };
+}
+
+export async function downloadReportCsv(path, params, filename) {
+  try {
+    const res = await api.get(path, { params, responseType: "blob" });
+    const url = window.URL.createObjectURL(new Blob([res.data], { type: "text/csv" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = `${filename}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    window.URL.revokeObjectURL(url);
+    toast.success("Export downloaded");
+  } catch (e) {
+    toast.error(e.response?.status === 403 ? "No permission to export this report" : "Export failed");
+  }
+}
+
+export function ReportShell({ title, subtitle, actions, loading, error, syncedAt, onRetry, children, testid }) {
+  return (
+    <Card data-testid={testid}>
+      <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 gap-3">
+        <div>
+          <CardTitle className="text-base">{title}
+            {subtitle && <span className="ml-2 text-sm text-slate-500 font-normal">{subtitle}</span>}
+          </CardTitle>
+          <div className="text-[10px] text-slate-400 mt-0.5">
+            {loading ? "Syncing…" : syncedAt ? `Live · auto-refreshes every 60s · last synced ${syncedAt.toLocaleTimeString()}` : "—"}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 justify-end">{actions}</div>
+      </CardHeader>
+      <CardContent>
+        {error && (
+          <div className="mb-3 flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700" data-testid={`${testid}-error`}>
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <div className="flex-1">{error}</div>
+            {onRetry && <Button size="sm" variant="outline" className="h-6 text-[11px]" onClick={() => onRetry()}>Retry</Button>}
+          </div>
+        )}
+        {loading && !error ? (
+          <div className="space-y-2" data-testid={`${testid}-skeleton`}>
+            {[...Array(5)].map((_, i) => <div key={i} className="h-8 rounded bg-slate-100 animate-pulse" />)}
+          </div>
+        ) : children}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* Drill-down: full receipt + linked invoices + journal entry */
+export function ReceiptDrillDialog({ receiptId, onClose }) {
+  const [rcpt, setRcpt] = useState(null);
+  useEffect(() => {
+    if (!receiptId) { setRcpt(null); return; }
+    api.get(`/billing/receipts/${receiptId}`)
+      .then(r => setRcpt(r.data))
+      .catch(() => toast.error("Could not load receipt"));
+  }, [receiptId]);
+
+  const je = rcpt?.journal_entry;
+  return (
+    <Dialog open={!!receiptId} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-3xl max-h-[88vh] overflow-y-auto" data-testid="receipt-drill-dialog">
+        <DialogHeader>
+          <DialogTitle>Receipt {rcpt?.receipt_no || ""}</DialogTitle>
+          <DialogDescription>{rcpt?.client_name} · {rcpt?.receipt_date} · {rcpt?.mode}</DialogDescription>
+        </DialogHeader>
+        {!rcpt ? <div className="h-24 rounded bg-slate-100 animate-pulse" /> : (
+          <div className="space-y-4 text-sm">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {[["Amount Received", rcpt.amount], ["TDS Deducted", rcpt.tds_deducted],
+                ["Retention Held", rcpt.retention_deducted], ["Total Adjusted", rcpt.total_adjusted]].map(([l, v]) => (
+                <div key={l} className="rounded-md border bg-slate-50 p-2">
+                  <div className="text-[10px] uppercase text-slate-500">{l}</div>
+                  <div className="font-bold tabular-nums">{fmt(v)}</div>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
+              <div><span className="text-slate-500">UTR / Ref:</span> {rcpt.txn_reference || "—"}</div>
+              <div><span className="text-slate-500">Bank:</span> {rcpt.bank_account || "—"}</div>
+              <div><span className="text-slate-500">Project:</span> {rcpt.project_code || "—"}</div>
+              <div><span className="text-slate-500">Created:</span> {(rcpt.created_at || "").slice(0, 16).replace("T", " ")} · {rcpt.created_by}</div>
+              <div className="col-span-2"><span className="text-slate-500">Remarks:</span> {rcpt.remarks || "—"}</div>
+            </div>
+
+            <div>
+              <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-1">Linked Invoices</div>
+              {(rcpt.invoices || []).length === 0 ? <div className="text-xs text-slate-400">On-account receipt — no invoice linked.</div> : (
+                <table className="w-full text-xs border rounded-md overflow-hidden">
+                  <thead className="bg-slate-50 uppercase text-[10px] text-slate-600">
+                    <tr><th className="text-left px-2 py-1.5">Invoice #</th><th className="text-left px-2 py-1.5">Date</th><th className="text-right px-2 py-1.5">Gross</th><th className="text-right px-2 py-1.5">Outstanding</th><th className="text-left px-2 py-1.5">Status</th></tr>
+                  </thead>
+                  <tbody>
+                    {rcpt.invoices.map(i => (
+                      <tr key={i.id} className="border-t">
+                        <td className="px-2 py-1 font-mono">{i.invoice_no}</td>
+                        <td className="px-2 py-1 font-mono">{i.invoice_date}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{fmt(i.totals?.gross_value)}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{fmt(i.outstanding)}</td>
+                        <td className="px-2 py-1">{i.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div>
+              <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-1">Journal Entry {rcpt.je_voucher_number ? `· ${rcpt.je_voucher_number}` : ""}</div>
+              {!je ? <div className="text-xs text-slate-400">No journal entry linked.</div> : (
+                <table className="w-full text-xs border rounded-md overflow-hidden">
+                  <thead className="bg-slate-50 uppercase text-[10px] text-slate-600">
+                    <tr><th className="text-left px-2 py-1.5">Account</th><th className="text-left px-2 py-1.5">Narration</th><th className="text-right px-2 py-1.5">Debit</th><th className="text-right px-2 py-1.5">Credit</th></tr>
+                  </thead>
+                  <tbody>
+                    {(je.lines || []).map((l, i) => (
+                      <tr key={i} className="border-t">
+                        <td className="px-2 py-1">{l.account_name || l.account_code}</td>
+                        <td className="px-2 py-1 text-slate-500">{l.narration || je.narration || "—"}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{l.debit ? fmt(l.debit) : "—"}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{l.credit ? fmt(l.credit) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+        <DialogFooter>
+          <Button size="sm" variant="outline" onClick={onClose} data-testid="receipt-drill-close">Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -851,92 +1030,298 @@ export function GSTSalesRegisterView() {
 
 /* ═══════════════════ TDS Receivable ═══════════════════ */
 export function TDSReceivableView() {
-  const [data, setData] = useState({ clients: [], total_tds: 0 });
-  const load = () => api.get("/billing/reports/tds-receivable").then(r => setData(r.data));
-  useEffect(() => { load(); }, []);
+  const [filters, setFilters] = useState({ fy: "", cert_status: "" });
+  const { data, loading, error, syncedAt, reload } = useLiveReport("/billing/reports/tds-receivable", filters);
+  const [certFor, setCertFor] = useState(null);
+  const [certForm, setCertForm] = useState({ certificate_no: "", certificate_date: "", remarks: "" });
+  const [drill, setDrill] = useState(null);
+  const d = data || { clients: [], total_tds: 0, certificate_received: 0, certificate_pending: 0, fy_options: [] };
+
+  const openCert = (r) => {
+    setCertFor(r);
+    setCertForm({
+      certificate_no: r.certificate_no || "",
+      certificate_date: r.certificate_date || new Date().toISOString().slice(0, 10),
+      remarks: r.certificate_remarks || "",
+    });
+  };
+
+  const saveCert = async (received) => {
+    try {
+      await api.patch(`/billing/receipts/${certFor.id}/tds-certificate`, { received, ...certForm });
+      toast.success(received ? "TDS certificate recorded" : "Certificate status cleared");
+      setCertFor(null);
+      reload(true);
+    } catch (e) { toast.error(e.response?.data?.detail || "Could not save certificate"); }
+  };
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-base">TDS Receivable <span className="ml-2 text-sm text-slate-500 font-normal">Total: {fmt(data.total_tds)}</span></CardTitle>
-        <Button size="sm" variant="outline" onClick={load}><RefreshCcw className="h-3.5 w-3.5 mr-1" />Refresh</Button>
-      </CardHeader>
-      <CardContent>
-        {(data.clients || []).map(c => (
-          <div key={c.client_name} className="border rounded-md mb-2">
+    <>
+      <ReportShell
+        testid="tds-receivable-report"
+        title="TDS Receivable"
+        subtitle={`Total ${fmt(d.total_tds)} · Certificate pending ${fmt(d.certificate_pending)}`}
+        loading={loading} error={error} syncedAt={syncedAt} onRetry={reload}
+        actions={<>
+          <select value={filters.fy} onChange={e => setFilters(f => ({ ...f, fy: e.target.value }))}
+            data-testid="tds-fy-filter" className="h-8 rounded-md border px-2 text-xs">
+            <option value="">All financial years</option>
+            {(d.fy_options || []).map(f => <option key={f} value={f}>{f}</option>)}
+          </select>
+          <select value={filters.cert_status} onChange={e => setFilters(f => ({ ...f, cert_status: e.target.value }))}
+            data-testid="tds-cert-filter" className="h-8 rounded-md border px-2 text-xs">
+            <option value="">All certificates</option>
+            <option value="pending">Certificate pending</option>
+            <option value="received">Certificate received</option>
+          </select>
+          <Button size="sm" variant="outline" data-testid="tds-export-btn"
+            onClick={() => downloadReportCsv("/billing/reports/tds-receivable/export", { fy: filters.fy }, "tds_receivable")}>
+            <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />Export
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => reload()} data-testid="tds-refresh-btn"><RefreshCcw className="h-3.5 w-3.5 mr-1" />Refresh</Button>
+        </>}
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+          {[["TDS Deducted", d.total_tds, "text-slate-900"],
+            ["Certificates Received", d.certificate_received, "text-emerald-700"],
+            ["Certificates Pending", d.certificate_pending, "text-amber-700"]].map(([l, v, cls]) => (
+            <div key={l} className="p-3 rounded-md border bg-slate-50">
+              <div className="text-[10px] uppercase text-slate-500">{l}</div>
+              <div className={`text-lg font-bold tabular-nums ${cls}`}>{fmt(v)}</div>
+            </div>
+          ))}
+        </div>
+
+        {(d.clients || []).map(c => (
+          <div key={c.client_name} className="border rounded-md mb-2 overflow-hidden">
             <div className="flex justify-between px-3 py-2 bg-slate-100 font-semibold text-sm">
-              <span>{c.client_name}</span><span className="tabular-nums">{fmt(c.tds_deducted)}</span>
+              <span>{c.client_name}</span>
+              <span className="tabular-nums">{fmt(c.tds_deducted)}
+                <span className="ml-2 text-[10px] font-normal text-amber-700">pending {fmt(c.certificate_pending)}</span>
+              </span>
             </div>
             <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-[10px] uppercase text-slate-500">
+                <tr><th className="text-left px-3 py-1">Receipt #</th><th className="text-left px-3 py-1">Date</th><th className="text-left px-3 py-1">FY / Qtr</th><th className="text-left px-3 py-1">Project</th><th className="text-right px-3 py-1">TDS</th><th className="text-left px-3 py-1 pl-6">Form 16A</th><th className="text-right px-3 py-1">Action</th></tr>
+              </thead>
               <tbody>
-                {c.receipts.map((r, i) => (
-                  <tr key={i} className="border-t">
-                    <td className="px-3 py-1 font-mono text-xs w-32">{r.receipt_no}</td>
-                    <td className="px-3 py-1 font-mono text-xs w-28">{r.receipt_date}</td>
+                {c.receipts.map(r => (
+                  <tr key={r.id} className="border-t hover:bg-slate-50">
+                    <td className="px-3 py-1 font-mono text-xs">
+                      <button className="text-blue-700 hover:underline" onClick={() => setDrill(r.id)} data-testid={`tds-drill-${r.receipt_no}`}>{r.receipt_no}</button>
+                    </td>
+                    <td className="px-3 py-1 font-mono text-xs">{r.receipt_date}</td>
+                    <td className="px-3 py-1 text-xs">{r.fy} · {r.quarter}</td>
+                    <td className="px-3 py-1 font-mono text-[10px]">{r.project_code || "—"}</td>
                     <td className="px-3 py-1 text-right tabular-nums">{fmt(r.tds_deducted)}</td>
+                    <td className="px-3 py-1 pl-6">
+                      {r.certificate_received
+                        ? <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">Received {r.certificate_no ? `· ${r.certificate_no}` : ""}</span>
+                        : <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800">Pending</span>}
+                    </td>
+                    <td className="px-3 py-1 text-right">
+                      <Button size="sm" variant="outline" className="h-6 text-[10px]" onClick={() => openCert(r)} data-testid={`tds-cert-btn-${r.receipt_no}`}>
+                        {r.certificate_received ? "Edit" : "Mark Received"}
+                      </Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ))}
-        {data.clients?.length === 0 && <div className="text-center py-6 text-xs text-slate-400">No TDS deducted yet.</div>}
-      </CardContent>
-    </Card>
+        {(d.clients || []).length === 0 && !error && (
+          <div className="text-center py-8 text-xs text-slate-400">
+            No TDS deducted for this filter. TDS rows appear automatically when a receipt with a TDS deduction is posted under Billing → Receipts.
+          </div>
+        )}
+      </ReportShell>
+
+      <ReceiptDrillDialog receiptId={drill} onClose={() => setDrill(null)} />
+
+      <Dialog open={!!certFor} onOpenChange={(v) => !v && setCertFor(null)}>
+        <DialogContent className="max-w-md" data-testid="tds-cert-dialog">
+          <DialogHeader>
+            <DialogTitle>TDS Certificate (Form 16A)</DialogTitle>
+            <DialogDescription>{certFor?.receipt_no} · {fmt(certFor?.tds_deducted)} · {certFor?.fy} {certFor?.quarter}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Field label="Certificate No">
+              <Input value={certForm.certificate_no} onChange={e => setCertForm(f => ({ ...f, certificate_no: e.target.value }))} data-testid="tds-cert-no" />
+            </Field>
+            <Field label="Certificate Date">
+              <Input type="date" value={certForm.certificate_date} onChange={e => setCertForm(f => ({ ...f, certificate_date: e.target.value }))} data-testid="tds-cert-date" />
+            </Field>
+            <Field label="Remarks">
+              <Input value={certForm.remarks} onChange={e => setCertForm(f => ({ ...f, remarks: e.target.value }))} data-testid="tds-cert-remarks" />
+            </Field>
+          </div>
+          <DialogFooter>
+            {certFor?.certificate_received && (
+              <Button size="sm" variant="outline" onClick={() => saveCert(false)} data-testid="tds-cert-clear">Clear status</Button>
+            )}
+            <Button size="sm" onClick={() => saveCert(true)} data-testid="tds-cert-save">
+              <CheckCircle2 className="h-3.5 w-3.5 mr-1" />Mark Received
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
 /* ═══════════════════ Retention Receivable ═══════════════════ */
 export function RetentionReceivableView() {
-  const [data, setData] = useState({ clients: [], total_retention: 0 });
-  const load = () => api.get("/billing/reports/retention-receivable").then(r => setData(r.data));
-  useEffect(() => { load(); }, []);
+  const { data, loading, error, syncedAt, reload } = useLiveReport("/billing/reports/retention-receivable");
+  const [drill, setDrill] = useState(null);
+  const d = data || { clients: [], total_retention: 0 };
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-base">Retention Receivable <span className="ml-2 text-sm text-slate-500 font-normal">Total: {fmt(data.total_retention)}</span></CardTitle>
-        <Button size="sm" variant="outline" onClick={load}><RefreshCcw className="h-3.5 w-3.5 mr-1" />Refresh</Button>
-      </CardHeader>
-      <CardContent>
-        {(data.clients || []).map(c => (
-          <div key={c.client_name} className="border rounded-md mb-2">
+    <>
+      <ReportShell
+        testid="retention-receivable-report"
+        title="Retention Receivable"
+        subtitle={`Total: ${fmt(d.total_retention)}`}
+        loading={loading} error={error} syncedAt={syncedAt} onRetry={reload}
+        actions={<>
+          <Button size="sm" variant="outline" data-testid="retn-export-btn"
+            onClick={() => downloadReportCsv("/billing/reports/retention-receivable/export", {}, "retention_receivable")}>
+            <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />Export
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => reload()} data-testid="retn-refresh-btn"><RefreshCcw className="h-3.5 w-3.5 mr-1" />Refresh</Button>
+        </>}
+      >
+        {(d.clients || []).map(c => (
+          <div key={c.client_name} className="border rounded-md mb-2 overflow-hidden">
             <div className="flex justify-between px-3 py-2 bg-slate-100 font-semibold text-sm">
               <span>{c.client_name}</span><span className="tabular-nums">{fmt(c.retention_deducted)}</span>
             </div>
+            <table className="w-full text-sm">
+              <tbody>
+                {(c.receipts || []).map((r, i) => (
+                  <tr key={i} className="border-t hover:bg-slate-50">
+                    <td className="px-3 py-1 font-mono text-xs w-36">{r.receipt_no}</td>
+                    <td className="px-3 py-1 font-mono text-xs w-28">{r.receipt_date}</td>
+                    <td className="px-3 py-1 text-right tabular-nums">{fmt(r.retention_deducted)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ))}
-        {data.clients?.length === 0 && <div className="text-center py-6 text-xs text-slate-400">No retention withheld yet.</div>}
-      </CardContent>
-    </Card>
+        {(d.clients || []).length === 0 && !error && (
+          <div className="text-center py-8 text-xs text-slate-400">
+            No retention withheld yet. Retention rows appear automatically when a receipt with a retention deduction is posted.
+          </div>
+        )}
+      </ReportShell>
+      <ReceiptDrillDialog receiptId={drill} onClose={() => setDrill(null)} />
+    </>
   );
 }
 
 /* ═══════════════════ Collection Report ═══════════════════ */
 export function CollectionReportView() {
-  const [data, setData] = useState({ rows: [], totals: {} });
-  const load = () => api.get("/billing/reports/collection").then(r => setData(r.data));
-  useEffect(() => { load(); }, []);
+  const monthStart = new Date().toISOString().slice(0, 8) + "01";
+  const [filters, setFilters] = useState({ start: "", end: "", client_name: "", project_id: "", mode: "" });
+  const { data, loading, error, syncedAt, reload } = useLiveReport("/billing/reports/collection", filters);
+  const [clients, setClients] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [drill, setDrill] = useState(null);
+  const d = data || { rows: [], totals: {}, trend: [], by_client: [], modes: [] };
+
+  useEffect(() => {
+    api.get("/clients").then(r => setClients(r.data || [])).catch(() => {});
+    api.get("/projects").then(r => setProjects(r.data || [])).catch(() => {});
+  }, []);
+
+  const maxTrend = Math.max(1, ...(d.trend || []).map(t => t.total_adjusted || 0));
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-base">Collection Report</CardTitle>
-        <Button size="sm" variant="outline" onClick={load}><RefreshCcw className="h-3.5 w-3.5 mr-1" />Refresh</Button>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-4 gap-2 mb-3">
-          <div className="p-3 rounded-md border bg-slate-50"><div className="text-[10px] uppercase text-slate-500">Total Adjusted</div><div className="text-lg font-bold tabular-nums">{fmt(data.totals?.total_adjusted)}</div></div>
-          <div className="p-3 rounded-md border bg-slate-50"><div className="text-[10px] uppercase text-slate-500">Cash Received</div><div className="text-lg font-bold tabular-nums text-emerald-700">{fmt(data.totals?.amount_received)}</div></div>
-          <div className="p-3 rounded-md border bg-slate-50"><div className="text-[10px] uppercase text-slate-500">TDS Deducted</div><div className="text-lg font-bold tabular-nums text-amber-700">{fmt(data.totals?.tds_deducted)}</div></div>
-          <div className="p-3 rounded-md border bg-slate-50"><div className="text-[10px] uppercase text-slate-500">Retention Held</div><div className="text-lg font-bold tabular-nums text-amber-700">{fmt(data.totals?.retention_deducted)}</div></div>
+    <>
+      <ReportShell
+        testid="collection-report"
+        title="Collection Report"
+        subtitle={`${d.totals?.count || 0} receipts`}
+        loading={loading} error={error} syncedAt={syncedAt} onRetry={reload}
+        actions={<>
+          <Button size="sm" variant="outline" data-testid="coll-export-btn"
+            onClick={() => downloadReportCsv("/billing/reports/collection/export", filters, "collection_report")}>
+            <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />Export
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => reload()} data-testid="coll-refresh-btn"><RefreshCcw className="h-3.5 w-3.5 mr-1" />Refresh</Button>
+        </>}
+      >
+        {/* Filters */}
+        <div className="flex flex-wrap items-end gap-2 mb-3 p-2 rounded-md border bg-slate-50/60">
+          <Field label="From"><Input type="date" className="h-8 w-36 text-xs" value={filters.start}
+            onChange={e => setFilters(f => ({ ...f, start: e.target.value }))} data-testid="coll-start" /></Field>
+          <Field label="To"><Input type="date" className="h-8 w-36 text-xs" value={filters.end}
+            onChange={e => setFilters(f => ({ ...f, end: e.target.value }))} data-testid="coll-end" /></Field>
+          <Field label="Client">
+            <select className="h-8 rounded-md border px-2 text-xs w-48" value={filters.client_name}
+              onChange={e => setFilters(f => ({ ...f, client_name: e.target.value }))} data-testid="coll-client">
+              <option value="">All clients</option>
+              {clients.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Project">
+            <select className="h-8 rounded-md border px-2 text-xs w-48" value={filters.project_id}
+              onChange={e => setFilters(f => ({ ...f, project_id: e.target.value }))} data-testid="coll-project">
+              <option value="">All projects</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.code || p.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Mode">
+            <select className="h-8 rounded-md border px-2 text-xs w-32" value={filters.mode}
+              onChange={e => setFilters(f => ({ ...f, mode: e.target.value }))} data-testid="coll-mode">
+              <option value="">All modes</option>
+              {(d.modes || []).map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </Field>
+          <div className="flex gap-1 ml-auto">
+            <Button size="sm" variant="outline" className="h-8 text-[11px]" data-testid="coll-this-month"
+              onClick={() => setFilters(f => ({ ...f, start: monthStart, end: new Date().toISOString().slice(0, 10) }))}>This month</Button>
+            <Button size="sm" variant="ghost" className="h-8 text-[11px]" data-testid="coll-clear-filters"
+              onClick={() => setFilters({ start: "", end: "", client_name: "", project_id: "", mode: "" })}>Clear</Button>
+          </div>
         </div>
+
+        {/* KPIs */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
+          <div className="p-3 rounded-md border bg-slate-50"><div className="text-[10px] uppercase text-slate-500">Total Adjusted</div><div className="text-lg font-bold tabular-nums" data-testid="coll-kpi-adjusted">{fmt(d.totals?.total_adjusted)}</div></div>
+          <div className="p-3 rounded-md border bg-slate-50"><div className="text-[10px] uppercase text-slate-500">Cash Received</div><div className="text-lg font-bold tabular-nums text-emerald-700">{fmt(d.totals?.amount_received)}</div></div>
+          <div className="p-3 rounded-md border bg-slate-50"><div className="text-[10px] uppercase text-slate-500">TDS Deducted</div><div className="text-lg font-bold tabular-nums text-amber-700">{fmt(d.totals?.tds_deducted)}</div></div>
+          <div className="p-3 rounded-md border bg-slate-50"><div className="text-[10px] uppercase text-slate-500">Retention Held</div><div className="text-lg font-bold tabular-nums text-amber-700">{fmt(d.totals?.retention_deducted)}</div></div>
+        </div>
+
+        {/* Monthly trend */}
+        {(d.trend || []).length > 0 && (
+          <div className="mb-3 p-3 rounded-md border" data-testid="coll-trend">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-2">Monthly Collection Trend</div>
+            <div className="flex items-end gap-3 h-32">
+              {d.trend.map(t => (
+                <div key={t.month} className="flex-1 flex flex-col items-center justify-end gap-1 min-w-[38px]">
+                  <div className="text-[10px] tabular-nums text-slate-600">{fmt(t.total_adjusted)}</div>
+                  <div className="w-full max-w-[72px] rounded-t bg-blue-600/80 transition-all hover:bg-blue-700"
+                    style={{ height: `${Math.max(4, (t.total_adjusted / maxTrend) * 90)}px` }} title={`${t.count} receipts`} />
+                  <div className="text-[10px] text-slate-500">{t.month}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Rows */}
         <div className="border rounded-md overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-600">
               <tr><th className="text-left px-3 py-2">Receipt #</th><th className="text-left px-3 py-2">Created</th><th className="text-left px-3 py-2">Date</th><th className="text-left px-3 py-2">Client</th><th className="text-left px-3 py-2">Project</th><th className="text-left px-3 py-2">Mode</th><th className="text-right px-3 py-2">Amount</th><th className="text-right px-3 py-2">TDS</th><th className="text-right px-3 py-2">Retn</th><th className="text-right px-3 py-2">Total</th></tr>
             </thead>
             <tbody>
-              {(data.rows || []).map(r => (
-                <tr key={r.id} className="border-t hover:bg-slate-50">
-                  <td className="px-3 py-1.5 font-mono text-xs">{r.receipt_no}</td>
+              {(d.rows || []).map(r => (
+                <tr key={r.id} className="border-t hover:bg-slate-50 cursor-pointer" onClick={() => setDrill(r.id)} data-testid={`coll-row-${r.receipt_no}`}>
+                  <td className="px-3 py-1.5 font-mono text-xs text-blue-700">{r.receipt_no}</td>
                   <td className="px-3 py-1.5 text-xs whitespace-nowrap">{r.created_at ? <>{r.created_at.slice(0, 10)}<div className="text-[10px] text-muted-foreground">{r.created_at.slice(11, 16)}</div></> : "—"}</td>
                   <td className="px-3 py-1.5 font-mono text-xs">{r.receipt_date}</td>
                   <td className="px-3 py-1.5">{r.client_name}</td>
@@ -948,12 +1333,17 @@ export function CollectionReportView() {
                   <td className="px-3 py-1.5 text-right tabular-nums font-semibold">{fmt(r.total_adjusted)}</td>
                 </tr>
               ))}
-              {(data.rows || []).length === 0 && <tr><td colSpan={10} className="text-center py-6 text-xs text-slate-400">No collections.</td></tr>}
+              {(d.rows || []).length === 0 && !error && (
+                <tr><td colSpan={10} className="text-center py-8 text-xs text-slate-400">
+                  No collections for this filter. Receipts posted under Billing → Receipts appear here automatically.
+                </td></tr>
+              )}
             </tbody>
           </table>
         </div>
-      </CardContent>
-    </Card>
+      </ReportShell>
+      <ReceiptDrillDialog receiptId={drill} onClose={() => setDrill(null)} />
+    </>
   );
 }
 

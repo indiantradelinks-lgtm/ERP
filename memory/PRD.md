@@ -5918,3 +5918,21 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - PPC (`payment_processing_router.py`): `_employee_bank()` helper with legacy fallback; employee-code lookup matches both `emp_code` and `employee_id`.
 - Employee form: added "Beneficiary Name (as per bank)" field.
 - Verified: legacy-header upload → canonical fields saved → visible in Edit form → PPC Verify dialog auto-fills beneficiary/bank/account/IFSC.
+
+## Accounts Receivables Reports — Live Data + Filters + TDS Certificates (Jun 2026, iter186)
+**User question**: Collection Report / TDS Receivable pages looked empty (Rs 0) — "enable them and link them with real data".
+**Finding**: Both were already live views over `db.client_receipts` (every receipt posted under Accounts → Billing → Receipts auto-posts a JE and instantly feeds Collection / TDS / Retention reports). They silently swallowed API errors (403 → blank "No collections"), had no filters, no export, no refresh.
+### Backend (`routers/billing_router.py`)
+- Helpers: `_csv_response()` (UTF-8-BOM CSV StreamingResponse), `_fy_quarter()` (Indian FY + quarter), `_receipt_query()`.
+- `GET /billing/reports/collection` now accepts `start,end,client_id,client_name,project_id,mode` and returns `rows, totals(+count), trend[monthly buckets], by_client[], modes[]`.
+- New: `GET /billing/reports/collection/export`, `/reports/tds-receivable/export`, `/reports/retention-receivable/export` (CSV).
+- `GET /billing/reports/tds-receivable` → per-receipt `id, fy, quarter, certificate_received/no/date`, per-client `certificate_received/pending`, top-level `total_tds / certificate_received / certificate_pending / fy_options`; filters `fy`, `cert_status=pending|received`.
+- New: `PATCH /billing/receipts/{id}/tds-certificate` {received, certificate_no, certificate_date, remarks} → stores `tds_certificate` on the receipt (audited; clearing records cleared_by/at). 404 unknown id, 400 if zero TDS.
+- `GET /billing/receipts/{id}` now also returns `journal_entry` (with lines) for drill-down.
+### Frontend (`pages/accounts/BillingViews.jsx`)
+- `useLiveReport()` hook: loading + error surfacing (403 → "role lacks accounting:read"), 60s auto-refresh, refresh on tab focus, `syncedAt` stamp. `ReportShell` (skeleton + error banner + retry), `downloadReportCsv()`, `ReceiptDrillDialog` (amounts, linked invoices, JE lines).
+- Collection Report: From/To + Client + Project + Mode filters, This-month/Clear shortcuts, 4 KPIs, Monthly Collection Trend bar strip, row click → drill-down, CSV export.
+- TDS Receivable: 3 KPIs (deducted / cert received / cert pending), FY + cert-status filters, FY·Qtr + Form-16A chip per receipt, "Mark Received" dialog, CSV export, receipt drill-down.
+- Retention Receivable: error/loading states, CSV export.
+### Testing
+- iteration_186: backend 20/20 pytest (`/app/backend/tests/test_iter186_receivables.py`), frontend 100% (filters, drill-down, cert save, 3 CSV downloads, RBAC 403 for sales role). No issues open.

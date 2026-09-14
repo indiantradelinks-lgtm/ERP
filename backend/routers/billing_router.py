@@ -35,6 +35,36 @@ from accounting_service import post_sales_invoice_issued, post_customer_receipt
 router = APIRouter(prefix="/billing", tags=["Billing & Receivables"])
 
 
+def _csv_response(rows: List[Dict[str, Any]], cols: List[tuple], filename: str):
+    """Stream a list of dicts as a UTF-8-BOM CSV (Excel friendly)."""
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([label for _, label in cols])
+    for r in rows:
+        w.writerow([r.get(key, "") if r.get(key) is not None else "" for key, _ in cols])
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return StreamingResponse(
+        io.BytesIO(buf.getvalue().encode("utf-8-sig")),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}_{stamp}.csv"'},
+    )
+
+
+def _fy_quarter(date_iso: str) -> tuple[str, str]:
+    """Indian financial year + quarter for a YYYY-MM-DD date."""
+    try:
+        y, m = int(date_iso[:4]), int(date_iso[5:7])
+    except Exception:
+        return ("—", "—")
+    fy_start = y if m >= 4 else y - 1
+    fy = f"FY{fy_start}-{str(fy_start + 1)[-2:]}"
+    q = "Q1" if 4 <= m <= 6 else "Q2" if 7 <= m <= 9 else "Q3" if 10 <= m <= 12 else "Q4"
+    return (fy, q)
+
+
 # ─── Constants ──────────────────────────────────────────────────────────
 INVOICE_TYPES: Dict[str, str] = {
     "TAX":   "Tax Invoice",
@@ -532,6 +562,11 @@ async def get_receipt(receipt_id: str, user: dict = Depends(require_permission("
             {"_id": 0, "id": 1, "title": 1, "file_url": 1, "content_type": 1, "size": 1}
         ).to_list(50)
         rcpt["files"] = files
+    # Enrich with the auto-posted journal entry (drill-down)
+    if rcpt.get("je_id"):
+        je = await db.journal_entries.find_one({"id": rcpt["je_id"]}, {"_id": 0})
+        if je:
+            rcpt["journal_entry"] = je
     return rcpt
 
 
@@ -619,26 +654,98 @@ async def project_outstanding(user: dict = Depends(require_permission("accountin
     return {"projects": sorted(by_proj.values(), key=lambda x: -x["outstanding"])}
 
 
-@router.get("/reports/collection")
-async def collection_report(start: Optional[str] = None, end: Optional[str] = None,
-                            user: dict = Depends(require_permission("accounting", "read"))):
+def _receipt_query(start: Optional[str], end: Optional[str], client_id: Optional[str],
+                   client_name: Optional[str], project_id: Optional[str],
+                   mode: Optional[str]) -> Dict[str, Any]:
     q: Dict[str, Any] = {}
     if start:
         q["receipt_date"] = {**q.get("receipt_date", {}), "$gte": start}
     if end:
-          q["receipt_date"] = {**q.get("receipt_date", {}), "$lte": end}
-    rows = await db.client_receipts.find(q, {"_id": 0}).sort("receipt_date", -1).to_list(2000)
+        q["receipt_date"] = {**q.get("receipt_date", {}), "$lte": end}
+    if client_id:
+        q["client_id"] = client_id
+    if client_name:
+        q["client_name"] = client_name
+    if project_id:
+        q["project_id"] = project_id
+    if mode:
+        q["mode"] = mode
+    return q
+
+
+@router.get("/reports/collection")
+async def collection_report(start: Optional[str] = None, end: Optional[str] = None,
+                            client_id: Optional[str] = None, client_name: Optional[str] = None,
+                            project_id: Optional[str] = None, mode: Optional[str] = None,
+                            user: dict = Depends(require_permission("accounting", "read"))):
+    q = _receipt_query(start, end, client_id, client_name, project_id, mode)
+    rows = await db.client_receipts.find(q, {"_id": 0}).sort("receipt_date", -1).to_list(5000)
     total_gross = sum(float(r.get("total_adjusted") or 0) for r in rows)
     total_net = sum(float(r.get("amount") or 0) for r in rows)
     total_tds = sum(float(r.get("tds_deducted") or 0) for r in rows)
     total_retn = sum(float(r.get("retention_deducted") or 0) for r in rows)
+
+    # Monthly trend (oldest → newest) + client mix
+    months: Dict[str, Dict[str, Any]] = {}
+    clients: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        m = (r.get("receipt_date") or "")[:7] or "—"
+        b = months.setdefault(m, {"month": m, "amount_received": 0.0, "tds_deducted": 0.0,
+                                  "retention_deducted": 0.0, "total_adjusted": 0.0, "count": 0})
+        c = clients.setdefault(r.get("client_name") or "—",
+                               {"client_name": r.get("client_name") or "—",
+                                "total_adjusted": 0.0, "amount_received": 0.0, "count": 0})
+        for k_src, k_dst in (("amount", "amount_received"), ("tds_deducted", "tds_deducted"),
+                             ("retention_deducted", "retention_deducted"),
+                             ("total_adjusted", "total_adjusted")):
+            b[k_dst] += float(r.get(k_src) or 0)
+        b["count"] += 1
+        c["total_adjusted"] += float(r.get("total_adjusted") or 0)
+        c["amount_received"] += float(r.get("amount") or 0)
+        c["count"] += 1
+
+    trend = [{k: (round(v, 2) if isinstance(v, float) else v) for k, v in b.items()}
+             for b in sorted(months.values(), key=lambda x: x["month"])]
+    by_client = sorted(({k: (round(v, 2) if isinstance(v, float) else v) for k, v in c.items()}
+                        for c in clients.values()), key=lambda x: -x["total_adjusted"])
     return {
         "rows": rows,
+        "trend": trend,
+        "by_client": by_client,
+        "modes": RECEIPT_MODES,
         "totals": {
             "total_adjusted": round(total_gross, 2), "amount_received": round(total_net, 2),
             "tds_deducted": round(total_tds, 2), "retention_deducted": round(total_retn, 2),
+            "count": len(rows),
         },
     }
+
+
+@router.get("/reports/collection/export")
+async def collection_report_export(start: Optional[str] = None, end: Optional[str] = None,
+                                   client_id: Optional[str] = None, client_name: Optional[str] = None,
+                                   project_id: Optional[str] = None, mode: Optional[str] = None,
+                                   user: dict = Depends(require_permission("accounting", "read"))):
+    q = _receipt_query(start, end, client_id, client_name, project_id, mode)
+    rows = await db.client_receipts.find(q, {"_id": 0}).sort("receipt_date", -1).to_list(5000)
+    cols = [("receipt_no", "Receipt No"), ("receipt_date", "Receipt Date"),
+            ("created_at", "Created At"), ("created_by", "Created By"),
+            ("client_name", "Client"), ("project_code", "Project"),
+            ("mode", "Mode"), ("txn_reference", "UTR / Reference"),
+            ("amount", "Amount Received"), ("tds_deducted", "TDS Deducted"),
+            ("retention_deducted", "Retention Held"), ("other_deduction", "Other Deduction"),
+            ("total_adjusted", "Total Adjusted"), ("je_voucher_number", "Journal Voucher"),
+            ("remarks", "Remarks")]
+    return _csv_response(rows, cols, "collection_report")
+
+
+@router.get("/reports/retention-receivable/export")
+async def retention_receivable_export(user: dict = Depends(require_permission("accounting", "read"))):
+    rows = await db.client_receipts.find({"retention_deducted": {"$gt": 0}}, {"_id": 0}).sort("receipt_date", -1).to_list(5000)
+    cols = [("receipt_no", "Receipt No"), ("receipt_date", "Receipt Date"),
+            ("client_name", "Client"), ("project_code", "Project"),
+            ("retention_deducted", "Retention Held"), ("total_adjusted", "Total Adjusted")]
+    return _csv_response(rows, cols, "retention_receivable")
 
 
 @router.get("/reports/gst-sales-register")
@@ -672,21 +779,116 @@ async def gst_sales_register(start: Optional[str] = None, end: Optional[str] = N
 
 
 @router.get("/reports/tds-receivable")
-async def tds_receivable_report(user: dict = Depends(require_permission("accounting", "read"))):
-    """Per-client / per-project view of TDS that has been deducted but not yet
-    received as TDS certificate / refund."""
-    rcpts = await db.client_receipts.find({"tds_deducted": {"$gt": 0}}, {"_id": 0}).to_list(5000)
+async def tds_receivable_report(fy: Optional[str] = None, cert_status: Optional[str] = None,
+                                user: dict = Depends(require_permission("accounting", "read"))):
+    """Per-client view of TDS deducted by clients, with Form-16A certificate tracking."""
+    rcpts = await db.client_receipts.find({"tds_deducted": {"$gt": 0}}, {"_id": 0}).sort("receipt_date", -1).to_list(5000)
     by_client: Dict[str, Dict[str, Any]] = {}
+    fy_set = set()
+    total_tds = received = 0.0
     for r in rcpts:
+        r_fy, r_q = _fy_quarter(r.get("receipt_date") or "")
+        fy_set.add(r_fy)
+        cert = r.get("tds_certificate") or {}
+        is_received = bool(cert.get("received"))
+        if fy and r_fy != fy:
+            continue
+        if cert_status == "received" and not is_received:
+            continue
+        if cert_status == "pending" and is_received:
+            continue
+        amt = float(r.get("tds_deducted") or 0)
+        total_tds += amt
+        if is_received:
+            received += amt
         c = r["client_name"]
-        row = by_client.setdefault(c, {"client_name": c, "tds_deducted": 0.0, "receipts": []})
-        row["tds_deducted"] += float(r.get("tds_deducted") or 0)
+        row = by_client.setdefault(c, {"client_name": c, "tds_deducted": 0.0,
+                                       "certificate_received": 0.0, "certificate_pending": 0.0,
+                                       "receipts": []})
+        row["tds_deducted"] += amt
+        row["certificate_received" if is_received else "certificate_pending"] += amt
         row["receipts"].append({
-            "receipt_no": r["receipt_no"], "receipt_date": r["receipt_date"],
-            "tds_deducted": r.get("tds_deducted"), "project_id": r.get("project_id"),
+            "id": r["id"], "receipt_no": r["receipt_no"], "receipt_date": r["receipt_date"],
+            "tds_deducted": amt, "amount": r.get("amount"), "total_adjusted": r.get("total_adjusted"),
+            "project_id": r.get("project_id"), "project_code": r.get("project_code"),
+            "fy": r_fy, "quarter": r_q,
+            "certificate_received": is_received,
+            "certificate_no": cert.get("certificate_no"),
+            "certificate_date": cert.get("certificate_date"),
+            "certificate_remarks": cert.get("remarks"),
         })
+    for row in by_client.values():
+        for k in ("tds_deducted", "certificate_received", "certificate_pending"):
+            row[k] = round(row[k], 2)
     return {"clients": sorted(by_client.values(), key=lambda x: -x["tds_deducted"]),
-            "total_tds": round(sum(float(r.get("tds_deducted") or 0) for r in rcpts), 2)}
+            "total_tds": round(total_tds, 2),
+            "certificate_received": round(received, 2),
+            "certificate_pending": round(total_tds - received, 2),
+            "fy_options": sorted(fy_set, reverse=True)}
+
+
+@router.get("/reports/tds-receivable/export")
+async def tds_receivable_export(fy: Optional[str] = None,
+                                user: dict = Depends(require_permission("accounting", "read"))):
+    rcpts = await db.client_receipts.find({"tds_deducted": {"$gt": 0}}, {"_id": 0}).sort("receipt_date", -1).to_list(5000)
+    out = []
+    for r in rcpts:
+        r_fy, r_q = _fy_quarter(r.get("receipt_date") or "")
+        if fy and r_fy != fy:
+            continue
+        cert = r.get("tds_certificate") or {}
+        out.append({
+            "receipt_no": r["receipt_no"], "receipt_date": r["receipt_date"],
+            "client_name": r.get("client_name"), "project_code": r.get("project_code"),
+            "fy": r_fy, "quarter": r_q, "tds_deducted": r.get("tds_deducted"),
+            "total_adjusted": r.get("total_adjusted"),
+            "cert_status": "Received" if cert.get("received") else "Pending",
+            "certificate_no": cert.get("certificate_no"),
+            "certificate_date": cert.get("certificate_date"),
+        })
+    cols = [("receipt_no", "Receipt No"), ("receipt_date", "Receipt Date"), ("client_name", "Client"),
+            ("project_code", "Project"), ("fy", "Financial Year"), ("quarter", "Quarter"),
+            ("tds_deducted", "TDS Deducted"), ("total_adjusted", "Total Adjusted"),
+            ("cert_status", "Certificate Status"), ("certificate_no", "Certificate No"),
+            ("certificate_date", "Certificate Date")]
+    return _csv_response(out, cols, "tds_receivable")
+
+
+class TDSCertificatePayload(BaseModel):
+    received: bool = True
+    certificate_no: Optional[str] = None
+    certificate_date: Optional[str] = None
+    remarks: Optional[str] = None
+
+
+@router.patch("/receipts/{receipt_id}/tds-certificate")
+async def set_tds_certificate(receipt_id: str, payload: TDSCertificatePayload,
+                              user: dict = Depends(require_permission("accounting", "write"))):
+    """Mark the Form-16A TDS certificate for a receipt as received (or reset it)."""
+    rcpt = await db.client_receipts.find_one({"id": receipt_id}, {"_id": 0})
+    if not rcpt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    if float(rcpt.get("tds_deducted") or 0) <= 0:
+        raise HTTPException(status_code=400, detail="No TDS deducted on this receipt")
+    cert = {
+        "received": payload.received,
+        "certificate_no": payload.certificate_no,
+        "certificate_date": payload.certificate_date,
+        "remarks": payload.remarks,
+        "marked_at": now_iso(),
+        "marked_by": user.get("name") or user.get("email"),
+    } if payload.received else {
+        "received": False,
+        "cleared_at": now_iso(),
+        "cleared_by": user.get("name") or user.get("email"),
+    }
+    await db.client_receipts.update_one({"id": receipt_id}, {"$set": {
+        "tds_certificate": cert, "updated_at": now_iso(),
+        "updated_by": user.get("name") or user.get("email"),
+    }})
+    await audit(user=user, action="tds_certificate_update", resource="client_receipts",
+                record_id=receipt_id, after={"receipt_no": rcpt.get("receipt_no"), **cert})
+    return {"ok": True, "receipt_no": rcpt.get("receipt_no"), "tds_certificate": cert}
 
 
 @router.get("/reports/retention-receivable")

@@ -1,0 +1,25 @@
+{
+  "summary": "Iteration 186 — Receivables reports (Collection, TDS, Retention) + TDS certificate + Receipt drill enrichment. Backend: 20/20 pytest cases pass at /app/backend/tests/test_iter186_receivables.py (unfiltered collection totals ₹5,91,600 across 20 receipts / TDS ₹6,400; filters by client/mode/date-range verified as subsets; monthly trend buckets have month+amount+count; CSV exports return text/csv with Content-Disposition attachment and header row; PATCH /receipts/{id}/tds-certificate marks + clears cert, returns 404 for unknown id and 400 for zero-TDS receipt; receipt drill enriches with journal_entry.lines + invoices; sales@erp.com correctly 403 on collection/tds/retention/patch). Frontend: admin login → Accounts → Collection Report shows KPI tiles, Monthly Collection Trend bars and 20-row table; This month filter narrows KPI to ₹2,04,600 and Clear restores ₹5,91,600; clicking coll-row-RCPT-2026-0010 opens receipt-drill-dialog with Journal Entry + Linked Invoices sections; Export downloads collection_report.csv. TDS Receivable page has tds-fy-filter, tds-cert-filter, tds-export-btn, 6 tds-cert-btn-* rows; cert dialog opens, saving with cert no shows 'Export downloaded/toast' feedback and cert filter can be switched; TDS CSV downloads. Retention Receivable page CSV also downloads. No console errors on any of the three pages.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter186_receivables.py",
+    "/app/test_reports/pytest/iter186.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "billing_router.py is now 964 lines — nearing the 700-line split threshold. Consider extracting the /reports/* endpoints and _csv_response/_fy_quarter/_receipt_query helpers into billing_reports_router.py for maintainability.",
+    "collection_report() loads up to 5000 receipts unindexed and does the trend/by_client aggregation in Python. For >5k receipts scale this to a MongoDB aggregate pipeline. Same applies to tds_receivable_report and retention_receivable_report.",
+    "set_tds_certificate() writes tds_certificate as {} when payload.received is False (line 880). Consider {'received': False, 'cleared_at': now_iso(), 'cleared_by': ...} for auditability — right now the audit-log delta records after={} which loses the 'who cleared it' info.",
+    "collection_report_export() does not honour the same 5000 cap intent — a very large query silently truncates. Consider streaming or explicit ceiling warning header."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter186_receivables.py (new — 20 tests, all passing)"
+  ],
+  "success_rate": {"backend": "100% (20/20)", "frontend": "100% (all inner-nav pages, filters, drill-down, cert save, and 3 CSV downloads succeeded)"},
+  "test_credentials": "admin@erp.com/Admin@123 (super_admin), sales@erp.com/Sales@123 (403 RBAC checks) — both worked via httpOnly-cookie login.",
+  "seed_data_creation": "PATCH /api/billing/receipts/{id}/tds-certificate was called during tests for one Adani Power receipt (marked + cleared) and via UI marked one additional receipt with cert 16A/UI/ITER186. No new receipts created.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iter186_receivables.py is a stable regression suite for /api/billing/reports/collection, /collection/export, /tds-receivable, /tds-receivable/export, /retention-receivable/export, PATCH /receipts/{id}/tds-certificate and the enriched GET /receipts/{id}. It self-loads REACT_APP_BACKEND_URL from /app/frontend/.env when env var is not set. Frontend inner-nav navigation is via text click ('Collection Report' / 'TDS Receivable' / 'Retention Receivable'), not deep-link query params."
+}
