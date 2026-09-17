@@ -153,6 +153,9 @@ COLUMNS: Dict[str, List[Dict[str, str]]] = {
         {"key": "contract_start_date", "label": "Contract Start Date"},
         {"key": "contract_end_date", "label": "Contract End Date"},
         {"key": "budget", "label": "Budget"}, {"key": "progress", "label": "Progress %"},
+        {"key": "category_label", "label": "Project Category"},
+        {"key": "priority_label", "label": "Project Priority"},
+        {"key": "labour_licence_label", "label": "Labour Licence Required"},
         {"key": "status", "label": "Status"},
     ],
     "inventory": [

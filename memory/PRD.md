@@ -5969,3 +5969,8 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - Hydration error `<span> cannot be a child of <option>`: native `<option>`s with multiple JSX children in ProjectRequests/ProjectExpenses converted to single template-literal children. Console now clean.
 ### Testing
 - iteration_188: backend 16/16 pytest (`/app/backend/tests/test_head_office_expense.py`), frontend 100%. Both reported console errors fixed and re-verified.
+
+## Project Master — Labour Licence Required + richer Excel export (Jun 2026)
+- `pages/Projects.jsx`: new field **Labour Licence Required** (Yes/No select, stored as `labour_licence_required` = "yes"|"no") in section "9 · Status & Classification"; saves via the generic projects CRUD (verified with PUT /api/projects/{id}).
+- `exports.py` projects column map + `routers/exports_router._enrich_projects()`: Excel/PDF export now includes **Project Category**, **Project Priority** and **Labour Licence Required** with humanised values ("Long Term", "Urgent", "Yes"/"No", "—" when unset), populated from real project data.
+- Verified: xlsx header row = S. No., Work Order Number, Code, Project, Client, Type, Site, Project Manager, Contract Start/End, Budget, Progress %, Project Category, Project Priority, Labour Licence Required, Status.

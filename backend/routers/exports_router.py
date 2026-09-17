@@ -77,6 +77,14 @@ async def _enrich_projects(rows: list[dict]) -> list[dict]:
                         or h.get("project_manager_label")
                         or users.get(h.get("project_manager_id"))
                         or r.get("manager") or "")
+        r["category_label"] = str(r.get("category") or "").replace("_", " ").title() or "—"
+        r["priority_label"] = str(r.get("priority") or "").replace("_", " ").title() or "—"
+        llr = r.get("labour_licence_required")
+        if isinstance(llr, bool):
+            r["labour_licence_label"] = "Yes" if llr else "No"
+        else:
+            r["labour_licence_label"] = {"yes": "Yes", "true": "Yes", "no": "No", "false": "No"}.get(
+                str(llr or "").strip().lower(), "—")
     return rows
 
 
