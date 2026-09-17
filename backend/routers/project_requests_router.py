@@ -462,7 +462,7 @@ async def create_request(p: RequestIn, request: Request,
         emp = await db.employees.find_one({"email": user.get("email")},
                                           {"_id": 0, "id": 1, "name": 1, "employee_id": 1, "emp_code": 1})
     doc = {
-        "id": p.id or new_id(),
+        "id": new_id(),
         "request_no": await next_sequence("REQ"),
         "project_id": project["id"], "project_code": project.get("code"),
         "project_name": project.get("name"), "client_name": project.get("client"),

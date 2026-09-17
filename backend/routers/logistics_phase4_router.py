@@ -519,7 +519,7 @@ async def vb_create(
     if doc.get("status") in (None, "", "pending"):
         doc["status"] = "submitted"  # save directly into Pending Approval
     doc.update({
-        "id": payload.id or new_id(),
+        "id": payload.id if payload.id and not await db.vendor_bills.find_one({"id": payload.id}, {"_id": 1}) else new_id(),
         "vb_no": f"VB-{_yr()}-{seq:04d}",
         "net_payable": net,
         "bill_date": payload.bill_date or datetime.now(timezone.utc).date().isoformat(),

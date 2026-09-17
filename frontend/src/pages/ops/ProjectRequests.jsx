@@ -516,7 +516,7 @@ export default function ProjectRequests() {
                   <select value={form.material_category_id} onChange={(e) => onServiceCategoryChange(e.target.value)}
                     className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-service-category">
                     <option value="">— select category —</option>
-                    {categories.map((c) => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}
+                    {categories.map((c) => <option key={c.id} value={c.id}>{`${c.code} · ${c.name}`}</option>)}
                   </select>
                 </div>
                 )}
@@ -560,7 +560,7 @@ export default function ProjectRequests() {
                   employees={projectEmployees}
                   value={form.employee_id}
                   onChange={(id) => setForm({ ...form, employee_id: id })}
-                  placeholder={form.project_code ? "Search by ID / name…" : "Select project first…"}
+                  placeholder={form.project_code || isHO ? "Search by ID / name…" : "Select project first…"}
                   testid="req-form-employee"
                 />
                 <div>
@@ -605,7 +605,7 @@ export default function ProjectRequests() {
                 <select value={form.material_category_id} onChange={(e) => onCategoryChange(e.target.value)}
                   className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-material-category">
                   <option value="">— select category —</option>
-                  {categories.map((c) => <option key={c.id} value={c.id}>{c.code} · {c.name}{c.item_count ? ` (${c.item_count} items)` : ""}</option>)}
+                  {categories.map((c) => <option key={c.id} value={c.id}>{`${c.code} · ${c.name}${c.item_count ? ` (${c.item_count} items)` : ""}`}</option>)}
                 </select>
               </div>
             )}
@@ -615,7 +615,7 @@ export default function ProjectRequests() {
               <select value={form.cost_center_id} onChange={(e) => setForm({ ...form, cost_center_id: e.target.value })}
                 className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-costcenter">
                 <option value="">{(isSelf || isHO) && !form.project_code ? "— select project first —" : "— select cost center —"}</option>
-                {ccList.map((cc) => <option key={cc.id} value={cc.id}>{cc.category_code} · {cc.category_name}{cc.budget ? ` (budget ${inr(cc.budget)})` : ""}</option>)}
+                {ccList.map((cc) => <option key={cc.id} value={cc.id}>{`${cc.category_code} · ${cc.category_name}${cc.budget ? ` (budget ${inr(cc.budget)})` : ""}`}</option>)}
               </select>
             </div>
             ) : (
@@ -700,7 +700,7 @@ export default function ProjectRequests() {
                               setItem(i, m ? { item_id: m.id, item_code: m.code, name: m.name, unit: m.unit || "Nos", rate: m.last_rate || 0, unit_weight_kg: m.unit_weight_kg || it.unit_weight_kg, custom: false } : { item_id: "", item_code: "", name: "" });
                             }} className="h-8 rounded-sm border border-input bg-background px-2 text-xs col-span-4" data-testid={`req-item-select-${i}`}>
                               <option value="">— item from master —</option>
-                              {catItems.map((m) => <option key={m.id} value={m.id}>{m.name} · {m.code}{m.stock_qty ? ` (stock ${m.stock_qty})` : ""}</option>)}
+                              {catItems.map((m) => <option key={m.id} value={m.id}>{`${m.name} · ${m.code}${m.stock_qty ? ` (stock ${m.stock_qty})` : ""}`}</option>)}
                               <option value="__custom">Other / type manually…</option>
                             </select>
                           ) : (

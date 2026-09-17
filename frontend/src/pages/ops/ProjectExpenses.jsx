@@ -321,7 +321,7 @@ export default function ProjectExpenses({ embedded = false }) {
               <select value={form.cost_center_id} onChange={(e) => setForm({ ...form, cost_center_id: e.target.value })}
                 className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="pex-form-cc">
                 <option value="">— select cost center —</option>
-                {(isHO ? hoCCs : ccList).map((c) => <option key={c.id} value={c.id}>{c.category_name || c.name}{isHO ? "" : ` · budget ${inr(c.budget)} · spent ${inr(c.actual)}`}</option>)}
+                {(isHO ? hoCCs : ccList).map((c) => <option key={c.id} value={c.id}>{`${c.category_name || c.name}${isHO ? "" : ` · budget ${inr(c.budget)} · spent ${inr(c.actual)}`}`}</option>)}
               </select>
               {!isHO && form.project_code && ccList.length === 0 && (
                 <p className="text-[10px] text-amber-700 mt-0.5">No cost centers on this project — ask admin to auto-provision them (Admin → Cost Centers).</p>

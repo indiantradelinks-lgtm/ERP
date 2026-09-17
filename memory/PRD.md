@@ -5949,3 +5949,23 @@ Verified: paginated API (10/49), search "manager" → 3 across all records, lega
 - `SalaryBulkUpload` component adds **Template** (`ss-bulk-template-btn`) + **Bulk Upload** (`ss-bulk-upload-btn`) on the Salary Structures tab. Dialog (`ss-bulk-dialog`): how-it-works panel, file picker (`ss-bulk-file`), submit (`ss-bulk-submit`), summary tiles (Rows Read / Created / Superseded / Skipped), failed-rows table (`ss-bulk-errors`) with row no + reason, imported table (`ss-bulk-created`) with SS no / basic / gross / eff-from. Refreshes the structures list on success.
 ### Testing
 - iteration_187: backend 11/11 pytest (`/app/backend/tests/test_iter187_salary_bulk.py`), frontend 100%. Both minor review items fixed (employee_code fallback on insert; DialogDescription a11y). Test batches created during testing were purged afterwards.
+
+## Head Office (Delhi HO) Expense + Vendor Payment · IST Timestamps (Jun 2026, iter188)
+### 1. Project Request Center — Head Office expense & vendor payment
+**Gap**: HO bookings were only possible through `self_expense`, which forces the payee to be the requester and has no office location — so a PM could not book a Delhi HO expense payable to a vendor.
+- New request type `head_office_expense` → "Head Office Expense (Delhi HO / Admin)" (dept admin, payment, expense_type head_office). `HO_TYPES = {self_expense, head_office_expense}`; raiseable by PM/PC/super_admin (`RAISE_ROLES`) plus `HO_RAISE_EXTRA` = dept_head / admin / accounts / hr / GM / director.
+- `GET|POST /api/office-locations` — `office_locations` collection, seeded with **Delhi Head Office** (DEL-HO, is_default). POST is super_admin only.
+- `create_request` HO branch: no project (project_code sentinel `HEAD-OFFICE`, project_name = office), mandatory office_location (defaults to the default office) + mandatory **Head Office** cost center (rejects project CCs), amount > 0, vendor required when paid_to_type = vendor, rejects a supplied project_id. Doc carries `office_location` + `is_head_office`.
+- Flow verified end to end: raise → Project Head → GM → Director (large value) → `POST /{id}/fulfil` books a Daily Expense (`PEX-…`, project_code HEAD-OFFICE, office_location, is_head_office, source_request_no, paid_to = vendor, status approved_for_payment) → Accounts pays with UTR/proof. `_book_expense` now stamps office/HO/source-request fields.
+- Direct HO booking: `POST /api/project-expenses` accepts `office_location` with a HO cost center and no project; `GET /api/project-expenses?scope=head_office|project` filters. Frontend: `ProjectExpenses.jsx` scope radios (`pex-scope-project` / `pex-scope-head_office`) + office dropdown; `ProjectRequests.jsx` HO banner (`req-ho-banner`) + `req-form-office-location`, list/detail show "HEAD OFFICE · <office>".
+### 2. Timestamps — single IST formatter across all modules
+**Root cause**: backend stores UTC correctly, but ~70 screens printed the raw ISO string (`.slice(0,16)`) or relied on the viewing device's timezone → an action at 2:31 PM IST displayed as 9:01.
+- New `/app/frontend/src/lib/datetime.js`: `fmtDT` ("17 Sep 2026, 11:42 AM IST"), `fmtD`, `fmtT`, `fmtRel` ("5 min ago"), `fmtDTRel`, `todayIST`. Plain `YYYY-MM-DD` dates are never timezone-shifted; no-tz strings **with seconds** (backend) are treated as UTC while `datetime-local` input values (no seconds) stay as wall time.
+- Scripted sweep (`/app/scripts/fix_timestamps.py`, `fix_timestamps2.py`) converted every `toLocaleString/.slice(0,16)/.slice(11,16)` timestamp render across ~70 files; imports normalised; `npx eslint src` → 0 errors.
+- Approval timelines (`ApprovalDetail.jsx`) now show absolute IST + relative "x ago"; request chain chips carry the action time.
+- Backend: `core.IST`, `now_ist()`, `fmt_ist()`; all `datetime.utcnow()` removed (scheduler now tz-aware); Excel/PDF "Generated"/"Prepared By" stamps and HR letter dates render IST (`exports.py`, `document_pdf.py`, `pdf_generator.py`, `quotation_pdf.py`, `safety_phase5_router.py`, `routers/hr/letters.py`).
+### Bug fixes found during testing (iteration_188)
+- Duplicate React key: `project_requests` create used the **client-supplied** `id`, so a double submit produced two docs with the same id (REQ-2026-0070/0071 repaired). Ids are now always server-generated here and in `project_expenses_router` / `logistics_phase4_router` (vendor bills guard against reuse).
+- Hydration error `<span> cannot be a child of <option>`: native `<option>`s with multiple JSX children in ProjectRequests/ProjectExpenses converted to single template-literal children. Console now clean.
+### Testing
+- iteration_188: backend 16/16 pytest (`/app/backend/tests/test_head_office_expense.py`), frontend 100%. Both reported console errors fixed and re-verified.

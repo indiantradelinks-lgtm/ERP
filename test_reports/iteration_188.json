@@ -1,0 +1,36 @@
+{
+  "summary": "Backend + frontend testing for Project Request Center Head-Office Expense workflow and IST timestamp sweep. 16/16 pytest tests pass covering /api/office-locations (seed + idempotence + super_admin gate + duplicate 400), /api/project-requests/types (head_office_expense present), full HO create -> 3-step approval (PH-GM-Director) -> fulfil -> auto-booked project expense (approved_for_payment, scope=head_office, source_request_no set), all validation errors (project CC, no CC, amount=0, vendor without vendor, project_id supplied), direct POST /api/project-expenses HO booking + regression on project scope, and RBAC 403 for sales@erp.com. Frontend UI verified in /app/ops/requests: Payment dialog with request_type=head_office_expense shows req-ho-banner + req-form-office-location (Delhi Head Office) + req-form-ho-costcenter + Vendor picker; Expense Booking tab shows pex-form-scope radios + pex-form-office; list rows show HEAD OFFICE / Delhi Head Office with '17 Sep 2026, 11:40 AM IST' style timestamps. Manually confirmed PEX-2026-0029/0030 already present with correct HO metadata. Two console errors need main-agent attention.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Payment Request dialog (ProjectRequests.jsx) — request type / paid-to select", "issue": "React hydration error: 'In HTML, <span> cannot be a child of <option>'. A native <select><option> is being rendered with a <span> inside the <option> — logged as red console error every time the Payment dialog is opened.", "selector": "[role=dialog] select option", "priority": "MEDIUM"},
+      {"component": "Project Request Center list (ProjectRequests.jsx) / cost-center or vendor dropdown", "issue": "React 'Encountered two children with the same key, b72d558e-e490-4520-9bb7-d68996719db7'. Duplicate id in a mapped list — repeats many times per render. Likely a duplicated cost_centers row (there is a seed insert path in /api/head-office-cost-centers that could clash) or a duplicated vendor.", "selector": "n/a (console)", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_head_office_expense.py",
+    "/app/test_reports/pytest/head_office_expense.xml"
+  ],
+  "action_items": [
+    "Fix hydration error: replace <span> inside <option> with plain text, or switch to a Radix Select (SelectItem) so wrapping <span> is valid. Applies to the request-type / paid-to / office-location native selects in ProjectRequests.jsx.",
+    "Debug duplicate React key b72d558e-e490-4520-9bb7-d68996719db7: probably a duplicated cost_centers document (seed re-insert without unique-code guard) or a repeated vendor entry. Either dedupe on read or add a unique index on cost_centers.id and clean the duplicate."
+  ],
+  "critical_code_review_comments": [
+    "project_requests_router._book_expense reuses the request's cost_center_id verbatim including for HO cases — good; but the fallback `db.cost_centers.find_one({project_id: row.project_id})` when cost_center_id is missing will silently pick a random project CC for a HO request whose project_id is None (returns None, so OK, but worth an explicit HO branch).",
+    "GET /api/head-office-cost-centers uses `category_code` to dedupe seed — but does NOT check for existing docs with the same category_code that lack `head_office: true`; multiple calls under load can race and insert dupes. Consider a unique index on (category_code, project_id=null).",
+    "REQUEST_TYPES contains both `self_expense` and `head_office_expense` with slightly overlapping validation logic. Refactor the HO validation block into a helper to avoid drift.",
+    "office-locations POST role-checks role='super_admin' AFTER the require_permission dependency — sales@erp.com is blocked by permission (correct) but the explicit 403 message never fires for other roles. Move the check earlier or document precedence."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_head_office_expense.py"
+  ],
+  "success_rate": {"backend": "100% (16/16 pytest)", "frontend": "100% (all HO UI elements present, timestamps IST)"},
+  "test_credentials": "admin@erp.com / Admin@123, sales@erp.com / Sales@123 — both verified working.",
+  "seed_data_creation": "Test suite created a REQ-2026-01xx HO request (Rs 18,500, approved through 3 steps, fulfilled, PEX created), and TEST_direct_HO (Rs 2,450) + TEST_regression (Rs 500, project) via direct expense POST. No records deleted.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Head Office Expense workflow is fully working end-to-end (backend + frontend). Two React console errors remain — hydration <span> in <option>, and duplicate key b72d558e-... — both non-blocking but visible in DevTools. IST timestamp sweep confirmed on requests list, expense-booking list and PEX rows. To pick up: verify remaining screens listed in review request (Employee 360 / Advances, TDS Receivable, Notifications bell, Safety incidents datetime-local preservation, Admin > User Management last_login) — sample done but not exhaustive.",
+  "rca of the issue": "No critical bugs. The two console warnings both originate in the Payment Request dialog area — the <span> in <option> hydration warning comes from richly-formatted option labels (e.g. category chips) that React strips at hydration; the duplicate-key warning traces to a cost-center or vendor list where the same UUID appears twice (likely because HO seed re-inserts without checking for prior seed rows created without the head_office flag)."
+}

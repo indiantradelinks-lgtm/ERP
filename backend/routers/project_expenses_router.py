@@ -208,7 +208,7 @@ async def create_expense(p: ExpenseIn, request: Request,
     steps = BASE_CHAIN + (LARGE_CHAIN_EXTRA if p.amount > threshold else []) + [ACCOUNTS_STEP]
     chain = [{"role": r, "label": l, "status": "pending", "by": None, "at": None, "remarks": None} for r, l in steps]
     doc = {
-        "id": p.id or new_id(),
+        "id": new_id(),
         "expense_no": await next_sequence("PEX"),
         "project_id": project["id"], "project_code": project.get("code"),
         "project_name": project.get("name"), "client_name": project.get("client"),
