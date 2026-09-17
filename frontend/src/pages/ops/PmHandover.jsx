@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ProjectSelect } from "@/components/MasterSelect";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { fmtDT } from "@/lib/datetime";
 
 const inr = (v) => `₹ ${Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 
@@ -102,7 +103,7 @@ export default function PmHandover() {
             <span className="text-slate-500">Client: {p.client || "—"}</span>
             <span className="text-slate-500">Current PM: <b className="text-slate-800">{p.project_manager || "—"}</b></span>
             <span className="text-slate-500">Contract: {p.start_date || "—"} → {p.end_date || "—"}</span>
-            <span className="text-slate-500">Generated: {(pack.generated_at || "").slice(0, 16).replace("T", " ")} by {pack.generated_by}</span>
+            <span className="text-slate-500">Generated: {fmtDT(pack.generated_at)} by {pack.generated_by}</span>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3">

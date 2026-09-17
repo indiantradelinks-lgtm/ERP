@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import RowAttachments from "@/components/RowAttachments";
 import useAutoSync from "@/hooks/useAutoSync";
+import { fmtDT } from "@/lib/datetime";
 
 const inr = (v) => `₹ ${Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
@@ -398,7 +399,7 @@ export default function PaymentProcessingCenter() {
                   <TableCell className="text-xs whitespace-nowrap">{v.advance_adjusted ? inr(v.advance_adjusted) : "—"}</TableCell>
                   <TableCell className="text-xs font-semibold whitespace-nowrap">{inr(net)}</TableCell>
                   <TableCell className="text-xs whitespace-nowrap">
-                    <div>{(v.verified_at || "").slice(0, 16).replace("T", " ")}</div>
+                    <div>{fmtDT(v.verified_at)}</div>
                     <div className="text-[10px] text-slate-500">{v.verified_by}</div>
                   </TableCell>
                   <TableCell>{attachBtn(r)}</TableCell>
@@ -441,7 +442,7 @@ export default function PaymentProcessingCenter() {
                   <TableCell className="text-xs font-semibold">{inr(f.total_amount)}</TableCell>
                   <TableCell className="text-xs">{f.payment_mode}</TableCell>
                   <TableCell className="text-xs">{f.created_by}</TableCell>
-                  <TableCell className="text-xs whitespace-nowrap">{(f.created_at || "").slice(0, 16).replace("T", " ")}</TableCell>
+                  <TableCell className="text-xs whitespace-nowrap">{fmtDT(f.created_at)}</TableCell>
                   <TableCell>
                     <Button size="sm" variant="outline" className="rounded-sm h-7" onClick={() => downloadBankFile(f)}
                       data-testid={`ppc-download-${f.file_no}`}><Download className="h-3.5 w-3.5" /></Button>

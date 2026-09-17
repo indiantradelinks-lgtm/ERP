@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { api, API, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import SendEmailDialog from "@/components/SendEmailDialog";
+import { fmtD } from "@/lib/datetime";
 
 const KINDS = [
   { value: "offer", label: "Offer Letter" },
@@ -197,7 +198,7 @@ export default function HrLetters() {
                     <TableCell className="font-semibold">{t.name}</TableCell>
                     <TableCell><Badge variant="outline" className="rounded-sm font-mono">{t.kind}</Badge></TableCell>
                     <TableCell className="text-[12px] max-w-xs truncate">{t.description || "—"}</TableCell>
-                    <TableCell className="text-[11px]">{(t.created_at || "").slice(0, 10)}</TableCell>
+                    <TableCell className="text-[11px]">{fmtD(t.created_at)}</TableCell>
                     <TableCell className="text-[11px] tabular">{Math.round((t.size_bytes || 0) / 1024)} KB</TableCell>
                     <TableCell className="text-right">
                       <div className="inline-flex gap-1">

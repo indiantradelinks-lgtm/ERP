@@ -30,6 +30,26 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def now_ist() -> datetime:
+    """Current time in IST — for user-facing stamps on PDFs / Excel exports."""
+    return datetime.now(IST)
+
+
+def fmt_ist(value=None, fmt: str = "%d %b %Y · %I:%M %p IST") -> str:
+    """Render a UTC ISO string (or datetime / now) as an IST display stamp."""
+    if value is None:
+        dt = now_ist()
+    else:
+        dt = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.astimezone(IST)
+    return dt.strftime(fmt).replace(" 0", " ")
+
+
 def new_id() -> str:
     return str(uuid.uuid4())
 

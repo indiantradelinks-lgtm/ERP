@@ -16,6 +16,7 @@ import { Plus, RefreshCcw, CheckCircle2, X, AlertCircle, Shield, ShieldOff, Penc
 import DirectBookingDialog from "@/components/DirectBookingDialog";
 import { fmt } from "./AccountsViews";
 import { ProjectSelect } from "@/components/MasterSelect";
+import { fmtD } from "@/lib/datetime";
 
 const STATUS_COLORS = {
   draft: "bg-slate-100 text-slate-700",
@@ -248,7 +249,7 @@ export function VendorBillsView() {
   const paymentControl = async (r, action) => {
     let payload = { action };
     if (action === "set_due_days") {
-      const dd = window.prompt(`New Due Days for ${r.bill_no} (counted from approval date ${(r.approved_at || "").slice(0, 10)}):`, r.due_days || 30);
+      const dd = window.prompt(`New Due Days for ${r.bill_no} (counted from approval date ${fmtD(r.approved_at)}):`, r.due_days || 30);
       if (dd === null) return;
       payload.due_days = Number(dd);
     }
@@ -895,7 +896,7 @@ export function GRNPendingInvoiceView() {
                   <td className="px-3 py-1.5 font-mono text-xs">{r.grn_number}</td>
                   <td className="px-3 py-1.5 font-mono text-xs">{r.po_number || "—"}</td>
                   <td className="px-3 py-1.5">{r.vendor_name}</td>
-                  <td className="px-3 py-1.5 font-mono text-xs">{r.received_at?.slice(0, 10)}</td>
+                  <td className="px-3 py-1.5 font-mono text-xs">{fmtD(r.received_at)}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums">{fmt(r.total_accepted)}</td>
                   <td className="px-3 py-1.5 text-right">
                     <Button size="sm" variant="outline" className="h-7" onClick={() => createBill(r)} data-testid={`grn-create-bill-${r.grn_number}`}>

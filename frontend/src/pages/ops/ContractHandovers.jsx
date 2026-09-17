@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { DepartmentSelect } from "@/components/DepartmentSelect";
+import { fmtDT } from "@/lib/datetime";
 
 const STATUS_TONE = {
   draft: "bg-slate-100 text-slate-700 border-slate-300",
@@ -418,7 +419,7 @@ function HandoverDialog({ mode, initial, onClose, onSaved }) {
           <DialogDescription className="sr-only">Project handover detail</DialogDescription>
           {form.updated_by && form.updated_at && (
             <p className="text-xs text-slate-500 mt-1" data-testid="ho-last-edited">
-              Last edited by <b>{form.updated_by}</b> on {new Date(form.updated_at).toLocaleString("en-IN")}
+              Last edited by <b>{form.updated_by}</b> on {fmtDT(form.updated_at)}
             </p>
           )}
         </DialogHeader>
@@ -491,7 +492,7 @@ function HandoverDialog({ mode, initial, onClose, onSaved }) {
                   <div key={h.id} className={`border rounded-md p-2.5 text-xs ${h.event === "admin_edited" ? "border-amber-300 bg-amber-50/60" : "bg-white"}`}>
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium text-slate-800">{h.by_name} <span className="text-slate-400 font-normal">({(h.by_role || "").replaceAll("_", " ")})</span></span>
-                      <span className="text-slate-500 font-mono-data">{h.at ? new Date(h.at).toLocaleString("en-IN") : ""}</span>
+                      <span className="text-slate-500 font-mono-data">{h.at ? fmtDT(h.at) : ""}</span>
                     </div>
                     <div className="mt-1 text-slate-600">{h.message}</div>
                     {h.meta?.changes && Object.keys(h.meta.changes).length > 0 && (

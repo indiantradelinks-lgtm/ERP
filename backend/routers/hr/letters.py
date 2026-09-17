@@ -151,7 +151,8 @@ def _employee_context(emp: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _meta_context() -> Dict[str, Any]:
-    now = datetime.now(timezone.utc)
+    from core import now_ist
+    now = now_ist()
     return {
         "today": now.strftime("%Y-%m-%d"),
         "today_long": now.strftime("%d %B %Y"),

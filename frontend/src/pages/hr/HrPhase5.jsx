@@ -1,3 +1,4 @@
+import { fmtDT } from "@/lib/datetime";
 // HR Phase 5 — Final HR Dashboard, Reports Center, Audit Trail,
 // Integration Review and Final Controls
 import { useEffect, useMemo, useState } from "react";
@@ -108,7 +109,7 @@ function FinalDashboard() {
     <div className="space-y-3">
       <ManpowerQueue />
       <div className="flex justify-between items-center">
-        <div className="text-sm text-muted-foreground">Real-time KPIs — {d.total_cards} cards · as of {(d.as_of || "").slice(0, 16)}</div>
+        <div className="text-sm text-muted-foreground">Real-time KPIs — {d.total_cards} cards · as of {fmtDT(d.as_of)}</div>
         <Button size="sm" variant="outline" onClick={load} data-testid="hr5-dash-refresh"><RefreshCw className="h-4 w-4 mr-1" /> Refresh</Button>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">

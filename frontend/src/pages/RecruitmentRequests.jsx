@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { fmtDT } from "@/lib/datetime";
 
 const RECRUIT_STATUS_TONE = {
   filled: "success", closed: "neutral", approved: "success", completed: "success",
@@ -151,7 +152,7 @@ export default function RecruitmentRequests() {
                   <div className="text-[10px] uppercase text-muted-foreground mb-1">Status History</div>
                   {[...acting.history].reverse().map((h, i) => (
                     <div key={i} className="text-xs border-l-2 border-primary/30 pl-2 mb-1">
-                      <div>{String(h.at).replace("T", " ").slice(0, 16)} · <b>{h.from || "—"} → {h.to}</b> · {h.by}</div>
+                      <div>{fmtDT(h.at)} · <b>{h.from || "—"} → {h.to}</b> · {h.by}</div>
                       {(h.remarks || h.pm_info_received != null) && (
                         <div className="text-muted-foreground">
                           {h.pm_info_received != null ? `PM info: ${h.pm_info_received ? "received" : "pending"} · ` : ""}{h.remarks}

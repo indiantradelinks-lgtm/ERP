@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from core import db, now_iso, new_id, require_permission
+from core import db, now_iso, new_id, require_permission, fmt_ist
 
 router = APIRouter(prefix="/safety", tags=["safety-phase5"])
 
@@ -665,7 +665,7 @@ def _stream_xlsx(payload: Dict[str, Any]) -> StreamingResponse:
     ws = wb.active
     ws.title = payload["report_key"][:30]
     ws.append([payload["label"]])
-    ws.append([f"Generated at: {payload['generated_at']}"])
+    ws.append([f"Generated at: {fmt_ist(payload['generated_at'])}"])
     ws.append([])
     ws.append(payload["columns"])
     for r in payload["rows"]:
@@ -697,7 +697,7 @@ def _stream_pdf(payload: Dict[str, Any]) -> StreamingResponse:
     styles = getSampleStyleSheet()
     elems = [
         Paragraph(f"<b>{payload['label']}</b>", styles["Title"]),
-        Paragraph(f"Generated: {payload['generated_at']} · Rows: {payload['count']}", styles["Normal"]),
+        Paragraph(f"Generated: {fmt_ist(payload['generated_at'])} · Rows: {payload['count']}", styles["Normal"]),
         Spacer(1, 12),
     ]
     header = [c.replace("_", " ").title() for c in payload["columns"]]

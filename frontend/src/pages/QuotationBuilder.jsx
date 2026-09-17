@@ -15,6 +15,7 @@ import { api, API } from "@/lib/api";
 import { toast } from "sonner";
 import SubmitWithDocsDialog from "@/components/SubmitWithDocsDialog";
 import { useAuth } from "@/contexts/AuthContext";
+import { fmtDT, fmtD } from "@/lib/datetime";
 
 const inr = (n) => "₹ " + Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const newSection = (service = "scaffolding", basis = "manpower_material") => ({
@@ -199,8 +200,8 @@ export default function QuotationBuilder() {
           </h1>
           <div className="text-[11px] text-muted-foreground mt-1" data-testid="qb-prepared-by">
             Prepared by <b className="text-foreground">{quote.created_by_name || "—"}</b>
-            {quote.created_at && <> on {quote.created_at.slice(0, 10)}</>}
-            {quote.updated_by_name && quote.updated_at && <> · Last updated by <b className="text-foreground">{quote.updated_by_name}</b> on {quote.updated_at.slice(0, 10)}</>}
+            {quote.created_at && <> on {fmtD(quote.created_at)}</>}
+            {quote.updated_by_name && quote.updated_at && <> · Last updated by <b className="text-foreground">{quote.updated_by_name}</b> on {fmtD(quote.updated_at)}</>}
           </div>
         </div>
         <div className="flex gap-2">
@@ -247,7 +248,7 @@ export default function QuotationBuilder() {
               every change is auto-saved and stamped with your name, date &amp; time in the audit log.
               {quote.last_admin_edit && (
                 <span className="block mt-1 text-amber-700">
-                  Last corrected by <b>{quote.last_admin_edit.by}</b> on {new Date(quote.last_admin_edit.at).toLocaleString("en-IN")} (fields: {(quote.last_admin_edit.fields || []).join(", ")})
+                  Last corrected by <b>{quote.last_admin_edit.by}</b> on {fmtDT(quote.last_admin_edit.at)} (fields: {(quote.last_admin_edit.fields || []).join(", ")})
                 </span>
               )}
             </div>

@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Loader2, Send, CheckCircle2, XCircle, ChevronDown, ChevronRight, Boxes } from "lucide-react";
+import { fmtD } from "@/lib/datetime";
 
 const APPROVER_ROLES = ["super_admin", "general_manager", "director", "dept_head"];
 
@@ -291,7 +292,7 @@ function RequestRow({ r, expanded, onToggle, canApprove, acting, onApprove, onRe
             {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </button>
         </td>
-        <td className="px-3 py-2 font-mono-data">{r.request_no}<div className="text-[10px] text-slate-400">{(r.created_at || "").slice(0, 10)}</div></td>
+        <td className="px-3 py-2 font-mono-data">{r.request_no}<div className="text-[10px] text-slate-400">{fmtD(r.created_at)}</div></td>
         <td className="px-3">{r.category}</td>
         <td className="px-3 text-right">{r.total_items}</td>
         <td className="px-3 text-right font-semibold">{r.total_qty}</td>

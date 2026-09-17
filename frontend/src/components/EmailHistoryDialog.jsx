@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { History, RefreshCcw, Paperclip } from "lucide-react";
+import { fmtDT } from "@/lib/datetime";
 
 const STATUS_TONE = {
   sent: "bg-emerald-100 text-emerald-700",
@@ -63,7 +64,7 @@ export default function EmailHistoryDialog({ module, recordId, recordLabel, onCl
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id} className="border-b" data-testid={`history-row-${r.id}`}>
-                    <td className="p-1.5 whitespace-nowrap font-mono text-[10px]">{(r.sent_at || r.created_at || "").slice(0, 16).replace("T", " ")}</td>
+                    <td className="p-1.5 whitespace-nowrap font-mono text-[10px]">{fmtDT(r.sent_at || r.created_at)}</td>
                     <td className="p-1.5">{(r.to || []).join(", ")}</td>
                     <td className="p-1.5 max-w-[280px] truncate" title={r.subject}>{r.subject}</td>
                     <td className="p-1.5 text-[10px]">{r.sender_email}</td>

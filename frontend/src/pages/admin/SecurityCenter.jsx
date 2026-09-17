@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Shield, Activity, Download, Eye, Lock, RefreshCcw } from "lucide-react";
+import { fmtDT } from "@/lib/datetime";
 
 export default function SecurityCenter() {
   const [summary, setSummary] = useState(null);
@@ -171,7 +172,7 @@ export default function SecurityCenter() {
                 <tbody>
                   {exports.map((e, i) => (
                     <tr key={i} className="border-b border-slate-800" data-testid={`export-row-${i}`}>
-                      <td className="py-2 text-xs text-slate-400">{(e.ts || "").slice(0, 16)}</td>
+                      <td className="py-2 text-xs text-slate-400">{fmtDT(e.ts)}</td>
                       <td>{e.actor_name}</td>
                       <td><Badge>{e.activity}</Badge></td>
                       <td>{e.resource}</td>

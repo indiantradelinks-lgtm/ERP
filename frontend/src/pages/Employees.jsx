@@ -12,6 +12,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { toneFor } from "@/lib/statusTone";
 import { useDepartments } from "@/components/DepartmentSelect";
+import { fmtDT } from "@/lib/datetime";
 
 const STATUS_TONE = { active: "success", on_leave: "warning", exited: "neutral" };
 
@@ -417,7 +418,7 @@ export default function Employees({ master = "employee" }) {
                     <tr key={r.audit_id} className="border-t" data-testid={`del-row-${r.audit_id}`}>
                       <td className="py-1.5"><b>{r.name || "—"}</b><div className="text-xs text-slate-500">{r.employee_id || "—"} · {r.department || "—"}</div></td>
                       <td className="py-1.5 text-xs">{r.deleted_by}<div className="text-slate-500">{r.deleted_by_role}</div></td>
-                      <td className="py-1.5 text-xs">{r.ts ? new Date(r.ts).toLocaleString() : "—"}</td>
+                      <td className="py-1.5 text-xs">{r.ts ? fmtDT(r.ts) : "—"}</td>
                       <td className="py-1.5 text-right">
                         {r.restorable
                           ? <Button size="sm" variant="outline" onClick={() => restoreDeleted(r)} data-testid={`del-restore-${r.audit_id}`}>Restore</Button>
@@ -546,7 +547,7 @@ function EmployeeHistoryDialog({ open, onOpenChange, rows, employee }) {
             <li key={h.id} className="py-2.5 text-sm" data-testid={`emp-history-${h.id}`}>
               <div className="flex items-center justify-between gap-3">
                 <div className="font-semibold">{labelFor(h.action)}</div>
-                <div className="text-[10px] text-muted-foreground">{(h.at || "").slice(0, 16).replace("T", " ")}</div>
+                <div className="text-[10px] text-muted-foreground">{fmtDT(h.at)}</div>
               </div>
               <div className="text-xs text-muted-foreground mt-0.5">
                 {h.from && <span>From: <span className="font-mono-data text-foreground">{JSON.stringify(h.from)}</span> · </span>}

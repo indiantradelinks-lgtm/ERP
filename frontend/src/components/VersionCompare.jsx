@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { GitCompare } from "lucide-react";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
+import { fmtDT } from "@/lib/datetime";
 
 export default function VersionCompare({ approvalId, open, onClose }) {
   const [versions, setVersions] = useState([]);
@@ -64,11 +65,11 @@ export default function VersionCompare({ approvalId, open, onClose }) {
 
         <div className="flex items-center gap-3 mb-3">
           <select className="border rounded-sm p-1 text-sm" value={v1} onChange={(e) => setV1(e.target.value)} data-testid="version-v1">
-            {versions.map((v) => <option key={v.version} value={v.version}>v{v.version} · {(v.saved_at || "").slice(0, 16)}</option>)}
+            {versions.map((v) => <option key={v.version} value={v.version}>v{v.version} · {fmtDT(v.saved_at)}</option>)}
           </select>
           <span className="text-muted-foreground">↔</span>
           <select className="border rounded-sm p-1 text-sm" value={v2} onChange={(e) => setV2(e.target.value)} data-testid="version-v2">
-            {versions.map((v) => <option key={v.version} value={v.version}>v{v.version} · {(v.saved_at || "").slice(0, 16)}</option>)}
+            {versions.map((v) => <option key={v.version} value={v.version}>v{v.version} · {fmtDT(v.saved_at)}</option>)}
           </select>
           <Button size="sm" onClick={runCompare} disabled={busy} data-testid="version-compare-run">Compare</Button>
         </div>
@@ -122,7 +123,7 @@ function HistoryColumn({ title, rows }) {
           <li key={`${h.at}-${i}`} className="p-2">
             <div className="flex justify-between">
               <span className="font-semibold capitalize">{(h.action || "").replaceAll("_", " ")}</span>
-              <span className="text-muted-foreground">{(h.at || "").slice(0, 16)}</span>
+              <span className="text-muted-foreground">{fmtDT(h.at)}</span>
             </div>
             <div className="text-muted-foreground">{h.by} · {h.step_label}</div>
             {h.comment && <div className="italic mt-0.5">"{h.comment}"</div>}

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Wallet, ChevronRight, AlertCircle } from "lucide-react";
 import { api } from "@/lib/api";
+import { fmtD } from "@/lib/datetime";
 
 const inr = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
 
@@ -30,7 +31,7 @@ export default function MyAdvancesWidget() {
 
   const downloadStatement = () => {
     const rows = [["Advance #", "Type", "Status", "Requested", "Approved", "Outstanding", "Created"]];
-    (data.history || []).forEach((h) => rows.push([h.advance_no, h.advance_type, h.status, h.requested_amount, h.approved_amount, h.outstanding, h.created_at?.slice(0, 10)]));
+    (data.history || []).forEach((h) => rows.push([h.advance_no, h.advance_type, h.status, h.requested_amount, h.approved_amount, h.outstanding, fmtD(h.created_at)]));
     const csv = rows.map((r) => r.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const a = document.createElement("a");

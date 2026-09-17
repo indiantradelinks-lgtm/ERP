@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { api, apiErrorMessage } from "@/lib/api";
 import RowAttachments from "@/components/RowAttachments";
 import { StatusChip, inr, dt, useSvcMeta } from "./shared";
+import { fmtDT } from "@/lib/datetime";
 
 const Row = ({ k, v }) => (
   <div className="flex justify-between gap-4 text-sm py-0.5">
@@ -170,7 +171,7 @@ export default function ServiceRequestDetail() {
             {d.timeline.map((t, i) => (
               <div key={`${t.at}-${i}`} className="border-l-2 border-primary/30 pl-3 relative">
                 <span className="absolute -left-[5px] top-1.5 h-2 w-2 rounded-full bg-primary/60" />
-                <div className="text-xs text-muted-foreground">{String(t.at).replace("T", " ").slice(0, 16)} · {t.doc} {t.ref}</div>
+                <div className="text-xs text-muted-foreground">{fmtDT(t.at)} · {t.doc} {t.ref}</div>
                 <div className="text-sm font-medium">{String(t.action || "").replace(/_/g, " ")}{t.to ? ` → ${t.to.replace(/_/g, " ")}` : ""}</div>
                 <div className="text-xs">{t.by} ({t.role}){t.remarks ? ` — “${t.remarks}”` : ""}</div>
               </div>

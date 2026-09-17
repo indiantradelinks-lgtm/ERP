@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Truck, PackageCheck, AlertOctagon, RefreshCcw, ChevronRight } from "lucide-react";
+import { fmtDT } from "@/lib/datetime";
 
 // ------------------------------------------------------------
 // In-Transit Tracking
@@ -47,7 +48,7 @@ export function InTransitTracking() {
                 <td className="px-3 py-2 text-xs">{r.vehicle_number || "—"}</td>
                 <td className="px-3 py-2 text-xs">{r.driver_name || "—"}</td>
                 <td className="px-3 py-2 text-xs">{r.from_point_name || "?"} → {r.to_point_name || "?"}</td>
-                <td className="px-3 py-2 text-xs text-slate-500">{(r.updated_at || "").slice(0, 16).replace("T", " ")}</td>
+                <td className="px-3 py-2 text-xs text-slate-500">{fmtDT(r.updated_at)}</td>
                 <td className="px-3 py-2 text-right"><ChevronRight className="h-3 w-3 inline" /></td>
               </tr>
             ))}
@@ -97,7 +98,7 @@ export function DeliveryConfirmations() {
                 <td className="px-3 py-2 text-right">{r.short_qty || 0}</td>
                 <td className="px-3 py-2 text-right">{r.damaged_qty || 0}</td>
                 <td className="px-3 py-2 text-xs">{r.received_by || "—"}</td>
-                <td className="px-3 py-2 text-xs text-slate-500">{(r.delivered_at || "").slice(0, 16).replace("T", " ")}</td>
+                <td className="px-3 py-2 text-xs text-slate-500">{fmtDT(r.delivered_at)}</td>
                 <td className="px-3 py-2 text-xs">
                   <span className={`text-[10px] uppercase font-semibold px-2 py-0.5 rounded ${r.is_partial ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
                     {r.is_partial ? "Partial" : "Full"} · {r.material_condition || "—"}

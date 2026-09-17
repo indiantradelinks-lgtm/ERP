@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FileText, Upload, RefreshCcw, Download, Search } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { fmtDT } from "@/lib/datetime";
 
 export default function ProjectDocuments() {
   const [projects, setProjects] = useState([]);
@@ -121,7 +122,7 @@ export default function ProjectDocuments() {
                     <td className="px-3 py-2 font-medium">{d.original_name || d.filename}</td>
                     <td className="px-3 py-2 text-xs">{d.size ? (d.size / 1024).toFixed(1) + " KB" : "—"}</td>
                     <td className="px-3 py-2 text-xs">{d.uploaded_by || d.created_by || "—"}</td>
-                    <td className="px-3 py-2 text-xs">{(d.uploaded_at || d.created_at || "").slice(0, 16).replace("T", " ")}</td>
+                    <td className="px-3 py-2 text-xs">{fmtDT(d.uploaded_at || d.created_at)}</td>
                     <td className="px-3 py-2 text-right">
                       {d.url && (
                         <a href={d.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-blue-600 text-xs">

@@ -1,3 +1,4 @@
+import { fmtDT } from "@/lib/datetime";
 // HR Phase 2 Hub — Attendance, Shifts, Overtime, Compliance, Safety Readiness
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -421,7 +422,7 @@ function AttendanceView() {
                     <TableCell className="font-mono">{l.month}</TableCell>
                     <TableCell>{l.project_code || "ALL"}</TableCell>
                     <TableCell>{l.locked_by_name}</TableCell>
-                    <TableCell className="text-xs">{l.locked_at?.slice(0, 16)}</TableCell>
+                    <TableCell className="text-xs">{fmtDT(l.locked_at)}</TableCell>
                     <TableCell>{l.reason || "—"}</TableCell>
                     <TableCell>
                       <Button size="sm" variant="outline" onClick={() => unlock(l)} data-testid={`unlock-${l.id}`}>

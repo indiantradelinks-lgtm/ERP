@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { fmtD } from "@/lib/datetime";
 
 const T_STATUS = {
   pending_approval: ["Pending Approval", "border-amber-300 text-amber-900 bg-amber-50"],
@@ -101,7 +102,7 @@ export function TransfersTab({ bump, locations, items, canWrite, canApprove, onC
             <TableRow key={t.id} data-testid={`scaf-transfer-row-${t.id}`}>
               <TableCell>
                 <div className="font-mono-data text-xs font-bold">{t.transfer_no}</div>
-                <div className="text-[10px] text-muted-foreground">{(t.created_at || "").slice(0, 10)} · {t.created_by}</div>
+                <div className="text-[10px] text-muted-foreground">{fmtD(t.created_at)} · {t.created_by}</div>
               </TableCell>
               <TableCell className="text-xs">
                 <div className="font-semibold">{t.from_location}</div>
@@ -425,7 +426,7 @@ export function ChallansTab({ bump, canWrite, onChanged, locations = [] }) {
               <TableCell>
                 <div className="font-mono-data text-xs font-bold">{c.challan_no}</div>
                 {c.in_challan_no && <div className="text-[10px] font-mono-data text-emerald-700">IN: {c.in_challan_no}</div>}
-                <div className="text-[10px] text-muted-foreground">{(c.dispatched_at || "").slice(0, 10)} · vs {c.transfer_no}</div>
+                <div className="text-[10px] text-muted-foreground">{fmtD(c.dispatched_at)} · vs {c.transfer_no}</div>
               </TableCell>
               <TableCell className="text-xs">
                 <div className="font-semibold">{c.from_location}</div>

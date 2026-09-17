@@ -18,6 +18,7 @@ import FileUploader from "@/components/FileUploader";
 import RowAttachments from "@/components/RowAttachments";
 import useAutoSync from "@/hooks/useAutoSync";
 import ProjectExpenses from "./ProjectExpenses";
+import { fmtDT } from "@/lib/datetime";
 
 const inr = (v) => `₹ ${Number(v || 0).toLocaleString("en-IN")}`;
 const RAISE_ROLES = new Set(["project_coordinator", "project_manager", "super_admin", "manager_o_p", "manager_op",
@@ -28,7 +29,7 @@ const blankItem = () => ({ name: "", quantity: 1, unit: "Nos", rate: 0, specs: "
 const blank = () => ({ id: newId(), project_code: "", project_id: "", request_type: "", need_by: "",
   priority: "medium", description: "", items: [blankItem()], vendor: "", vehicle_ref: "", payment_mode: "",
   period_from: "", period_to: "", monthly_rate: "", months: "", from_location: "", to_location: "", amount: "", remarks: "",
-  cost_center_id: "", site_location: "", material_category_id: "", employee_id: "", self_for_project: false,
+  cost_center_id: "", site_location: "", office_location: "", material_category_id: "", employee_id: "", self_for_project: false,
   expense_type: "", expense_date: new Date().toISOString().slice(0, 10), settlement_mode: "vendor_payable", paid_to_type: "vendor", upi_any_name: "" });
 
 const PAY_STAGE = {
@@ -94,13 +95,25 @@ export default function ProjectRequests() {
   const isManpower = form.request_type === "manpower";
   const isVehicle = form.request_type?.startsWith("vehicle") || form.request_type === "one_time_vehicle";
   const isSelf = form.request_type === "self_expense";
+  const isHO = form.request_type === "head_office_expense";
   const [hoCCs, setHoCCs] = useState([]);
+  const [offices, setOffices] = useState([]);
   useEffect(() => {
-    if (isSelf && hoCCs.length === 0) {
+    if ((isSelf || isHO) && hoCCs.length === 0) {
       api.get("/head-office-cost-centers").then((r) => setHoCCs(r.data || [])).catch(() => {});
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSelf]);
+  }, [isSelf, isHO]);
+  useEffect(() => {
+    if (!isHO || offices.length) return;
+    api.get("/office-locations").then((r) => {
+      const list = r.data || [];
+      setOffices(list);
+      const def = list.find((o) => o.is_default) || list[0];
+      if (def) setForm((f) => (f.office_location ? f : { ...f, office_location: def.name }));
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHO]);
   const isPayment = meta?.payment;
 
   const load = async () => {
@@ -218,13 +231,14 @@ export default function ProjectRequests() {
   };
 
   const create = async () => {
-    if (!form.project_code && !isSelf) { toast.error("Select a project"); return; }
+    if (!form.project_code && !isSelf && !isHO) { toast.error("Select a project"); return; }
+    if (isHO && !form.office_location) { toast.error("Select the Office Location (e.g. Delhi Head Office)"); return; }
     if (isSelf && form.self_for_project && !form.project_code) { toast.error("Select the project this expense was incurred for"); return; }
     if (!form.request_type) { toast.error("Select request type"); return; }
     if (isManpower && !form.items.some((i) => i.name && Number(i.quantity) > 0)) { toast.error("Add at least one manpower line"); return; }
     if (isStockable && !form.items.some((i) => (i.name || "").trim() && Number(i.quantity) > 0)) { toast.error("Add at least one item"); return; }
     if (estValue <= 0 && !isStockable && !isManpower) { toast.error("Enter amount / rate"); return; }
-    if (!form.cost_center_id) { toast.error(isSelf ? (form.self_for_project ? "Select the project's Cost Center" : "Select a Head Office Cost Center before submitting") : "Cost Center is mandatory — select a valid Cost Center before submitting"); return; }
+    if (!form.cost_center_id) { toast.error((isSelf || isHO) ? (form.self_for_project ? "Select the project's Cost Center" : "Select a Head Office Cost Center before submitting") : "Cost Center is mandatory — select a valid Cost Center before submitting"); return; }
     if (isPayment && mode === "service" && !isSelf && benef.length === 0) {
       if (form.paid_to_type === "vendor" && !form.vendor) { toast.error("Select the approved vendor to be paid"); return; }
       const upiHasAnyName = form.payment_mode === "UPI" && (form.upi_any_name || "").trim();
@@ -395,11 +409,11 @@ export default function ProjectRequests() {
                 <TableRow key={r.id} data-testid={`req-row-${r.id}`} className="cursor-pointer" onClick={() => setDetail(r)}>
                   <TableCell>
                     <div className="font-mono-data text-xs font-bold">{r.request_no}</div>
-                    <div className="text-[10px] text-muted-foreground whitespace-nowrap" data-testid={`req-created-${r.id}`}>{(r.created_at || "").slice(0, 16).replace("T", " ")}</div>
+                    <div className="text-[10px] text-muted-foreground whitespace-nowrap" data-testid={`req-created-${r.id}`}>{fmtDT(r.created_at)}</div>
                     <div className="text-[10px] text-muted-foreground">{r.created_by}</div>
                   </TableCell>
-                  <TableCell><div className="font-semibold text-sm">{r.project_code}</div>
-                    <div className="text-[11px] text-muted-foreground truncate max-w-[160px]">{r.project_name}</div></TableCell>
+                  <TableCell><div className="font-semibold text-sm">{r.is_head_office ? "HEAD OFFICE" : r.project_code}</div>
+                    <div className="text-[11px] text-muted-foreground truncate max-w-[160px]">{r.office_location || r.project_name}</div></TableCell>
                   <TableCell>
                     <Badge variant="outline" className="rounded-sm text-[10px]">{r.request_type_label}</Badge>
                     <div className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1"><DIcon className="h-3 w-3" /> {r.owning_dept}</div>
@@ -459,8 +473,23 @@ export default function ProjectRequests() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-1">
-            {!isSelf ? (
+            {!isSelf && !isHO ? (
               <ProjectSelect label="Project *" value={form.project_code} onChange={(code, row) => { setForm({ ...form, project_code: code, project_id: row?.id || "", cost_center_id: "", employee_id: "" }); loadCostCenters(row?.id); }} testid="req-form-project" />
+            ) : isHO ? (
+              <>
+                <div className="border border-sky-200 bg-sky-50 rounded-sm p-2 text-xs text-sky-900 self-end" data-testid="req-ho-banner">
+                  <b>Head Office Expense</b> — no project. Booked against the selected <b>Head Office Cost Center</b> below and
+                  paid to a vendor (or person) through the normal approval → Payment Processing chain.
+                </div>
+                <div>
+                  <Label className="text-[10px] uppercase tracking-wider">Office Location *</Label>
+                  <select value={form.office_location} onChange={(e) => setForm({ ...form, office_location: e.target.value })}
+                    className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-office-location">
+                    <option value="">— select office —</option>
+                    {offices.map((o) => <option key={o.id} value={o.name}>{o.name}</option>)}
+                  </select>
+                </div>
+              </>
             ) : (
               <>
                 <div className="border border-amber-200 bg-amber-50 rounded-sm p-2 text-xs text-amber-800 self-end" data-testid="req-self-banner">
@@ -481,7 +510,7 @@ export default function ProjectRequests() {
             )}
             {mode === "service" && (
               <>
-                {!isSelf && (
+                {!isSelf && !isHO && (
                 <div>
                   <Label className="text-[10px] uppercase tracking-wider">Category (Item Master) *</Label>
                   <select value={form.material_category_id} onChange={(e) => onServiceCategoryChange(e.target.value)}
@@ -580,12 +609,12 @@ export default function ProjectRequests() {
                 </select>
               </div>
             )}
-            {!isSelf || form.self_for_project ? (
+            {(!isSelf && !isHO) || form.self_for_project ? (
             <div>
-              <Label className="text-[10px] uppercase tracking-wider">{isSelf ? "Project Cost Center *" : "Cost Center *"}</Label>
+              <Label className="text-[10px] uppercase tracking-wider">{(isSelf || isHO) ? "Project Cost Center *" : "Cost Center *"}</Label>
               <select value={form.cost_center_id} onChange={(e) => setForm({ ...form, cost_center_id: e.target.value })}
                 className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-costcenter">
-                <option value="">{isSelf && !form.project_code ? "— select project first —" : "— select cost center —"}</option>
+                <option value="">{(isSelf || isHO) && !form.project_code ? "— select project first —" : "— select cost center —"}</option>
                 {ccList.map((cc) => <option key={cc.id} value={cc.id}>{cc.category_code} · {cc.category_name}{cc.budget ? ` (budget ${inr(cc.budget)})` : ""}</option>)}
               </select>
             </div>
@@ -811,7 +840,7 @@ export default function ProjectRequests() {
             <>
               <DialogHeader>
                 <DialogTitle className="font-display flex items-center gap-2">{detail.request_no} · {detail.request_type_label}</DialogTitle>
-                <DialogDescription>{detail.project_code} — {detail.project_name} · routed to <b>{detail.owning_dept}</b></DialogDescription>
+                <DialogDescription>{detail.is_head_office ? `HEAD OFFICE — ${detail.office_location || "Head Office"}` : `${detail.project_code} — ${detail.project_name}`} · routed to <b>{detail.owning_dept}</b></DialogDescription>
               </DialogHeader>
               <div className="flex justify-end -mt-2">
                 <Button size="sm" variant="outline" className="rounded-sm h-7" onClick={() => setAttachFor(detail)} data-testid="req-detail-attachments">
@@ -833,7 +862,7 @@ export default function ProjectRequests() {
                       ["Settlement", (detail.settlement_mode || "—").replace(/_/g, " ")]] : []),
                     ...(detail.employee_id ? [["Emp ID", detail.employee_code || "—"], ["Employee Name", detail.employee_name || "—"]] : []),
                     ["Raised By", detail.created_by],
-                    ["Raised At", (detail.created_at || "").slice(0, 16).replace("T", " ")]].map(([k, v]) => (
+                    ["Raised At", fmtDT(detail.created_at)]].map(([k, v]) => (
                     <div key={k} className="border border-border rounded-sm p-2"><div className="text-[10px] uppercase text-muted-foreground">{k}</div><div className="font-semibold text-xs">{v}</div></div>
                   ))}
                 </div>
@@ -902,7 +931,7 @@ export default function ProjectRequests() {
                 <div className="flex items-center gap-1 flex-wrap">
                   {(detail.chain || []).map((s, i) => (
                     <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded-sm border ${s.status === "approved" ? "bg-emerald-50 border-emerald-300 text-emerald-800" : s.status === "rejected" ? "bg-rose-50 border-rose-300 text-rose-800" : "bg-secondary border-border text-muted-foreground"}`}>
-                      {s.label}{s.by ? ` · ${s.by}` : ""}</span>
+                      {s.label}{s.by ? ` · ${s.by}` : ""}{s.at ? ` · ${fmtDT(s.at)}` : ""}</span>
                   ))}
                 </div>
                 {detail.pr_number && <div className="text-xs text-violet-700">Purchase Request raised: <b>{detail.pr_number}</b></div>}
@@ -921,7 +950,7 @@ export default function ProjectRequests() {
                         {detail.pay_info?.verified_by && <span className="text-muted-foreground"> — {detail.pay_info.verified_by}</span>}
                       </div>
                     )}
-                    {detail.pay_info?.verified_by && <span className="ml-2 text-muted-foreground">verified by {detail.pay_info.verified_by} · {(detail.pay_info.verified_at || "").slice(0, 16).replace("T", " ")}</span>}
+                    {detail.pay_info?.verified_by && <span className="ml-2 text-muted-foreground">verified by {detail.pay_info.verified_by} · {fmtDT(detail.pay_info.verified_at)}</span>}
                     {detail.pay_info?.bank_file_no && <span className="ml-2 font-mono-data">{detail.pay_info.bank_file_no}</span>}
                     {detail.pay_info?.utr_no && <span className="ml-2 font-mono-data">UTR {detail.pay_info.utr_no} · {detail.pay_info.paid_date}</span>}
                   </div>

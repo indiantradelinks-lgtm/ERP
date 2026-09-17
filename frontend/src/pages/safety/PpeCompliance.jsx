@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { ShieldCheck, RefreshCcw } from "lucide-react";
+import { fmtDT } from "@/lib/datetime";
 
 export default function PpeCompliance() {
   const [projects, setProjects] = useState([]);
@@ -69,7 +70,7 @@ export default function PpeCompliance() {
               </ul>
             </div>
           )}
-          <div className="text-[10px] text-muted-foreground">As of {new Date(result.as_of).toLocaleString()}</div>
+          <div className="text-[10px] text-muted-foreground">As of {fmtDT(result.as_of)}</div>
         </div>
       )}
     </div>

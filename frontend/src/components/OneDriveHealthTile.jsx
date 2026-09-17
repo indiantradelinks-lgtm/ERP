@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { Cloud, CloudOff, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { fmtDT } from "@/lib/datetime";
 
 export const OneDriveHealthTile = () => {
   const [h, setH] = useState(null);
@@ -47,7 +48,7 @@ export const OneDriveHealthTile = () => {
         </div>
       )}
       {h.last_pushed_at && (
-        <div className="mt-1 text-[10px] opacity-60">Last successful push: {new Date(h.last_pushed_at).toLocaleString()}</div>
+        <div className="mt-1 text-[10px] opacity-60">Last successful push: {fmtDT(h.last_pushed_at)}</div>
       )}
     </button>
   );

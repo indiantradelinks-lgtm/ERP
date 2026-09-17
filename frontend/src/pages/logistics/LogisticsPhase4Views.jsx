@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Landmark, Receipt, Building2, Truck, DollarSign, RefreshCcw, CheckCircle2 } from "lucide-react";
+import { fmtDT } from "@/lib/datetime";
 
 const inr = (n) => `₹${Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 
@@ -75,7 +76,7 @@ export function FinanceApprovalInbox() {
                 </td>
                 <td className="px-3 py-2 text-xs">{(r.type || "").replace("logistics_", "")}</td>
                 <td className="px-3 py-2 text-xs">{r.requested_by}</td>
-                <td className="px-3 py-2 text-xs text-slate-500">{(r.created_at || "").slice(0, 16).replace("T", " ")}</td>
+                <td className="px-3 py-2 text-xs text-slate-500">{fmtDT(r.created_at)}</td>
                 <td className="px-3 py-2">
                   <span className={`text-[10px] uppercase font-semibold px-2 py-0.5 rounded ${r.status === "approved" ? "bg-emerald-100 text-emerald-800" : r.status === "rejected" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>{r.status}</span>
                 </td>

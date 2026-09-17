@@ -1,3 +1,4 @@
+import { fmtDT } from "@/lib/datetime";
 /**
  * Store & Inventory · Phase 1 master views
  * =========================================
@@ -63,7 +64,7 @@ export function InventoryDashboardView() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold">Inventory Dashboard</h2>
-          <p className="text-xs text-slate-500">Real-time material control · {d.as_of?.slice(0, 16)}</p>
+          <p className="text-xs text-slate-500">Real-time material control · {fmtDT(d.as_of)}</p>
         </div>
         <Button size="sm" variant="outline" onClick={load}><RefreshCcw className="h-3.5 w-3.5 mr-1" />Refresh</Button>
       </div>

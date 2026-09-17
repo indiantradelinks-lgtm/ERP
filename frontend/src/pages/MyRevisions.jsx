@@ -7,6 +7,7 @@ import { RotateCcw, FileQuestion, XCircle, Inbox } from "lucide-react";
 import ApprovalDetail from "@/components/ApprovalDetail";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
+import { fmtDT } from "@/lib/datetime";
 
 const statusMeta = {
   rejected_revision_required: { label: "Revision Required", tone: "bg-rose-100 text-rose-700", icon: XCircle },
@@ -117,7 +118,7 @@ export default function MyRevisions() {
                         )}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
-                        {(r.last_reject_at || r.updated_at || "").slice(0, 16).replace("T", " ")}
+                        {fmtDT(r.last_reject_at || r.updated_at)}
                       </TableCell>
                       <TableCell>
                         <Button size="sm" onClick={() => setViewing(r)} data-testid={`revision-open-${r.id}`}>

@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertTriangle, Plus, RefreshCcw, Search, Ban, FileSearch, Filter, Lock } from "lucide-react";
+import { fmtDT } from "@/lib/datetime";
 
 const TYPES = [
   { v: "near_miss", label: "Near Miss", critical: false },
@@ -106,7 +107,7 @@ export default function Incidents() {
                   {r.escalation_id && <span className="block text-[9px] text-purple-600">escalated</span>}
                   {r.cost_approval_id && <span className="block text-[9px] text-blue-600">cost →Fin</span>}
                 </td>
-                <td className="px-3 py-2 text-xs">{r.incident_datetime?.slice(0, 16).replace("T", " ")}</td>
+                <td className="px-3 py-2 text-xs">{fmtDT(r.incident_datetime)}</td>
                 <td className="px-3 py-2 text-xs">{r.incident_type?.replaceAll("_", " ")}</td>
                 <td className="px-3 py-2 text-xs">{r.project_code || "—"}</td>
                 <td className="px-3 py-2 text-xs max-w-xs truncate">{r.description}</td>

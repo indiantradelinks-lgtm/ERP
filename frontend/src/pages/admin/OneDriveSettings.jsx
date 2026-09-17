@@ -11,6 +11,7 @@ import {
   AlertTriangle, CheckCircle2, ExternalLink, Play,
 } from "lucide-react";
 import { toast } from "sonner";
+import { fmtDT } from "@/lib/datetime";
 
 const StatusPill = ({ ok, label }) =>
   ok ? (
@@ -364,7 +365,7 @@ export default function OneDriveSettings() {
                   {backups.length === 0 && <tr><td colSpan={4} className="px-3 py-8 text-center text-muted-foreground">No backups yet</td></tr>}
                   {backups.map((b) => (
                     <tr key={b.id} className="border-t">
-                      <td className="px-3 py-2">{new Date(b.at).toLocaleString()}</td>
+                      <td className="px-3 py-2">{fmtDT(b.at)}</td>
                       <td className="px-3 py-2 font-mono text-xs">{b.filename}</td>
                       <td className="px-3 py-2">{(b.size / 1024 / 1024).toFixed(1)} MB</td>
                       <td className="px-3 py-2 text-xs">

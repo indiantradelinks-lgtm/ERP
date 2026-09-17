@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { Network, Clock, Building2, ShieldAlert, Search, GitBranch } from "lucide-react";
 import { toast } from "sonner";
+import { fmtDT } from "@/lib/datetime";
 
 const inr = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
 
@@ -197,7 +198,7 @@ function AuditTab() {
             <TableBody>
               {rows.length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-6">No matching logs</TableCell></TableRow>}
               {rows.map((r, i) => (
-                <TableRow key={i}><TableCell className="text-xs">{new Date(r.at || r.created_at).toLocaleString()}</TableCell><TableCell className="text-xs">{r.user_name || r.user_id}<div className="text-[10px] text-muted-foreground">{r.user_role}</div></TableCell><TableCell><Badge variant="outline">{r.action}</Badge></TableCell><TableCell className="text-xs font-mono">{r.resource}</TableCell><TableCell className="text-xs font-mono truncate max-w-[160px]">{r.record_id}</TableCell><TableCell className="text-xs text-muted-foreground">{r.ip}</TableCell></TableRow>
+                <TableRow key={i}><TableCell className="text-xs">{fmtDT(r.at || r.created_at)}</TableCell><TableCell className="text-xs">{r.user_name || r.user_id}<div className="text-[10px] text-muted-foreground">{r.user_role}</div></TableCell><TableCell><Badge variant="outline">{r.action}</Badge></TableCell><TableCell className="text-xs font-mono">{r.resource}</TableCell><TableCell className="text-xs font-mono truncate max-w-[160px]">{r.record_id}</TableCell><TableCell className="text-xs text-muted-foreground">{r.ip}</TableCell></TableRow>
               ))}
             </TableBody>
           </Table>
@@ -234,7 +235,7 @@ function RecordTrailTab() {
               {data.timeline.map((t, i) => (
                 <li key={i} className="flex items-center gap-2 border-b pb-1 text-xs">
                   <Badge variant="outline" className={t.phase === "created" ? "bg-blue-100 text-blue-800" : t.phase === "approval" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}>{t.phase}{t.action ? `:${t.action}` : ""}</Badge>
-                  <span className="text-muted-foreground">{t.at && new Date(t.at).toLocaleString()}</span>
+                  <span className="text-muted-foreground">{t.at && fmtDT(t.at)}</span>
                   <span>· {t.by} <span className="text-muted-foreground">({t.by_role})</span></span>
                   {t.department && <Badge variant="outline" className="text-[10px]">{t.department}</Badge>}
                   {t.comment && <span className="italic">"{t.comment}"</span>}

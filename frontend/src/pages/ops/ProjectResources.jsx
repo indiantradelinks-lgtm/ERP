@@ -25,6 +25,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import ApprovalDocsGate, { validateApprovalDocs, emptyApprovalDocs } from "@/components/ApprovalDocsGate";
 import { BulkUploadDialog, QuickQtyDialog } from "./ResourcePlanBulkDialogs";
 import { useAuth } from "@/contexts/AuthContext";
+import { fmtD } from "@/lib/datetime";
 
 const EMPTY = {
   resource_type: "manpower",
@@ -368,7 +369,7 @@ function ResourceTable({ type, rows, wbsMap, actMap, canEdit, selectable, select
             {selectable && (
               <td className="px-2 py-1">
                 {r.converted_request_no ? (
-                  <span className="inline-block px-1.5 py-0.5 text-[9px] font-bold rounded border bg-emerald-50 border-emerald-300 text-emerald-700 whitespace-nowrap" title={`Converted to ${r.converted_request_no}${r.converted_at ? ` on ${(r.converted_at || "").slice(0, 10)}` : ""}`} data-testid={`rp-converted-badge-${r.id}`}>
+                  <span className="inline-block px-1.5 py-0.5 text-[9px] font-bold rounded border bg-emerald-50 border-emerald-300 text-emerald-700 whitespace-nowrap" title={`Converted to ${r.converted_request_no}${r.converted_at ? ` on ${fmtD(r.converted_at)}` : ""}`} data-testid={`rp-converted-badge-${r.id}`}>
                     Converted → {r.converted_request_no}
                   </span>
                 ) : r.rr_batch_id ? (

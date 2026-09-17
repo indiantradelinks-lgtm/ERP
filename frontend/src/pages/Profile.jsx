@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/DataTableShell";
 import { LayoutGrid, Briefcase, FileText, Wallet, Boxes, ShieldAlert, Car, HardHat, Truck, ArrowRight, Users, CalendarDays, ChevronLeft, ChevronRight, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { fmtD } from "@/lib/datetime";
 
 const STATUS_TONE = {
   P: "bg-green-100 text-green-800 border-green-300",
@@ -82,7 +83,7 @@ export default function Profile() {
           <div className="space-y-3 text-sm">
             <Row label="Department" value={user.department || "—"} />
             <Row label="Phone" value={user.phone || "—"} />
-            <Row label="Joined" value={(user.created_at || "").slice(0, 10) || "—"} />
+            <Row label="Joined" value={fmtD(user.created_at) || "—"} />
             <Row label="Last login" value={(user.last_login || "").slice(0, 19).replace("T", " ") || "—"} />
           </div>
         </div>
@@ -270,7 +271,7 @@ function MyAttendance() {
     setMonth(next);
   };
 
-  const monthLabel = new Date(month + "-01T00:00:00").toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+  const monthLabel = fmtD(month + "-01T00:00:00");
   const s = data?.summary;
 
   return (
@@ -341,7 +342,7 @@ function MyAttendance() {
                   <tr key={r.date} className="border-t border-border/60" data-testid={`my-att-row-${r.date}`}>
                     <td className="px-3 py-1.5 font-mono-data text-xs">{r.date}</td>
                     <td className="px-3 py-1.5 text-xs text-muted-foreground">
-                      {new Date(r.date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short" })}
+                      {fmtD(r.date + "T00:00:00")}
                     </td>
                     <td className="px-3 py-1.5">
                       <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-sm border", STATUS_TONE[r.code] || "bg-secondary border-border")}>

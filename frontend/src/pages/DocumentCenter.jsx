@@ -15,6 +15,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProjectSelect } from "@/components/MasterSelect";
+import { fmtDT, fmtD } from "@/lib/datetime";
 
 const MULTIPART = { headers: { "Content-Type": "multipart/form-data" } };
 const errMsg = (err, fallback) => {
@@ -229,7 +230,7 @@ export default function DocumentCenter() {
                   <TableCell className="text-xs">{r.category_name}</TableCell>
                   <TableCell className="text-xs">{MODULE_LABEL[r.module] || r.module}{r.project_code ? ` · ${r.project_code}` : ""}</TableCell>
                   <TableCell className="text-xs font-bold">v{r.current_version}</TableCell>
-                  <TableCell className="text-xs">{latest.uploaded_by}<div className="text-[10px] text-muted-foreground">{(latest.uploaded_at || "").slice(0, 10)}</div></TableCell>
+                  <TableCell className="text-xs">{latest.uploaded_by}<div className="text-[10px] text-muted-foreground">{fmtD(latest.uploaded_at)}</div></TableCell>
                   <TableCell><ExpiryBadge date={r.expiry_date} /></TableCell>
                   <TableCell>{STATUS_BADGE[r.status] || r.status}</TableCell>
                   <TableCell><SyncBadge status={r.onedrive_status} url={r.onedrive_url} /></TableCell>
@@ -274,7 +275,7 @@ export default function DocumentCenter() {
               <li key={v.version} className="flex items-center justify-between border border-border rounded-sm p-2.5" data-testid={`dms-ver-${v.version}`}>
                 <div>
                   <div className="text-sm font-bold">v{v.version} <span className="font-normal text-xs text-muted-foreground">· {v.file_name} · {fmtSize(v.size || 0)}</span></div>
-                  <div className="text-[10px] text-muted-foreground">{v.uploaded_by} · {(v.uploaded_at || "").slice(0, 16).replace("T", " ")}</div>
+                  <div className="text-[10px] text-muted-foreground">{v.uploaded_by} · {fmtDT(v.uploaded_at)}</div>
                 </div>
                 <Button variant="outline" size="sm" className="h-8 rounded-sm" onClick={() => download(history, v)} data-testid={`dms-ver-download-${v.version}`}>
                   <Download className="h-3.5 w-3.5 mr-1" /> Download

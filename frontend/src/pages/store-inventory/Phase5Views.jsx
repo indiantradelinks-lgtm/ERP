@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, RefreshCcw, AlertTriangle, CheckCircle2, FileDown, Calculator, ScrollText, IndianRupee } from "lucide-react";
+import { fmtDT } from "@/lib/datetime";
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -253,7 +254,7 @@ export function FinalDashboardView() {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-lg font-semibold">Store &amp; Inventory · Final Dashboard</h2>
-          <p className="text-xs text-slate-500">{d.as_of?.slice(0, 16)} · powered by 5-phase Phase ladder</p>
+          <p className="text-xs text-slate-500">{fmtDT(d.as_of)} · powered by 5-phase Phase ladder</p>
         </div>
         <Button size="sm" variant="outline" onClick={load}><RefreshCcw className="h-3.5 w-3.5 mr-1" />Refresh</Button>
       </div>

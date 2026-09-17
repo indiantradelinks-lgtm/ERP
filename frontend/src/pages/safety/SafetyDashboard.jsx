@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { ShieldAlert, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { fmtDT } from "@/lib/datetime";
 
 const TONE = (v) => {
   if (v === 0 || v === "0") return "neutral";
@@ -69,7 +70,7 @@ export default function SafetyDashboard() {
           </button>
         ))}
       </div>
-      <div className="text-[10px] text-muted-foreground">As of {new Date(data.as_of).toLocaleString()}</div>
+      <div className="text-[10px] text-muted-foreground">As of {fmtDT(data.as_of)}</div>
     </div>
   );
 }

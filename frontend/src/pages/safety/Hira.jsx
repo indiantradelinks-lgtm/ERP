@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertTriangle, Plus, Pencil, Send, RefreshCcw, RotateCcw, Trash2, X } from "lucide-react";
+import { fmtDT } from "@/lib/datetime";
 
 const SERVICE_TYPES = ["scaffolding", "painting", "roof_sheeting", "rope_access", "manpower", "material_handling", "other"];
 const RISK_RATINGS = ["", "low", "medium", "high", "critical"];
@@ -303,7 +304,7 @@ export default function Hira() {
               <ul className="text-xs space-y-1">
                 {editing.revisions.map((rv, i) => (
                   <li key={i} className="border rounded-sm p-1.5 bg-amber-50/40">
-                    R{rv.rev} · {rv.revised_at?.slice(0, 16).replace("T", " ")} by <b>{rv.revised_by}</b>
+                    R{rv.rev} · {fmtDT(rv.revised_at)} by <b>{rv.revised_by}</b>
                   </li>
                 ))}
               </ul>

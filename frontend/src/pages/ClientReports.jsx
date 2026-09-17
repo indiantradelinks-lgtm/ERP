@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge } from "@/components/DataTableShell";
 import { api } from "@/lib/api";
+import { fmtDT } from "@/lib/datetime";
 
 const TABS = [
   { id: "by-client", label: "By Client", icon: Building2 },
@@ -237,7 +238,7 @@ function ActivityTable({ rows }) {
       <TableBody>
         {rows.map((r) => (
           <TableRow key={r.id} className="hover:bg-muted/30">
-            <TableCell className="font-mono-data text-xs">{(r.at || "").slice(0, 16).replace("T", " ")}</TableCell>
+            <TableCell className="font-mono-data text-xs">{fmtDT(r.at)}</TableCell>
             <TableCell><StatusBadge text={r.action} tone="info" /></TableCell>
             <TableCell className="text-sm">{r.user_name || r.user_email || "—"}</TableCell>
             <TableCell className="font-mono-data text-xs">{r.record_id?.slice(0, 8)}</TableCell>

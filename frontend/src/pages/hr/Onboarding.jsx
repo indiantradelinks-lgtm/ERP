@@ -22,6 +22,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { api, apiErrorMessage, stripEmpty } from "@/lib/api";
 import { toast } from "sonner";
 import { DepartmentSelect } from "@/components/DepartmentSelect";
+import { fmtDT } from "@/lib/datetime";
 
 const STAGE_ICONS = {
   offer_accepted: FileCheck,
@@ -189,7 +190,7 @@ export default function Onboarding() {
                       {s.done ? <CheckCircle2 className="h-5 w-5 text-emerald-700" /> : <Icon className="h-5 w-5 text-muted-foreground" />}
                       <div className="flex-1">
                         <div className="font-semibold text-sm">{s.label}</div>
-                        {s.done && <div className="text-[11px] text-muted-foreground">{s.done_at?.slice(0, 16).replace("T", " ")} · {s.done_by}</div>}
+                        {s.done && <div className="text-[11px] text-muted-foreground">{fmtDT(s.done_at)} · {s.done_by}</div>}
                       </div>
                       {!s.done && detail.status !== "completed" && (
                         <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={() => advance(detail.id, s.key)} data-testid={`onb-mark-${s.key}`}>

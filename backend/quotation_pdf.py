@@ -17,6 +17,7 @@ from reportlab.platypus import (
 )
 
 from pdf_watermark import attach_watermark
+from core import fmt_ist
 
 
 # Brand palette
@@ -344,7 +345,7 @@ def render_quotation_pdf(quote: Dict, company: Dict) -> bytes:
     prepared_by = quote.get("created_by_name") or "—"
     prepared = Paragraph(
         f"<font color='#64748b'>Quotation Prepared By:</font> <b>{prepared_by}</b>"
-        + (f" &nbsp;&nbsp;<font color='#64748b'>on {str(quote.get('created_at') or '')[:10]}</font>" if quote.get("created_at") else ""),
+        + (f" &nbsp;&nbsp;<font color='#64748b'>on {fmt_ist(quote.get('created_at'))}</font>" if quote.get("created_at") else ""),
         styles["Small"])
     story.append(KeepTogether([notes_tbl, Spacer(1, 10), sig, Spacer(1, 8), prepared]))
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import os
 from datetime import datetime
+from core import fmt_ist
 from typing import Any, Dict, List
 
 from reportlab.lib import colors
@@ -108,7 +109,7 @@ def _items_table(items: List[Dict[str, Any]], columns: List[Dict[str, str]], s) 
 
 def _footer(s):
     return Paragraph(
-        f"Generated {datetime.utcnow().strftime('%d %b %Y · %H:%M UTC')} · This is a computer-generated document.",
+        f"Generated {fmt_ist()} · This is a computer-generated document.",
         s["small"],
     )
 

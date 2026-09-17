@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { fmtDT, fmtD, fmtT } from "@/lib/datetime";
 
 const inr = (v) => `₹ ${Number(v || 0).toLocaleString("en-IN")}`;
 const SOURCES = {
@@ -60,8 +61,8 @@ export default function MyApprovalsCenter() {
       const pm = ff.pm.toLowerCase();
       all = all.filter((i) => `${i.title} ${i.subtitle} ${i.created_by}`.toLowerCase().includes(pm));
     }
-    if (ff.from) all = all.filter((i) => (i.created_at || "").slice(0, 10) >= ff.from);
-    if (ff.to) all = all.filter((i) => (i.created_at || "").slice(0, 10) <= ff.to);
+    if (ff.from) all = all.filter((i) => fmtD(i.created_at) >= ff.from);
+    if (ff.to) all = all.filter((i) => fmtD(i.created_at) <= ff.to);
     return all;
   }, [data, filter, ff]);
 
@@ -132,8 +133,8 @@ export default function MyApprovalsCenter() {
                   </TableCell>
                   <TableCell className="text-right font-mono-data tabular text-sm font-bold">{r.amount ? inr(r.amount) : "—"}</TableCell>
                   <TableCell className="text-xs">{r.decided_by || "—"}</TableCell>
-                  <TableCell className="text-xs whitespace-nowrap font-semibold" title={(r.approvers || []).map((a) => `${a.step}: ${a.by} @ ${(a.at || "").slice(0, 16).replace("T", " ")}`).join("\n")}>
-                    {r.decided_at ? `${r.decided_at.slice(0, 10)} ${r.decided_at.slice(11, 16)}` : "—"}
+                  <TableCell className="text-xs whitespace-nowrap font-semibold" title={(r.approvers || []).map((a) => `${a.step}: ${a.by} @ ${fmtDT(a.at)}`).join("\n")}>
+                    {r.decided_at ? `${fmtD(r.decided_at)} ${fmtT(r.decided_at)}` : "—"}
                   </TableCell>
                 </TableRow>
               ))}

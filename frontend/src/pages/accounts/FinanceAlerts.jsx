@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Bell, Inbox, ListChecks, RefreshCcw, ArrowUpCircle } from "lucide-react";
+import { fmtDT } from "@/lib/datetime";
 
 const fmt = (v) => `₹${Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 const sevColor = { critical: "destructive", warning: "secondary", info: "outline" };
@@ -183,7 +184,7 @@ export default function FinanceAlerts() {
                       <td>{f.client_name || "-"}</td>
                       <td><Badge>{f.status}</Badge></td>
                       <td>{f.assigned_to || "-"}</td>
-                      <td className="text-xs text-slate-400">{(f.updated_at || "").slice(0, 16)}</td>
+                      <td className="text-xs text-slate-400">{fmtDT(f.updated_at)}</td>
                       <td className="text-right space-x-1">
                         <Button size="sm" variant="ghost" onClick={() => updateFollowup(f.id, "committed")} data-testid={`btn-commit-${f.id}`}>Commit</Button>
                         <Button size="sm" variant="ghost" onClick={() => updateFollowup(f.id, "received")} data-testid={`btn-received-${f.id}`}>Received</Button>

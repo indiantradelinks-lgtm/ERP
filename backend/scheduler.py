@@ -2,7 +2,7 @@
 import asyncio
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -19,7 +19,7 @@ _last_results: dict = {"expiry_scan": None, "invoice_reminders": None, "shortage
 async def _expiry_job():
     try:
         result = await run_expiry_scan()
-        _last_results["expiry_scan"] = {"at": datetime.utcnow().isoformat(), **result}
+        _last_results["expiry_scan"] = {"at": datetime.now(timezone.utc).isoformat(), **result}
         logger.info(f"Nightly expiry-scan complete: {result}")
     except Exception as e:
         logger.exception(f"Nightly expiry-scan failed: {e}")
@@ -28,7 +28,7 @@ async def _expiry_job():
 async def _invoice_job():
     try:
         result = await run_invoice_reminders()
-        _last_results["invoice_reminders"] = {"at": datetime.utcnow().isoformat(), **result}
+        _last_results["invoice_reminders"] = {"at": datetime.now(timezone.utc).isoformat(), **result}
         logger.info(f"Weekly invoice-reminders complete: {result}")
     except Exception as e:
         logger.exception(f"Weekly invoice-reminders failed: {e}")
@@ -44,7 +44,7 @@ async def _shortage_job():
         from core import db
         rows = await compute_manpower_shortages()
         total = sum(r["shortfall"] for r in rows)
-        _last_results["shortage_scan"] = {"at": datetime.utcnow().isoformat(), "total_shortfall": total, "rows": len(rows)}
+        _last_results["shortage_scan"] = {"at": datetime.now(timezone.utc).isoformat(), "total_shortfall": total, "rows": len(rows)}
         logger.info(f"Daily shortage scan: {len(rows)} flagged, total shortfall={total}")
         if rows and email_enabled():
             recipients = await db.users.find(
@@ -98,7 +98,7 @@ async def _enquiry_reminder_job():
             n += 1
         if n:
             logger.info(f"[enquiry_reminders] fired {n} reminder(s)")
-        _last_results["enquiry_reminders"] = {"fired": n, "ts": datetime.utcnow().isoformat()}
+        _last_results["enquiry_reminders"] = {"fired": n, "ts": datetime.now(timezone.utc).isoformat()}
     except Exception as e:
         logger.exception(f"Enquiry reminder job failed: {e}")
 
@@ -130,7 +130,7 @@ async def _action_item_overdue_job():
             n += 1
         if n:
             logger.info(f"[action_item_overdue] flagged {n} item(s)")
-        _last_results["action_item_overdue"] = {"flagged": n, "ts": datetime.utcnow().isoformat()}
+        _last_results["action_item_overdue"] = {"flagged": n, "ts": datetime.now(timezone.utc).isoformat()}
     except Exception as e:
         logger.exception(f"Action item overdue job failed: {e}")
 
@@ -142,7 +142,7 @@ async def _premob_delay_job():
         n = await premob_delay_scan()
         if n:
             logger.info(f"[premob_delay] notified {n} delayed item(s)")
-        _last_results["premob_delay"] = {"notified": n, "ts": datetime.utcnow().isoformat()}
+        _last_results["premob_delay"] = {"notified": n, "ts": datetime.now(timezone.utc).isoformat()}
     except Exception as e:
         logger.exception(f"Premob delay job failed: {e}")
 
@@ -152,7 +152,7 @@ async def _gmc_weekly_job():
     try:
         from routers.gmc_router import run_gmc_weekly_review
         result = await run_gmc_weekly_review()
-        _last_results["gmc_weekly_review"] = {"at": datetime.utcnow().isoformat(), **result}
+        _last_results["gmc_weekly_review"] = {"at": datetime.now(timezone.utc).isoformat(), **result}
         logger.info(f"[gmc_weekly_review] {result}")
     except Exception as e:
         logger.exception(f"GMC weekly review job failed: {e}")
@@ -225,7 +225,7 @@ async def _vendor_payment_due_job():
                 await _db.notification_markers.insert_one({"id": digest_marker, "at": now_iso()})
         if n:
             logger.info(f"[vendor_payment_due] flagged {n} bill(s)")
-        _last_results["vendor_payment_due"] = {"flagged": n, "ts": datetime.utcnow().isoformat()}
+        _last_results["vendor_payment_due"] = {"flagged": n, "ts": datetime.now(timezone.utc).isoformat()}
     except Exception as e:
         logger.exception(f"Vendor payment due job failed: {e}")
 
@@ -257,7 +257,7 @@ async def _billing_reminder_job():
                     "body": ", ".join(r["project_code"] for r in pending[:10]),
                     "link": "/app/accounts/billing-pending",
                 })
-        _last_results["billing_reminder"] = {"pending": len(pending), "email": res, "ts": datetime.utcnow().isoformat()}
+        _last_results["billing_reminder"] = {"pending": len(pending), "email": res, "ts": datetime.now(timezone.utc).isoformat()}
         logger.info(f"[billing_reminder] month={month} pending={len(pending)} email={res}")
     except Exception as e:
         logger.exception(f"Billing reminder job failed: {e}")
@@ -343,7 +343,7 @@ async def _email_retry_job():
     try:
         from routers.email_actions_router import retry_pending_outbox
         result = await retry_pending_outbox()
-        _last_results["email_retry"] = {"at": datetime.utcnow().isoformat(), **result}
+        _last_results["email_retry"] = {"at": datetime.now(timezone.utc).isoformat(), **result}
         if result.get("retried", 0):
             logger.info(f"Email outbox retry: {result}")
     except Exception as e:
@@ -354,7 +354,7 @@ async def _onedrive_push_job():
     try:
         from routers.onedrive_router import run_push_queue
         result = await run_push_queue(limit=25)
-        _last_results["onedrive_push"] = {"at": datetime.utcnow().isoformat(), **result}
+        _last_results["onedrive_push"] = {"at": datetime.now(timezone.utc).isoformat(), **result}
         if result.get("pushed", 0) or result.get("failed", 0):
             logger.info(f"OneDrive push queue: {result}")
     except Exception as e:
@@ -365,7 +365,7 @@ async def _onedrive_backup_job():
     try:
         from routers.onedrive_router import run_db_backup
         result = await run_db_backup()
-        _last_results["onedrive_backup"] = {"at": datetime.utcnow().isoformat(), **result}
+        _last_results["onedrive_backup"] = {"at": datetime.now(timezone.utc).isoformat(), **result}
         logger.info(f"OneDrive nightly backup: {result}")
     except Exception as e:
         logger.exception(f"OneDrive backup job failed: {e}")
@@ -388,7 +388,7 @@ async def _approval_reminder_job():
 
         cfg = await db.settings.find_one({"_id": "approval_workflow"}, {"_id": 0}) or {}
         if not cfg.get("auto_reminders_enabled", True):
-            _last_results["approval_reminders"] = {"at": datetime.utcnow().isoformat(), "skipped": "disabled"}
+            _last_results["approval_reminders"] = {"at": datetime.now(timezone.utc).isoformat(), "skipped": "disabled"}
             return
         reminder_days = int(cfg.get("reminder_days", 1))
         escalation_days = int(cfg.get("escalation_days", 3))
@@ -503,7 +503,7 @@ async def _approval_reminder_job():
                 sent += 1
 
         _last_results["approval_reminders"] = {
-            "at": datetime.utcnow().isoformat(),
+            "at": datetime.now(timezone.utc).isoformat(),
             "reminders_sent": sent, "escalated": escalated,
         }
         logger.info(f"Approval reminders: sent={sent}, escalated={escalated}")

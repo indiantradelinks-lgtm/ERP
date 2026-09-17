@@ -105,7 +105,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 
 def _now_str() -> str:
-    return datetime.now(timezone.utc).strftime("%d-%b-%Y %H:%M UTC")
+    from core import fmt_ist
+    return fmt_ist(fmt="%d-%b-%Y %I:%M %p IST")
 
 
 def _money(v: Any) -> str:

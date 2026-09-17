@@ -1,3 +1,4 @@
+import { fmtDT } from "@/lib/datetime";
 import { useEffect, useState } from "react";
 import { useNavigate, Navigate } from "react-router-dom";
 import { api } from "@/lib/api";
@@ -49,7 +50,7 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-2 text-xs">
           <StatusBadge text="Live" tone="success" />
-          <span className="text-muted-foreground">Updated {new Date().toLocaleString()}</span>
+          <span className="text-muted-foreground">Updated {fmtDT()}</span>
         </div>
       </div>
 

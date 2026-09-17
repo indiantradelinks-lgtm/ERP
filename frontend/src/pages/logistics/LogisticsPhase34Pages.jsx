@@ -15,6 +15,7 @@ import { Users, Plane, Hotel, MapPin, LogOut, Fuel, Wrench, DollarSign, FileText
 import RowAttachments from "@/components/RowAttachments";
 import FileUploader from "@/components/FileUploader";
 import useAutoSync from "@/hooks/useAutoSync";
+import { fmtDT } from "@/lib/datetime";
 
 // ------------------------------------------------------------
 // Generic list + dialog shell
@@ -217,7 +218,7 @@ function ApprovalChainCell({ row }) {
                 </div>
                 <div className="text-xs mt-1">
                   <div><b>Approver:</b> {s.approver || "— awaiting action —"}</div>
-                  {s.at && <div><b>On:</b> {new Date(s.at).toLocaleString()}</div>}
+                  {s.at && <div><b>On:</b> {fmtDT(s.at)}</div>}
                   <div><b>Remarks:</b> {s.comment || "—"}</div>
                 </div>
               </div>
@@ -369,7 +370,7 @@ export function SiteReporting() {
         { key: "employee_name", label: "Employee" },
         { key: "project_code", label: "Project" },
         { key: "site_location", label: "Site" },
-        { key: "reporting_at", label: "Reported At", render: (r) => (r.reporting_at || "").slice(0, 16).replace("T", " ") },
+        { key: "reporting_at", label: "Reported At", render: (r) => fmtDT(r.reporting_at) },
         { key: "safety_induction_done", label: "Induction", render: (r) => r.safety_induction_done ? "✔" : "✗" },
         { key: "accommodation_confirmed", label: "Acc.", render: (r) => r.accommodation_confirmed ? "✔" : "✗" },
       ]}

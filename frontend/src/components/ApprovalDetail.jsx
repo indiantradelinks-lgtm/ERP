@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import { fmtDT, fmtRel } from "@/lib/datetime";
 
 function statusTone(status) {
   if (status === "approved") return "success";
@@ -77,7 +78,7 @@ function ChainStep({ step, idx, currentIdx, terminal }) {
       {step.approver && (
         <div className="text-right text-[10px] text-muted-foreground">
           <div className="font-semibold text-foreground">{step.approver}</div>
-          <div>{step.at?.slice(0, 16).replace("T", " ")}</div>
+          <div title={fmtDT(step.at)}>{fmtDT(step.at)}<div className="text-[9px] opacity-70">{fmtRel(step.at)}</div></div>
         </div>
       )}
     </div>
@@ -132,7 +133,7 @@ function HistoryEntry({ h, idx }) {
         )}
       </div>
       <div className="text-[10px] text-muted-foreground flex items-center gap-1 shrink-0">
-        <Clock className="h-3 w-3" /> {h.at?.slice(0, 16).replace("T", " ")}
+        <Clock className="h-3 w-3" /> {fmtDT(h.at)} · {fmtRel(h.at)}
       </div>
     </li>
   );

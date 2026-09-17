@@ -17,6 +17,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { CheckCircle2, XCircle, AlertTriangle, RefreshCcw, ListTodo } from "lucide-react";
+import { fmtD } from "@/lib/datetime";
 
 const fmt = (v) => `₹${Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 
@@ -186,7 +187,7 @@ export default function GoLiveCenter() {
                         <td className="py-2">{r.type}</td><td>{r.subject || "-"}</td>
                         <td className="text-right">{r.amount ? fmt(r.amount) : "-"}</td>
                         <td><Badge variant="secondary">{r.status}</Badge></td>
-                        <td className="text-xs text-slate-400">{(r.created_at || "").slice(0, 10)}</td>
+                        <td className="text-xs text-slate-400">{fmtD(r.created_at)}</td>
                       </tr>
                     ))}
                   </tbody>

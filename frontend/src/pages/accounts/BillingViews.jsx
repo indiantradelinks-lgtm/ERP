@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Plus, RefreshCcw, CheckCircle2, AlertCircle, FileSpreadsheet, X, Paperclip, Eye, Upload, ExternalLink, FileText } from "lucide-react";
 import FileUploader from "@/components/FileUploader";
 import { fmt } from "./AccountsViews";
+import { fmtDT, fmtD, fmtT } from "@/lib/datetime";
 
 const INVOICE_TYPE_OPTS = [
   ["TAX", "Tax Invoice"], ["PROF", "Proforma Invoice"], ["RA", "RA Bill"],
@@ -169,7 +170,7 @@ export function ReceiptDrillDialog({ receiptId, onClose }) {
               <div><span className="text-slate-500">UTR / Ref:</span> {rcpt.txn_reference || "—"}</div>
               <div><span className="text-slate-500">Bank:</span> {rcpt.bank_account || "—"}</div>
               <div><span className="text-slate-500">Project:</span> {rcpt.project_code || "—"}</div>
-              <div><span className="text-slate-500">Created:</span> {(rcpt.created_at || "").slice(0, 16).replace("T", " ")} · {rcpt.created_by}</div>
+              <div><span className="text-slate-500">Created:</span> {fmtDT(rcpt.created_at)} · {rcpt.created_by}</div>
               <div className="col-span-2"><span className="text-slate-500">Remarks:</span> {rcpt.remarks || "—"}</div>
             </div>
 
@@ -655,7 +656,7 @@ export function ReceiptsView() {
                 {rows.map(r => (
                   <tr key={r.id} className="border-t hover:bg-slate-50 cursor-pointer" data-testid={`bill-rcpt-row-${r.receipt_no}`} onClick={() => openDetail(r)}>
                     <td className="px-3 py-1.5 font-mono text-xs text-blue-700 underline">{r.receipt_no}</td>
-                    <td className="px-3 py-1.5 text-xs whitespace-nowrap">{r.created_at ? <>{r.created_at.slice(0, 10)}<div className="text-[10px] text-muted-foreground">{r.created_at.slice(11, 16)}</div></> : "—"}</td>
+                    <td className="px-3 py-1.5 text-xs whitespace-nowrap">{r.created_at ? <>{fmtD(r.created_at)}<div className="text-[10px] text-muted-foreground">{fmtT(r.created_at)}</div></> : "—"}</td>
                     <td className="px-3 py-1.5 font-mono text-xs">{r.receipt_date}</td>
                     <td className="px-3 py-1.5 text-xs">{r.client_name}</td>
                     <td className="px-3 py-1.5 font-mono text-[10px]">{r.project_code || "—"}</td>
@@ -810,7 +811,7 @@ export function ReceiptsView() {
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
               {[
                 ["Receipt Date", detail.receipt_date],
-                ["Created", detail.created_at ? `${detail.created_at.slice(0, 10)} ${detail.created_at.slice(11, 16)}` : "—"],
+                ["Created", detail.created_at ? `${fmtD(detail.created_at)} ${fmtT(detail.created_at)}` : "—"],
                 ["Client", detail.client_name],
                 ["Project", detail.project_code || "—"],
                 ["Mode", detail.mode],
@@ -1322,7 +1323,7 @@ export function CollectionReportView() {
               {(d.rows || []).map(r => (
                 <tr key={r.id} className="border-t hover:bg-slate-50 cursor-pointer" onClick={() => setDrill(r.id)} data-testid={`coll-row-${r.receipt_no}`}>
                   <td className="px-3 py-1.5 font-mono text-xs text-blue-700">{r.receipt_no}</td>
-                  <td className="px-3 py-1.5 text-xs whitespace-nowrap">{r.created_at ? <>{r.created_at.slice(0, 10)}<div className="text-[10px] text-muted-foreground">{r.created_at.slice(11, 16)}</div></> : "—"}</td>
+                  <td className="px-3 py-1.5 text-xs whitespace-nowrap">{r.created_at ? <>{fmtD(r.created_at)}<div className="text-[10px] text-muted-foreground">{fmtT(r.created_at)}</div></> : "—"}</td>
                   <td className="px-3 py-1.5 font-mono text-xs">{r.receipt_date}</td>
                   <td className="px-3 py-1.5">{r.client_name}</td>
                   <td className="px-3 py-1.5 font-mono text-[10px]">{r.project_code || "—"}</td>

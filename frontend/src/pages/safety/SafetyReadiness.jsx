@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ShieldPlus, RefreshCcw, Send } from "lucide-react";
+import { fmtDT } from "@/lib/datetime";
 
 const CLASS_TONE = {
   ready: "bg-emerald-100 text-emerald-900 border-emerald-400",
@@ -80,7 +81,7 @@ export default function SafetyReadiness() {
             <div>
               <div className="text-[10px] uppercase tracking-wider">Overall Classification</div>
               <div className="font-display font-black text-3xl uppercase tracking-tight">{data.classification.replaceAll("_", " ")}</div>
-              <div className="text-[10px] mt-0.5">{data.factors.length} factors evaluated · {new Date(data.as_of).toLocaleString()}</div>
+              <div className="text-[10px] mt-0.5">{data.factors.length} factors evaluated · {fmtDT(data.as_of)}</div>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

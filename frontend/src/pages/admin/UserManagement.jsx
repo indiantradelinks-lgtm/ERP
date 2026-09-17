@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { fmtDT } from "@/lib/datetime";
 
 const FALLBACK_ROLES = [
   "super_admin", "director", "general_manager", "dept_head", "project_manager",
@@ -201,7 +202,7 @@ export default function UserManagement() {
                       </span>
                     )}
                   </TableCell>
-                  <TableCell className="text-[11px] text-muted-foreground">{(u.last_login || "—").slice(0, 16).replace("T", " ")}</TableCell>
+                  <TableCell className="text-[11px] text-muted-foreground">{fmtDT(u.last_login)}</TableCell>
                   <TableCell className="text-right">
                     <div className="inline-flex gap-1">
                       {u.role !== "super_admin" && u.active !== false && (

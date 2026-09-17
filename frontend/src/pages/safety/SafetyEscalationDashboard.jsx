@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Siren, RefreshCcw, CheckCircle2 } from "lucide-react";
+import { fmtDT } from "@/lib/datetime";
 
 const KIND_LABEL = {
   overdue_capa: "Overdue CAPA",
@@ -57,7 +58,7 @@ export default function SafetyEscalationDashboard() {
                 <td className="px-3 py-2 text-xs font-mono">{r.ref_no || r.ref_id?.slice(0, 8)}</td>
                 <td className="px-3 py-2 text-xs">{r.project_id ? r.project_id.slice(0, 12) : "—"}</td>
                 <td className="px-3 py-2 text-xs max-w-md truncate">{r.reason}</td>
-                <td className="px-3 py-2 text-xs">{r.created_at?.slice(0, 16).replace("T", " ")}</td>
+                <td className="px-3 py-2 text-xs">{fmtDT(r.created_at)}</td>
                 <td className="px-3 py-2 text-right"><Button size="icon" variant="ghost" className="h-7 w-7 text-emerald-700" onClick={() => closeIt(r)} data-testid={`esc-close-${r.id}`}><CheckCircle2 className="h-3.5 w-3.5" /></Button></td>
               </tr>
             ))}

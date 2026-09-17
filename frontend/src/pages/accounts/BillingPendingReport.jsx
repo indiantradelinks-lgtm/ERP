@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { api, apiErrorMessage } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import { fmtD } from "@/lib/datetime";
 
 const inr = (v) => `₹ ${Number(v || 0).toLocaleString("en-IN")}`;
 const STATUS_META = {
@@ -241,7 +242,7 @@ export default function BillingPendingReport() {
                     {r.billing_status === "pending" && r.pending_days != null && <div className="text-[10px] text-muted-foreground mt-0.5">{r.pending_days} days</div>}
                   </TableCell>
                   <TableCell className="text-xs">
-                    {r.last_bill_no ? <><div className="font-semibold">{r.last_bill_no}</div><div className="text-[10px] text-muted-foreground">{(r.last_bill_at || "").slice(0, 10)}</div></> : "—"}
+                    {r.last_bill_no ? <><div className="font-semibold">{r.last_bill_no}</div><div className="text-[10px] text-muted-foreground">{fmtD(r.last_bill_at)}</div></> : "—"}
                   </TableCell>
                   <TableCell className="text-xs">
                     {r.open_request_no ? <><div className="font-semibold">{r.open_request_no}</div><div className="text-[10px] text-muted-foreground">{(r.open_request_nature || "").replaceAll("_", " ")}</div></> : "—"}

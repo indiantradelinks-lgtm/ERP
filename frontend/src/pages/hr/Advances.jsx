@@ -27,6 +27,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { api, apiErrorMessage } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import { fmtDT } from "@/lib/datetime";
 
 const STATUS_TONE = {
   draft: "bg-slate-100 text-slate-700 border-slate-300",
@@ -723,7 +724,7 @@ function AdvanceDetailDialog({ id, onOpenChange, onChange, user }) {
                     }>{i + 1}</Badge>
                     <span className="font-medium">{step.label}</span>
                     <span className="text-muted-foreground">{step.role}</span>
-                    {step.approver && <span className="text-muted-foreground">· {step.approver} · {step.at && new Date(step.at).toLocaleString()}</span>}
+                    {step.approver && <span className="text-muted-foreground">· {step.approver} · {step.at && fmtDT(step.at)}</span>}
                     {step.comment && <span className="italic text-muted-foreground">"{step.comment}"</span>}
                   </li>
                 ))}
@@ -751,7 +752,7 @@ function AdvanceDetailDialog({ id, onOpenChange, onChange, user }) {
                 <KV label="Txn #" value={adv.payment.txn_no} />
                 <KV label="Bank" value={adv.payment.bank_name} />
                 <KV label="Paid By" value={adv.payment.paid_by} />
-                <KV label="Paid At" value={adv.payment.paid_at && new Date(adv.payment.paid_at).toLocaleString()} />
+                <KV label="Paid At" value={adv.payment.paid_at && fmtDT(adv.payment.paid_at)} />
               </div>
             </div>
           )}
@@ -792,7 +793,7 @@ function AdvanceDetailDialog({ id, onOpenChange, onChange, user }) {
               <ul className="text-xs space-y-1 mt-1 max-h-40 overflow-y-auto border rounded p-2 bg-slate-50">
                 {adv.status_history.map((h, i) => (
                   <li key={i}>
-                    <span className="text-muted-foreground">{new Date(h.at).toLocaleString()}</span> · <strong>{h.by}</strong> ({h.by_role}) — {h.from} → {h.to}
+                    <span className="text-muted-foreground">{fmtDT(h.at)}</span> · <strong>{h.by}</strong> ({h.by_role}) — {h.from} → {h.to}
                     {h.comment && <span className="italic"> · "{h.comment}"</span>}
                   </li>
                 ))}

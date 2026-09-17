@@ -22,6 +22,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { api, apiErrorMessage, stripEmpty, API } from "@/lib/api";
 import { toast } from "sonner";
+import { fmtD } from "@/lib/datetime";
 
 const LEVELS = ["beginner", "intermediate", "expert"];
 const EXP_TONE = {
@@ -640,7 +641,7 @@ function DocumentRow({ row, scanning, onScan, onDelete }) {
           )}
           {!overall && <span className="text-[11px] text-muted-foreground">—</span>}
         </TableCell>
-        <TableCell className="text-[11px]">{(row.created_at || "").slice(0, 10)}</TableCell>
+        <TableCell className="text-[11px]">{fmtD(row.created_at)}</TableCell>
         <TableCell className="text-right">
           <div className="inline-flex gap-1">
             <Button size="sm" className="h-7 rounded-sm" onClick={onScan} disabled={scanning} data-testid={`doc-scan-${row.id}`}>

@@ -21,6 +21,7 @@ const PAY_ROLES = new Set(["super_admin", "director", "accounts_executive", "bil
 const RAISE_ROLES = new Set(["project_coordinator", "project_manager", "super_admin"]);
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const blank = () => ({ id: newId(), project_code: "", project_id: "", cost_center_id: "", expense_type: "",
+  booking_scope: "project", office_location: "",
   expense_date: new Date().toISOString().slice(0, 10), amount: "", description: "", bill_no: "",
   paid_to: "", paid_to_type: "vendor", employee_id: "", payment_mode: "Cash", settlement_mode: "petty_cash", remarks: "" });
 
@@ -48,6 +49,9 @@ export default function ProjectExpenses({ embedded = false }) {
   const [proofFiles, setProofFiles] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [offices, setOffices] = useState([]);
+  const [hoCCs, setHoCCs] = useState([]);
+  const isHO = form.booking_scope === "head_office";
 
   const load = async () => {
     try {
@@ -65,6 +69,8 @@ export default function ProjectExpenses({ embedded = false }) {
     api.get("/project-expenses/settings").then((r) => setThreshold(r.data?.large_threshold || 10000)).catch(() => {});
     api.get("/vendors/approved-lite").then((r) => setVendors(r.data || [])).catch(() => {});
     api.get("/advances/eligible-employees").then((r) => setEmployees(r.data || [])).catch(() => {});
+    api.get("/office-locations").then((r) => setOffices(r.data || [])).catch(() => {});
+    api.get("/head-office-cost-centers").then((r) => setHoCCs(r.data || [])).catch(() => {});
   }, []);
   useEffect(() => { load(); }, [filters]); // eslint-disable-line
   useAutoSync(load);
@@ -80,16 +86,20 @@ export default function ProjectExpenses({ embedded = false }) {
   };
 
   const create = async () => {
-    if (!form.project_code) { toast.error("Select a project"); return; }
+    if (!isHO && !form.project_code) { toast.error("Select a project"); return; }
+    if (isHO && !form.office_location) { toast.error("Select the Office Location (e.g. Delhi Head Office)"); return; }
     if (!form.expense_type) { toast.error("Select expense type"); return; }
     if (!Number(form.amount)) { toast.error("Enter amount"); return; }
-    if (!form.cost_center_id) { toast.error("Cost Center is mandatory — select a valid Cost Center before submitting"); return; }
+    if (!form.cost_center_id) { toast.error(isHO ? "Select a Head Office Cost Center before submitting" : "Cost Center is mandatory — select a valid Cost Center before submitting"); return; }
     if (form.paid_to_type === "vendor" && !form.paid_to) { toast.error("Select the approved vendor"); return; }
     if (form.paid_to_type === "person" && !form.employee_id) { toast.error("Select the employee (Emp ID)"); return; }
     try {
       const emp = employees.find((e) => e.id === form.employee_id);
       const r = await api.post("/project-expenses", {
         ...form, amount: Number(form.amount),
+        project_code: isHO ? "HEAD-OFFICE" : form.project_code,
+        project_id: isHO ? null : form.project_id,
+        office_location: isHO ? form.office_location : null,
         employee_code: emp?.employee_id || emp?.emp_code || null,
         employee_name: emp?.name || null,
       });
@@ -218,8 +228,8 @@ export default function ProjectExpenses({ embedded = false }) {
                   <div className="text-[10px] text-muted-foreground">{r.expense_date} · {r.created_by}</div>
                 </TableCell>
                 <TableCell>
-                  <div className="font-semibold text-sm">{r.project_code}</div>
-                  <div className="text-[11px] text-muted-foreground">{r.category_name || "— no cost center —"}</div>
+                  <div className="font-semibold text-sm">{r.is_head_office ? "HEAD OFFICE" : r.project_code}</div>
+                  <div className="text-[11px] text-muted-foreground">{r.is_head_office && r.office_location ? `${r.office_location} · ` : ""}{r.category_name || "— no cost center —"}</div>
                 </TableCell>
                 <TableCell>
                   <Badge variant="outline" className="rounded-sm text-[10px]">{r.expense_type_label}</Badge>
@@ -280,15 +290,40 @@ export default function ProjectExpenses({ embedded = false }) {
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-1">
-            <ProjectSelect label="Project *" value={form.project_code} onChange={onProjectPicked} testid="pex-form-project" />
+            <div className="col-span-2 flex flex-wrap gap-4 rounded-sm border bg-slate-50 p-2" data-testid="pex-form-scope">
+              {[["project", "Project Expense"], ["head_office", "Head Office Expense"]].map(([k, label]) => (
+                <label key={k} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <input type="radio" name="booking_scope" value={k} checked={form.booking_scope === k}
+                    data-testid={`pex-scope-${k}`}
+                    onChange={() => { setForm({ ...form, booking_scope: k, project_code: "", project_id: "", cost_center_id: "",
+                      office_location: k === "head_office" ? (offices.find((o) => o.is_default)?.name || offices[0]?.name || "") : "" }); setCcList([]); }} />
+                  {label}
+                </label>
+              ))}
+              <span className="text-[11px] text-muted-foreground self-center">
+                {isHO ? "No project — booked against a Head Office cost center." : "Booked against the selected project's cost center."}
+              </span>
+            </div>
+            {isHO ? (
+              <div>
+                <Label className="text-[10px] uppercase tracking-wider">Office Location *</Label>
+                <select value={form.office_location} onChange={(e) => setForm({ ...form, office_location: e.target.value })}
+                  className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="pex-form-office">
+                  <option value="">— select office —</option>
+                  {offices.map((o) => <option key={o.id} value={o.name}>{o.name}</option>)}
+                </select>
+              </div>
+            ) : (
+              <ProjectSelect label="Project *" value={form.project_code} onChange={onProjectPicked} testid="pex-form-project" />
+            )}
             <div>
-              <Label className="text-[10px] uppercase tracking-wider">Cost Center *</Label>
+              <Label className="text-[10px] uppercase tracking-wider">{isHO ? "Head Office Cost Center *" : "Cost Center *"}</Label>
               <select value={form.cost_center_id} onChange={(e) => setForm({ ...form, cost_center_id: e.target.value })}
                 className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="pex-form-cc">
                 <option value="">— select cost center —</option>
-                {ccList.map((c) => <option key={c.id} value={c.id}>{c.category_name} · budget {inr(c.budget)} · spent {inr(c.actual)}</option>)}
+                {(isHO ? hoCCs : ccList).map((c) => <option key={c.id} value={c.id}>{c.category_name || c.name}{isHO ? "" : ` · budget ${inr(c.budget)} · spent ${inr(c.actual)}`}</option>)}
               </select>
-              {form.project_code && ccList.length === 0 && (
+              {!isHO && form.project_code && ccList.length === 0 && (
                 <p className="text-[10px] text-amber-700 mt-0.5">No cost centers on this project — ask admin to auto-provision them (Admin → Cost Centers).</p>
               )}
             </div>

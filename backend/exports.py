@@ -3,6 +3,7 @@ import io
 import os
 import re
 from datetime import datetime
+from core import fmt_ist
 from typing import List, Dict, Any, Optional, Set
 
 from openpyxl import Workbook
@@ -421,7 +422,7 @@ def to_excel(resource: str, rows: List[Dict[str, Any]], mask_pii: bool = False) 
     # Brand text block (rows 1-3, columns C+)
     ws.cell(row=1, column=3, value=BRAND_NAME).font = Font(bold=True, size=14, color="0F172A")
     ws.cell(row=2, column=3, value="").font = Font(italic=True, color="475569", size=9)
-    ws.cell(row=3, column=3, value=f"{resource.replace('_', ' ').title()} · Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}").font = Font(italic=True, color="64748B", size=9)
+    ws.cell(row=3, column=3, value=f"{resource.replace('_', ' ').title()} · Generated: {fmt_ist(fmt='%Y-%m-%d %I:%M %p IST')}").font = Font(italic=True, color="64748B", size=9)
     if mask_pii:
         ws.cell(row=4, column=3, value="⚠ DPDP Act 2023 — PII fields are masked for the current viewer.").font = Font(italic=True, color="B45309", size=9)
 
@@ -520,7 +521,7 @@ def to_pdf(resource: str, rows: List[Dict[str, Any]], mask_pii: bool = False) ->
         logo_cell = ""
     brand_block = [
         Paragraph(f"<b>{BRAND_NAME}</b>", title_style),
-        Paragraph(f"{resource.replace('_', ' ').title()} · Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} · {len(rows)} records", meta_style),
+        Paragraph(f"{resource.replace('_', ' ').title()} · Generated: {fmt_ist(fmt='%Y-%m-%d %I:%M %p IST')} · {len(rows)} records", meta_style),
     ]
     if mask_pii:
         brand_block.append(Paragraph(

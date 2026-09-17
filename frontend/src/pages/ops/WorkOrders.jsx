@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Plus, Pencil, Trash2, RefreshCcw, FileSignature, Filter, Search, Link2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { fmtDT } from "@/lib/datetime";
 
 const STATUSES = ["draft", "received", "active", "completed", "cancelled", "hold"];
 const EMPTY = { wo_no: "", project_id: "", wo_date: "", valid_from: "", valid_until: "",
@@ -397,7 +398,7 @@ export default function WorkOrders() {
                   {editing.revision_history.map((h, i) => (
                     <li key={i} className="border rounded-sm p-2 bg-amber-50">
                       <div className="flex justify-between font-mono">
-                        <span>{(h.at || "").slice(0, 16).replace("T", " ")}</span>
+                        <span>{fmtDT(h.at)}</span>
                         <span><b>₹ {Number(h.from_value || 0).toLocaleString("en-IN")}</b> → <b>₹ {Number(h.to_value || 0).toLocaleString("en-IN")}</b></span>
                       </div>
                       <div className="text-muted-foreground">by {h.by_name || "—"} {h.reason && `· ${h.reason}`}</div>

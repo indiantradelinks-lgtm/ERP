@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { StatusBadge } from "@/components/DataTableShell";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { fmtD } from "@/lib/datetime";
 
 const TYPE_LABEL = { delivery: "Delivery", return: "Return", inter_site_transfer: "Inter-site", vendor_return: "Vendor Return" };
 const TYPE_TONE = { delivery: "primary", return: "warning", inter_site_transfer: "info", vendor_return: "danger" };
@@ -216,7 +217,7 @@ export default function Challans() {
               <div className="md:col-span-2 space-y-2">
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <Info label="Type" value={TYPE_LABEL[view.type]} />
-                  <Info label="Dispatch" value={view.dispatched_at?.slice(0, 10) || "—"} />
+                  <Info label="Dispatch" value={fmtD(view.dispatched_at) || "—"} />
                   <Info label="From" value={view.from_location || "—"} />
                   <Info label="To" value={view.to_location || "—"} />
                   <Info label="Vehicle" value={view.vehicle_no || "—"} />

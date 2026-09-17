@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/DataTableShell";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { toneFor } from "@/lib/statusTone";
+import { fmtD } from "@/lib/datetime";
 
 const VP_STATUS_TONE = { approved: "success", rejected: "danger" };
 
@@ -186,7 +187,7 @@ export default function VendorPortal() {
               <div className="font-display font-black text-xl tabular w-12 text-center">{Number(e.rating || 0).toFixed(1)}</div>
               <div className="flex-1">
                 <div className="font-semibold">{e.period}</div>
-                <div className="text-[11px] text-muted-foreground">{e.rated_by} · {(e.created_at || "").slice(0, 10)}</div>
+                <div className="text-[11px] text-muted-foreground">{e.rated_by} · {fmtD(e.created_at)}</div>
                 {e.note && <div className="text-xs mt-1">"{e.note}"</div>}
               </div>
             </li>

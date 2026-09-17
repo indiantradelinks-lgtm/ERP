@@ -13,6 +13,7 @@ import { DepartmentSelect } from "@/components/DepartmentSelect";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { toneFor } from "@/lib/statusTone";
+import { fmtD, fmtT } from "@/lib/datetime";
 
 const STATUS_TONE = {
   open: "info", under_review: "primary", submitted: "primary",
@@ -268,10 +269,10 @@ export default function Enquiries() {
               {filtered.map((r) => (
                 <TableRow key={r.id} className="hover:bg-muted/30" data-testid={`enquiry-row-${r.id}`} data-row-id={r.id}>
                   <TableCell className="font-mono-data text-sm">{r.enquiry_no}<div className="text-[10px] text-muted-foreground">{r.customer_enquiry_no || ""}</div></TableCell>
-                  <TableCell className="font-mono-data text-xs whitespace-nowrap" data-testid={`enquiry-created-${r.id}`}>{r.created_at ? r.created_at.slice(0, 10) : "—"}<div className="text-[10px] text-muted-foreground">{r.created_at ? r.created_at.slice(11, 16) : ""}</div></TableCell>
+                  <TableCell className="font-mono-data text-xs whitespace-nowrap" data-testid={`enquiry-created-${r.id}`}>{r.created_at ? fmtD(r.created_at) : "—"}<div className="text-[10px] text-muted-foreground">{r.created_at ? fmtT(r.created_at) : ""}</div></TableCell>
                   <TableCell className="text-xs whitespace-nowrap" data-testid={`enquiry-created-by-${r.id}`}>
                     <span className="font-semibold">{r.created_by_name || "—"}</span>
-                    {r.updated_by_name && r.updated_at && <div className="text-[10px] text-muted-foreground">Upd. {r.updated_by_name} · {r.updated_at.slice(0, 10)}</div>}
+                    {r.updated_by_name && r.updated_at && <div className="text-[10px] text-muted-foreground">Upd. {r.updated_by_name} · {fmtD(r.updated_at)}</div>}
                   </TableCell>
                   <TableCell className="text-sm font-semibold">
                     {r.customer}

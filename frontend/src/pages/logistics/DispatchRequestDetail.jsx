@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Truck, Package, MapPin, PackageCheck, AlertOctagon, ArrowLeft, ChevronRight } from "lucide-react";
+import { fmtDT, fmtD } from "@/lib/datetime";
 
 const STATUS_TONE = {
   draft: "bg-slate-100 text-slate-700",
@@ -80,7 +81,7 @@ export default function DispatchRequestDetail() {
           </h1>
           <div className="mt-1 flex items-center gap-2">
             <span className={`text-[10px] uppercase font-semibold px-2 py-0.5 rounded ${STATUS_TONE[dr.status] || "bg-slate-100"}`}>{dr.status}</span>
-            <span className="text-xs text-slate-500">created {(dr.created_at || "").slice(0, 10)}</span>
+            <span className="text-xs text-slate-500">created {fmtD(dr.created_at)}</span>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -149,7 +150,7 @@ export default function DispatchRequestDetail() {
             <Kv k="Short/Damaged" v={`${d.short_qty || 0} / ${d.damaged_qty || 0}`} />
             <Kv k="Received By" v={d.received_by || "—"} />
             <Kv k="Condition" v={d.material_condition || "—"} />
-            <Kv k="Delivered At" v={(d.delivered_at || "").slice(0, 16).replace("T", " ")} />
+            <Kv k="Delivered At" v={fmtDT(d.delivered_at)} />
             {d.pod_url && <a className="text-blue-700 hover:underline text-xs" href={d.pod_url} target="_blank" rel="noreferrer">POD Doc ↗</a>}
           </div>
         ))}

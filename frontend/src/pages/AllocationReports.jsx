@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/DataTableShell";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { toneFor } from "@/lib/statusTone";
+import { fmtDT } from "@/lib/datetime";
 
 const ACTION_TONE = {
   department_move: "primary",
@@ -238,7 +239,7 @@ function HistoryTable({ rows }) {
       <TableBody>
         {rows.map((h, idx) => (
           <TableRow key={h.id || `${h.at}-${h.employee_id || idx}-${h.action}`} className="hover:bg-muted/30" data-testid={`alloc-history-${h.id || idx}`}>
-            <TableCell className="font-mono-data text-xs">{(h.at || "").slice(0, 16).replace("T", " ")}</TableCell>
+            <TableCell className="font-mono-data text-xs">{fmtDT(h.at)}</TableCell>
             <TableCell className="text-sm font-semibold">{h.employee_name || "—"}</TableCell>
             <TableCell><StatusBadge text={labelFor(h.action)} tone={toneFor(ACTION_TONE, h.action, "neutral")} /></TableCell>
             <TableCell className="text-sm">{h.project || "—"}</TableCell>

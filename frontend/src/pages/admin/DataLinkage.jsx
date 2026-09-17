@@ -10,6 +10,7 @@ import {
   CheckCircle2, AlertTriangle, Search,
 } from "lucide-react";
 import { toast } from "sonner";
+import { fmtDT } from "@/lib/datetime";
 
 export default function DataLinkage() {
   const [tab, setTab] = useState("sheets");
@@ -136,7 +137,7 @@ function GoogleSheetsTab() {
                     <tr key={c.id} className="border-t" data-testid={`sheet-row-${c.id}`}>
                       <td className="px-3 py-2 font-medium">{c.name}</td>
                       <td className="px-3 py-2 text-xs"><a href={c.csv_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline inline-flex items-center gap-1 truncate max-w-[300px]">{c.csv_url.slice(0, 60)}…<ExternalLink className="h-3 w-3" /></a></td>
-                      <td className="px-3 py-2 text-xs">{c.last_synced_at ? new Date(c.last_synced_at).toLocaleString() : "—"}</td>
+                      <td className="px-3 py-2 text-xs">{c.last_synced_at ? fmtDT(c.last_synced_at) : "—"}</td>
                       <td className="px-3 py-2 text-xs">{c.last_row_count ?? "—"}</td>
                       <td className="px-3 py-2">
                         <Button size="sm" variant="outline" onClick={() => previewChannel(c.id)} disabled={previewing} data-testid={`sheet-preview-${c.id}`}><RefreshCw className="h-3 w-3 mr-1" />Preview</Button>
@@ -290,7 +291,7 @@ function TallyTab() {
             <strong>Tally setup:</strong> In Tally Prime open <em>Gateway → F12 → ODBC/Advanced → Enable HTTP server</em>. The default port is <code>9000</code>. The ERP backend must be able to reach the Tally machine over the network — for a local-network Tally, set Host to the LAN IP of the Tally PC.
           </div>
           {cfg.last_sync_at && (
-            <div className="text-xs text-muted-foreground">Last masters sync: {new Date(cfg.last_sync_at).toLocaleString()} · {cfg.ledger_count} ledgers</div>
+            <div className="text-xs text-muted-foreground">Last masters sync: {fmtDT(cfg.last_sync_at)} · {cfg.ledger_count} ledgers</div>
           )}
         </CardContent>
       </Card>

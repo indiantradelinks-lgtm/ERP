@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { Activity, RefreshCcw, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { fmtDT, fmtD } from "@/lib/datetime";
 
 const inr = (n) => `₹${Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 
@@ -82,7 +83,7 @@ export default function SafetyManagementReview() {
             <Activity className="h-7 w-7 text-red-600" /> Safety Management Review Dashboard
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Executive HSE cockpit — 30 real-time KPIs across all safety phases. Snapshot as of {new Date(data.as_of).toLocaleString()}.
+            Executive HSE cockpit — 30 real-time KPIs across all safety phases. Snapshot as of {fmtDT(data.as_of)}.
           </p>
         </div>
         <Button variant="outline" onClick={load} data-testid="mgmt-review-refresh">
@@ -146,7 +147,7 @@ export default function SafetyManagementReview() {
               {closures.map((r, i) => (
                 <tr key={i} className="border-t hover:bg-slate-50/40 cursor-pointer" onClick={() => navigate("/app/safety/project-closure")}>
                   <td className="px-3 py-1.5 font-mono">{r.project_code}</td>
-                  <td className="px-3 py-1.5 text-slate-600">{(r.closed_at || "").slice(0, 10)}</td>
+                  <td className="px-3 py-1.5 text-slate-600">{fmtD(r.closed_at)}</td>
                 </tr>
               ))}
             </tbody>

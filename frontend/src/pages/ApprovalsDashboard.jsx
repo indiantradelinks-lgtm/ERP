@@ -7,6 +7,7 @@ import { Layers, RotateCcw, FileQuestion, XCircle, Clock, CheckCircle2 } from "l
 import ApprovalDetail from "@/components/ApprovalDetail";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
+import { fmtDT } from "@/lib/datetime";
 
 const LANES = [
   { key: "pending", label: "Pending", icon: Clock, tone: "border-blue-200 bg-blue-50 text-blue-900" },
@@ -116,7 +117,7 @@ function LaneTable({ rows, onOpen }) {
               <td className="p-2 text-xs font-mono">v{r.version || "1.0"}{r.resubmit_count ? ` · ${r.resubmit_count}↻` : ""}</td>
               <td className="p-2"><Badge variant="outline" className="text-[10px]">{(r.status || "").replaceAll("_", " ")}</Badge></td>
               <td className="p-2 text-xs">{r.created_by || r.requested_by || "—"}</td>
-              <td className="p-2 text-xs text-muted-foreground">{(r.updated_at || r.created_at || "").slice(0, 16).replace("T", " ")}</td>
+              <td className="p-2 text-xs text-muted-foreground">{fmtDT(r.updated_at || r.created_at)}</td>
               <td className="p-2"><Button size="sm" variant="outline" onClick={() => onOpen(r)} data-testid={`lane-open-${r.id}`}>Open</Button></td>
             </tr>
           ))}

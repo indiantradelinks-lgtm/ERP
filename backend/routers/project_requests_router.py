@@ -57,7 +57,15 @@ REQUEST_TYPES: Dict[str, Dict[str, Any]] = {
     "manpower":         {"label": "Manpower / Site Staff", "dept": "hr", "stockable": False, "payment": False, "expense_type": None},
     "other":            {"label": "Other", "dept": "admin", "stockable": False, "payment": True, "expense_type": "misc"},
     "self_expense":     {"label": "User Expense / Self Expense", "dept": "admin", "stockable": False, "payment": True, "expense_type": "head_office"},
+    "head_office_expense": {"label": "Head Office Expense (Delhi HO / Admin)", "dept": "admin", "stockable": False, "payment": True, "expense_type": "head_office"},
 }
+
+# Request types booked against a Head Office cost center instead of a project
+HO_TYPES = {"self_expense", "head_office_expense"}
+# Head Office expense requests may also be raised by admin/accounts/HR desks
+HO_RAISE_EXTRA = {"dept_head", "admin_executive", "accounts_executive", "hr_executive",
+                  "general_manager", "director"}
+OFFICE_SEED = [("DEL-HO", "Delhi Head Office", True)]
 
 
 async def get_request_types(active_only: bool = False) -> Dict[str, Dict[str, Any]]:
@@ -124,6 +132,45 @@ def _ip(request: Request) -> str:
     return request.client.host if request.client else ""
 
 
+@router.get("/office-locations")
+async def office_locations(user: dict = Depends(require_permission("project_requests", "read"))):
+    """Head Office / branch office locations for non-project (HO) expense bookings."""
+    rows = [o async for o in db.office_locations.find({"active": {"$ne": False}}, {"_id": 0})]
+    have = {o.get("code") for o in rows}
+    added = False
+    for code, name, is_default in OFFICE_SEED:
+        if code not in have:
+            await db.office_locations.insert_one({
+                "id": new_id(), "code": code, "name": name, "is_default": is_default,
+                "active": True, "created_at": now_iso(), "created_by": "system (seed)"})
+            added = True
+    if added:
+        rows = [o async for o in db.office_locations.find({"active": {"$ne": False}}, {"_id": 0})]
+    return sorted(rows, key=lambda o: (not o.get("is_default"), o.get("name") or ""))
+
+
+class OfficeLocationIn(BaseModel):
+    code: str
+    name: str
+    is_default: bool = False
+
+
+@router.post("/office-locations")
+async def add_office_location(p: OfficeLocationIn,
+                              user: dict = Depends(require_permission("project_requests", "write"))):
+    if user.get("role") != "super_admin":
+        raise HTTPException(403, "Only a super admin can add office locations")
+    code = p.code.strip().upper()
+    if await db.office_locations.find_one({"code": code}):
+        raise HTTPException(400, f"Office location '{code}' already exists")
+    doc = {"id": new_id(), "code": code, "name": p.name.strip(), "is_default": p.is_default,
+           "active": True, "created_at": now_iso(),
+           "created_by": user.get("name") or user.get("email")}
+    await db.office_locations.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
 async def _large_threshold() -> float:
     doc = await db.proj_settings.find_one({"id": "global"}, {"_id": 0, "daily_expense_large_threshold": 1})
     return float((doc or {}).get("daily_expense_large_threshold") or 10000)
@@ -171,6 +218,7 @@ class RequestIn(BaseModel):
     remarks: Optional[str] = None
     cost_center_id: Optional[str] = None
     site_location: Optional[str] = None
+    office_location: Optional[str] = None  # Head Office / branch booking location
     material_category_id: Optional[str] = None
     employee_id: Optional[str] = None      # HR master employee (service/payment requests)
     expense_type: Optional[str] = None     # override (defaults to routing meta)
@@ -303,8 +351,11 @@ async def summary(project_code: Optional[str] = None,
 async def create_request(p: RequestIn, request: Request,
                          user: dict = Depends(require_permission("project_requests", "write"))):
     from pm_scope import is_pm_scoped
-    if (p.request_type != "self_expense"
-            and user.get("role") not in RAISE_ROLES and not is_pm_scoped(user)):
+    if p.request_type in HO_TYPES:
+        if (user.get("role") not in RAISE_ROLES | HO_RAISE_EXTRA) and not is_pm_scoped(user):
+            raise HTTPException(403, "Head Office expense requests can be raised by PM / Project Coordinator, "
+                                     "dept heads or the Admin / Accounts / HR desk")
+    elif user.get("role") not in RAISE_ROLES and not is_pm_scoped(user):
         raise HTTPException(403, "Only Project Coordinator / Project Manager can raise project requests")
     _rtypes = await get_request_types(active_only=True)
     if p.request_type not in _rtypes:
@@ -329,16 +380,20 @@ async def create_request(p: RequestIn, request: Request,
                                   "remarks": str(b.get("remarks") or "").strip()})
         p.amount = round(sum(x["amount"] for x in beneficiaries), 2)
     project = None
+    office_location = (p.office_location or "").strip() or None
+    if p.request_type in HO_TYPES and not office_location:
+        default_office = await db.office_locations.find_one({"is_default": True}, {"_id": 0, "name": 1})
+        office_location = (default_office or {}).get("name") or OFFICE_SEED[0][1]
     if p.project_id:
         project = await db.projects.find_one({"id": p.project_id}, {"_id": 0})
     elif p.project_code:
         project = await db.projects.find_one({"code": p.project_code}, {"_id": 0})
     if not project:
-        if p.request_type == "self_expense":
-            project = {"id": None, "code": "HEAD-OFFICE", "name": "Head Office", "client": None}
+        if p.request_type in HO_TYPES:
+            project = {"id": None, "code": "HEAD-OFFICE", "name": office_location or "Head Office", "client": None}
         else:
             raise HTTPException(400, "Select a valid project")
-    if project.get("id") and p.request_type != "self_expense":
+    if project.get("id") and p.request_type not in HO_TYPES:
         await ensure_project_access(user, project["id"])
     est = _estimate_value(p)
 
@@ -364,6 +419,18 @@ async def create_request(p: RequestIn, request: Request,
             {"project_id": project["id"],
              "$or": [{"category_id": mcat["id"]}, {"category_code": mcat.get("code")}]},
             {"_id": 0, "id": 1, "category_code": 1, "category_name": 1, "project_id": 1})
+    if p.request_type == "head_office_expense":
+        if project.get("id"):
+            raise HTTPException(400, "A Head Office expense cannot be booked against a project — "
+                                     "use a project payment request instead")
+        if not p.cost_center_id or not cc:
+            raise HTTPException(400, "Select a Head Office Cost Center before submitting this expense")
+        if cc.get("project_id"):
+            raise HTTPException(400, "Head Office expenses must be booked against a Head Office cost center")
+        if float(p.amount or 0) <= 0 and _estimate_value(p) <= 0:
+            raise HTTPException(400, "Enter the expense amount")
+        if (p.paid_to_type or "vendor") == "vendor" and not (p.vendor or "").strip():
+            raise HTTPException(400, "Select the approved vendor to be paid")
     if p.request_type == "self_expense":
         if project.get("id"):
             # Project-linked self expense — must book against that project's cost center
@@ -414,6 +481,8 @@ async def create_request(p: RequestIn, request: Request,
         "cost_center_id": (cc or {}).get("id"),
         "cost_center_label": f"{(cc or {}).get('category_code') or ''} · {(cc or {}).get('category_name') or ''}".strip(" ·") if cc else None,
         "site_location": p.site_location,
+        "office_location": office_location,
+        "is_head_office": p.request_type in HO_TYPES and not project.get("id"),
         "material_category_id": (mcat or {}).get("id"),
         "material_category_code": (mcat or {}).get("code"),
         "material_category": (mcat or {}).get("name"),
@@ -1016,6 +1085,9 @@ async def _book_expense(row: dict, user: dict) -> Optional[str]:
             "current_step": 0, "approved_at": now_iso(),
             "je_id": None, "payment_ref": None, "paid_at": None, "paid_by": None,
             "source": "project_request", "source_request_id": row["id"],
+            "source_request_no": row.get("request_no"),
+            "office_location": row.get("office_location"),
+            "is_head_office": bool(row.get("is_head_office")),
             "created_at": now_iso(), "created_by": f"{user.get('name') or user.get('email')} (request fulfil)",
             "created_by_id": user.get("id"),
         }

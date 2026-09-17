@@ -11,6 +11,7 @@ import { toneFor } from "@/lib/statusTone";
 import { useNavigate } from "react-router-dom";
 import SendEmailDialog from "@/components/SendEmailDialog";
 import ApprovalDocsGate, { validateApprovalDocs, emptyApprovalDocs } from "@/components/ApprovalDocsGate";
+import { fmtD, fmtT } from "@/lib/datetime";
 
 const QUOTE_STATUS_TONE = {
   invoiced: "success", won: "success", sent: "info", submitted: "info",
@@ -133,8 +134,8 @@ export default function Quotations() {
 
   const columns = [
     { key: "quote_number", label: "Quote #" },
-    { key: "created_at", label: "Created", render: (row) => row.created_at ? <span className="font-mono-data text-xs whitespace-nowrap" data-testid={`quotation-created-${row.id}`}>{row.created_at.slice(0, 10)}<div className="text-[10px] text-muted-foreground">{row.created_at.slice(11, 16)}</div></span> : "—" },
-    { key: "created_by_name", label: "Created By", render: (row) => <span className="text-xs whitespace-nowrap" data-testid={`quotation-created-by-${row.id}`}><span className="font-semibold">{row.created_by_name || "—"}</span>{row.updated_by_name && row.updated_at && <div className="text-[10px] text-muted-foreground">Upd. {row.updated_by_name} · {row.updated_at.slice(0, 10)}</div>}</span> },
+    { key: "created_at", label: "Created", render: (row) => row.created_at ? <span className="font-mono-data text-xs whitespace-nowrap" data-testid={`quotation-created-${row.id}`}>{fmtD(row.created_at)}<div className="text-[10px] text-muted-foreground">{fmtT(row.created_at)}</div></span> : "—" },
+    { key: "created_by_name", label: "Created By", render: (row) => <span className="text-xs whitespace-nowrap" data-testid={`quotation-created-by-${row.id}`}><span className="font-semibold">{row.created_by_name || "—"}</span>{row.updated_by_name && row.updated_at && <div className="text-[10px] text-muted-foreground">Upd. {row.updated_by_name} · {fmtD(row.updated_at)}</div>}</span> },
     { key: "enquiry_no", label: "Enquiry", render: (row) => row.enquiry_no ? <StatusBadge text={row.enquiry_no} tone="info" /> : "—" },
     { key: "revision_no", label: "Rev", render: (row) => <StatusBadge text={`R${row.revision_no || 0}`} tone={row.revision_no ? "primary" : "neutral"} /> },
     { key: "client", label: "Client" },

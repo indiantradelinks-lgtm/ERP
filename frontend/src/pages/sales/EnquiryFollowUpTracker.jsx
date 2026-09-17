@@ -16,6 +16,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { CalendarClock, RefreshCcw, Phone, Mail, Users, Send, AlertTriangle, Download, CheckCircle2 } from "lucide-react";
+import { fmtDT } from "@/lib/datetime";
 
 const fmt = (v) => `₹${Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 
@@ -278,7 +279,7 @@ export default function EnquiryFollowUpTracker() {
                     <div key={h.id} className="text-xs p-2 bg-muted/40 rounded-sm">
                       <div className="flex items-center justify-between">
                         <span className="font-medium">{h.mode} · {h.done_by}</span>
-                        <span className="text-muted-foreground">{(h.done_at || "").slice(0, 16)}</span>
+                        <span className="text-muted-foreground">{fmtDT(h.done_at)}</span>
                       </div>
                       <div className="text-muted-foreground mt-1">{h.remarks}</div>
                       {h.next_followup_date && <div className="text-[10px] mt-1">→ Next FU: <span className="text-foreground">{h.next_followup_date}</span></div>}

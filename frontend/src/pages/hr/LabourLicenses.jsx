@@ -12,6 +12,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProjectSelect, SiteLocationSelect } from "@/components/MasterSelect";
 import RowAttachments from "@/components/RowAttachments";
+import { fmtDT } from "@/lib/datetime";
 
 const FORM_TYPES = ["Labour License", "Form V", "Form VI", "Form XVII"];
 const STATUS_STYLE = {
@@ -164,7 +165,7 @@ export default function LabourLicenses() {
               {(historyFor.renewal_history || []).slice().reverse().map((h, i) => (
                 <div key={i} className="border rounded p-2 text-xs bg-slate-50">
                   <div><b>{h.license_number}</b> · {h.valid_from || "—"} → {h.expiry_date}</div>
-                  <div className="text-muted-foreground">Renewed by {h.renewed_by} on {new Date(h.renewed_at).toLocaleString("en-IN")}</div>
+                  <div className="text-muted-foreground">Renewed by {h.renewed_by} on {fmtDT(h.renewed_at)}</div>
                   {h.renewal_remarks && <div>{h.renewal_remarks}</div>}
                 </div>
               ))}

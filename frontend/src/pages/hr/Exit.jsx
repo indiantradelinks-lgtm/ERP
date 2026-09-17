@@ -19,6 +19,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { api, apiErrorMessage, stripEmpty } from "@/lib/api";
 import { toast } from "sonner";
+import { fmtDT } from "@/lib/datetime";
 
 const STATUS_TONE = {
   draft: "bg-secondary text-muted-foreground border-border",
@@ -277,7 +278,7 @@ export default function Exit() {
                     <Badge className={`rounded-sm border text-[10px] uppercase ${ITEM_TONE[c.status] || ""}`}>{c.status}</Badge>
                     <div className="flex-1">
                       <div className="text-sm font-semibold">{c.label}</div>
-                      <div className="text-[11px] text-muted-foreground">Approver: <span className="font-mono">{c.approver_role}</span>{c.approved_by ? ` · ${c.approved_by} on ${(c.approved_at || "").slice(0, 16).replace("T", " ")}` : ""}</div>
+                      <div className="text-[11px] text-muted-foreground">Approver: <span className="font-mono">{c.approver_role}</span>{c.approved_by ? ` · ${c.approved_by} on ${fmtDT(c.approved_at)}` : ""}</div>
                       {c.remarks && <div className="text-[11px] text-muted-foreground italic">"{c.remarks}"</div>}
                     </div>
                     {c.status === "pending" && detail.status !== "finalised" && (

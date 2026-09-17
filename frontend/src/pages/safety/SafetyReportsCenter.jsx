@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FileSpreadsheet, FileText, RefreshCcw, Search } from "lucide-react";
+import { fmtDT, fmtT } from "@/lib/datetime";
 
 export default function SafetyReportsCenter() {
   const [keys, setKeys] = useState([]);
@@ -144,7 +145,7 @@ export default function SafetyReportsCenter() {
               <div className="border rounded-sm bg-card overflow-hidden">
                 <div className="px-3 py-2 border-b bg-slate-50 flex items-center justify-between">
                   <div className="text-xs font-bold uppercase tracking-wider text-slate-600">
-                    {data.count} row{data.count === 1 ? "" : "s"} · generated {new Date(data.generated_at).toLocaleTimeString()}
+                    {data.count} row{data.count === 1 ? "" : "s"} · generated {fmtT(data.generated_at)}
                   </div>
                 </div>
                 <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
@@ -184,6 +185,6 @@ function formatCell(v) {
   if (typeof v === "boolean") return v ? "✔" : "✗";
   if (typeof v === "number") return v.toLocaleString("en-IN");
   const s = String(v);
-  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return s.slice(0, 16).replace("T", " ");
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return fmtDT(s);
   return s;
 }

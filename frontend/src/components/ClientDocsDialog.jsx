@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/DataTableShell";
 import FileUploader from "@/components/FileUploader";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { fmtDT } from "@/lib/datetime";
 
 export const CLIENT_DOC_CATEGORIES = ["PAN", "GST", "MSA", "NDA", "TradeLicense", "IncorporationCert", "AddressProof", "BankDetails", "Other"];
 
@@ -92,7 +93,7 @@ export default function ClientDocsDialog({ parentType, parentId, title, onClose 
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-semibold truncate">{f.original_filename || f.title}</div>
                       <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                        {f.uploaded_by} · {(f.created_at || "").slice(0, 16).replace("T", " ")}
+                        {f.uploaded_by} · {fmtDT(f.created_at)}
                       </div>
                     </div>
                     <a

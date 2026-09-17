@@ -83,6 +83,7 @@ class ExpenseIn(BaseModel):
     project_id: Optional[str] = None
     project_code: Optional[str] = None
     cost_center_id: Optional[str] = None
+    office_location: Optional[str] = None   # book under a Head Office / branch instead of a project
     expense_type: str
     expense_date: str
     amount: float
@@ -120,9 +121,14 @@ async def expense_settings(user: dict = Depends(require_permission("project_expe
 @router.get("/project-expenses")
 async def list_expenses(project_code: Optional[str] = None, status: Optional[str] = None,
                         expense_type: Optional[str] = None, cost_center_id: Optional[str] = None,
+                        scope: Optional[str] = None,
                         from_date: Optional[str] = None, to_date: Optional[str] = None,
                         user: dict = Depends(require_permission("project_expenses", "read"))):
     q: Dict[str, Any] = {}
+    if scope == "head_office":
+        q["is_head_office"] = True
+    elif scope == "project":
+        q["is_head_office"] = {"$ne": True}
     if project_code:
         q["project_code"] = project_code
     if status:
@@ -173,14 +179,28 @@ async def create_expense(p: ExpenseIn, request: Request,
     project = None
     if p.project_id:
         project = await db.projects.find_one({"id": p.project_id}, {"_id": 0})
-    elif p.project_code:
+    elif p.project_code and p.project_code != "HEAD-OFFICE":
         project = await db.projects.find_one({"code": p.project_code}, {"_id": 0})
+    is_head_office = False
+    office_location = (p.office_location or "").strip() or None
     if not project:
-        raise HTTPException(400, "Select a valid project")
+        # Head Office (non-project) booking — needs an office location + a HO cost center
+        if not office_location and p.project_code != "HEAD-OFFICE":
+            raise HTTPException(400, "Select a valid project, or pick an Office Location to book this under Head Office")
+        if not office_location:
+            default_office = await db.office_locations.find_one({"is_default": True}, {"_id": 0, "name": 1})
+            office_location = (default_office or {}).get("name") or "Delhi Head Office"
+        is_head_office = True
+        project = {"id": None, "code": "HEAD-OFFICE", "name": office_location, "client": None}
     cc = None
     if p.cost_center_id:
         cc = await db.cost_centers.find_one({"id": p.cost_center_id}, {"_id": 0})
-        if not cc or cc.get("project_id") != project["id"]:
+        if not cc:
+            raise HTTPException(400, "Cost center not found")
+        if is_head_office:
+            if cc.get("project_id"):
+                raise HTTPException(400, "Head Office expenses must use a Head Office cost center")
+        elif cc.get("project_id") != project["id"]:
             raise HTTPException(400, "Cost center does not belong to the selected project")
     if not cc:
         raise HTTPException(400, "Cost Center is mandatory — select a valid Cost Center before submitting this expense")
@@ -192,6 +212,7 @@ async def create_expense(p: ExpenseIn, request: Request,
         "expense_no": await next_sequence("PEX"),
         "project_id": project["id"], "project_code": project.get("code"),
         "project_name": project.get("name"), "client_name": project.get("client"),
+        "office_location": office_location, "is_head_office": is_head_office,
         "cost_center_id": (cc or {}).get("id"), "category_code": (cc or {}).get("category_code"),
         "category_name": (cc or {}).get("category_name"),
         "expense_type": p.expense_type, "expense_type_label": _etypes[p.expense_type]["label"],

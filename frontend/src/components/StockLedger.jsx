@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { BookOpenCheck, Download } from "lucide-react";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
+import { fmtDT } from "@/lib/datetime";
 
 const KIND_COLOR = {
   inward: "bg-emerald-100 text-emerald-700",
@@ -93,7 +94,7 @@ export default function StockLedger({ itemId, itemName, open, onOpenChange }) {
                   )}
                   {data.rows.map((r, i) => (
                     <tr key={i} className="border-t hover:bg-slate-50">
-                      <td className="p-2 font-mono">{(r.at || "").slice(0, 16).replace("T", " ")}</td>
+                      <td className="p-2 font-mono">{fmtDT(r.at)}</td>
                       <td className="p-2 font-mono">{r.txn_no || "—"}</td>
                       <td className="p-2"><Badge className={KIND_COLOR[r.txn_type] || "bg-slate-100"}>{r.txn_type}</Badge></td>
                       <td className="p-2 text-right font-mono">{r.delta > 0 ? `+${r.qty}` : `-${r.qty}`}</td>

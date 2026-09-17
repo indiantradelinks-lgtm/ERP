@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { fmtDT } from "@/lib/datetime";
 
 export default function AssignmentManager() {
   const [data, setData] = useState({ projects: [], users: [], pm_users: [], coord_users: [] });
@@ -168,7 +169,7 @@ export default function AssignmentManager() {
             {(hist?.history || []).map((h) => (
               <div key={h.id} className="border rounded-sm p-2.5 text-xs">
                 <div className="font-semibold">{h.field}: <span className="text-muted-foreground">{h.from_name || "unassigned"}</span> → <span className="text-primary">{h.to_name || "unassigned"}</span></div>
-                <div className="text-[10px] text-muted-foreground mt-0.5">{(h.at || "").replace("T", " ").slice(0, 16)} · by {h.by}{h.remarks ? ` · "${h.remarks}"` : ""}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">{fmtDT(h.at)} · by {h.by}{h.remarks ? ` · "${h.remarks}"` : ""}</div>
               </div>
             ))}
           </div>

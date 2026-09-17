@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { api } from "@/lib/api";
 import { Link } from "react-router-dom";
+import { fmtDT } from "@/lib/datetime";
 
 export default function NotificationBell() {
   const [items, setItems] = useState([]);
@@ -69,7 +70,7 @@ export default function NotificationBell() {
                   {n.body && <div className="text-muted-foreground mt-0.5 line-clamp-2">{n.body}</div>}
                   <div className="text-[10px] text-muted-foreground mt-1 flex items-center gap-2">
                     <Badge variant="outline" className="text-[9px] py-0 px-1 h-4">{(n.type || "").replaceAll("_", " ")}</Badge>
-                    <span>{(n.at || "").slice(0, 16).replace("T", " ")}</span>
+                    <span>{fmtDT(n.at)}</span>
                   </div>
                 </div>
                 {!n.read && (

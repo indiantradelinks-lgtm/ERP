@@ -7,6 +7,7 @@ import { Bot, Download, FileUp, History, RotateCcw, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { fmtDT } from "@/lib/datetime";
 
 const FLAG_TONE = {
   duplicate: "bg-amber-100 text-amber-800 border-amber-300",
@@ -197,7 +198,7 @@ export default function AttendanceImport() {
               <tr key={b.id} className="border-t" data-testid={`punch-batch-${b.id}`}>
                 <td className="px-2 py-1.5 font-mono-data text-xs">{b.file_name}</td>
                 <td className="px-2 py-1.5 text-xs">{b.uploaded_by}</td>
-                <td className="px-2 py-1.5 text-xs">{(b.at || "").slice(0, 16).replace("T", " ")}</td>
+                <td className="px-2 py-1.5 text-xs">{fmtDT(b.at)}</td>
                 <td className="px-2 py-1.5 text-xs">{(b.dates || []).slice(0, 3).join(", ")}{(b.dates || []).length > 3 ? "…" : ""}</td>
                 <td className="px-2 py-1.5 text-xs">{b.result ? `${b.result.created}C / ${b.result.updated}U / ${b.result.skipped}S` : "—"}</td>
                 <td className="px-2 py-1.5">
