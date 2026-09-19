@@ -53,8 +53,27 @@ async def get_views(table: str, user: dict = Depends(get_current_user)):
     shared = await db.table_views.find(sf, {"_id": 0}).sort("name", 1).to_list(100)
     for sh in shared:
         sh["can_delete"] = user.get("role") == "super_admin" or sh.get("user_id") == user["id"]
+    # Department default: own-department default wins over an all-departments default
+    defaults = [sh for sh in shared if sh.get("is_default")]
+    default_shared = next((d for d in defaults if d.get("department") != ALL_DEPTS), None) or (defaults[0] if defaults else None)
     return {"last": (last or {}).get("state"), "presets": presets, "shared": shared,
-            "can_publish": user.get("role") in PUBLISH_ROLES}
+            "default_shared": default_shared, "can_publish": user.get("role") in PUBLISH_ROLES}
+
+
+@router.post("/{table}/shared/{view_id}/default")
+async def set_default_shared(table: str, view_id: str, user: dict = Depends(get_current_user)):
+    """Star one team view per table+department as the department default (toggle)."""
+    view = await db.table_views.find_one({"id": view_id, "table": table, "kind": "shared"}, {"_id": 0})
+    if not view:
+        raise HTTPException(status_code=404, detail="Shared view not found")
+    if user.get("role") != "super_admin" and view.get("user_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Only the publisher or super_admin can set the department default")
+    make_default = not view.get("is_default")
+    if make_default:
+        await db.table_views.update_many({"table": table, "kind": "shared", "department": view.get("department")},
+                                         {"$set": {"is_default": False}})
+    await db.table_views.update_one({"id": view_id}, {"$set": {"is_default": make_default, "updated_at": now_iso()}})
+    return {"ok": True, "is_default": make_default}
 
 
 @router.post("/{table}/shared")

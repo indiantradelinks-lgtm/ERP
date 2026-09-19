@@ -19,6 +19,7 @@ export function buildViewsApi(view, current, setters, defaultPageSize = 50, defa
     canPublish: !!view.canPublish,
     publishShared: (name, department) => view.publishShared(name, state, department),
     unpublishShared: view.unpublishShared,
+    setDefaultShared: view.setDefaultShared,
     isDefault: same(state, defaults),
     activePresetId: ([...view.presets, ...(view.shared || [])].find((p) => same({ ...defaults, ...p.state }, state)) || {}).id || null,
     savePreset: (name) => view.savePreset(name, state),

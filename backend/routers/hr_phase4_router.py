@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from core import db, get_current_user, require_permission, now_iso, new_id
+from pagination import maybe_paged, paged_or_rows
 from accounting_service import post_journal_entry
 from audit import audit
 
@@ -152,7 +153,7 @@ async def create_structure(p: SalaryStructureIn, request: Request,
 
 
 @router.get("/salary-structures")
-async def list_structures(employee_id: Optional[str] = None,
+async def list_structures(request: Request, employee_id: Optional[str] = None,
                           approval_status: Optional[str] = None,
                           user: dict = Depends(require_permission("hr_onboarding", "read"))):
     q: Dict[str, Any] = {}
@@ -160,6 +161,10 @@ async def list_structures(employee_id: Optional[str] = None,
         q["employee_id"] = employee_id
     if approval_status:
         q["approval_status"] = approval_status
+    paged = await maybe_paged(request, "hr_salary_structures", q, "effective_from",
+                              ["employee_name", "employee_code", "employee_id", "department", "designation", "approval_status", "status", "grade"])
+    if paged:
+        return paged
     return await db.hr_salary_structures.find(q, {"_id": 0}) \
         .sort("effective_from", -1).limit(500).to_list(500)
 

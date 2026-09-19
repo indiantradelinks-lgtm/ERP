@@ -10,7 +10,7 @@ import { buildViewsApi } from "@/hooks/tableViewState";
  * Returns { rows, pagination, search, setSearch, reload, loading, total } — `pagination` plugs into <TablePager/>.
  */
 export default function usePagedList(url, filters = {}, opts = {}) {
-  const { pageSize: initial = 50, errorLabel = "records", viewKey = null, searchKeys = "", defaultSort = { by: "created_at", dir: "desc" }, enabled = true } = opts;
+  const { pageSize: initial = 50, errorLabel = "records", viewKey = null, searchKeys = "", defaultSort = { by: "created_at", dir: "desc" }, enabled = true, transform = null } = opts;
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -56,13 +56,17 @@ export default function usePagedList(url, filters = {}, opts = {}) {
       Object.entries(JSON.parse(filterKey)).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") qs.set(k, String(v)); });
       const { data } = await api.get(`${url}${url.includes("?") ? "&" : "?"}${qs.toString()}`);
       if (my !== seq.current) return;
-      setRows(Array.isArray(data) ? data : (data.rows || []));
+      let list = Array.isArray(data) ? data : (data.rows || []);
+      if (transform) list = await transform(list);
+      if (my !== seq.current) return;
+      setRows(list);
       setTotal(Array.isArray(data) ? data.length : (data.total || 0));
     } catch (e) {
       if (my === seq.current) toast.error(e.response?.data?.detail || `Failed to load ${errorLabel}`);
     } finally {
       if (my === seq.current) setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewApplied, enabled, url, page, pageSize, debounced, sort.by, sort.dir, filterKey, errorLabel, searchKeys]);
 
   useEffect(() => { load(); }, [load]);

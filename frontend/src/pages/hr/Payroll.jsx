@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, apiErrorMessage } from "@/lib/api";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { downloadPdf } from "@/lib/exports";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -202,14 +205,12 @@ function KV({ label, value }) {
 
 function PayslipsTab() {
   const [month, setMonth] = useState(currentMonth());
-  const [rows, setRows] = useState([]);
+  const { rows, pagination, search, setSearch, reload: load } = usePagedList("/payroll/payslips", { month }, {
+    viewKey: "payroll_payslips", errorLabel: "payslips", defaultSort: { by: "month", dir: "desc" },
+    searchKeys: "employee_name,employee_code,dept_doc_no,department,designation,month",
+  });
   const [viewing, setViewing] = useState(null);
   const [emailing, setEmailing] = useState(false);
-  const load = async () => {
-    try { const { data } = await api.get(`/payroll/payslips?month=${month}`); setRows(data); }
-    catch (e) { toast.error(apiErrorMessage(e)); }
-  };
-  useEffect(() => { load(); }, [month]);
   const emailAll = async () => {
     if (!window.confirm(`Email each employee their ${month} payslip PDF (sent from noreply mailbox)?`)) return;
     setEmailing(true);
@@ -228,6 +229,8 @@ function PayslipsTab() {
       <CardHeader className="flex flex-row items-center gap-3">
         <CardTitle className="text-base flex-1">Payslips</CardTitle>
         <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="w-40" />
+        <Input className="h-8 w-48" placeholder="Search employee…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="payslips-search" />
+        <TableViewsMenu pagination={pagination} testidPrefix="payslips" />
         <Button size="sm" onClick={load}>Reload</Button>
         {rows.length > 0 && (
           <Button size="sm" variant="outline" onClick={() => downloadPdf(`/payroll/payslips/bulk-pdf?month=${month}`, `Payslips-${month}.pdf`)} data-testid="payslips-bulk-pdf-btn">
@@ -252,6 +255,7 @@ function PayslipsTab() {
             </TableBody>
           </Table>
         </div>
+        <div className="pt-2"><TablePager pagination={pagination} testidPrefix="payslips" /></div>
         {viewing && <SlipDialog slip={viewing} onClose={() => setViewing(null)} />}
       </CardContent>
     </Card>

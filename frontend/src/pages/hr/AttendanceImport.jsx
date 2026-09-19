@@ -7,6 +7,8 @@ import { Bot, Download, FileUp, History, RotateCcw, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
 import { fmtDT } from "@/lib/datetime";
 
 const FLAG_TONE = {
@@ -24,10 +26,10 @@ export default function AttendanceImport() {
   const [busy, setBusy] = useState("");
   const [preview, setPreview] = useState(null);
   const [xlResult, setXlResult] = useState(null);
-  const [history, setHistory] = useState([]);
+  const { rows: history, pagination: histPg, reload: loadHistory } = usePagedList("/hr2/attendance-plus/punch-imports", {}, {
+    viewKey: "hr_punch_imports", errorLabel: "import history", pageSize: 25, defaultSort: { by: "at", dir: "desc" },
+  });
 
-  const loadHistory = () => api.get("/hr2/attendance-plus/punch-imports").then((r) => setHistory(r.data || [])).catch(() => {});
-  useEffect(() => { loadHistory(); }, []);
 
   const aiUpload = async (file) => {
     if (!file) return;
@@ -215,6 +217,7 @@ export default function AttendanceImport() {
             ))}
           </tbody>
         </table>
+        <div className="px-3 py-2 border-t border-border"><TablePager pagination={histPg} testidPrefix="punch-hist" /></div>
       </div>
     </div>
   );

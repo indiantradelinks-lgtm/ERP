@@ -34,6 +34,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from core import db, require_permission, new_id, now_iso
+from pagination import maybe_paged, paged_or_rows
 from audit import audit
 from sequences import next_sequence
 from accounting_service import post_journal_entry
@@ -173,7 +174,7 @@ def _compute_amounts(payload: DebitCreditNoteIn) -> Dict[str, float]:
 
 
 @router.get("/notes")
-async def list_notes(kind: Optional[str] = None, party_id: Optional[str] = None,
+async def list_notes(request: Request, kind: Optional[str] = None, party_id: Optional[str] = None,
                      status: Optional[str] = None,
                      user: dict = Depends(require_permission("accounting", "read"))):
     q: Dict[str, Any] = {}
@@ -183,8 +184,20 @@ async def list_notes(kind: Optional[str] = None, party_id: Optional[str] = None,
         q["party_id"] = party_id
     if status:
         q["status"] = status
+    paged = await maybe_paged(request, "finance_notes", q, "created_at", ["note_no", "kind", "party_name", "reference", "reason", "status"])
+    if paged:
+        return paged
     rows = await db.finance_notes.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return rows
+
+
+@router.get("/notes/status-counts")
+async def note_status_counts(kind: Optional[str] = None, user: dict = Depends(require_permission("accounting", "read"))):
+    q: Dict[str, Any] = {"kind": kind} if kind else {}
+    out = {"draft": 0, "pending_approval": 0, "approved": 0, "cancelled": 0}
+    async for r in db.finance_notes.aggregate([{"$match": q}, {"$group": {"_id": "$status", "n": {"$sum": 1}}}]):
+        out[r["_id"] or "draft"] = r["n"]
+    return out
 
 
 @router.get("/notes/reason-codes")

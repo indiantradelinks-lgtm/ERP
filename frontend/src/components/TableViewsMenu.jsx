@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bookmark, BookmarkPlus, RotateCcw, Trash2, Check, Users, Share2 } from "lucide-react";
+import { Bookmark, BookmarkPlus, RotateCcw, Trash2, Check, Users, Share2, Star } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,7 @@ export default function TableViewsMenu({ pagination, testidPrefix = "tbl" }) {
   const { user } = useAuth() || {};
   const views = pagination?.views;
   if (!views) return null;
-  const { presets, shared = [], canPublish, publishShared, unpublishShared, savePreset, applyPreset, deletePreset, resetView, isDefault, activePresetId } = views;
+  const { presets, shared = [], canPublish, publishShared, unpublishShared, setDefaultShared, savePreset, applyPreset, deletePreset, resetView, isDefault, activePresetId } = views;
   const isSuper = user?.role === "super_admin";
 
   const openSave = (m) => { setMode(m); setAllDepts(false); setSaveOpen(true); };
@@ -63,7 +63,16 @@ export default function TableViewsMenu({ pagination, testidPrefix = "tbl" }) {
                 <DropdownMenuItem key={p.id} className="flex items-center gap-2 text-sm" onSelect={() => applyPreset(p)} data-testid={`${testidPrefix}-shared-${p.id}`}>
                   <Check className={`h-3.5 w-3.5 ${activePresetId === p.id ? "text-primary" : "opacity-0"}`} />
                   <span className="flex-1 truncate" title={`Published by ${p.published_by || "manager"} · ${p.department === "__all__" ? "All departments" : p.department}`}>{p.name}</span>
+                  {p.is_default && <span className="text-[9px] uppercase font-bold text-amber-600" data-testid={`${testidPrefix}-shared-default-badge-${p.id}`}>default</span>}
                   <span className="text-[9px] uppercase text-muted-foreground">{p.department === "__all__" ? "all" : "dept"}</span>
+                  {p.can_delete && (
+                    <button type="button" className={p.is_default ? "text-amber-500" : "text-muted-foreground hover:text-amber-500"}
+                      onClick={(e) => { e.stopPropagation(); e.preventDefault(); setDefaultShared(p.id); }}
+                      title={p.is_default ? "Unset department default" : "Make this the department default view"}
+                      data-testid={`${testidPrefix}-shared-default-${p.id}`}>
+                      <Star className="h-3.5 w-3.5" fill={p.is_default ? "currentColor" : "none"} />
+                    </button>
+                  )}
                   {p.can_delete && (
                     <button type="button" className="text-muted-foreground hover:text-destructive"
                       onClick={(e) => { e.stopPropagation(); e.preventDefault(); unpublishShared(p.id); }} title="Unpublish team view"

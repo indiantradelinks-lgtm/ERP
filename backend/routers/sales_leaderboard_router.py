@@ -3,9 +3,9 @@ from calendar import monthrange
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
-from core import db, require_permission
+from core import db, require_permission, get_current_user
 
 router = APIRouter(prefix="/sales", tags=["sales-leaderboard"])
 
@@ -32,9 +32,7 @@ async def _sales_users() -> List[Dict[str, Any]]:
     return await db.users.find(q, {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1, "department": 1}).to_list(500)
 
 
-@router.get("/leaderboard")
-async def leaderboard(month: Optional[str] = None,
-                      user: dict = Depends(require_permission("sales_reports", "read"))):
+async def compute_leaderboard(month: Optional[str] = None) -> dict:
     label, start, end = _month_bounds(month)
     users = await _sales_users()
     ids = [u["id"] for u in users]
@@ -78,6 +76,33 @@ async def leaderboard(month: Optional[str] = None,
     return {"month": label, "rows": rows,
             "totals": {"enquiries": sum(r["enquiries"] for r in rows), "quotes": sum(r["quotes"] for r in rows),
                        "won": tw, "lost": tl, "win_rate": round(100 * tw / (tw + tl), 1) if (tw + tl) else None}}
+
+
+@router.get("/leaderboard")
+async def leaderboard(month: Optional[str] = None,
+                      user: dict = Depends(require_permission("sales_reports", "read"))):
+    return await compute_leaderboard(month)
+
+
+@router.post("/leaderboard/digest/send")
+async def send_digest_now(month: Optional[str] = None, user: dict = Depends(get_current_user)):
+    if user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Only super_admin can send the digest manually")
+    from sales_digest import send_leaderboard_digest
+    return await send_leaderboard_digest(month, triggered_by=user.get("email") or "manual")
+
+
+@router.get("/leaderboard/digest/log")
+async def digest_log(user: dict = Depends(get_current_user)):
+    if user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="super_admin only")
+    from sales_digest import digest_recipients
+    from notification_service import email_enabled
+    from m365_email import shared_mailbox_configured
+    rows = await db.sales_digest_log.find({}, {"_id": 0}).sort("at", -1).to_list(12)
+    return {"email_enabled": shared_mailbox_configured() or email_enabled(),
+            "channel": "m365_shared_mailbox" if shared_mailbox_configured() else ("resend" if email_enabled() else None),
+            "recipients": await digest_recipients(), "history": rows}
 
 
 @router.get("/leaderboard/{user_id}/details")

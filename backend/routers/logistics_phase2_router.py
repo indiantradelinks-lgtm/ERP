@@ -37,10 +37,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import Request, APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from core import db, now_iso, new_id, require_permission
+from pagination import maybe_paged, paged_or_rows
 
 router = APIRouter(prefix="/logistics", tags=["logistics-phase2"])
 
@@ -205,12 +206,16 @@ async def allocate_vehicle(
 
 @router.get("/allocations")
 async def allocations_list(
+    request: Request,
     dr_id: Optional[str] = None,
     user: dict = Depends(require_permission("dispatch_requests", "read")),
 ):
     q: Dict[str, Any] = {}
     if dr_id:
         q["dr_id"] = dr_id
+    paged = await maybe_paged(request, "logistics_vehicle_allocations", q, "created_at", ['dr_no', 'vehicle_no', 'vehicle_number', 'driver_name', 'transporter', 'status', 'allocation_type'])
+    if paged:
+        return paged
     return await db.logistics_vehicle_allocations.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
 
 
@@ -297,12 +302,16 @@ async def load_confirm(
 
 @router.get("/loadings")
 async def loadings_list(
+    request: Request,
     dr_id: Optional[str] = None,
     user: dict = Depends(require_permission("dispatch_requests", "read")),
 ):
     q: Dict[str, Any] = {}
     if dr_id:
         q["dr_id"] = dr_id
+    paged = await maybe_paged(request, "logistics_loading_events", q, "created_at", ['dr_no', 'vehicle_no', 'loading_point', 'event', 'status', 'remarks', 'recorded_by'])
+    if paged:
+        return paged
     return await db.logistics_loading_events.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
 
 
@@ -580,6 +589,7 @@ async def exceptions_list(
 
 @router.get("/stock-moves")
 async def stock_moves_list(
+    request: Request,
     dr_id: Optional[str] = None,
     project_id: Optional[str] = None,
     event: Optional[str] = None,
@@ -592,6 +602,9 @@ async def stock_moves_list(
         q["project_id"] = project_id
     if event:
         q["event"] = event
+    paged = await maybe_paged(request, "logistics_stock_moves", q, "at", ['dr_no', 'item_name', 'item_code', 'event', 'project_name', 'project_code', 'location', 'remarks'])
+    if paged:
+        return paged
     return await db.logistics_stock_moves.find(q, {"_id": 0}).sort("at", -1).to_list(2000)
 
 

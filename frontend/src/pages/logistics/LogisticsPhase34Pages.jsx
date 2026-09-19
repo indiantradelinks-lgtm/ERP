@@ -15,46 +15,36 @@ import { Users, Plane, Hotel, MapPin, LogOut, Fuel, Wrench, DollarSign, FileText
 import RowAttachments from "@/components/RowAttachments";
 import FileUploader from "@/components/FileUploader";
 import useAutoSync from "@/hooks/useAutoSync";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
+import { lookupGet } from "@/lib/lookups";
 import { fmtDT } from "@/lib/datetime";
 
 // ------------------------------------------------------------
 // Generic list + dialog shell
 // ------------------------------------------------------------
 function ListPage({ testId, title, subtitle, icon, endpoint, columns, formFields, empty,
-                    tone = "blue", extraLoads = [], onEnrich, attachments }) {
-  const [rows, setRows] = useState([]);
+                    tone = "blue", extraLoads = [], onEnrich, attachments, searchKeys = "" }) {
+  const { rows, pagination, search, setSearch, reload } = usePagedList(endpoint, {}, {
+    viewKey: `logistics_${endpoint.split("/").pop()}`, errorLabel: title, transform: onEnrich || null,
+    searchKeys: searchKeys || columns.map((c) => c.key).filter((k) => k && !k.startsWith("_")).join(","),
+  });
   const [preloads, setPreloads] = useState({});
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(empty);
   const [attachFor, setAttachFor] = useState(null);
 
-  const load = async (silent = false) => {
-    try {
-      const results = await Promise.allSettled([
-        api.get(endpoint),
-        ...extraLoads.map((l) => api.get(l.path)),
-      ]);
-      const [main, ...rest] = results;
-      if (main.status === "rejected") throw main.reason;
-      let data = main.value.data || [];
-      if (onEnrich) data = await onEnrich(data);
-      setRows(data);
-      const pmap = {};
-      extraLoads.forEach((l, i) => {
-        pmap[l.key] = rest[i].status === "fulfilled" ? (rest[i].value.data || []) : [];
-      });
-      setPreloads(pmap);
-    } catch (e) { if (!silent) toast.error(e.response?.data?.detail || "Load failed"); }
+  const loadPreloads = async () => {
+    const rest = await Promise.allSettled(extraLoads.map((l) => (l.path === "/projects" ? lookupGet(l.path) : api.get(l.path))));
+    const pmap = {};
+    extraLoads.forEach((l, i) => { pmap[l.key] = rest[i].status === "fulfilled" ? (rest[i].value.data || []) : []; });
+    setPreloads(pmap);
   };
-  useEffect(() => { load(); }, []);
-  // Perf: background sync refreshes ONLY the main list (preloads rarely change)
-  const refreshMain = async () => {
-    const r = await api.get(endpoint);
-    let data = r.data || [];
-    if (onEnrich) data = await onEnrich(data);
-    setRows(data);
-  };
-  useAutoSync(refreshMain, { interval: 5000 });
+  const load = () => { reload(); loadPreloads(); };
+  useEffect(() => { loadPreloads(); }, []);
+  // Perf: background sync refreshes ONLY the current page of the main list
+  useAutoSync(reload, { interval: 15000 });
 
   const save = async () => {
     try {
@@ -83,7 +73,9 @@ function ListPage({ testId, title, subtitle, icon, endpoint, columns, formFields
           <h1 className="font-display font-black text-2xl flex items-center gap-2">{icon} {title}</h1>
           <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <Input className="h-9 w-56" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid={`${testId}-search`} />
+          <TableViewsMenu pagination={pagination} testidPrefix={testId} />
           <Button variant="outline" onClick={load}><RefreshCcw className="h-3.5 w-3.5" /></Button>
           <Button onClick={() => { setEditing({}); setForm({ ...empty, id: (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`), _files: [] }); }} data-testid={`${testId}-new`}>
             <Plus className="h-4 w-4 mr-1" /> New
@@ -128,6 +120,7 @@ function ListPage({ testId, title, subtitle, icon, endpoint, columns, formFields
             </tbody>
           </table>
         </div>
+        <div className="px-3 py-2 border-t border-border"><TablePager pagination={pagination} testidPrefix={testId} /></div>
       </div>
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>

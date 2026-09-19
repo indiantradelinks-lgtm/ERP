@@ -22,12 +22,13 @@ import tempfile
 from datetime import datetime, timezone, timedelta, time as dtime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import Request, APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from openpyxl import Workbook, load_workbook
 
 from core import db, require_permission, get_current_user, now_iso, new_id
+from pagination import maybe_paged, paged_or_rows
 from audit import audit
 
 logger = logging.getLogger("erp.attendance_plus")
@@ -1056,8 +1057,12 @@ async def punch_rollback(batch_id: str,
 
 
 @router.get("/punch-imports")
-async def punch_history(user: dict = Depends(require_permission("attendance", "read"))):
-    rows = await db.punch_import_batches.find(
-        {}, {"_id": 0, "rows": 0, "prev_docs": 0, "created_ids": 0, "mapping": 0}
-    ).sort("at", -1).to_list(100)
+async def punch_history(request: Request, user: dict = Depends(require_permission("attendance", "read"))):
+    proj = {"_id": 0, "rows": 0, "prev_docs": 0, "created_ids": 0, "mapping": 0}
+    paged = await maybe_paged(request, "punch_import_batches", {}, "at", ["filename", "file_name", "uploaded_by", "status", "month", "source"])
+    if paged:
+        ids = [r["id"] for r in paged["rows"] if r.get("id")]
+        paged["rows"] = await db.punch_import_batches.find({"id": {"$in": ids}}, proj).sort("at", -1).to_list(len(ids) or 1)
+        return paged
+    rows = await db.punch_import_batches.find({}, proj).sort("at", -1).to_list(100)
     return rows

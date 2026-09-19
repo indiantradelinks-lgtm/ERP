@@ -21,7 +21,8 @@ export default function useTableView(key, enabled = true) {
     api.get(`/table-views/${key}`)
       .then(({ data }) => {
         if (!alive) return;
-        setInitial(data?.last || null); setPresets(data?.presets || []);
+        // Own remembered state wins; otherwise the department default team view applies
+        setInitial(data?.last || data?.default_shared?.state || null); setPresets(data?.presets || []);
         setShared(data?.shared || []); setCanPublish(!!data?.can_publish);
       })
       .catch(() => {})
@@ -66,7 +67,19 @@ export default function useTableView(key, enabled = true) {
     } catch (e) { toast.error(e.response?.data?.detail || "Could not remove team view"); }
   }, [key]);
 
+  const setDefaultShared = useCallback(async (id) => {
+    try {
+      const { data } = await api.post(`/table-views/${key}/shared/${id}/default`);
+      setShared((p) => p.map((x) => {
+        const target = p.find((y) => y.id === id);
+        if (x.id === id) return { ...x, is_default: data.is_default };
+        return x.department === target?.department && data.is_default ? { ...x, is_default: false } : x;
+      }));
+      toast.success(data.is_default ? "Set as department default view" : "Department default cleared");
+    } catch (e) { toast.error(e.response?.data?.detail || "Could not update default"); }
+  }, [key]);
+
   const reset = useCallback(() => { clearTimeout(timer.current); api.delete(`/table-views/${key}/last`).catch(() => {}); }, [key]);
 
-  return { ready, initial, presets, shared, canPublish, persist, savePreset, deletePreset, publishShared, unpublishShared, reset, active };
+  return { ready, initial, presets, shared, canPublish, persist, savePreset, deletePreset, publishShared, unpublishShared, setDefaultShared, reset, active };
 }

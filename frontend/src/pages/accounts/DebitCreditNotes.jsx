@@ -9,6 +9,9 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,7 +35,10 @@ const KIND_LABEL = { credit_note: "Credit Note", debit_note: "Debit Note" };
 
 export default function DebitCreditNotes() {
   const [tab, setTab] = useState("credit_note");
-  const [rows, setRows] = useState([]);
+  const { rows, pagination, search, setSearch, reload, loading: rowsLoading } = usePagedList("/finance/notes", { kind: tab }, {
+    viewKey: `finance_notes_${tab}`, errorLabel: "notes", searchKeys: "note_no,party_name,reference,reason,status",
+  });
+  const [counts, setCounts] = useState({ draft: 0, pending_approval: 0, approved: 0, cancelled: 0 });
   const [clients, setClients] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [reasonCodes, setReasonCodes] = useState([]);
@@ -42,13 +48,14 @@ export default function DebitCreditNotes() {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [notesRes, clRes, vRes, rcRes] = await Promise.all([
-        api.get(`/finance/notes?kind=${tab}`),
+      reload();
+      const [cRes, clRes, vRes, rcRes] = await Promise.all([
+        api.get(`/finance/notes/status-counts?kind=${tab}`),
         lookupGet("/clients"),
         api.get("/vendors?status=approved"),
         api.get("/finance/notes/reason-codes"),
       ]);
-      setRows(notesRes.data || []);
+      setCounts(cRes.data || counts);
       const cl = Array.isArray(clRes.data) ? clRes.data : (clRes.data?.data || []);
       setClients(cl);
       setVendors(vRes.data || []);
@@ -61,11 +68,6 @@ export default function DebitCreditNotes() {
   };
   useEffect(() => { loadAll(); }, [tab]);
 
-  const counts = useMemo(() => {
-    const out = { draft: 0, pending_approval: 0, approved: 0, cancelled: 0 };
-    rows.forEach((r) => { out[r.status] = (out[r.status] || 0) + 1; });
-    return out;
-  }, [rows]);
 
   const submit = async (id) => {
     try {
@@ -151,7 +153,7 @@ export default function DebitCreditNotes() {
                 </thead>
                 <tbody>
                   {loading && <tr><td colSpan={8} className="px-3 py-8 text-center text-slate-400">Loading…</td></tr>}
-                  {!loading && rows.length === 0 && <tr><td colSpan={8} className="px-3 py-8 text-center text-slate-400">No {KIND_LABEL[tab]}s yet</td></tr>}
+                  {!loading && !rowsLoading && rows.length === 0 && <tr><td colSpan={8} className="px-3 py-8 text-center text-slate-400">No {KIND_LABEL[tab]}s yet</td></tr>}
                   {rows.map((r) => (
                     <tr key={r.id} className="border-b" data-testid={`note-row-${r.id}`}>
                       <td className="px-3 py-2 font-mono text-xs">{r.note_number}</td>
@@ -188,6 +190,11 @@ export default function DebitCreditNotes() {
                   ))}
                 </tbody>
               </table>
+              <div className="pt-2 flex items-center gap-2">
+                <Input className="h-8 w-56" placeholder="Search note #, party, reason…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="notes-search" />
+                <TableViewsMenu pagination={pagination} testidPrefix="notes" />
+                <div className="flex-1"><TablePager pagination={pagination} testidPrefix="notes" /></div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

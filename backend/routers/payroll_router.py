@@ -27,10 +27,11 @@ import logging
 from calendar import monthrange
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile
+from fastapi import Request, APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from core import db, get_current_user, now_iso, new_id
+from pagination import maybe_paged, paged_or_rows
 
 logger = logging.getLogger("erp.payroll")
 router = APIRouter(prefix="/payroll", tags=["payroll"])
@@ -681,7 +682,7 @@ async def commit_run(payload: CommitIn, user: dict = Depends(get_current_user)):
 # 4) Payslip queries
 # ════════════════════════════════════════════════════════════════════════
 @router.get("/payslips")
-async def list_payslips(month: str = "", employee_id: str = "", user: dict = Depends(get_current_user)):
+async def list_payslips(request: Request, month: str = "", employee_id: str = "", user: dict = Depends(get_current_user)):
     q: dict = {}
     role = user.get("role")
     if role not in HR_ROLES | FINANCE_ROLES:
@@ -694,6 +695,9 @@ async def list_payslips(month: str = "", employee_id: str = "", user: dict = Dep
         q["month"] = month
     if employee_id and role in HR_ROLES | FINANCE_ROLES:
         q["employee_id"] = employee_id
+    paged = await maybe_paged(request, "payslips", q, "month", ["employee_name", "employee_code", "employee_id", "month", "department", "designation", "status"])
+    if paged:
+        return paged
     rows = await db.payslips.find(q, {"_id": 0}).sort("month", -1).limit(500).to_list(500)
     return rows
 

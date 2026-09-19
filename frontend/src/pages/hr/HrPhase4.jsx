@@ -18,6 +18,9 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { api, apiErrorMessage } from "@/lib/api";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { EmployeeSearchSelect } from "@/components/EmployeeSearchSelect";
 import { ProjectSelect } from "@/components/MasterSelect";
 import { toast } from "sonner";
@@ -242,7 +245,10 @@ function SalaryBulkUpload({ onDone }) {
 
 // ─────────── SALARY STRUCTURES ───────────
 function StructuresView() {
-  const [rows, setRows] = useState([]);
+  const { rows, pagination, search, setSearch, reload: load } = usePagedList("/hr4/salary-structures", {}, {
+    viewKey: "hr_salary_structures", errorLabel: "salary structures", defaultSort: { by: "effective_from", dir: "desc" },
+    searchKeys: "employee_name,employee_code,employee_id,department,designation,approval_status,wage_type",
+  });
   const [open, setOpen] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [form, setForm] = useState({
@@ -251,11 +257,6 @@ function StructuresView() {
     food_allowance: 0, other_allowance: 0, overtime_rate: 0, professional_tax: 200,
     attendance_bonus_applicable: false, attendance_bonus_amount: 0,
   });
-  const load = async () => {
-    try { setRows((await api.get("/hr4/salary-structures")).data || []); }
-    catch (e) { toast.error(apiErrorMessage(e)); }
-  };
-  useEffect(() => { load(); }, []);
   useEffect(() => {
     if (!open || employees.length) return;
     lookupGet("/employees").then((r) => setEmployees(r.data || [])).catch(() => {});
@@ -280,6 +281,8 @@ function StructuresView() {
       <CardHeader className="flex flex-row items-center justify-between flex-wrap gap-2">
         <CardTitle className="text-sm flex items-center gap-2"><DollarSign className="h-4 w-4" /> Salary / Wage Structures</CardTitle>
         <div className="flex flex-wrap items-center gap-2">
+          <Input className="h-8 w-52" placeholder="Search employee, dept…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="hr4-ss-search" />
+          <TableViewsMenu pagination={pagination} testidPrefix="hr4-ss" />
           <SalaryBulkUpload onDone={load} />
           <Button size="sm" onClick={() => setOpen(true)} data-testid="hr4-ss-new"><Plus className="h-4 w-4 mr-1" /> New Structure</Button>
         </div>
@@ -324,6 +327,7 @@ function StructuresView() {
             ))}
           </TableBody>
         </Table>
+        <div className="pt-2"><TablePager pagination={pagination} testidPrefix="hr4-ss" /></div>
       </CardContent>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-3xl">

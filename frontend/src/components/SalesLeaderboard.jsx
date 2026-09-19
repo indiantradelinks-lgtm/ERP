@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { Trophy, ChevronLeft, ChevronRight, Medal } from "lucide-react";
+import { Trophy, ChevronLeft, ChevronRight, Medal, Mail } from "lucide-react";
+import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import LeaderboardDetail from "@/components/LeaderboardDetail";
@@ -20,6 +22,19 @@ export default function SalesLeaderboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [detailFor, setDetailFor] = useState(null);
+  const [sending, setSending] = useState(false);
+  const { user } = useAuth() || {};
+  const sendDigest = async () => {
+    if (!window.confirm(`Email the ${monthLabel(month)} leaderboard digest to sales managers, directors and GM now?`)) return;
+    setSending(true);
+    try {
+      const { data: r } = await api.post(`/sales/leaderboard/digest/send?month=${month}`);
+      if (r.sent.length) toast.success(`Digest sent to ${r.sent.length} recipient${r.sent.length > 1 ? "s" : ""}`);
+      if (r.failed.length) toast.error(`${r.failed.length} not delivered: ${r.failed.map((f) => f.status).join("; ").slice(0, 160)}`);
+      if (!r.sent.length && !r.failed.length) toast.info("No recipients with a sales-manager, director or GM role.");
+    } catch (e) { toast.error(e.response?.data?.detail || "Could not send digest"); }
+    finally { setSending(false); }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -40,6 +55,11 @@ export default function SalesLeaderboard() {
         <h2 className="font-display font-bold text-base md:text-lg tracking-tight">Sales Leaderboard</h2>
         <span className="text-xs text-muted-foreground hidden md:inline">Enquiries raised · quotes sent · win rate (won ÷ decided) — sales roles only</span>
         <div className="ml-auto flex items-center gap-1">
+          {user?.role === "super_admin" && (
+            <Button size="sm" variant="outline" className="h-7 rounded-sm text-xs mr-2" onClick={sendDigest} disabled={sending} title="Auto-sent on the first working day of each month at 09:00 IST" data-testid="leaderboard-send-digest">
+              <Mail className="h-3.5 w-3.5 mr-1" /> {sending ? "Sending…" : "Send digest now"}
+            </Button>
+          )}
           <Button size="icon" variant="outline" className="h-7 w-7 rounded-sm" onClick={() => setMonth(shiftMonth(month, -1))} data-testid="leaderboard-prev-month"><ChevronLeft className="h-3.5 w-3.5" /></Button>
           <span className="text-xs font-semibold tabular-nums min-w-[120px] text-center" data-testid="leaderboard-month">{monthLabel(month)}</span>
           <Button size="icon" variant="outline" className="h-7 w-7 rounded-sm" disabled={month >= thisMonth()} onClick={() => setMonth(shiftMonth(month, 1))} data-testid="leaderboard-next-month"><ChevronRight className="h-3.5 w-3.5" /></Button>

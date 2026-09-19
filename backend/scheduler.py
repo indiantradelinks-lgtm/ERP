@@ -297,6 +297,9 @@ def start_scheduler() -> None:
 
     _scheduler.add_job(_billing_reminder_job, CronTrigger(hour=9, minute=30),
                        id="billing_reminder", replace_existing=True)
+    # Monthly sales leaderboard digest — 09:00 IST (03:30 UTC) daily check, sends on the first working day only
+    from sales_digest import scheduled_digest_job
+    _scheduler.add_job(scheduled_digest_job, CronTrigger(hour=3, minute=30), id="sales_leaderboard_digest", replace_existing=True)
 
     from datetime import timedelta as _td
     _scheduler.add_job(_client_invoice_backfill_job, "date",

@@ -26,10 +26,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import Request, APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from core import db, now_iso, new_id, require_permission
+from pagination import maybe_paged, paged_or_rows
 
 router = APIRouter(prefix="/logistics", tags=["logistics-phase3"])
 
@@ -101,6 +102,7 @@ class MobilizationIn(BaseModel):
 
 @router.get("/mobilizations")
 async def mobs_list(
+    request: Request,
     status: Optional[str] = None,
     project_id: Optional[str] = None,
     user: dict = Depends(require_permission("dispatch_requests", "read")),
@@ -110,6 +112,9 @@ async def mobs_list(
         q["status"] = status
     if project_id:
         q["project_id"] = project_id
+    paged = await maybe_paged(request, "logistics_mobilizations", q, "created_at", ['mob_no', 'project_name', 'project_code', 'from_location', 'to_location', 'status', 'mob_type', 'remarks'])
+    if paged:
+        return paged
     return await db.logistics_mobilizations.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
 
 
@@ -194,12 +199,16 @@ class TravelIn(BaseModel):
 
 @router.get("/travel")
 async def travel_list(
+    request: Request,
     mob_id: Optional[str] = None,
     user: dict = Depends(require_permission("dispatch_requests", "read")),
 ):
     q: Dict[str, Any] = {}
     if mob_id:
         q["mob_id"] = mob_id
+    paged = await maybe_paged(request, "logistics_travel", q, "created_at", ['mob_no', 'employee_name', 'traveller_name', 'mode', 'from_location', 'to_location', 'status', 'pnr', 'ticket_no'])
+    if paged:
+        return paged
     return await db.logistics_travel.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
 
 
