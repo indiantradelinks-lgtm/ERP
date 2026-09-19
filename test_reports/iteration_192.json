@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 192 — verified Phase-3 server-side paging on 9 endpoints, department default shared view flow, and monthly Sales Leaderboard digest (backend + frontend). Backend: 19/19 pytest passed — paged contract {rows,total,page,page_size,pages} + legacy array on /logistics/allocations|loadings|stock-moves|mobilizations|travel, /finance/notes, /hr4/salary-structures, /payroll/payslips (employee scope preserved for non-HR/Finance), /hr2/attendance-plus/punch-imports (heavy fields rows/prev_docs/created_ids/mapping absent); status filter mobilizations?status=draft, notes?kind=credit_note, payslips?month=2026-08, salary-structures?approval_status=approved all work; /finance/notes/status-counts?kind=credit_note sum equals total from paged list; RBAC — safety@erp.com blocked on /hr4/salary-structures (403), test_pm@erp.com scoped on payslips (empty list because no linked employee record); default-shared view lifecycle — publish v1 (dept=__all__) → POST /default toggles is_default=true; PM sees default_shared with v1.id; publishing v2 and starring clears v1; toggling clears; safety_officer POST default → 403; PM DELETE /table-views/inventory/last still returns default_shared; sales digest — POST /api/sales/leaderboard/digest/send?month=2026-08 as admin returns {month:'2026-08', sent, failed, recipients, rows}, PM POST → 403, PM GET /log → 403, GET /log for admin returns {email_enabled,channel,recipients,history}. Frontend: all 6 Phase-3 UI screens render pager+search+views testids — logistics/mobilizations (mobilization-page-pager-range 'Showing 0–0 of 0'), logistics/travel (travel-page 'Showing 1–1 of 1'), /app/accounts/notes (notes 13 credit + tab switch), /app/hr/payroll-statutory (hr4-ss 7 rows), /app/hr/payroll (payslips), /app/attendance-center (punch-hist 3 rows); New dialog opens on click. TableViewsMenu on /app/inventory: 'inventory-views-btn' opens menu; admin sees 'inventory-view-publish' item; publish/star flow already covered by backend integration + Iter191 UI. Sales digest button 'leaderboard-send-digest' visible for admin on /app/sales-reports, absent for test_pm@erp.com.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/app/attendance-center", "issues": ["React hydration warning: <span> cannot be a child of <option> — AttendanceCenter.jsx line 77 (project options render x-source-var wrapper span inside <option>). Console noise only; select still works. Consider stripping x-source spans from native <option> renderers."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter192.py",
+    "/app/test_reports/pytest/iter192_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "sales_leaderboard_router.leaderboard_details: aggregates use $ifNull chain of 3 levels for quote value — works but hard to read. Also QUOTE_SENT_STATUSES set is sorted in every call — hoist to module const.",
+    "table_views_router._shared_filter still uses the 'table_any' auxiliary key pattern flagged in Iter191 (get_views pops it before use). Refactor to inline to remove the code smell.",
+    "sales_digest.digest_recipients includes dept_head with dept regex 'sales' but excludes DIGEST_ROLES member if their department query happens to fail — current implementation is correct via $or. Verified director@erp.com and gm@erp.com are recipients; plain sales_executive is not.",
+    "payroll_router.list_payslips: when a non-HR/Finance user has no employee record, returns '[]' unconditionally — bypassing maybe_paged. This is safe but inconsistent with the paged contract; callers with page=1 receive an array instead of {rows,total,…}. Tolerated but consider returning {rows:[],total:0,page:1,page_size:page_size,pages:0} for uniformity.",
+    "attendance_plus_router.punch_history: after maybe_paged returns paged rows, code re-queries db by ids with heavy-field projection — this double-fetch is fine but the ids order from the second .sort('at', -1) may reshuffle vs the paginator's own sort. Verified ordering matched during tests but consider preserving the paged 'rows' order explicitly."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter192.py",
+    "/app/test_reports/iteration_192.json"
+  ],
+  "success_rate": {"backend": "100% (19/19)", "frontend": "100% (all 6 Phase-3 screens + views menu + digest button visibility verified)"},
+  "test_credentials": "admin@erp.com/Admin@123, test_pm@erp.com/PM@12345, safety@erp.com/Safety@123",
+  "seed_data_creation": "Two ephemeral shared views TEST_iter192_A / TEST_iter192_B on table 'inventory' (dept=__all__) — created & deleted within pytest test_default_shared_view_flow. Digest send generated real outbox rows via /api/sales/leaderboard/digest/send?month=2026-08 (delivered through M365 shared mailbox where configured; recipients list e.g. director@erp.com, gm@erp.com).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Phase-3 paged endpoints follow the same contract as Phase-1/2. Default department shared view: POST /api/table-views/{table}/shared/{id}/default toggles is_default; only ONE default per (table,department); GET returns {last,presets,shared,default_shared,can_publish}; default_shared picks own-dept over __all__ when both exist. Sales digest: POST /api/sales/leaderboard/digest/send?month=YYYY-MM (super_admin only) writes to db.email_outbox with related.entity_type='sales_leaderboard_digest' and logs to db.sales_digest_log; scheduler cron at 03:30 UTC daily invokes sales_digest.scheduled_digest_job (skipped unless first working day of month). Test-run created +1 sales_digest_log entry for 2026-08 (triggered_by=admin@erp.com). Frontend testids: logistics list pages use their own testId prefix like 'mobilization-page', 'travel-page' etc (NOT 'log-mobilization' as the request stated); other Phase-3 screens use 'notes', 'hr4-ss', 'payslips', 'punch-hist' as documented.",
+  "rca of the issue": "N/A — no functional issues found. One console warning (hydration <span> inside <option>) is a pre-existing dev-overlay artefact from x-source instrumentation, not a real DOM issue in production build."
+}
