@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 190 — verified Module Router Paging Phase 1 (11 endpoints), Saved Table Views (auto-remember + presets + reset), and Sales Leaderboard on both backend and frontend. Backend: 39/39 pytest passed (contract, legacy array, search+sort, f_<field>/status/voucher_type filters, enrichment on project-requests/project-expenses/advances, RBAC scoping for PM on advances, 403 for PM on vouchers, table-views CRUD + junk-key stripping + per-user isolation, leaderboard contract + no-super-admin filter + invalid-month fallback + permission check). Frontend: all Phase-1 screens (Enquiries, PRs, RFQs, GRNs, Journal Voucher/Vendor Bills/Vendor Payments via Accounts sidebar, Ops Project Requests + Expenses tabs, HR Advances) show correct pager/search/views testids and render rows. JV server-side search verified (23 → 0 after typing ZZZ). Sales Leaderboard tile: month prev/next works, next disabled on current month (September 2026), 1 sales user card visible, sreport-tab-monthly still functional below. Inventory saved views: preset creation, auto-remember (search=SCF + page_size=25 persisted through reload), preset menu shows check-marks, Reset restores defaults, delete removes preset. No pagination/lookupGet/TableViewsMenu console errors on /app, /app/projects, /app/approvals. All previously known hydration warnings from iter189 (span-in-option) remain and are not new.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter190_phase1.py",
+    "/app/test_reports/pytest/iter190_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "table_views_router._clean_state correctly whitelists STATE_KEYS and clamps page_size to [1,200] — good. Junk keys stripped verified by test.",
+    "sales_leaderboard_router: SALES_ROLES + regex ^sales OR department~sales — correctly excludes super_admin; invalid month gracefully falls back to current UTC month.",
+    "sales_leaderboard: quote_value uses $ifNull chain on total/grand_total/amount — reasonable fallback but silent if a quotation stores value under a different field; consider a documented canonical field.",
+    "pagination.paged_find always returns pages=max(1, ...) even when total=0 — cosmetic (returns pages=1 with 0 rows). Frontend TablePager should handle this (verified: 'Showing 0–0 of 0' rendered correctly).",
+    "Accounts.jsx uses in-page useState for active view — no deep-linking via URL; tests must click sidebar rather than navigate. Not a bug but limits shareable URLs and hurts back-button UX."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter190_phase1.py",
+    "/app/test_reports/iteration_190.json"
+  ],
+  "success_rate": {"backend": "100% (39/39)", "frontend": "100% (all phase-1 screens + leaderboard + saved views verified)"},
+  "test_credentials": "admin@erp.com/Admin@123 (super_admin), test_pm@erp.com/PM@12345 (project_manager)",
+  "seed_data_creation": "Ephemeral only — TEST_iter190_preset and TEST_iter190_admin_only presets created and deleted within pytest; TEST_iter190_ui preset created via UI test and cleaned up at end of Playwright run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend paged contract for the 11 Phase-1 endpoints matches the generic shape from iter189 ({rows,total,page,page_size,pages}); legacy array preserved when `page` omitted. Vouchers submenu inside /app/accounts uses in-page state — test by clicking sidebar text ('Journal Entry', 'Vendor Bills', 'Vendor Payments') rather than URL param. Ops Project Requests and Project Expenses share the same page (/app/ops/requests) with ?tab=expenses switching to the pex-* testids. Sales Leaderboard lives on /app/sales-reports as the top tile (testid sales-leaderboard).",
+  "rca of the issue": "N/A — no issues found this iteration."
+}
