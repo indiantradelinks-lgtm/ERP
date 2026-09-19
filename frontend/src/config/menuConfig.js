@@ -340,7 +340,7 @@ export const MENU_ITEMS = [
   { department: "safety", label: "Management Review Dashboard", to: "/app/safety/management-review", icon: Activity,       testid: "nav-safety-mgmt-review", perm: "safety_reports" },
   // Phase 5 · Closure · Reports · Audit Trail
   { department: "safety", label: "Project Safety Closure",     to: "/app/safety/project-closure",     icon: ClipboardList,  testid: "nav-safety-closure", perm: "safety_closure" },
-  { department: "safety", label: "Safety Reports Center",      to: "/app/safety/reports",             icon: FileSpreadsheet, testid: "nav-safety-reports", perm: "safety_reports" },
+  { department: "safety", label: "Safety Reports Center",      to: "/app/safety/reports",             icon: FileSpreadsheet, testid: "nav-safety-reports-center", perm: "safety_reports" },
   { department: "safety", label: "Safety Audit Trail",         to: "/app/safety/audit-trail",         icon: History,        testid: "nav-safety-audit-trail", perm: "safety_reports" },
   { department: "safety", label: "Safety Approval Inbox",     to: "/app/approvals",                  icon: ClipboardCheck, testid: "nav-safety-approvals", perm: "approvals" },
   { department: "safety", label: "Safety Reports",            to: "/app/safety",                     icon: FileBarChart,   testid: "nav-safety-reports", perm: "safety_reports" },

@@ -22,7 +22,7 @@ export default function TablePager({ pagination, testidPrefix = "tbl" }) {
           data-testid={`${testidPrefix}-page-size`}
           title="Rows per page"
         >
-          {SIZES.map((n) => <option key={n} value={n}>{n} / page</option>)}
+          {SIZES.map((n) => <option key={n} value={n}>{`${n} / page`}</option>)}
         </select>
         <Button size="sm" variant="outline" className={btn} disabled={page <= 1} onClick={() => setPage(1)} data-testid={`${testidPrefix}-page-first`}><ChevronsLeft className="h-3.5 w-3.5" /></Button>
         <Button size="sm" variant="outline" className={btn} disabled={page <= 1} onClick={() => setPage(page - 1)} data-testid={`${testidPrefix}-page-prev`}><ChevronLeft className="h-3.5 w-3.5" /></Button>

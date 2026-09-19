@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 189 — executed backend + frontend tests for server-side pagination/search/sort/filter across 22 generic module tables, admin lists (audit-logs, login-activity, files, onedrive/queue), approvals, RBAC scoping, generic CRUD, and attachment persistence. Backend: 27/27 passed after fixing 2 wrong URLs in review spec (onedrive endpoints are under /api/admin/onedrive/*). Frontend: pager testids present and functional on inventory + 9 module screens, admin audit-logs & sessions; deep-link approvals?id= auto-opens the detail dialog; attachment persists across refresh; dashboard KPIs render; regression looks clean. One UI issue observed: after clicking inventory-save-btn the DialogOverlay was still intercepting pointer events when trying to click delete (30s timeout) — see rca below.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Inventory add/edit Dialog", "issue": "DialogOverlay still intercepts pointer events after inventory-save-btn is clicked; subsequent inventory-delete-<id> click timed out. Row also didn't visibly appear via search (search showed 1–50 of 330 unfiltered) — suggests Save may not close dialog nor commit through UI reliably. Backend POST /api/inventory works fine (pytest passes), so this is a frontend dialog-close/state issue.", "selector": "[data-testid='inventory-save-btn'] + Radix DialogOverlay", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Global (all pages)", "issues": [
+        "Hydration warning repeated on every page: '<span> cannot be a child of <option>' — a <span> is being rendered inside <option> in a native <select>, likely in a dropdown option renderer.",
+        "React 'Encountered two children with the same key' warning on /app/approvals and /app/quotations rows — duplicate keys in map()."
+      ]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter189_pagination.py",
+    "/app/test_reports/pytest/iter189_results.xml"
+  ],
+  "action_items": [
+    "Investigate Inventory Add dialog not closing after Save (dialog overlay persists, blocks subsequent row-action clicks). Verify save handler calls onOpenChange(false) / setOpen(false) on success and that the API succeeded from UI (network tab).",
+    "Fix duplicate React keys on Approvals & Quotations list rendering (use unique row.id fallback).",
+    "Fix span-inside-option hydration warning — replace <span> children inside <option> with plain text (or move to a custom Select)."
+  ],
+  "critical_code_review_comments": [
+    "pagination.py projection() always sets _id:0 and force-adds 'id' — good. sort_spec() adds 'id' as stable tie-breaker — good. RESERVED_PARAMS covers common filters — good.",
+    "crud_router list_items falls back to unsorted .to_list(5000) on sort exception — silent behaviour; consider logging so ops can spot missing indexes.",
+    "onedrive queue endpoint is /api/admin/onedrive/queue (not /api/onedrive/queue as review spec stated) — spec drift; docs/tests should be aligned."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter189_pagination.py"
+  ],
+  "success_rate": {"backend": "100% (27/27)", "frontend": "~90% (pagers + deep-link + attachment persist all pass; inventory Save dialog interaction flaky)"},
+  "test_credentials": "admin@erp.com/Admin@123 (super_admin), test_pm@erp.com/PM@12345 (project_manager)",
+  "seed_data_creation": "None persisted — TEST_iter189_widget inventory record created and deleted in pytest; UI-created TEST_iter189_ui inventory row may still exist due to dialog-overlay preventing delete (cleanup attempt failed).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend pagination contract is solid on generic CRUD, approvals, admin/audit-logs, admin/login-activity, files, admin/onedrive/queue. Note the correct onedrive path is /api/admin/onedrive/{queue,health,stats}. Frontend pager testids follow the '<resource>-pager-range / -page-next/-page-prev/-page-first/-page-last / -page-indicator / -page-size / -col-<field> / -search' convention. TEST_iter189_ui inventory row may need manual cleanup by super_admin.",
+  "rca of the issue": "Inventory Add dialog: after inventory-save-btn click, Radix DialogOverlay data-state remained 'open' and intercepted subsequent clicks. Two possibilities — (a) save handler didn't call setOpen(false) on success path, or (b) an inner validation failed silently so the mutation never fired (search showed 1–50 of 330 rather than the newly created TEST_iter189_ui). Reproduction: navigate /app/inventory → inventory-add-btn → fill inventory-field-name only → inventory-save-btn → try to click any inventory-delete-<id>. Mitigation: in the Inventory dialog Save handler, ensure setOpen(false) is called inside the onSuccess callback of the mutation, and surface backend validation errors via a toast so users don't see a silent no-op."
+}
