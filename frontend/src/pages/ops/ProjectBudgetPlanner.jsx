@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProjectSelect, useCategories } from "@/components/MasterSelect";
+import { lookupGet } from "@/lib/lookups";
 
 const inr = (v) => `₹ ${Number(v || 0).toLocaleString("en-IN")}`;
 const FREQS = [
@@ -70,7 +71,7 @@ export default function ProjectBudgetPlanner() {
   }, [filters, groupBy]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
 
   const loadCC = (projectId) => {
     if (!projectId) return setCcList([]);

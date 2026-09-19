@@ -204,7 +204,7 @@ export default function Inventory() {
         onDelete={r.remove}
         testidPrefix="inventory"
         exportResource={r.exportResource}
-        canWrite={r.canWrite}
+        canWrite={r.canWrite} pagination={r.pagination}
         canDelete={r.canDelete}
         attachmentsParentType="inventory_items"
       />

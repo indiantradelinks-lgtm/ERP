@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { ClipboardList, Plus, Pencil, Send, RefreshCcw, RotateCcw, Trash2, X } from "lucide-react";
 import { fmtDT } from "@/lib/datetime";
+import { lookupGet } from "@/lib/lookups";
 
 const RISK = ["", "low", "medium", "high", "critical"];
 const STATUS_TONE = {
@@ -45,7 +46,7 @@ export default function Jsa() {
 
   const load = async () => {
     try {
-      const [a, b] = await Promise.all([api.get("/safety/jsa"), api.get("/projects")]);
+      const [a, b] = await Promise.all([api.get("/safety/jsa"), lookupGet("/projects")]);
       setRows(a.data || []); setProjects(b.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
   };

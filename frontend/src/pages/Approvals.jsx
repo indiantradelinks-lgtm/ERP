@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Eye } from "lucide-react";
 import ApprovalDetail from "@/components/ApprovalDetail";
 import { toneFor } from "@/lib/statusTone";
+import { api } from "@/lib/api";
 
 const APPROVAL_STATUS_TONE = { approved: "success", rejected: "danger", in_progress: "info" };
 
@@ -17,14 +18,15 @@ export default function Approvals() {
 
   const openDetail = (row) => { setActive(row); setOpen(true); };
 
-  // If URL has ?id=xxx, auto-open the matching approval once data loads
+  // If URL has ?id=xxx, auto-open the matching approval (fetch directly — it may not be on this page)
   useEffect(() => {
     const id = params.get("id");
-    if (id && r.data?.length) {
-      const found = r.data.find((x) => x.id === id);
-      if (found) { setActive(found); setOpen(true); }
-    }
-  }, [params, r.data]);
+    if (!id) return;
+    const found = r.data.find((x) => x.id === id);
+    if (found) { setActive(found); setOpen(true); return; }
+    api.get(`/approvals/${id}`).then(({ data }) => { if (data?.id) { setActive(data); setOpen(true); } }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
 
   const columns = [
     { key: "title", label: "Request" },
@@ -81,7 +83,7 @@ export default function Approvals() {
         onDelete={r.remove}
         testidPrefix="approvals"
         exportResource={r.exportResource}
-        canWrite={r.canWrite}
+        canWrite={r.canWrite} pagination={r.pagination}
         canDelete={r.canDelete}
       />
       <ApprovalDetail approval={active} open={open} onOpenChange={setOpen} onUpdated={onUpdated} />

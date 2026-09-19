@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ShieldAlert, Plus, Pencil, Trash2, RefreshCcw, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { lookupGet } from "@/lib/lookups";
 
 const TYPES = ["hot_work", "confined_space", "height", "electrical", "excavation", "lifting", "general"];
 const CLEARANCE = ["pending", "cleared", "rejected"];
@@ -28,7 +29,7 @@ export default function WorkPermits() {
   const { user } = useAuth() || {};
   const canEdit = !["sales_executive", "store_incharge"].includes(user?.role);
 
-  useEffect(() => { api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { load(); }, [filt]);
 
   const load = async () => {

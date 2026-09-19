@@ -10,6 +10,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { DepartmentSelect } from "@/components/DepartmentSelect";
 import { ProjectSelect, SiteSelect } from "@/components/MasterSelect";
+import { lookupGet } from "@/lib/lookups";
 
 const STATUS_TONE = { issued: "warning", returned: "success", partially_returned: "info", written_off: "danger" };
 const KIND_TONE = { material: "primary", tool: "info", consumable: "warning", asset: "success" };
@@ -53,7 +54,7 @@ export default function MaterialAllocations() {
         api.get(url),
         api.get("/inventory").catch(() => ({ data: [] })),
         api.get("/assets").catch(() => ({ data: [] })),
-        api.get("/employees").catch(() => ({ data: [] })),
+        lookupGet("/employees").catch(() => ({ data: [] })),
       ]);
       setRows(a.data || []);
       setInventory(inv.data || []);

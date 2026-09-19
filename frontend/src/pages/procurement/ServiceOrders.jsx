@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Briefcase, Plus, RefreshCcw, CheckCircle2, FileCheck2, X, FileDown } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const STATUS_TONE = {
   draft: "bg-slate-100 text-slate-700",
@@ -52,7 +53,7 @@ export default function ServiceOrders() {
       const [soRes, vRes, pRes] = await Promise.all([
         api.get("/procurement-extras/service-orders"),
         api.get("/vendors?status=approved"),
-        api.get("/projects"),
+        lookupGet("/projects"),
       ]);
       setRows(soRes.data || []);
       setVendors(vRes.data || []);

@@ -15,6 +15,7 @@ import AmendmentCompareDialog from "@/components/AmendmentCompareDialog";
 import { downloadPdf } from "@/lib/exports";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
+import { lookupGet } from "@/lib/lookups";
 
 const PO_STATUS_TONE = {
   approved: "success", rejected: "danger", received: "info", partially_received: "warning",
@@ -29,7 +30,7 @@ export default function PurchaseOrders() {
   const r = useResource("purchase-orders");
   const [projMap, setProjMap] = useState({});
   useEffect(() => {
-    api.get("/projects").then((res) => {
+    lookupGet("/projects").then((res) => {
       const m = {};
       (res.data || []).forEach((p) => {
         const info = { code: p.code || p.project_code, name: p.name, manager: p.manager || p.project_manager_name };
@@ -185,7 +186,7 @@ export default function PurchaseOrders() {
   ];
   return (
     <>
-      <DataTableShell title="Purchase Orders" description="Requisition → RFQ → PO → GRN. Multi-level approvals. POs lock after final approval — amendments need an approved request." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="purchase" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} attachmentsParentType="purchase_orders" />
+      <DataTableShell title="Purchase Orders" description="Requisition → RFQ → PO → GRN. Multi-level approvals. POs lock after final approval — amendments need an approved request." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="purchase" exportResource={r.exportResource} canWrite={r.canWrite} pagination={r.pagination} canDelete={r.canDelete} attachmentsParentType="purchase_orders" />
       <SendEmailDialog
         open={!!emailFor}
         onOpenChange={(o) => !o && setEmailFor(null)}

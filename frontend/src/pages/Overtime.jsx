@@ -25,5 +25,5 @@ export default function Overtime() {
     { key: "approver", label: "Approver" },
     { key: "status", label: "Status", type: "select", options: ["pending", "approved", "rejected"] },
   ];
-  return <DataTableShell title="Overtime Entries" description="Recorded extra hours awaiting approval before going into payroll." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="overtime" exportResource="overtime" canWrite={r.canWrite} canDelete={r.canDelete} />;
+  return <DataTableShell title="Overtime Entries" description="Recorded extra hours awaiting approval before going into payroll." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="overtime" exportResource="overtime" canWrite={r.canWrite} pagination={r.pagination} canDelete={r.canDelete} />;
 }

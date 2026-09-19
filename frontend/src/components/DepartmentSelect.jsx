@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Label } from "@/components/ui/label";
+import { lookupGet } from "@/lib/lookups";
 
 // Module-level cache so multiple components don't refetch on each render.
 let _cache = null;
@@ -18,7 +19,7 @@ export async function fetchDepartments(forceReload = false) {
   if (_inflight) return _inflight;
   _inflight = (async () => {
     try {
-      const { data } = await api.get("/departments");
+      const { data } = await lookupGet("/departments");
       _cache = (data || []).map((d) => d.name || d.code).filter(Boolean).sort();
     } catch {
       _cache = [];

@@ -108,7 +108,7 @@ export default function Attendance() {
       onDelete={r.remove}
       testidPrefix="attendance"
       exportResource={r.exportResource}
-      canWrite={r.canWrite}
+      canWrite={r.canWrite} pagination={r.pagination}
       canDelete={r.canDelete}
       extraActions={extraActions}
     />

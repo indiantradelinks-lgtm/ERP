@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import DataTableShell, { StatusBadge } from "@/components/DataTableShell";
 import useResource from "@/hooks/useResource";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { toneFor } from "@/lib/statusTone";
 import { useDepartments } from "@/components/DepartmentSelect";
 import { fmtDT } from "@/lib/datetime";
+import { lookupGet } from "@/lib/lookups";
 
 const STATUS_TONE = { active: "success", on_leave: "warning", exited: "neutral" };
 
@@ -53,18 +54,18 @@ const MASTER_META = {
 };
 
 export default function Employees({ master = "employee" }) {
-  const r = useResource("employees");
+  const [projectFilter, setProjectFilter] = useState("");
+  const r = useResource("employees", { params: { master, ...(projectFilter ? { f_current_project_code: projectFilter } : {}) } });
   const meta = MASTER_META[master];
   const DEPARTMENT_OPTIONS = useDepartments();
   const [histOpen, setHistOpen] = useState(false);
   const [histRows, setHistRows] = useState([]);
   const [histFor, setHistFor] = useState(null);
   const [projects, setProjects] = useState([]);
-  const [projectFilter, setProjectFilter] = useState("");
 
   useEffect(() => {
     if (master !== "worker") return;
-    api.get("/projects").then((res) => setProjects(res.data || [])).catch(() => {});
+    lookupGet("/projects").then((res) => setProjects(res.data || [])).catch(() => {});
     setProjectFilter("");
   }, [master]);
 
@@ -333,30 +334,7 @@ export default function Employees({ master = "employee" }) {
     } catch (e) { toast.error(e.response?.data?.detail || "Restore failed"); }
   };
 
-  // ── Server-side pagination + search (handles 1,000+ employees) ──
-  const PAGE_SIZE = 50;
-  const [page, setPage] = useState(1);
-  const [pgSearch, setPgSearch] = useState("");
-  const [pgRows, setPgRows] = useState([]);
-  const [pgTotal, setPgTotal] = useState(0);
-  const loadPage = useCallback(async (p = page, s = pgSearch) => {
-    try {
-      const params = new URLSearchParams({ page: String(p), page_size: String(PAGE_SIZE), master });
-      if (s.trim()) params.set("search", s.trim());
-      const { data } = await api.get(`/employees?${params.toString()}`);
-      setPgRows(data.rows || []);
-      setPgTotal(data.total || 0);
-    } catch (e) { /* loadError handled by useResource path */ }
-  }, [page, pgSearch, master]);
-  useEffect(() => { setPage(1); setPgSearch(""); }, [master]);
-  useEffect(() => { loadPage(page, pgSearch); /* eslint-disable-next-line */ }, [page, master]);
-  useEffect(() => {
-    const t = setTimeout(() => { setPage(1); loadPage(1, pgSearch); }, 400);
-    return () => clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pgSearch]);
-  const totalPages = Math.max(1, Math.ceil(pgTotal / PAGE_SIZE));
-  const refreshAll = () => loadPage(page, pgSearch);
+  const refreshAll = () => r.reload();
 
   const extraActions = (
     <div className="flex items-center gap-2" data-testid="emp-bulk-actions">
@@ -436,19 +414,8 @@ export default function Employees({ master = "employee" }) {
         key={master}
         title={meta.title}
         description={meta.description}
-        data={pgRows.filter((row) => !projectFilter || row.current_project_code === projectFilter)}
-        serverSearch={pgSearch}
-        onServerSearch={setPgSearch}
-        serverTotal={pgTotal}
-        footerExtra={
-          <span className="inline-flex items-center gap-2 ml-3" data-testid="emp-pagination">
-            <Button size="sm" variant="outline" className="h-7 px-2" disabled={page <= 1}
-              onClick={() => setPage(page - 1)} data-testid="emp-page-prev">‹ Prev</Button>
-            <span className="text-xs">Page {page} / {totalPages}</span>
-            <Button size="sm" variant="outline" className="h-7 px-2" disabled={page >= totalPages}
-              onClick={() => setPage(page + 1)} data-testid="emp-page-next">Next ›</Button>
-          </span>
-        }
+        data={r.data}
+        pagination={r.pagination}
         columns={columns}
         fields={fields}
         onCreate={async (p) => { const res = await r.create(p); refreshAll(); return res; }}

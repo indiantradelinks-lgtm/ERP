@@ -11,6 +11,7 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { fmtDT } from "@/lib/datetime";
+import { lookupGet } from "@/lib/lookups";
 
 const FALLBACK_ROLES = [
   "super_admin", "director", "general_manager", "dept_head", "project_manager",
@@ -51,13 +52,13 @@ export default function UserManagement() {
   };
   const loadDepts = async () => {
     try {
-      const { data } = await api.get("/departments");
+      const { data } = await lookupGet("/departments");
       setDepartments((data || []).map((d) => d.name || d.code).filter(Boolean));
     } catch { /* leave empty — input falls back to free text */ }
   };
   const loadEmployees = async () => {
     try {
-      const { data } = await api.get("/employees");
+      const { data } = await lookupGet("/employees");
       // Show every non-exited employee — including Inactive ones — so logins
       // can be created/managed for them too.
       const list = (data || []).filter((e) => String(e.status || "").toLowerCase() !== "exited");

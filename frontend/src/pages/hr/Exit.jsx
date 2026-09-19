@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { api, apiErrorMessage, stripEmpty } from "@/lib/api";
 import { toast } from "sonner";
 import { fmtDT } from "@/lib/datetime";
+import { lookupGet } from "@/lib/lookups";
 
 const STATUS_TONE = {
   draft: "bg-secondary text-muted-foreground border-border",
@@ -53,7 +54,7 @@ export default function Exit() {
     try {
       const [ex, emps] = await Promise.all([
         api.get("/hr/exits"),
-        api.get("/employees"),
+        lookupGet("/employees"),
       ]);
       setExits(ex.data || []);
       setEmployees(emps.data || []);

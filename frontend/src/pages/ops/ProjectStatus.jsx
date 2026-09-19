@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Activity, RefreshCcw } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const STATUSES = ["planned", "active", "on_hold", "completed", "cancelled"];
 const TONES = {
@@ -18,7 +19,7 @@ const TONES = {
 
 export default function ProjectStatus() {
   const [projects, setProjects] = useState([]);
-  const load = async () => { const r = await api.get("/projects").catch(() => ({ data: [] })); setProjects(r.data); };
+  const load = async () => { const r = await lookupGet("/projects").catch(() => ({ data: [] })); setProjects(r.data); };
   useEffect(() => { load(); }, []);
 
   const byStatus = useMemo(() => {

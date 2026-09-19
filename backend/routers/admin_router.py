@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 
 from core import db, get_current_user, now_iso, new_id, ROLES, logger, hash_password, require_permission
+from pagination import combine, search_clause, paged_find
 from approval_engine import APPROVAL_CHAINS
 from rbac import (
     PERMISSIONS_BASE, _resolved, set_overrides,
@@ -361,18 +362,24 @@ async def list_audit_logs(
     actor_id: Optional[str] = None,
     record_id: Optional[str] = None,
     action: Optional[str] = None,
+    search: str = "",
     limit: int = 200,
+    page: int = 0,
+    page_size: int = 50,
     user: dict = Depends(require_super_admin),
 ):
     q: Dict[str, Any] = {}
     if resource:
-        q["resource"] = resource
+        q["resource"] = {"$regex": re.escape(resource), "$options": "i"}
     if actor_id:
         q["actor_id"] = actor_id
     if record_id:
         q["record_id"] = record_id
     if action:
         q["action"] = action
+    q = combine(q, search_clause(search, ["actor_name", "actor_role", "resource", "action", "record_id"]))
+    if page >= 1:
+        return await paged_find("audit_logs", q, page, page_size, [("ts", -1)])
     limit = max(1, min(limit, 1000))
     rows = await db.audit_logs.find(q, {"_id": 0}).sort("ts", -1).to_list(limit)
     return rows
@@ -765,9 +772,13 @@ async def load_rbac_overrides_on_startup() -> int:
         return 0
 
 @router.get("/login-activity")
-async def login_activity(limit: int = 100, user: dict = Depends(require_super_admin)):
+async def login_activity(limit: int = 100, page: int = 0, page_size: int = 50, search: str = "",
+                         user: dict = Depends(require_super_admin)):
+    q = combine(search_clause(search, ["name", "email", "role", "ip"]))
+    if page >= 1:
+        return await paged_find("login_activity", q, page, page_size, [("at", -1)])
     limit = max(1, min(limit, 500))
-    rows = await db.login_activity.find({}, {"_id": 0}).sort("at", -1).to_list(limit)
+    rows = await db.login_activity.find(q, {"_id": 0}).sort("at", -1).to_list(limit)
     return rows
 
 

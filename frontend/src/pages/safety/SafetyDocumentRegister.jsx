@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { FileText, Plus, Pencil, RefreshCcw, Trash2, Filter } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const DOC_TYPES = ["license", "certificate", "insurance", "statutory", "policy", "plan", "other"];
 const EXPIRY_STATUSES = ["", "valid", "expiring_soon", "expired", "no_expiry"];
@@ -39,7 +40,7 @@ export default function SafetyDocumentRegister() {
     try {
       const [a, b] = await Promise.all([
         api.get(`/safety/documents${statusFilter ? `?status=${statusFilter}` : ""}${typeFilter ? `${statusFilter ? "&" : "?"}doc_type=${typeFilter}` : ""}`),
-        api.get("/projects"),
+        lookupGet("/projects"),
       ]);
       setRows(a.data || []); setProjects(b.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }

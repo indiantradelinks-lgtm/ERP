@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Loader2, Upload, FileDown, History } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const CATS = ["material", "labour", "transport", "subcontract", "service", "other"];
 const fmt = (n) => "₹ " + Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 });
@@ -19,7 +20,7 @@ export const DirectBookingDialog = ({ onClose }) => {
   const fileRef = useRef(null);
 
   useEffect(() => {
-    api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {});
+    lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {});
   }, []);
 
   const gross = Number(form.taxable_value || 0) + Number(form.gst_amount || 0);

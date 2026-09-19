@@ -18,6 +18,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { AttendanceBulkDialog } from "./HrPhase2";
 import AttendanceImport from "./AttendanceImport";
+import { lookupGet } from "@/lib/lookups";
 
 const hoursBetween = (tin, tout) => {
   if (!tin || !tout) return 0;
@@ -52,7 +53,7 @@ export default function AttendanceCenter() {
   const [autoOpen, setAutoOpen] = useState(false);
 
   useEffect(() => {
-    api.get("/projects").then((r) => {
+    lookupGet("/projects").then((r) => {
       const rows = r.data || [];
       setProjects(rows);
       if (isProjectRole && rows.length && !scope) setScope(rows[0].code);

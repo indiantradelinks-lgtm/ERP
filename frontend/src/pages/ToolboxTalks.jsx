@@ -18,5 +18,5 @@ export default function ToolboxTalks() {
     { key: "attendees_count", label: "Attendees", type: "number" },
     { key: "key_messages", label: "Key Messages", type: "textarea", full: true },
   ];
-  return <DataTableShell title="Toolbox Talks" description="Daily site briefings logged with topic, attendance and key messages." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="toolbox" exportResource="toolbox-talks" canWrite={r.canWrite} canDelete={r.canDelete} attachmentsParentType="safety" />;
+  return <DataTableShell title="Toolbox Talks" description="Daily site briefings logged with topic, attendance and key messages." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="toolbox" exportResource="toolbox-talks" canWrite={r.canWrite} pagination={r.pagination} canDelete={r.canDelete} attachmentsParentType="safety" />;
 }

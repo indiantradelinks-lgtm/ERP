@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ClipboardList, CheckCircle2, XCircle, ShieldAlert, RefreshCcw, Lock } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 export default function ProjectSafetyClosure() {
   const [projects, setProjects] = useState([]);
@@ -22,7 +23,7 @@ export default function ProjectSafetyClosure() {
   const [overrideReason, setOverrideReason] = useState("");
 
   const loadProjects = async () => {
-    try { const r = await api.get("/projects"); setProjects(r.data || []); }
+    try { const r = await lookupGet("/projects"); setProjects(r.data || []); }
     catch (e) { toast.error(e.response?.data?.detail || "Failed to load projects"); }
   };
   useEffect(() => { loadProjects(); }, []);

@@ -86,7 +86,7 @@ export default function Documents() {
         onDelete={r.remove}
         testidPrefix="documents"
         exportResource={r.exportResource}
-        canWrite={r.canWrite}
+        canWrite={r.canWrite} pagination={r.pagination}
         canDelete={r.canDelete}
       />
     </div>

@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Plus, Pencil, Trash2, RefreshCcw, FileSignature, Filter, Search, Link2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { fmtDT } from "@/lib/datetime";
+import { lookupGet } from "@/lib/lookups";
 
 const STATUSES = ["draft", "received", "active", "completed", "cancelled", "hold"];
 const EMPTY = { wo_no: "", project_id: "", wo_date: "", valid_from: "", valid_until: "",
@@ -68,7 +69,7 @@ export default function WorkOrders() {
     try {
       const [a, b, c] = await Promise.all([
         api.get("/work-orders"),
-        api.get("/projects"),
+        lookupGet("/projects"),
         api.get("/work-orders/stats").catch(() => ({ data: null })),
       ]);
       setRows(a.data);

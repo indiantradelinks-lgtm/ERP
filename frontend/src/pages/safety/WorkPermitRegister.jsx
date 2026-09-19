@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { ClipboardCheck, Plus, Pencil, RefreshCcw, Send, PlayCircle, XCircle, Filter, CheckCircle2, Ban } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const STATUS_TONE = {
   draft: "bg-slate-100 text-slate-700 border-slate-300",
@@ -51,7 +52,7 @@ export default function WorkPermitRegister() {
     try {
       const [a, b, c, d, e, f] = await Promise.all([
         api.get("/safety/work-permits"),
-        api.get("/projects"),
+        lookupGet("/projects"),
         api.get("/safety/masters/work-permit-types"),
         api.get("/safety/hira?status=approved"),
         api.get("/safety/jsa?status=approved"),

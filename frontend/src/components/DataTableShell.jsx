@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
-import { Plus, Search, Trash2, Pencil, FileSpreadsheet, FileText, Paperclip } from "lucide-react";
+import { Plus, Search, Trash2, Pencil, FileSpreadsheet, FileText, Paperclip, ArrowUp, ArrowDown, ArrowUpDown, Loader2 } from "lucide-react";
+import TablePager from "@/components/TablePager";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -172,20 +173,34 @@ export default function DataTableShell({
   onAfterCreate,        // async (createdRow, form) => void — fires after a successful create
   createDefaults,       // object — initial form values when creating a new record
   editFetch,            // async (row) => axios response — fetch full record before edit (all DB fields)
+  pagination,           // from useResource().pagination — enables server-side search / sort / paging
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
-  useSearchLanding((q) => (onServerSearch ? onServerSearch(q) : setQuery(q)), [data]);
+  const serverMode = !!pagination;
+  const searchValue = serverMode ? pagination.search : (onServerSearch ? serverSearch : query);
+  const handleSearch = (v) => {
+    if (serverMode) pagination.setSearch(v);
+    else if (onServerSearch) onServerSearch(v);
+    else setQuery(v);
+  };
+  useSearchLanding(handleSearch, [data]);
+
+  const columnKeys = useMemo(() => (searchKeys || columns.map((c) => c.key)).filter((k) => k && !k.startsWith("_")), [columns, searchKeys]);
+  useEffect(() => {
+    if (serverMode) pagination.setSearchKeys(columnKeys.join(","));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverMode, columnKeys.join(",")]);
 
   const filtered = useMemo(() => {
-    if (onServerSearch) return data;
+    if (serverMode || onServerSearch) return data;
     if (!query) return data;
     const q = query.toLowerCase();
     const keys = searchKeys || columns.map((c) => c.key);
     return data.filter((row) => keys.some((k) => String(row?.[k] ?? "").toLowerCase().includes(q)));
-  }, [data, query, columns, searchKeys, onServerSearch]);
+  }, [data, query, columns, searchKeys, onServerSearch, serverMode]);
 
   const startCreate = () => {
     setEditing(null);
@@ -239,10 +254,10 @@ export default function DataTableShell({
           <div className="relative flex-1 md:w-72">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder={onServerSearch ? "Search all records…" : "Search…"}
+              placeholder={serverMode || onServerSearch ? "Search all records…" : "Search…"}
               className="pl-9 h-9 rounded-sm"
-              value={onServerSearch ? serverSearch : query}
-              onChange={(e) => (onServerSearch ? onServerSearch(e.target.value) : setQuery(e.target.value))}
+              value={searchValue}
+              onChange={(e) => handleSearch(e.target.value)}
               data-testid={`${testidPrefix}-search`}
             />
           </div>
@@ -316,9 +331,26 @@ export default function DataTableShell({
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40 hover:bg-muted/40">
-              {columns.map((c) => (
-                <TableHead key={c.key} className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">{c.label}</TableHead>
-              ))}
+              {columns.map((c) => {
+                const sortable = serverMode && c.key && !c.key.startsWith("_") && c.sortable !== false;
+                const active = sortable && pagination.sort.by === c.key;
+                return (
+                  <TableHead
+                    key={c.key}
+                    className={cn("text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground", sortable && "cursor-pointer select-none hover:text-foreground")}
+                    onClick={sortable ? () => pagination.setSort(c.key) : undefined}
+                    aria-sort={active ? (pagination.sort.dir === "asc" ? "ascending" : "descending") : undefined}
+                    data-testid={`${testidPrefix}-col-${c.key}`}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      {c.label}
+                      {sortable && (active
+                        ? (pagination.sort.dir === "asc" ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />)
+                        : <ArrowUpDown className="h-3 w-3 opacity-30" />)}
+                    </span>
+                  </TableHead>
+                );
+              })}
               {hasActions && <TableHead className="w-28 text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
@@ -328,7 +360,9 @@ export default function DataTableShell({
                 <TableCell colSpan={columns.length + 1} className="text-center text-sm py-10">
                   {loadError
                     ? <span className="text-rose-600" data-testid="table-load-error">{loadError}</span>
-                    : <span className="text-muted-foreground">No records.</span>}
+                    : serverMode && pagination.loading
+                      ? <span className="text-muted-foreground inline-flex items-center gap-2" data-testid={`${testidPrefix}-loading`}><Loader2 className="h-4 w-4 animate-spin" /> Loading…</span>
+                      : <span className="text-muted-foreground">No records.</span>}
                 </TableCell>
               </TableRow>
             )}
@@ -362,8 +396,14 @@ export default function DataTableShell({
         </Table>
       </div>
       <div className="px-4 py-2 border-t border-border text-xs text-muted-foreground">
-        Showing <span className="text-foreground font-semibold">{filtered.length}</span> of {serverTotal ?? data.length}
-        {footerExtra}
+        {serverMode ? (
+          <TablePager pagination={pagination} testidPrefix={testidPrefix} />
+        ) : (
+          <>
+            Showing <span className="text-foreground font-semibold">{filtered.length}</span> of {serverTotal ?? data.length}
+            {footerExtra}
+          </>
+        )}
       </div>
     </div>
   );

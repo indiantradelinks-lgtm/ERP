@@ -1,18 +1,12 @@
-import { useEffect, useState } from "react";
-import { Activity } from "lucide-react";
+import { Activity, Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge } from "@/components/DataTableShell";
-import { api } from "@/lib/api";
-import { toast } from "sonner";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
 
 export default function Sessions() {
-  const [rows, setRows] = useState([]);
-
-  useEffect(() => {
-    api.get("/admin/login-activity?limit=200")
-      .then((r) => setRows(r.data))
-      .catch((e) => toast.error(e.response?.data?.detail || "Failed to load sessions"));
-  }, []);
+  const { rows, pagination, search, setSearch } = usePagedList("/admin/login-activity", {}, { errorLabel: "sessions" });
 
   return (
     <div className="space-y-6" data-testid="admin-sessions">
@@ -24,7 +18,14 @@ export default function Sessions() {
         <p className="text-sm text-muted-foreground mt-1">Recent successful sign-ins, IPs and user-agent fingerprints. Tokens are JWT-based with 8h sliding expiry.</p>
       </div>
 
-      <div className="bg-card border border-border rounded-sm overflow-x-auto">
+      <div className="bg-card border border-border rounded-sm">
+        <div className="flex items-center gap-2 p-4 border-b border-border">
+          <div className="relative w-72">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input className="pl-9 h-9 rounded-sm" placeholder="Search user / email / IP…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="sessions-search" />
+          </div>
+        </div>
+        <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40 hover:bg-muted/40">
@@ -50,6 +51,8 @@ export default function Sessions() {
             ))}
           </TableBody>
         </Table>
+        </div>
+        <div className="px-4 py-2 border-t border-border"><TablePager pagination={pagination} testidPrefix="sessions" /></div>
       </div>
     </div>
   );

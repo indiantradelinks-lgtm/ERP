@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Search, FileSearch } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/DataTableShell";
-import { api } from "@/lib/api";
-import { toast } from "sonner";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
 
 const ACTION_TONE = {
   create: "success",
@@ -17,29 +17,10 @@ const ACTION_TONE = {
 };
 
 export default function AuditLogs() {
-  const [rows, setRows] = useState([]);
-  const [filter, setFilter] = useState({ resource: "", action: "", q: "" });
+  const [filter, setFilter] = useState({ resource: "", action: "" });
   const [detail, setDetail] = useState(null);
-
-  const load = async () => {
-    try {
-      const params = new URLSearchParams();
-      if (filter.resource) params.set("resource", filter.resource);
-      if (filter.action) params.set("action", filter.action);
-      params.set("limit", "200");
-      const { data } = await api.get(`/admin/audit-logs?${params.toString()}`);
-      setRows(data);
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Failed to load audit logs");
-    }
-  };
-  useEffect(() => { load(); }, [filter.resource, filter.action]);
-
-  const filtered = rows.filter((r) => {
-    if (!filter.q) return true;
-    const q = filter.q.toLowerCase();
-    return [r.actor_name, r.actor_role, r.resource, r.action, r.record_id].some((v) => String(v ?? "").toLowerCase().includes(q));
-  });
+  const { rows, pagination, search, setSearch } = usePagedList("/admin/audit-logs", filter, { errorLabel: "audit logs" });
+  const filtered = rows;
 
   return (
     <div className="space-y-6" data-testid="admin-audit">
@@ -55,7 +36,7 @@ export default function AuditLogs() {
         <div className="flex flex-wrap items-center gap-2 p-4 border-b border-border">
           <div className="relative w-64">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input className="pl-9 h-9 rounded-sm" placeholder="Search actor / record…" value={filter.q} onChange={(e) => setFilter({ ...filter, q: e.target.value })} data-testid="audit-search" />
+            <Input className="pl-9 h-9 rounded-sm" placeholder="Search actor / record…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="audit-search" />
           </div>
           <Input className="h-9 rounded-sm w-44" placeholder="Filter resource" value={filter.resource} onChange={(e) => setFilter({ ...filter, resource: e.target.value })} data-testid="audit-filter-resource" />
           <select className="h-9 rounded-sm border border-input bg-background px-2 text-sm" value={filter.action} onChange={(e) => setFilter({ ...filter, action: e.target.value })} data-testid="audit-filter-action">
@@ -67,7 +48,7 @@ export default function AuditLogs() {
             <option value="reset">Reset</option>
             <option value="login">Login</option>
           </select>
-          <div className="ml-auto text-xs text-muted-foreground"><span className="text-foreground font-semibold">{filtered.length}</span> of {rows.length} events</div>
+          <div className="ml-auto text-xs text-muted-foreground"><span className="text-foreground font-semibold">{pagination.total.toLocaleString("en-IN")}</span> events</div>
         </div>
         <div className="overflow-x-auto">
           <Table>
@@ -98,6 +79,7 @@ export default function AuditLogs() {
             </TableBody>
           </Table>
         </div>
+        <div className="px-4 py-2 border-t border-border"><TablePager pagination={pagination} testidPrefix="audit" /></div>
       </div>
 
       <Dialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>

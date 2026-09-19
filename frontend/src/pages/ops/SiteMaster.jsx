@@ -23,6 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { MapPin, Search, RefreshCcw, Building2, ExternalLink, Pencil } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { lookupGet } from "@/lib/lookups";
 
 export default function SiteMaster() {
   const [sites, setSites] = useState([]);
@@ -41,8 +42,8 @@ export default function SiteMaster() {
     try {
       const [a, b, c] = await Promise.all([
         api.get("/sites"),
-        api.get("/clients"),
-        api.get("/projects"),
+        lookupGet("/clients"),
+        lookupGet("/projects"),
       ]);
       setSites(a.data);
       setClients(b.data);

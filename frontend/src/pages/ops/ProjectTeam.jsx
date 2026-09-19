@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Users, Pencil, RefreshCcw, Search } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { lookupGet } from "@/lib/lookups";
 
 export default function ProjectTeam() {
   const [projects, setProjects] = useState([]);
@@ -24,7 +25,7 @@ export default function ProjectTeam() {
 
   const load = async () => {
     try {
-      const r = await api.get("/projects");
+      const r = await lookupGet("/projects");
       setProjects(r.data);
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
   };

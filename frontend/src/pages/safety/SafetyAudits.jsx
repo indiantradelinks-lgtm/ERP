@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ClipboardCheck, Plus, RefreshCcw, X, Lock } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const AUDIT_TYPES = ["internal", "client", "third_party", "site", "contractor", "ppe", "scaffold", "work_permit"];
 const RISK_LEVELS = ["", "low", "medium", "high", "critical"];
@@ -37,7 +38,7 @@ export default function SafetyAudits() {
 
   const load = async () => {
     try {
-      const [a, b] = await Promise.all([api.get("/safety/audits"), api.get("/projects")]);
+      const [a, b] = await Promise.all([api.get("/safety/audits"), lookupGet("/projects")]);
       setRows(a.data || []); setProjects(b.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
   };

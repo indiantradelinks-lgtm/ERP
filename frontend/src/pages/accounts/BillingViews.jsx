@@ -16,6 +16,7 @@ import { Plus, RefreshCcw, CheckCircle2, AlertCircle, FileSpreadsheet, X, Paperc
 import FileUploader from "@/components/FileUploader";
 import { fmt } from "./AccountsViews";
 import { fmtDT, fmtD, fmtT } from "@/lib/datetime";
+import { lookupGet } from "@/lib/lookups";
 
 const INVOICE_TYPE_OPTS = [
   ["TAX", "Tax Invoice"], ["PROF", "Proforma Invoice"], ["RA", "RA Bill"],
@@ -474,8 +475,8 @@ export function ReceiptsView() {
 
   const load = () => api.get("/billing/receipts").then(r => setRows(r.data || []));
   const loadReceivable = () => api.get("/billing/invoices/receivable").then(r => setReceivable(r.data || [])).catch(() => {});
-  const loadClients = () => api.get("/clients").then(r => setClients(r.data || [])).catch(() => {});
-  const loadProjects = () => api.get("/projects").then(r => setProjects(r.data || [])).catch(() => {});
+  const loadClients = () => lookupGet("/clients").then(r => setClients(r.data || [])).catch(() => {});
+  const loadProjects = () => lookupGet("/projects").then(r => setProjects(r.data || [])).catch(() => {});
   useEffect(() => { load(); loadReceivable(); loadClients(); loadProjects(); }, []);
 
   /* ── Open form pre-filled from a specific invoice ── */
@@ -1232,8 +1233,8 @@ export function CollectionReportView() {
   const d = data || { rows: [], totals: {}, trend: [], by_client: [], modes: [] };
 
   useEffect(() => {
-    api.get("/clients").then(r => setClients(r.data || [])).catch(() => {});
-    api.get("/projects").then(r => setProjects(r.data || [])).catch(() => {});
+    lookupGet("/clients").then(r => setClients(r.data || [])).catch(() => {});
+    lookupGet("/projects").then(r => setProjects(r.data || [])).catch(() => {});
   }, []);
 
   const maxTrend = Math.max(1, ...(d.trend || []).map(t => t.total_adjusted || 0));

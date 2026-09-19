@@ -16,6 +16,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { RefreshCcw, Plus, ListTodo, AlertTriangle, Users, Boxes, ClipboardList, ShieldCheck, ShieldAlert, Receipt, Wallet, Activity } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const FACTORS = [
   { key: "manpower",          label: "Manpower",          icon: Users },
@@ -62,7 +63,7 @@ export default function InternalProjectReview() {
   const load = async () => {
     try {
       const [pj, kp, ai] = await Promise.all([
-        api.get("/projects"),
+        lookupGet("/projects"),
         api.get("/internal-reviews/dashboard"),
         api.get("/action-items/inbox?view=pending"),
       ]);

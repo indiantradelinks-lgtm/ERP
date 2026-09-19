@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ShieldCheck, Plus, Pencil, RefreshCcw, Trash2 } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const STATUSES = ["draft", "active", "closed"];
 const EMPTY = {
@@ -28,7 +29,7 @@ export default function SafetyPlanRegister() {
 
   const load = async () => {
     try {
-      const [a, b] = await Promise.all([api.get("/safety/plans"), api.get("/projects")]);
+      const [a, b] = await Promise.all([api.get("/safety/plans"), lookupGet("/projects")]);
       setRows(a.data || []); setProjects(b.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
   };

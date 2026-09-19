@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Truck, Plus, RefreshCcw } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const APPROVAL_TONE = {
   approved: "bg-emerald-100 text-emerald-800",
@@ -37,8 +38,8 @@ export default function VendorSafetyCompliance() {
     try {
       const [a, b, c] = await Promise.all([
         api.get("/safety/vendor-compliance"),
-        api.get("/vendors"),
-        api.get("/projects"),
+        lookupGet("/vendors"),
+        lookupGet("/projects"),
       ]);
       setRows(a.data || []); setVendors(b.data || []); setProjects(c.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }

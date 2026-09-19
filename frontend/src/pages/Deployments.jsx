@@ -8,6 +8,7 @@ import { LayoutGrid, XCircle, Upload, Download } from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { toneFor } from "@/lib/statusTone";
+import { lookupGet } from "@/lib/lookups";
 
 const DEPLOYMENT_STATUS_TONE = { active: "success", completed: "neutral", planned: "info", withdrawn: "danger" };
 
@@ -27,8 +28,8 @@ export default function Deployments() {
   const [importOpen, setImportOpen] = useState(false);
 
   useEffect(() => {
-    api.get("/employees").then((res) => setEmployees(res.data || [])).catch(() => {});
-    api.get("/projects").then((res) => setProjects(res.data || [])).catch(() => {});
+    lookupGet("/employees").then((res) => setEmployees(res.data || [])).catch(() => {});
+    lookupGet("/projects").then((res) => setProjects(res.data || [])).catch(() => {});
   }, []);
 
   const endDeployment = async (row) => {
@@ -102,7 +103,7 @@ export default function Deployments() {
         onDelete={r.remove}
         testidPrefix="deployments"
         exportResource="deployments"
-        canWrite={r.canWrite}
+        canWrite={r.canWrite} pagination={r.pagination}
         canDelete={r.canDelete}
         extraActions={r.canWrite ? (
           <Button variant="outline" size="sm" className="h-9 rounded-sm" onClick={() => setImportOpen(true)} data-testid="deployments-import-open">

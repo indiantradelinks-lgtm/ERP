@@ -68,7 +68,7 @@ export default function Safety() {
         onDelete={r.remove}
         testidPrefix="safety"
         exportResource={r.exportResource}
-        canWrite={r.canWrite}
+        canWrite={r.canWrite} pagination={r.pagination}
         canDelete={r.canDelete}
       />
       <Dialog open={open} onOpenChange={setOpen}>

@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProjectSelect } from "@/components/MasterSelect";
+import { lookupGet } from "@/lib/lookups";
 
 const TYPES = [
   { value: "material", label: "Material", Icon: Boxes },
@@ -64,7 +65,7 @@ export default function PreMobilization() {
   }, [filters]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
 
   const openNew = () => { setEditId(null); setForm({ ...blank(), project_id: filters.project_id }); setOpen(true); };
   const openEdit = (r) => {

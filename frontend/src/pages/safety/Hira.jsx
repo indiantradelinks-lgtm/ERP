@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertTriangle, Plus, Pencil, Send, RefreshCcw, RotateCcw, Trash2, X } from "lucide-react";
 import { fmtDT } from "@/lib/datetime";
+import { lookupGet } from "@/lib/lookups";
 
 const SERVICE_TYPES = ["scaffolding", "painting", "roof_sheeting", "rope_access", "manpower", "material_handling", "other"];
 const RISK_RATINGS = ["", "low", "medium", "high", "critical"];
@@ -52,7 +53,7 @@ export default function Hira() {
 
   const load = async () => {
     try {
-      const [a, b] = await Promise.all([api.get("/safety/hira"), api.get("/projects")]);
+      const [a, b] = await Promise.all([api.get("/safety/hira"), lookupGet("/projects")]);
       setRows(a.data || []); setProjects(b.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
   };

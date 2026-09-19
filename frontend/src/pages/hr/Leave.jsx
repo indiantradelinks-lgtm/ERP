@@ -23,6 +23,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { ProjectSelect } from "@/components/MasterSelect";
 import { EmployeeSearchSelect } from "@/components/EmployeeSearchSelect";
 import { toast } from "sonner";
+import { lookupGet } from "@/lib/lookups";
 
 const STATUS_TONE = {
   pending: "bg-amber-100 text-amber-900 border-amber-300",
@@ -68,7 +69,7 @@ export default function Leave() {
         const r = await api.get("/advances/eligible-employees");
         empList = r.data?.employees || [];
       } catch {
-        const r = await api.get("/employees");
+        const r = await lookupGet("/employees");
         empList = r.data || [];
       }
       setLeaveTypes(lt.data || []);

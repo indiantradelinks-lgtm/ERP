@@ -10,13 +10,14 @@ import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Activity, RefreshCcw, AlertTriangle, ClipboardCheck, ShieldAlert, Ruler, PlusSquare } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 export default function ExecutionDashboard() {
   const [projects, setProjects] = useState([]);
   const [projectId, setProjectId] = useState("");
   const [data, setData] = useState(null);
 
-  useEffect(() => { api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { if (projectId) load(); else setData(null); }, [projectId]);
 
   const load = async () => {

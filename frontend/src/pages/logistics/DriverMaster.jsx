@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { User2, Plus, RefreshCcw, Pencil, AlertTriangle } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const STATUSES = ["available", "assigned", "on_trip", "on_leave", "inactive"];
 const STATUS_TONE = {
@@ -39,7 +40,7 @@ export default function DriverMaster() {
   const load = async () => {
     try {
       const q = statusFilter ? `?status=${statusFilter}` : "";
-      const [a, b] = await Promise.all([api.get(`/logistics/drivers${q}`), api.get("/vendors")]);
+      const [a, b] = await Promise.all([api.get(`/logistics/drivers${q}`), lookupGet("/vendors")]);
       setRows(a.data || []); setVendors(b.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
   };

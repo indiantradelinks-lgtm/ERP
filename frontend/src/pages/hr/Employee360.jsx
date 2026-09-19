@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { api, apiErrorMessage, stripEmpty, API } from "@/lib/api";
 import { toast } from "sonner";
 import { fmtD } from "@/lib/datetime";
+import { lookupGet } from "@/lib/lookups";
 
 const LEVELS = ["beginner", "intermediate", "expert"];
 const EXP_TONE = {
@@ -64,7 +65,7 @@ export default function Employee360() {
 
   const loadEmps = async () => {
     try {
-      const r = await api.get("/employees");
+      const r = await lookupGet("/employees");
       const rows = r.data || [];
       setEmployees(rows);
       const empParam = searchParams.get("emp");

@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Eye, Plus, RefreshCcw, Ban, AlertTriangle } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const KINDS = [
   { v: "unsafe_act", label: "Unsafe Act" },
@@ -30,7 +31,7 @@ export default function SafetyObservationsRegister() {
 
   const load = async () => {
     try {
-      const [a, b, c] = await Promise.all([api.get("/safety/observations-v2"), api.get("/projects"), api.get("/safety/masters/observation-categories")]);
+      const [a, b, c] = await Promise.all([api.get("/safety/observations-v2"), lookupGet("/projects"), api.get("/safety/masters/observation-categories")]);
       setRows(a.data || []); setProjects(b.data || []); setCategories(c.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
   };

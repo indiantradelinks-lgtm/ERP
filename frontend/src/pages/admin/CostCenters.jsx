@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { lookupGet } from "@/lib/lookups";
 
 const inr = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
 
@@ -21,7 +22,7 @@ export default function CostCenters() {
   const [form, setForm] = useState({ project_id: "", category_id: "", code: "", name: "", budget: 0, active: true });
 
   useEffect(() => {
-    api.get("/projects").then((r) => setProjects(r.data || []))
+    lookupGet("/projects").then((r) => setProjects(r.data || []))
        .catch((e) => toast.error(e.response?.data?.detail || "Load projects failed"));
     api.get("/procurement/master/categories?active_only=true").then((r) => setCategories(r.data || []))
        .catch(() => { });

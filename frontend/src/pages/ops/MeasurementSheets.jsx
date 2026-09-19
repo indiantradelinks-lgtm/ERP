@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Ruler, Plus, Pencil, Trash2, RefreshCcw, ArrowLeft, Send, CheckCircle2, ShieldCheck, XCircle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { lookupGet } from "@/lib/lookups";
 
 const MS_STATUS = ["draft", "submitted", "checked", "approved", "rejected"];
 const CERT = ["pending", "certified", "partial", "rejected", "held"];
@@ -45,7 +46,7 @@ export default function MeasurementSheets() {
   const canApprove = ["super_admin", "director", "general_manager", "dept_head", "project_manager"].includes(user?.role);
   const canEdit = !["sales_executive", "store_incharge"].includes(user?.role);
 
-  useEffect(() => { api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { load(); }, [filt]);
 
   const load = async () => {

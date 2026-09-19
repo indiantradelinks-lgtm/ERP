@@ -20,6 +20,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Wallet, Calculator, RefreshCcw, AlertTriangle, CheckCircle2, FileWarning } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const SEV_TONE = {
   critical: "bg-rose-100 text-rose-700",
@@ -44,7 +45,7 @@ export default function BudgetCommitmentCenter() {
   useEffect(() => {
     (async () => {
       try {
-        const { data } = await api.get("/projects");
+        const { data } = await lookupGet("/projects");
         const rows = Array.isArray(data) ? data : (data?.data || []);
         setProjects(rows);
       } catch { /* ignore */ }

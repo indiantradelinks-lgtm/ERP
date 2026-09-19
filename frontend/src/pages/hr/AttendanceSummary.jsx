@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { lookupGet } from "@/lib/lookups";
 
 const monthIso = () => new Date().toISOString().slice(0, 7);
 const CODES = ["P", "A", "HD", "L", "WO", "H", "OD"];
@@ -114,7 +115,7 @@ export default function AttendanceSummary() {
   const [downloading, setDownloading] = useState("");
 
   useEffect(() => {
-    api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {});
+    lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {});
   }, []);
 
   const load = useCallback(async () => {

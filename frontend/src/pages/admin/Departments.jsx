@@ -28,7 +28,7 @@ export default function Departments() {
       onUpdate={r.update}
       onDelete={r.remove}
       testidPrefix="departments"
-      canWrite={r.canWrite}
+      canWrite={r.canWrite} pagination={r.pagination}
       canDelete={r.canDelete}
     />
   );

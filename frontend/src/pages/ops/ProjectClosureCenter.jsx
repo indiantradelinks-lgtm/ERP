@@ -22,13 +22,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ClipboardCheck, DollarSign, TrendingUp, Award, FileSpreadsheet, History, CheckCircle2, RefreshCcw, Download, Send, FileCheck2, AlertTriangle, Lock } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 export default function ProjectClosureCenter() {
   const [projects, setProjects] = useState([]);
   const [projectId, setProjectId] = useState("");
   const [tab, setTab] = useState("checklist");
 
-  useEffect(() => { api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
 
   return (
     <div className="p-6 space-y-4" data-testid="page-closure-center">

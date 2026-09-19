@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/DataTableShell";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { lookupGet } from "@/lib/lookups";
 
 const SITE_ROLE_OPTIONS = ["site_engineer", "supervisor", "safety_officer", "store_incharge", "logistics_coordinator", "helper"];
 const SHIFT_OPTIONS = ["day", "night", "general", "rotational"];
@@ -35,7 +36,7 @@ export default function AllocationBoard() {
     try {
       const [idleR, projR, sh] = await Promise.all([
         api.get("/allocation/idle-employees"),
-        api.get("/projects"),
+        lookupGet("/projects"),
         api.get("/allocation/shortages"),
       ]);
       setIdle(idleR.data || []);

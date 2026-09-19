@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, RefreshCcw, CheckCircle2, XCircle } from "lucide-react";
 import { ProjectSelect } from "@/components/MasterSelect";
+import { lookupGet } from "@/lib/lookups";
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -73,7 +74,7 @@ export function PPEIssueView() {
       const [r, i, e] = await Promise.all([
         api.get("/inv4/ppe-issues"),
         api.get("/inventory"),
-        api.get("/employees").catch(() => ({ data: [] })),
+        lookupGet("/employees").catch(() => ({ data: [] })),
       ]);
       setRows(r.data); setItems(i.data); setEmployees(e.data);
     } catch (er) { toast.error(er.response?.data?.detail || "Load failed"); }

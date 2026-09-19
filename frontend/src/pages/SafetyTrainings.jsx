@@ -20,5 +20,5 @@ export default function SafetyTrainings() {
     { key: "project", label: "Project Code" },
     { key: "topics", label: "Topics Covered", type: "textarea", full: true },
   ];
-  return <DataTableShell title="Safety Trainings" description="Mandatory and refresher training sessions for site staff." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="safety-trainings" exportResource="safety-trainings" canWrite={r.canWrite} canDelete={r.canDelete} attachmentsParentType="safety" />;
+  return <DataTableShell title="Safety Trainings" description="Mandatory and refresher training sessions for site staff." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="safety-trainings" exportResource="safety-trainings" canWrite={r.canWrite} pagination={r.pagination} canDelete={r.canDelete} attachmentsParentType="safety" />;
 }

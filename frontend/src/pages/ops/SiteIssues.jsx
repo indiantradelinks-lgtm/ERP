@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertTriangle, Plus, Pencil, Trash2, RefreshCcw, CheckCircle2, ArrowUpCircle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { lookupGet } from "@/lib/lookups";
 
 const CATEGORIES = ["manpower", "material", "safety", "client", "permit", "logistics", "equipment", "weather", "technical", "billing", "other"];
 const IMPACTS = ["low", "medium", "high", "critical"];
@@ -35,7 +36,7 @@ export default function SiteIssues() {
   const { user } = useAuth() || {};
   const canEdit = !["sales_executive", "store_incharge"].includes(user?.role);
 
-  useEffect(() => { api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { load(); }, [filt]);
 
   const load = async () => {

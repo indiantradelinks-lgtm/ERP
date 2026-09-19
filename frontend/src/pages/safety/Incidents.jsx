@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertTriangle, Plus, RefreshCcw, Search, Ban, FileSearch, Filter, Lock } from "lucide-react";
 import { fmtDT } from "@/lib/datetime";
+import { lookupGet } from "@/lib/lookups";
 
 const TYPES = [
   { v: "near_miss", label: "Near Miss", critical: false },
@@ -46,7 +47,7 @@ export default function Incidents() {
   const load = async () => {
     try {
       const q = typeFilter ? `?incident_type=${typeFilter}` : "";
-      const [a, b] = await Promise.all([api.get(`/safety/incidents${q}`), api.get("/projects")]);
+      const [a, b] = await Promise.all([api.get(`/safety/incidents${q}`), lookupGet("/projects")]);
       setRows(a.data || []); setProjects(b.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
   };

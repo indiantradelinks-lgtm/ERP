@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Wrench, Plus, RefreshCcw, Ban, AlertOctagon, Filter } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const STATUS_TONE = { open: "bg-slate-100 text-slate-700", in_progress: "bg-amber-100 text-amber-800", closed: "bg-emerald-100 text-emerald-800", overdue: "bg-red-100 text-red-700" };
 const SOURCES = ["inspection", "observation", "incident", "audit", "client_feedback"];
@@ -27,7 +28,7 @@ export default function Capa() {
   const load = async () => {
     try {
       const q = statusFilter ? `?status=${statusFilter}` : "";
-      const [a, b] = await Promise.all([api.get(`/safety/capa${q}`), api.get("/projects")]);
+      const [a, b] = await Promise.all([api.get(`/safety/capa${q}`), lookupGet("/projects")]);
       setRows(a.data || []); setProjects(b.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
   };

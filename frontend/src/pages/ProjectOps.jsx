@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogD
 import { StatusBadge } from "@/components/DataTableShell";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { lookupGet } from "@/lib/lookups";
 
 const inr = (n) => "₹ " + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
 
@@ -112,7 +113,7 @@ function ProjectSnapshot() {
   const [delayForm, setDelayForm] = useState({ hours: 1, category: "weather", reason: "" });
   const [extraForm, setExtraForm] = useState({ description: "", estimated_value: 0, client_approved: false });
 
-  useEffect(() => { api.get("/projects").then((r) => setProjects(r.data || [])); }, []);
+  useEffect(() => { lookupGet("/projects").then((r) => setProjects(r.data || [])); }, []);
   const load = async (code) => {
     setSnap(null); setProfit(null);
     try {

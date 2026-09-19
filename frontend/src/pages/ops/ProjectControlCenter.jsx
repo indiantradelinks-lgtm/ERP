@@ -19,6 +19,7 @@ import {
   Layers, RefreshCcw, AlertTriangle, BellRing, Users, Package,
   ShieldAlert, Truck, Briefcase, DollarSign, Wallet, ChevronRight, CheckCircle2,
 } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const TRANSITIONS = ["active", "on_hold", "completed", "closure_pending", "closed"];
 
@@ -41,7 +42,7 @@ export default function ProjectControlCenter() {
     try {
       const [a, b] = await Promise.all([
         api.get("/proj-phase4/control-center"),
-        api.get("/projects"),
+        lookupGet("/projects"),
       ]);
       setPortfolio(a.data); setProjects(b.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }

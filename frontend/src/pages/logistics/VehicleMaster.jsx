@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Truck, Plus, RefreshCcw, Pencil, AlertTriangle } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const VEHICLE_TYPES = ["truck", "trailer", "pickup", "crane", "hydra", "forklift", "tempo", "car", "bus", "two_wheeler", "other"];
 const OWNERSHIP = ["own", "hired", "vendor"];
@@ -49,7 +50,7 @@ export default function VehicleMaster() {
       const [a, b, c] = await Promise.all([
         api.get("/logistics/vehicles"),
         api.get("/logistics/drivers"),
-        api.get("/vendors"),
+        lookupGet("/vendors"),
       ]);
       setRows(a.data || []); setDrivers(b.data || []); setVendors(c.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }

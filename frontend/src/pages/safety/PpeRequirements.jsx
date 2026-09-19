@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Hammer, Plus, Pencil, Trash2, RefreshCcw } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const EMPTY = { project_id: "", project_code: "", service_type: "", activity: "", permit_type_id: "", hazard_category_id: "", required_ppe_ids: [], notes: "", active: true };
 
@@ -26,7 +27,7 @@ export default function PpeRequirements() {
     try {
       const [a, b, c, d, e] = await Promise.all([
         api.get("/safety/ppe-requirements"),
-        api.get("/projects"),
+        lookupGet("/projects"),
         api.get("/safety/masters/work-permit-types"),
         api.get("/safety/masters/ppe-categories"),
         api.get("/safety/masters/hazard-categories"),

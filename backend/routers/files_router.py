@@ -9,6 +9,7 @@ import jwt as pyjwt
 from core import db, get_current_user, now_iso, new_id, JWT_SECRET, JWT_ALGORITHM, logger
 import hashlib
 from storage import put_object, get_object, MAX_BYTES
+from pagination import combine, search_clause, paged_find
 
 router = APIRouter(tags=["files"])
 
@@ -113,7 +114,8 @@ async def upload_file(
 
 
 @router.get("/files")
-async def list_files(parent_type: str = "", parent_id: str = "", folder: str = "", user: dict = Depends(get_current_user)):
+async def list_files(parent_type: str = "", parent_id: str = "", folder: str = "", search: str = "",
+                     page: int = 0, page_size: int = 50, user: dict = Depends(get_current_user)):
     q: Dict[str, Any] = {"is_deleted": False}
     if parent_type:
         q["parent_type"] = parent_type
@@ -121,6 +123,9 @@ async def list_files(parent_type: str = "", parent_id: str = "", folder: str = "
         q["parent_id"] = parent_id
     if folder:
         q["folder"] = folder
+    q = combine(q, search_clause(search, ["title", "original_filename", "uploaded_by", "category"]))
+    if page >= 1:
+        return await paged_find("files", q, page, page_size, [("created_at", -1)])
     rows = await db.files.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
     return rows
 

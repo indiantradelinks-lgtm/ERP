@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ClipboardList, Plus, Trash2, RefreshCcw, CheckCircle2, AlertTriangle, Users, Target, Save } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { lookupGet } from "@/lib/lookups";
 
 const EMPTY_MILESTONE   = { name: "", target_date: "", status: "pending", remarks: "" };
 const EMPTY_RISK        = { description: "", severity: "medium", likelihood: "medium", mitigation: "", owner: "" };
@@ -42,7 +43,7 @@ export default function ProjectPlanning() {
   const canEdit    = !["sales_executive", "store_incharge"].includes(user?.role);
 
   useEffect(() => {
-    api.get("/projects").then(r => setProjects(r.data || [])).catch(() => {});
+    lookupGet("/projects").then(r => setProjects(r.data || [])).catch(() => {});
   }, []);
 
   const loadPlan = async (pid) => {

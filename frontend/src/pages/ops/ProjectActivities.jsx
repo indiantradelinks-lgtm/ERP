@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { CalendarRange, Plus, Pencil, Trash2, RefreshCcw } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { lookupGet } from "@/lib/lookups";
 
 const ACT_STATUS = ["not_started", "in_progress", "completed", "on_hold", "cancelled", "delayed"];
 const EMPTY = {
@@ -35,7 +36,7 @@ export default function ProjectActivities() {
   const { user } = useAuth() || {};
   const canEdit = !["sales_executive", "store_incharge"].includes(user?.role);
 
-  useEffect(() => { api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
   useEffect(() => {
     if (!projectId) { setActivities([]); setWbsNodes([]); return; }
     load();

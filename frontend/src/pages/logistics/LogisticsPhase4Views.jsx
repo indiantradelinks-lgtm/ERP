@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Landmark, Receipt, Building2, Truck, DollarSign, RefreshCcw, CheckCircle2 } from "lucide-react";
 import { fmtDT } from "@/lib/datetime";
+import { lookupGet } from "@/lib/lookups";
 
 const inr = (n) => `₹${Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 
@@ -251,7 +252,7 @@ export function ProjectWiseCost() {
   const [data, setData] = useState(null);
 
   useEffect(() => {
-    api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {});
+    lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {});
   }, []);
 
   const load = async () => {

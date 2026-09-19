@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Truck, Plus, RefreshCcw, Pencil, ExternalLink } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const STATUSES = ["draft", "pending_approval", "approved", "allocated", "in_transit", "delivered", "closed", "cancelled", "rejected"];
 const STATUS_TONE = {
@@ -60,7 +61,7 @@ export default function DispatchRequests() {
       const [a, b, c, d, e] = await Promise.all([
         api.get(`/logistics/dispatch-requests${q}`),
         api.get("/logistics/dispatch-types"),
-        api.get("/projects"),
+        lookupGet("/projects"),
         api.get("/logistics/loading-points"),
         api.get("/logistics/routes"),
       ]);

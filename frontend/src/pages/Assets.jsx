@@ -40,5 +40,5 @@ export default function Assets() {
     { key: "depreciation_rate", label: "Depreciation %", type: "number" },
     { key: "status", label: "Status", type: "select", options: ["available", "in_use", "maintenance", "disposed"] },
   ];
-  return <DataTableShell title="Asset Management" description="Equipment register, allocation, maintenance and depreciation. Categories come from the unified Item Category Master." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="assets" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} attachmentsParentType="assets" />;
+  return <DataTableShell title="Asset Management" description="Equipment register, allocation, maintenance and depreciation. Categories come from the unified Item Category Master." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="assets" exportResource={r.exportResource} canWrite={r.canWrite} pagination={r.pagination} canDelete={r.canDelete} attachmentsParentType="assets" />;
 }

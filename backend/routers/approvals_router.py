@@ -2,10 +2,11 @@
 import asyncio
 from typing import Optional, List, Dict, Any
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 
 from core import db, get_current_user, now_iso
+from pagination import parse_keys, search_clause, extra_filters, combine, paged_find, sort_spec
 from approval_engine import build_chain, apply_action, apply_resubmit, APPROVAL_CHAINS
 
 router = APIRouter(tags=["approvals"])
@@ -103,14 +104,21 @@ def _approval_visibility_filter(user: dict) -> Optional[dict]:
 
 # ─── Department-scoped GET /approvals (overrides crud_router generic) ──────
 @router.get("/approvals")
-async def list_approvals_scoped(user: dict = Depends(get_current_user)):
+async def list_approvals_scoped(request: Request, search: str = "", page: int = 0, page_size: int = 50,
+                                sort_by: str = "", sort_dir: str = "desc", search_keys: str = "",
+                                user: dict = Depends(get_current_user)):
     """Return approvals the user can see. Department-scoped:
       • Global roles (super_admin/director/GM/dept_head) → all approvals
       • Other roles → only types in their department PLUS items they are
         a chain approver for OR originated.
+    With `page>=1` returns {rows,total,page,page_size,pages}; otherwise legacy array.
     """
     filt = _approval_visibility_filter(user) or {}
-    rows = await db.approvals.find(filt, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    keys = parse_keys(search_keys) or ["title", "type", "reference", "requested_by", "status"]
+    q = combine(filt, search_clause(search, keys), *extra_filters(request))
+    if page >= 1:
+        return await paged_find("approvals", q, page, page_size, sort_spec(sort_by, sort_dir))
+    rows = await db.approvals.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return rows
 
 

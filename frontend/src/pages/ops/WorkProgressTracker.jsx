@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Activity, RefreshCcw, Pencil, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { lookupGet } from "@/lib/lookups";
 
 const STATUSES = ["on_track", "delayed", "ahead", "on_hold"];
 
@@ -31,7 +32,7 @@ export default function WorkProgressTracker() {
   const { user } = useAuth() || {};
   const canEdit = !["sales_executive", "store_incharge"].includes(user?.role);
 
-  useEffect(() => { api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { if (projectId) load(); else setRows([]); }, [projectId]);
 
   const load = async () => {

@@ -16,6 +16,7 @@ import SendEmailDialog from "@/components/SendEmailDialog";
 import RfqBulkEmailDialog from "@/components/RfqBulkEmailDialog";
 import EmailHistoryDialog from "@/components/EmailHistoryDialog";
 import VendorTagDialog from "@/components/VendorTagDialog";
+import { lookupGet } from "@/lib/lookups";
 
 const RFQ_STATUS_TONE = {
   sent: "info", response_pending: "warning", under_evaluation: "info",
@@ -51,7 +52,7 @@ export default function Rfqs() {
       const [r, p, v] = await Promise.all([
         api.get("/procurement/rfqs"),
         api.get("/procurement/prs"),
-        api.get("/vendors"),
+        lookupGet("/vendors"),
       ]);
       setRows(r.data || []);
       setPrs((p.data || []).filter((x) => RFQ_PR_STATUSES.includes(x.status)));

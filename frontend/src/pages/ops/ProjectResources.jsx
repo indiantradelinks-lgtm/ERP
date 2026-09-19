@@ -26,6 +26,7 @@ import ApprovalDocsGate, { validateApprovalDocs, emptyApprovalDocs } from "@/com
 import { BulkUploadDialog, QuickQtyDialog } from "./ResourcePlanBulkDialogs";
 import { useAuth } from "@/contexts/AuthContext";
 import { fmtD } from "@/lib/datetime";
+import { lookupGet } from "@/lib/lookups";
 
 const EMPTY = {
   resource_type: "manpower",
@@ -92,7 +93,7 @@ export default function ProjectResources() {
   const canEdit = !["sales_executive", "store_incharge"].includes(user?.role);
 
   useEffect(() => {
-    api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {});
+    lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {});
     // Designations via projects-scoped endpoint (active only) — /hr1/designations needs employees.read
     // which PM-adjacent roles (coordinator, site engineer, supervisor) don't have.
     api.get("/ops/resource-requests/meta/designations")
@@ -104,7 +105,7 @@ export default function ProjectResources() {
       });
     api.get("/procurement/master/items").then((r) => setItems(r.data || [])).catch(() => setItems([]));
     api.get("/procurement/master/categories", { params: { active_only: true } }).then((r) => setCategories(r.data || [])).catch(() => setCategories([]));
-    api.get("/vendors").then((r) => setVendors(r.data || [])).catch(() => setVendors([]));
+    lookupGet("/vendors").then((r) => setVendors(r.data || [])).catch(() => setVendors([]));
   }, []);
 
   useEffect(() => {

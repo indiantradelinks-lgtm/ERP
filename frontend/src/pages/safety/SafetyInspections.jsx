@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ClipboardList, Plus, Pencil, RefreshCcw, X, Ban } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const INSPECTION_TYPES = ["daily_site", "weekly", "scaffold", "ppe", "work_at_height", "rope_access", "electrical", "fire_safety", "tools_tackles", "vehicle", "housekeeping", "client_audit"];
 const RISK = ["", "low", "medium", "high", "critical"];
@@ -37,7 +38,7 @@ export default function SafetyInspections() {
 
   const load = async () => {
     try {
-      const [a, b] = await Promise.all([api.get("/safety/inspections"), api.get("/projects")]);
+      const [a, b] = await Promise.all([api.get("/safety/inspections"), lookupGet("/projects")]);
       setRows(a.data || []); setProjects(b.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
   };

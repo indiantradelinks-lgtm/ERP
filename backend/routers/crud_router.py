@@ -12,6 +12,34 @@ from sequences import next_sequence
 from scope import project_filter, department_filter, projects_collection_filter
 from india_compliance import validate_employee_compliance
 from data_masking import mask_for, mask_list, SENSITIVE_FIELDS, PRIVILEGED_ROLES
+from pagination import parse_keys, search_clause, extra_filters, projection, paged_find, sort_spec
+
+# Server-side search fields per collection when the client doesn't send `search_keys`.
+DEFAULT_SEARCH_KEYS = {
+    "employees": ["name", "employee_name", "employee_id", "email", "phone", "department", "designation", "current_project_code"],
+    "projects": ["name", "code", "client", "client_name", "location", "status"],
+    "inventory": ["name", "code", "category", "location", "status"],
+    "purchase_orders": ["po_number", "vendor", "vendor_name", "project", "status", "pr_number"],
+    "quotations": ["quote_no", "client", "client_name", "title", "status", "enquiry_no"],
+    "safety_reports": ["incident_no", "report_id", "type", "project", "location", "status", "description"],
+    "assets": ["name", "code", "category", "status", "location"],
+    "payroll": ["employee", "employee_name", "employee_id", "month", "status"],
+    "vehicles": ["reg_no", "name", "driver", "type", "status"],
+    "documents": ["title", "name", "category", "number"],
+    "approvals": ["title", "type", "reference", "requested_by", "status"],
+    "attendance": ["employee_name", "employee_id", "date", "status", "project_code"],
+    "departments": ["name", "code"],
+    "ppe_issuance": ["employee", "employee_name", "item", "ppe_item"],
+    "ptws": ["ptw_no", "type", "project", "location", "status"],
+    "safety_trainings": ["training_no", "topic", "trainer", "project"],
+    "toolbox_talks": ["talk_no", "topic", "project", "conducted_by"],
+    "recruitment_requests": ["req_no", "position", "department", "project", "status"],
+    "candidates": ["candidate_no", "name", "position", "status", "phone", "email"],
+    "deployments": ["deployment_no", "employee", "project", "site_role", "status"],
+    "accommodations": ["accom_no", "name", "location", "project"],
+    "overtime": ["ot_no", "employee", "employee_name", "project", "status"],
+    "vendor_evaluations": ["vendor_name", "vendor", "period"],
+}
 
 
 # Auto-numbering map: collection → (prefix, field_name on the doc).
@@ -144,45 +172,40 @@ def make_crud(resource: str, collection: str, perm_key: str | None = None) -> No
                                          f"(Emp ID {dup.get('employee_id') or dup.get('emp_code') or '—'})")
 
     @router.get(f"/{resource}")
-    async def list_items(search: str = "", page: int = 0, page_size: int = 50, master: str = "",
+    async def list_items(request: Request, search: str = "", page: int = 0, page_size: int = 50, master: str = "",
+                         sort_by: str = "", sort_dir: str = "desc", search_keys: str = "", fields: str = "",
                          user: dict = Depends(require_permission(perm, "read"))):
         q = await _list_filter(collection, user)
         extra = []
         if search.strip():
-            rx = {"$regex": _re_mod.escape(search.strip()), "$options": "i"}
-            keys = (["name", "employee_name", "employee_id", "email", "phone", "department", "designation", "current_project_code"]
-                    if collection == "employees" else ["name", "code", "email", "phone"])
-            extra.append({"$or": [{k: rx} for k in keys]})
+            keys = parse_keys(search_keys) or DEFAULT_SEARCH_KEYS.get(collection, ["name", "code", "email", "phone"])
+            extra.append(search_clause(search, keys))
         if collection == "employees" and master:
             extra.append({"$or": [{"master_category": "employee"}, {"master_category": None},
                                   {"master_category": {"$exists": False}}]}
                          if master == "employee" else {"master_category": master})
+        extra.extend(extra_filters(request))
         if extra:
             q = {"$and": [q, *extra]} if q else ({"$and": extra} if len(extra) > 1 else extra[0])
+        proj = projection(fields)
         if page >= 1:
-            page_size = max(1, min(int(page_size or 50), 200))
-            total = await db[collection].count_documents(q)
-            try:
-                rows = await db[collection].find(q, {"_id": 0}).sort("created_at", -1)\
-                    .allow_disk_use(True).skip((page - 1) * page_size).limit(page_size).to_list(page_size)
-            except Exception:
-                rows = await db[collection].find(q, {"_id": 0})\
-                    .skip((page - 1) * page_size).limit(page_size).to_list(page_size)
+            result = await paged_find(collection, q, page, page_size, sort_spec(sort_by, sort_dir), proj)
+            rows = result["rows"]
             if collection == "employees":
                 for r in rows:
                     if not r.get("name") and r.get("employee_name"):
                         r["name"] = r["employee_name"]
             if collection == "quotations":
                 await attach_user_names(rows)
-            return {"rows": mask_list(rows, collection, user), "total": total,
-                    "page": page, "page_size": page_size}
+            result["rows"] = mask_list(rows, collection, user)
+            return result
         try:
-            rows = await db[collection].find(q, {"_id": 0}).sort("created_at", -1)\
+            rows = await db[collection].find(q, proj).sort(sort_spec(sort_by, sort_dir))\
                 .allow_disk_use(True).to_list(5000)
         except Exception:
             # Large collections without a created_at index can exceed Mongo's
             # in-memory sort limit — never blank the screen, return unsorted.
-            rows = await db[collection].find(q, {"_id": 0}).to_list(5000)
+            rows = await db[collection].find(q, proj).to_list(5000)
         if collection == "employees":
             for r in rows:
                 if not r.get("name") and r.get("employee_name"):

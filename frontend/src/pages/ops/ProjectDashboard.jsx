@@ -16,6 +16,7 @@ import {
   Zap, UserX, MapPinOff, ShieldAlert, Users, Package, ClipboardCheck,
   IndianRupee, FolderClosed, Hourglass, FileText, TrendingUp, BarChart3, RefreshCcw,
 } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const CARDS = [
   { key: "total_projects",                       title: "Total Projects",                tone: "blue",    Icon: LayoutDashboard },
@@ -58,7 +59,7 @@ export default function ProjectDashboard() {
     try {
       const [a, b] = await Promise.all([
         api.get("/proj-masters/dashboard-kpis"),
-        api.get("/projects"),
+        lookupGet("/projects"),
       ]);
       setKpis(a.data);
       setProjects(b.data);

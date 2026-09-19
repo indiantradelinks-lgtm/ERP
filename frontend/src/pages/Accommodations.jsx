@@ -20,5 +20,5 @@ export default function Accommodations() {
     { key: "project", label: "Linked Project" },
     { key: "rent_per_month", label: "Rent / Month (INR)", type: "number" },
   ];
-  return <DataTableShell title="Accommodations" description="Room / camp allocation, capacity and occupancy." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="accommodations" exportResource="accommodations" canWrite={r.canWrite} canDelete={r.canDelete} />;
+  return <DataTableShell title="Accommodations" description="Room / camp allocation, capacity and occupancy." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="accommodations" exportResource="accommodations" canWrite={r.canWrite} pagination={r.pagination} canDelete={r.canDelete} />;
 }

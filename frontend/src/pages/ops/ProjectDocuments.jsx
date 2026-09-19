@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { FileText, Upload, RefreshCcw, Download, Search } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { fmtDT } from "@/lib/datetime";
+import { lookupGet } from "@/lib/lookups";
 
 export default function ProjectDocuments() {
   const [projects, setProjects] = useState([]);
@@ -22,7 +23,7 @@ export default function ProjectDocuments() {
   const canWrite = !["sales_executive", "store_incharge", "purchase_officer"].includes(user?.role);
 
   useEffect(() => {
-    api.get("/projects").then((r) => setProjects(r.data)).catch(() => {});
+    lookupGet("/projects").then((r) => setProjects(r.data)).catch(() => {});
   }, []);
   const loadDocs = async (pid) => {
     if (!pid) { setDocs([]); return; }

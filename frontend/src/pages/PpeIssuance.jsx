@@ -22,5 +22,5 @@ export default function PpeIssuance() {
     { key: "issued_by", label: "Issued By" },
     { key: "remarks", label: "Remarks", type: "textarea", full: true },
   ];
-  return <DataTableShell title="PPE Issuance Register" description="Track personal protective equipment issued to each employee with expiry alerts." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="ppe" exportResource="ppe-issuance" canWrite={r.canWrite} canDelete={r.canDelete} attachmentsParentType="safety" />;
+  return <DataTableShell title="PPE Issuance Register" description="Track personal protective equipment issued to each employee with expiry alerts." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="ppe" exportResource="ppe-issuance" canWrite={r.canWrite} pagination={r.pagination} canDelete={r.canDelete} attachmentsParentType="safety" />;
 }

@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { MessageSquare, Plus, Pencil, Trash2, RefreshCcw } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { lookupGet } from "@/lib/lookups";
 
 const MODES = ["verbal", "written"];
 const STATUSES = ["open", "in_progress", "actioned", "closed"];
@@ -27,7 +28,7 @@ export default function ClientInstructions() {
   const { user } = useAuth() || {};
   const canEdit = !["sales_executive", "store_incharge"].includes(user?.role);
 
-  useEffect(() => { api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { load(); }, [filt]);
   const load = async () => {
     try { const { data } = await api.get("/proj-phase3/client-instructions", { params: { project_id: filt.project_id || undefined, status: filt.status || undefined } }); setRows(data || []); }

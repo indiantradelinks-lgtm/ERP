@@ -268,11 +268,16 @@ async def run_push_queue(limit: int = 25) -> dict:
 
 
 @router.get("/queue")
-async def list_queue(status: str = "", limit: int = 100, user: dict = Depends(get_current_user)):
+async def list_queue(status: str = "", limit: int = 100, page: int = 0, page_size: int = 50,
+                     user: dict = Depends(get_current_user)):
     _require_admin(user)
     q: dict = {}
     if status:
         q["status"] = status
+    if page >= 1:
+        from pagination import paged_find
+        return await paged_find("onedrive_queue", q, page, page_size, [("created_at", -1)])
+    limit = max(1, min(limit, 500))
     rows = await db.onedrive_queue.find(q, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
     return rows
 

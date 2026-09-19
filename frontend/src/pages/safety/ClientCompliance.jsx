@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { CheckCircle2, Plus, RefreshCcw, Pencil } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const REQ_TYPES = [
   "safety_document", "training", "ppe", "permit", "inspection",
@@ -38,7 +39,7 @@ export default function ClientCompliance() {
 
   const load = async () => {
     try {
-      const [a, b] = await Promise.all([api.get("/safety/client-compliance"), api.get("/projects")]);
+      const [a, b] = await Promise.all([api.get("/safety/client-compliance"), lookupGet("/projects")]);
       setRows(a.data || []); setProjects(b.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
   };

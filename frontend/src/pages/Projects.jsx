@@ -127,5 +127,5 @@ export default function Projects() {
     { key: "scope_summary", label: "Scope Summary", type: "textarea", full: true },
     { key: "remarks", label: "Remarks", type: "textarea", full: true },
   ];
-  return <DataTableShell title="Projects" description="Active sites, scopes, budgets and progress." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="projects" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} attachmentsParentType="projects" />;
+  return <DataTableShell title="Projects" description="Active sites, scopes, budgets and progress." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="projects" exportResource={r.exportResource} canWrite={r.canWrite} pagination={r.pagination} canDelete={r.canDelete} attachmentsParentType="projects" />;
 }

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { ShieldCheck, RefreshCcw } from "lucide-react";
 import { fmtDT } from "@/lib/datetime";
+import { lookupGet } from "@/lib/lookups";
 
 export default function PpeCompliance() {
   const [projects, setProjects] = useState([]);
@@ -16,7 +17,7 @@ export default function PpeCompliance() {
   const [workerId, setWorkerId] = useState("");
   const [result, setResult] = useState(null);
 
-  useEffect(() => { api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
 
   const compute = async () => {
     if (!projectId) { toast.error("Pick a project"); return; }

@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { PlusSquare, Plus, Pencil, Trash2, RefreshCcw, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { lookupGet } from "@/lib/lookups";
 
 const APPROVAL = ["pending", "approved", "rejected"];
 const CLIENT_APPROVAL = ["pending", "written", "verbal", "rejected"];
@@ -29,7 +30,7 @@ export default function ExtraWorks() {
   const canApprove = ["super_admin", "director", "general_manager", "dept_head", "project_manager"].includes(user?.role);
   const canEdit = !["sales_executive", "store_incharge"].includes(user?.role);
 
-  useEffect(() => { api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { load(); }, [filt]);
   useEffect(() => {
     if (filt.project_id) api.get("/proj-phase3/client-instructions", { params: { project_id: filt.project_id } }).then((r) => setInstructions(r.data || [])).catch(() => {});

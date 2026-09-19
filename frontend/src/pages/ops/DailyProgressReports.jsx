@@ -23,6 +23,7 @@ import {
   Send, CheckCircle2, XCircle, RotateCcw, Paperclip, Upload, Download,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { lookupGet } from "@/lib/lookups";
 
 const STATUSES = ["draft", "submitted", "approved", "rejected", "revised"];
 const EMPTY_HEADER = {
@@ -67,7 +68,7 @@ export default function DailyProgressReports() {
           params: { project_id: projectFilter || undefined, status: statusFilter || undefined,
                     from_date: fromDate || undefined, to_date: toDate || undefined },
         }),
-        api.get("/projects"),
+        lookupGet("/projects"),
       ]);
       setRows(a.data || []);
       setProjects(b.data || []);

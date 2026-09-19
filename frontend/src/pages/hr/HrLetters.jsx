@@ -22,6 +22,7 @@ import { api, API, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import SendEmailDialog from "@/components/SendEmailDialog";
 import { fmtD } from "@/lib/datetime";
+import { lookupGet } from "@/lib/lookups";
 
 const KINDS = [
   { value: "offer", label: "Offer Letter" },
@@ -60,7 +61,7 @@ export default function HrLetters() {
     try {
       const [t, e, l, p] = await Promise.all([
         api.get("/hr/letter-templates"),
-        api.get("/employees"),
+        lookupGet("/employees"),
         api.get("/hr/letters"),
         api.get("/hr/letters/placeholders"),
       ]);

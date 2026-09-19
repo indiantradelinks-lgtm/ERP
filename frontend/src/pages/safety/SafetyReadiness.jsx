@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ShieldPlus, RefreshCcw, Send } from "lucide-react";
 import { fmtDT } from "@/lib/datetime";
+import { lookupGet } from "@/lib/lookups";
 
 const CLASS_TONE = {
   ready: "bg-emerald-100 text-emerald-900 border-emerald-400",
@@ -29,7 +30,7 @@ export default function SafetyReadiness() {
   const [overrideFor, setOverrideFor] = useState(null);
   const [overrideForm, setOverrideForm] = useState({ reason: "", valid_until: "" });
 
-  useEffect(() => { api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
 
   const compute = async () => {
     if (!projectId) { toast.error("Pick a project"); return; }

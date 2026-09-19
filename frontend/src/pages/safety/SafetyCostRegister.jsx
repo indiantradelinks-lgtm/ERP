@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Wallet, Plus, RefreshCcw, AlertTriangle } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const COST_SOURCES = [
   "ppe_purchase", "training", "medical", "incident", "audit", "equipment",
@@ -37,7 +38,7 @@ export default function SafetyCostRegister() {
   const load = async () => {
     try {
       const q = filterSource ? `?cost_source=${encodeURIComponent(filterSource)}` : "";
-      const [a, b] = await Promise.all([api.get(`/safety/costs${q}`), api.get("/projects")]);
+      const [a, b] = await Promise.all([api.get(`/safety/costs${q}`), lookupGet("/projects")]);
       setRows(a.data || []); setProjects(b.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
   };

@@ -25,6 +25,7 @@ import {
   DollarSign, Banknote, Receipt, Wrench, Building2, FileText,
   Plus, Check, X, RefreshCw, ShieldCheck, Upload, Download,
 } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const monthIso = () => new Date().toISOString().slice(0, 7);
 const today = () => new Date().toISOString().slice(0, 10);
@@ -257,7 +258,7 @@ function StructuresView() {
   useEffect(() => { load(); }, []);
   useEffect(() => {
     if (!open || employees.length) return;
-    api.get("/employees").then((r) => setEmployees(r.data || [])).catch(() => {});
+    lookupGet("/employees").then((r) => setEmployees(r.data || [])).catch(() => {});
   }, [open]);
   const save = async () => {
     if (!form.employee_id) { toast.error("Select an employee"); return; }

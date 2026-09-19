@@ -28,5 +28,5 @@ export default function PermitsToWork() {
     { key: "precautions", label: "Precautions", type: "textarea", full: true },
     { key: "status", label: "Status", type: "select", options: ["draft", "open", "closed", "revoked"] },
   ];
-  return <DataTableShell title="Permits to Work (PTW)" description="Hot work, confined-space, working-at-height, and other safety-critical authorisations." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="ptw" exportResource="ptws" canWrite={r.canWrite} canDelete={r.canDelete} attachmentsParentType="safety" />;
+  return <DataTableShell title="Permits to Work (PTW)" description="Hot work, confined-space, working-at-height, and other safety-critical authorisations." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="ptw" exportResource="ptws" canWrite={r.canWrite} pagination={r.pagination} canDelete={r.canDelete} attachmentsParentType="safety" />;
 }

@@ -22,5 +22,5 @@ export default function Payroll() {
     { key: "net", label: "Net Pay (INR)", type: "number" },
     { key: "status", label: "Status", type: "select", options: ["draft", "processed", "paid", "on_hold"] },
   ];
-  return <DataTableShell title="Payroll" description="Monthly payroll cycles, deductions and net pay." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="payroll" exportResource={r.exportResource} canWrite={r.canWrite} canDelete={r.canDelete} />;
+  return <DataTableShell title="Payroll" description="Monthly payroll cycles, deductions and net pay." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="payroll" exportResource={r.exportResource} canWrite={r.canWrite} pagination={r.pagination} canDelete={r.canDelete} />;
 }

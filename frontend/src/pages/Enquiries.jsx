@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { toneFor } from "@/lib/statusTone";
 import { fmtD, fmtT } from "@/lib/datetime";
+import { lookupGet } from "@/lib/lookups";
 
 const STATUS_TONE = {
   open: "info", under_review: "primary", submitted: "primary",
@@ -70,7 +71,7 @@ export default function Enquiries() {
     try {
       const [eq, cl, s, p] = await Promise.all([
         api.get("/enquiries"),
-        api.get("/clients"),
+        lookupGet("/clients"),
         api.get("/sites"),
         api.get("/sales/enquiry-pulse"),
       ]);

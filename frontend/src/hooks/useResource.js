@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -22,24 +22,51 @@ const SLUG_TO_PERM = {
   approvals: "approvals",
 };
 
-export default function useResource(resource) {
+export const DEFAULT_PAGE_SIZE = 50;
+
+/**
+ * Server-paged resource hook. `data` holds ONLY the current page; `pagination`
+ * drives DataTableShell's search / sort / pager controls.
+ * opts: { enabled=true, pageSize=50, params={} (extra query, e.g. f_status) }
+ */
+export default function useResource(resource, opts = {}) {
+  const { enabled = true, pageSize: initialPageSize = DEFAULT_PAGE_SIZE, params: extraParams } = opts;
   const { can } = useAuth() || { can: () => true };
   const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(enabled);
   const [loadError, setLoadError] = useState(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(initialPageSize);
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState({ by: "created_at", dir: "desc" });
+  const searchKeysRef = useRef("");
+  const reqSeq = useRef(0);
 
   const permKey = SLUG_TO_PERM[resource] || resource;
   const canRead = can(permKey, "read");
   const canWrite = can(permKey, "write");
   const canDelete = can(permKey, "delete");
+  const extraKey = JSON.stringify(extraParams || {});
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (override = {}) => {
+    if (!enabled) return;
+    const seq = ++reqSeq.current;
     setLoading(true);
+    const p = override.page ?? page;
+    const s = override.search ?? search;
     try {
-      const { data } = await api.get(`/${resource}`);
-      setData(Array.isArray(data) ? data : []);
+      const qs = new URLSearchParams({ page: String(p), page_size: String(pageSize), sort_by: sort.by, sort_dir: sort.dir });
+      if (s.trim()) qs.set("search", s.trim());
+      if (searchKeysRef.current) qs.set("search_keys", searchKeysRef.current);
+      Object.entries(JSON.parse(extraKey)).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") qs.set(k, String(v)); });
+      const { data: res } = await api.get(`/${resource}?${qs.toString()}`);
+      if (seq !== reqSeq.current) return;
+      setData(Array.isArray(res) ? res : (res?.rows || []));
+      setTotal(Array.isArray(res) ? res.length : (res?.total || 0));
       setLoadError(null);
     } catch (e) {
+      if (seq !== reqSeq.current) return;
       if (e.response?.status === 403) {
         setLoadError(`Permission needed: your role cannot view '${resource}' on screen. Ask your admin to grant '${permKey} read' in the Role Register.`);
         toast.error(`No permission to view ${resource} — records exist but are hidden for your role. Ask admin for '${permKey} read'.`);
@@ -48,22 +75,38 @@ export default function useResource(resource) {
         toast.error(`Failed to load ${resource}`);
       }
     } finally {
-      setLoading(false);
+      if (seq === reqSeq.current) setLoading(false);
     }
-  }, [resource, permKey]);
+  }, [enabled, resource, permKey, page, pageSize, sort.by, sort.dir, search, extraKey]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Filters / page-size changed from outside → restart from page 1
+  const firstExtra = useRef(extraKey);
+  useEffect(() => {
+    if (firstExtra.current !== extraKey) { firstExtra.current = extraKey; setPage(1); }
+  }, [extraKey]);
+
+  // Debounced search → always jump back to page 1
+  const searchTimer = useRef(null);
+  const setSearchDebounced = useCallback((value) => {
+    setSearch(value);
+    clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => setPage(1), 350);
+  }, []);
+  useEffect(() => () => clearTimeout(searchTimer.current), []);
 
   const create = useCallback(async (payload) => {
     try {
       const { data: row } = await api.post(`/${resource}`, payload);
-      setData((d) => [row, ...d]);
+      setData((d) => [row, ...d].slice(0, pageSize));
+      setTotal((t) => t + 1);
       toast.success("Created");
       return row;
     } catch (e) {
       toast.error(apiErrorMessage(e, "Create failed"));
     }
-  }, [resource]);
+  }, [resource, pageSize]);
 
   const update = useCallback(async (id, payload) => {
     try {
@@ -80,11 +123,22 @@ export default function useResource(resource) {
     try {
       await api.delete(`/${resource}/${id}`);
       setData((d) => d.filter((r) => r.id !== id));
+      setTotal((t) => Math.max(0, t - 1));
       toast.success("Deleted");
     } catch (e) {
       toast.error(apiErrorMessage(e, "Delete failed"));
     }
   }, [resource]);
 
-  return { data, loading, loadError, reload: load, create, update, remove, canRead, canWrite, canDelete, exportResource: resource };
+  const pagination = useMemo(() => ({
+    page, pageSize, total, loading, search, sort,
+    pages: Math.max(1, Math.ceil(total / pageSize)),
+    setPage,
+    setPageSize: (n) => { setPageSize(n); setPage(1); },
+    setSearch: setSearchDebounced,
+    setSort: (by) => { setSort((s) => ({ by, dir: s.by === by && s.dir === "desc" ? "asc" : "desc" })); setPage(1); },
+    setSearchKeys: (csv) => { searchKeysRef.current = csv; },
+  }), [page, pageSize, total, loading, search, sort, setSearchDebounced]);
+
+  return { data, total, loading, loadError, reload: load, create, update, remove, canRead, canWrite, canDelete, exportResource: resource, pagination };
 }

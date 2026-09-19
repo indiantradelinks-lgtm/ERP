@@ -41,5 +41,5 @@ export default function Candidates() {
     { key: "stage", label: "Stage", type: "select", options: ["applied", "shortlisted", "interview", "offered", "hired", "rejected"] },
     { key: "notes", label: "Notes", type: "textarea", full: true },
   ], [hrUsers]);
-  return <DataTableShell title="Candidate Database" description="Applicants and interview pipeline. Assign an HR recruiter per candidate for follow-up tracking." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="candidates" exportResource="candidates" canWrite={r.canWrite} canDelete={r.canDelete} attachmentsParentType="documents" />;
+  return <DataTableShell title="Candidate Database" description="Applicants and interview pipeline. Assign an HR recruiter per candidate for follow-up tracking." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="candidates" exportResource="candidates" canWrite={r.canWrite} pagination={r.pagination} canDelete={r.canDelete} attachmentsParentType="documents" />;
 }

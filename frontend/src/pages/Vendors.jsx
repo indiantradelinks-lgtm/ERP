@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import FileUploader from "@/components/FileUploader";
+import { lookupGet } from "@/lib/lookups";
 
 const ADMIN_EDIT_ROLES = new Set(["super_admin", "director", "general_manager", "purchase_officer"]);
 
@@ -51,7 +52,7 @@ export default function Vendors() {
 
   const load = async () => {
     try {
-      const [v, c] = await Promise.all([api.get("/vendors"), api.get("/vendor-categories")]);
+      const [v, c] = await Promise.all([lookupGet("/vendors"), api.get("/vendor-categories")]);
       setVendors(v.data || []);
       setCats(c.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Failed to load"); }

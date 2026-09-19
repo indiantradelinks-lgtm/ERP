@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Briefcase, Building2, MapPin, Calendar, Users, Package, Truck, DollarSign, AlertTriangle, TrendingUp, TrendingDown, CircleDot, Activity, FileText, Wallet, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { lookupGet } from "@/lib/lookups";
 
 const ALERT_TONE = {
   danger: "bg-red-50 border-red-300 text-red-800",
@@ -22,7 +23,7 @@ export default function ProjectOpsDashboard() {
   const [projects, setProjects] = useState([]);
   const [pickerId, setPickerId] = useState(projectId || "");
 
-  useEffect(() => { api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
 
   useEffect(() => {
     if (!pickerId) { setD(null); return; }

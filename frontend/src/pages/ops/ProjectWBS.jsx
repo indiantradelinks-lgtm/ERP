@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Network, Plus, Pencil, Trash2, RefreshCcw, ChevronRight } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { lookupGet } from "@/lib/lookups";
 
 const WBS_STATUS = ["not_started", "in_progress", "completed", "on_hold", "cancelled"];
 const EMPTY = {
@@ -36,7 +37,7 @@ export default function ProjectWBS() {
   const { user } = useAuth() || {};
   const canEdit = !["sales_executive", "store_incharge"].includes(user?.role);
 
-  useEffect(() => { api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { if (projectId) load(); else setNodes([]); }, [projectId]);
 
   const load = async () => {

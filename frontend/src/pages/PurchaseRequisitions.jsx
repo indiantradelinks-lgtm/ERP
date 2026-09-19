@@ -14,6 +14,7 @@ import { api } from "@/lib/api";
 import { downloadPdf } from "@/lib/exports";
 import { toast } from "sonner";
 import SubmitWithDocsDialog from "@/components/SubmitWithDocsDialog";
+import { lookupGet } from "@/lib/lookups";
 
 const PR_STATUS_TONE = {
   draft: "neutral", pending_approval: "warning", approved: "success",
@@ -37,7 +38,7 @@ export default function PurchaseRequisitions() {
   const [rows, setRows] = useState([]);
   const [projMap, setProjMap] = useState({});
   useEffect(() => {
-    api.get("/projects").then((res) => {
+    lookupGet("/projects").then((res) => {
       const m = {};
       (res.data || []).forEach((p) => {
         const info = { code: p.code || p.project_code, name: p.name, manager: p.manager || p.project_manager_name };

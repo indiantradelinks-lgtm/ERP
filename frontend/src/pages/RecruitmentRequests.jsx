@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { fmtDT } from "@/lib/datetime";
+import { lookupGet } from "@/lib/lookups";
 
 const RECRUIT_STATUS_TONE = {
   filled: "success", closed: "neutral", approved: "success", completed: "success",
@@ -25,7 +26,7 @@ export default function RecruitmentRequests() {
   const [act, setAct] = useState({ status: "", pm_info_received: null, hired: "", remarks: "" });
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    api.get("/projects").then((res) => {
+    lookupGet("/projects").then((res) => {
       const m = {};
       (res.data || []).forEach((p) => {
         const info = { code: p.code || p.project_code, name: p.name, manager: p.project_manager_name || p.manager || p.manager_name || p.project_manager };
@@ -118,7 +119,7 @@ export default function RecruitmentRequests() {
   ];
   return (
     <>
-      <DataTableShell title="Recruitment Requests" description="Hiring requisitions raised by departments / project managers — HR updates outcomes; every change is history-tracked." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="recruit" exportResource="recruitment-requests" canWrite={r.canWrite} canDelete={r.canDelete} attachmentsParentType="documents" />
+      <DataTableShell title="Recruitment Requests" description="Hiring requisitions raised by departments / project managers — HR updates outcomes; every change is history-tracked." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="recruit" exportResource="recruitment-requests" canWrite={r.canWrite} pagination={r.pagination} canDelete={r.canDelete} attachmentsParentType="documents" />
 
       <Dialog open={!!acting} onOpenChange={(o) => !o && setActing(null)}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto rounded-sm" data-testid="recruit-action-dialog">

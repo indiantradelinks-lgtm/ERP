@@ -43,8 +43,8 @@ export default function Quotations() {
   const r = useResource("quotations");
 
   useEffect(() => {
-    const iv = setInterval(() => r.reload(), 15000);
-    const onFocus = () => r.reload();
+    const iv = setInterval(() => { if (!document.hidden) r.reload(); }, 30000);
+    const onFocus = () => { if (!document.hidden) r.reload(); };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onFocus);
     return () => { clearInterval(iv); window.removeEventListener("focus", onFocus); document.removeEventListener("visibilitychange", onFocus); };
@@ -266,7 +266,7 @@ export default function Quotations() {
         onDelete={r.remove}
         testidPrefix="quotations"
         exportResource={r.exportResource}
-        canWrite={r.canWrite}
+        canWrite={r.canWrite} pagination={r.pagination}
         canDelete={r.canDelete}
         attachmentsParentType="quotations"
       />

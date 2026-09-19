@@ -11,6 +11,7 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Wallet, Play, Eye, Download, Upload, Users, Calculator, AlertCircle, CheckCircle2, Mail } from "lucide-react";
 import { toast } from "sonner";
+import { lookupGet } from "@/lib/lookups";
 
 const inr = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
 const currentMonth = () => new Date().toISOString().slice(0, 7);
@@ -266,7 +267,7 @@ function MasterTab() {
   const [pendingUpload, setPendingUpload] = useState(null); // { file, preview }
   const load = async () => {
     try {
-      const [m, e] = await Promise.all([api.get("/payroll/master"), api.get("/employees")]);
+      const [m, e] = await Promise.all([api.get("/payroll/master"), lookupGet("/employees")]);
       setRows(m.data); setEmployees(e.data);
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };

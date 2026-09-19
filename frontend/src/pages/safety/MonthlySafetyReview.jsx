@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { CalendarDays, Plus, RefreshCcw, X, Eye } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const EMPTY_ACTION = { description: "", responsible_person: "", target_date: "", status: "open" };
 const EMPTY = {
@@ -32,7 +33,7 @@ export default function MonthlySafetyReview() {
 
   const load = async () => {
     try {
-      const [a, b] = await Promise.all([api.get("/safety/reviews"), api.get("/projects")]);
+      const [a, b] = await Promise.all([api.get("/safety/reviews"), lookupGet("/projects")]);
       setRows(a.data || []); setProjects(b.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
   };

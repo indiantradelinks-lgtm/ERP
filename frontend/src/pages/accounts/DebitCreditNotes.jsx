@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Receipt, Plus, RefreshCcw, CheckCircle2, Send, X, FileDown, AlertTriangle } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 const STATUS_TONE = {
   draft: "bg-slate-100 text-slate-700",
@@ -43,7 +44,7 @@ export default function DebitCreditNotes() {
     try {
       const [notesRes, clRes, vRes, rcRes] = await Promise.all([
         api.get(`/finance/notes?kind=${tab}`),
-        api.get("/clients"),
+        lookupGet("/clients"),
         api.get("/vendors?status=approved"),
         api.get("/finance/notes/reason-codes"),
       ]);

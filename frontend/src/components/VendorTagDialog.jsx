@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Loader2, Tags, Search } from "lucide-react";
+import { lookupGet } from "@/lib/lookups";
 
 export const VendorTagDialog = ({ onClose }) => {
   const [vendors, setVendors] = useState(null);
@@ -15,7 +16,7 @@ export const VendorTagDialog = ({ onClose }) => {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    Promise.all([api.get("/vendors"), api.get("/vendor-categories")])
+    Promise.all([lookupGet("/vendors"), api.get("/vendor-categories")])
       .then(([v, c]) => { setVendors(v.data || []); setCats(c.data || []); })
       .catch((e) => toast.error(apiErrorMessage(e, "Failed to load vendors")));
   }, []);

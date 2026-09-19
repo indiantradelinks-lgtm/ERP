@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { FileSpreadsheet, Plus, Pencil, Trash2, RefreshCcw, Upload, Download, CheckCircle2, ArrowLeft, FileDown } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { lookupGet } from "@/lib/lookups";
 
 const STATUSES = ["draft", "in_review", "approved", "revised", "cancelled"];
 const UOMS = ["nos", "sqm", "cum", "lm", "MT", "kg", "manday", "LS"];
@@ -54,7 +55,7 @@ export default function ProjectBOQ() {
     try {
       const [a, b] = await Promise.all([
         api.get("/proj-phase2/boqs", { params: { project_id: projectFilter || undefined, status: statusFilter || undefined } }),
-        api.get("/projects"),
+        lookupGet("/projects"),
       ]);
       setRows(a.data || []);
       setProjects(b.data || []);

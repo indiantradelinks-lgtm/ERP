@@ -109,6 +109,11 @@ async def on_startup():
         await db.vendor_evaluations.create_index("vendor_id")
         await db.employee_history.create_index([("employee_id", 1), ("at", -1)])
         await db.employees.create_index("employee_id")
+        try:
+            from indexes import ensure_indexes
+            await ensure_indexes()
+        except Exception as ie:
+            logger.warning(f"[indexes] bootstrap skipped: {ie}")
         # Logistics Phase 4 indexes
         try:
             from routers.logistics_phase4_router import _ensure_indexes as _logistics_p4_indexes

@@ -9,6 +9,7 @@ import {
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { lookupGet } from "@/lib/lookups";
 
 const REPORTS = [
   // Sales
@@ -61,7 +62,7 @@ export default function ReportsCenter() {
   const [fuView, setFuView] = useState("all");
 
   useEffect(() => {
-    api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {});
+    lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {});
   }, []);
 
   const saveBlob = (data, filename) => {

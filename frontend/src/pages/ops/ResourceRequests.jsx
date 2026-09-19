@@ -13,6 +13,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import SubmitWithDocsDialog from "@/components/SubmitWithDocsDialog";
 import ApprovalDocsGate, { validateApprovalDocs, emptyApprovalDocs } from "@/components/ApprovalDocsGate";
+import { lookupGet } from "@/lib/lookups";
 
 const TYPE_META = {
   asset:         { label: "Asset",         icon: Package,       tone: "bg-purple-100 text-purple-800 border-purple-300" },
@@ -69,7 +70,7 @@ export default function ResourceRequests() {
   };
   useEffect(() => {
     load();
-    api.get("/projects").then((r) => setProjects(r.data || [])).catch(() => {});
+    lookupGet("/projects").then((r) => setProjects(r.data || [])).catch(() => {});
   }, []);
 
   const filtered = useMemo(() => (rows || []).filter((r) => {

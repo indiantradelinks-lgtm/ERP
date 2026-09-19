@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FileSpreadsheet, FileText, RefreshCcw, Search } from "lucide-react";
 import { fmtDT, fmtT } from "@/lib/datetime";
+import { lookupGet } from "@/lib/lookups";
 
 export default function SafetyReportsCenter() {
   const [keys, setKeys] = useState([]);
@@ -22,7 +23,7 @@ export default function SafetyReportsCenter() {
 
   const loadKeys = async () => {
     try {
-      const [a, b] = await Promise.all([api.get("/safety/reports/keys"), api.get("/projects")]);
+      const [a, b] = await Promise.all([api.get("/safety/reports/keys"), lookupGet("/projects")]);
       setKeys(a.data || []); setProjects(b.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Failed to load"); }
   };
