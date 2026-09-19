@@ -25,10 +25,11 @@ Integrations:
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import Request, APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from core import db, now_iso, new_id, require_permission, get_current_user
+from pagination import maybe_paged, paged_or_rows
 from sequences import next_sequence
 from approval_engine import insert_approval
 
@@ -197,6 +198,7 @@ def _has_medical_perm(user: dict) -> bool:
 # ─── Endpoints ──────────────────────────────────────────────────────────
 @router.get("")
 async def list_incidents(
+    request: Request,
     status: Optional[str] = None,
     project_id: Optional[str] = None,
     incident_type: Optional[str] = None,
@@ -209,9 +211,11 @@ async def list_incidents(
         q["project_id"] = project_id
     if incident_type:
         q["incident_type"] = incident_type
-    rows = await db.safety_incidents.find(q, {"_id": 0}).sort("incident_datetime", -1).to_list(2000)
+    paged = await maybe_paged(request, "safety_incidents", q, "incident_datetime",
+                              ["incident_no", "title", "incident_type", "severity", "project_name", "project_code", "location", "status", "reported_by"])
+    rows = paged["rows"] if paged else await db.safety_incidents.find(q, {"_id": 0}).sort("incident_datetime", -1).to_list(2000)
     med_ok = _has_medical_perm(user)
-    return [_strip_medical(r, med_ok) for r in rows]
+    return paged_or_rows(paged, [_strip_medical(r, med_ok) for r in rows])
 
 
 @router.get("/{iid}")

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from core import db, get_current_user, require_permission, now_iso, new_id
+from pagination import maybe_paged, paged_or_rows
 from audit import audit
 from .common import ip_of, strip_id, days_between
 
@@ -174,7 +175,7 @@ async def apply_leave(payload: LeaveApplyIn, request: Request,
 
 
 @router.get("/leave-applications")
-async def list_leave_applications(status: Optional[str] = None,
+async def list_leave_applications(request: Request, status: Optional[str] = None,
                                   employee_id: Optional[str] = None,
                                   department: Optional[str] = None,
                                   user: dict = Depends(require_permission("hr_leave", "read"))):
@@ -182,6 +183,10 @@ async def list_leave_applications(status: Optional[str] = None,
     if status: q["status"] = status
     if employee_id: q["employee_id"] = employee_id
     if department: q["department"] = department
+    paged = await maybe_paged(request, "leave_applications", q, "applied_at",
+                              ["employee_name", "employee_code", "department", "leave_type", "status", "reason"])
+    if paged:
+        return paged
     return await db.leave_applications.find(q, {"_id": 0}).sort([("applied_at", -1)]).to_list(500)
 
 

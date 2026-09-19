@@ -4,8 +4,11 @@
  * Draft → Requested → Approved → Active → Expired/Closed/Cancelled.
  * Handles HIRA/JSA linkage, LOTO/gas/rescue flags and closure notes.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,36 +39,37 @@ const EMPTY = {
 };
 
 export default function WorkPermitRegister() {
-  const [rows, setRows] = useState([]);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const { rows: filtered, pagination, search, setSearch, reload } = usePagedList("/safety/work-permits", { status: statusFilter === "all" ? "" : statusFilter }, {
+    viewKey: "safety_work_permits", errorLabel: "work permits",
+    searchKeys: "permit_no,permit_type,work_description,project_name,project_code,location,status,issued_to,contractor",
+  });
   const [projects, setProjects] = useState([]);
   const [permitTypes, setPermitTypes] = useState([]);
   const [hiraOptions, setHiraOptions] = useState([]);
   const [jsaOptions, setJsaOptions] = useState([]);
   const [ppeCategories, setPpeCategories] = useState([]);
-  const [statusFilter, setStatusFilter] = useState("all");
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
   const [closureFor, setClosureFor] = useState(null);
   const [closureForm, setClosureForm] = useState({ completion_notes: "", incidents_reported: false });
 
-  const load = async () => {
+  const loadAux = async () => {
     try {
-      const [a, b, c, d, e, f] = await Promise.all([
-        api.get("/safety/work-permits"),
+      const [b, c, d, e, f] = await Promise.all([
         lookupGet("/projects"),
         api.get("/safety/masters/work-permit-types"),
         api.get("/safety/hira?status=approved"),
         api.get("/safety/jsa?status=approved"),
         api.get("/safety/masters/ppe-categories"),
       ]);
-      setRows(a.data || []); setProjects(b.data || []);
+      setProjects(b.data || []);
       setPermitTypes(c.data || []); setHiraOptions(d.data || []);
       setJsaOptions(e.data || []); setPpeCategories(f.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
   };
-  useEffect(() => { load(); }, []);
-
-  const filtered = useMemo(() => statusFilter === "all" ? rows : rows.filter((r) => r.status === statusFilter), [rows, statusFilter]);
+  const load = () => { reload(); loadAux(); };
+  useEffect(() => { loadAux(); }, []);
 
   const save = async () => {
     try {
@@ -100,6 +104,8 @@ export default function WorkPermitRegister() {
         </div>
         <div className="flex items-center gap-2">
           <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+          <Input className="h-8 w-52 text-xs" placeholder="Search permit #, work, project…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="wp-search" />
+          <TableViewsMenu pagination={pagination} testidPrefix="wp" />
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-8 rounded-sm border border-input bg-background text-xs px-2" data-testid="wp-filter">
             {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
@@ -166,6 +172,7 @@ export default function WorkPermitRegister() {
             ))}
           </tbody>
         </table>
+        <div className="px-3 py-2 border-t border-border"><TablePager pagination={pagination} testidPrefix="wp" /></div>
       </div>
 
       {/* Editor */}

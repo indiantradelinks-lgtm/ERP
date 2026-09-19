@@ -37,10 +37,11 @@ from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import Request, APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core import db, now_iso, new_id, require_permission
+from pagination import maybe_paged, paged_or_rows
 
 router = APIRouter(prefix="/logistics", tags=["logistics-phase1"])
 
@@ -584,6 +585,7 @@ class DispatchRequestIn(BaseModel):
 
 @router.get("/dispatch-requests")
 async def dr_list(
+    request: Request,
     status: Optional[str] = None,
     project_id: Optional[str] = None,
     user: dict = Depends(require_permission("dispatch_requests", "read")),
@@ -593,6 +595,10 @@ async def dr_list(
         q["status"] = status
     if project_id:
         q["project_id"] = project_id
+    paged = await maybe_paged(request, "logistics_dispatch_requests", q, "created_at",
+                              ["dr_no", "request_no", "project_name", "project_code", "from_location", "to_location", "status", "dispatch_type", "vehicle_no", "driver_name"])
+    if paged:
+        return paged
     return await db.logistics_dispatch_requests.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
 
 

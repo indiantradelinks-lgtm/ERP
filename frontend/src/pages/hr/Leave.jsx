@@ -19,6 +19,9 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { api, apiErrorMessage, stripEmpty } from "@/lib/api";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProjectSelect } from "@/components/MasterSelect";
 import { EmployeeSearchSelect } from "@/components/EmployeeSearchSelect";
@@ -41,7 +44,6 @@ export default function Leave() {
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [mine, setMine] = useState([]);
-  const [inbox, setInbox] = useState([]);
   const [balances, setBalances] = useState([]);
   const [balanceEmp, setBalanceEmp] = useState("");
   const [calendar, setCalendar] = useState({ month: currentMonth(), rows: [] });
@@ -56,6 +58,11 @@ export default function Leave() {
   const [remarks, setRemarks] = useState("");
 
   const canApprove = can?.("hr_leave", "write");
+  const inboxList = usePagedList("/hr/leave-applications", { status: "pending" }, {
+    enabled: !!canApprove, viewKey: "hr_leave_inbox", pageSize: 25, errorLabel: "leave inbox", defaultSort: { by: "applied_at", dir: "desc" },
+    searchKeys: "employee_name,employee_code,department,leave_type,status,reason",
+  });
+  const inbox = inboxList.rows;
 
   const load = async () => {
     try {
@@ -78,10 +85,7 @@ export default function Leave() {
       // Default applyForm.employee_id to self
       const selfEmp = empList.find((e) => (e.email || "").toLowerCase() === (user?.email || "").toLowerCase());
       if (selfEmp) setApplyForm((f) => ({ ...f, employee_id: f.employee_id || selfEmp.id }));
-      if (canApprove) {
-        const inboxResp = await api.get("/hr/leave-applications?status=pending");
-        setInbox(inboxResp.data || []);
-      }
+      if (canApprove) inboxList.reload();
       // Self balances
       if (selfEmp) {
         setBalanceEmp(selfEmp.id);
@@ -181,7 +185,7 @@ export default function Leave() {
           <TabsTrigger value="apply" data-testid="leave-tab-apply"><Plus className="h-3.5 w-3.5 mr-1" />Apply</TabsTrigger>
           <TabsTrigger value="mine" data-testid="leave-tab-mine"><Briefcase className="h-3.5 w-3.5 mr-1" />My Leaves ({mine.length})</TabsTrigger>
           <TabsTrigger value="balances" data-testid="leave-tab-balances"><AlertCircle className="h-3.5 w-3.5 mr-1" />Balances</TabsTrigger>
-          {canApprove && <TabsTrigger value="inbox" data-testid="leave-tab-inbox"><Inbox className="h-3.5 w-3.5 mr-1" />Approval Inbox ({inbox.length})</TabsTrigger>}
+          {canApprove && <TabsTrigger value="inbox" data-testid="leave-tab-inbox"><Inbox className="h-3.5 w-3.5 mr-1" />Approval Inbox ({inboxList.pagination.total})</TabsTrigger>}
           <TabsTrigger value="calendar" data-testid="leave-tab-calendar"><CalendarDays className="h-3.5 w-3.5 mr-1" />Calendar</TabsTrigger>
         </TabsList>
 
@@ -283,7 +287,11 @@ export default function Leave() {
 
         {/* INBOX */}
         {canApprove && (
-          <TabsContent value="inbox" className="mt-4">
+          <TabsContent value="inbox" className="mt-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <Input className="h-9 w-64 rounded-sm" placeholder="Search employee, type, reason…" value={inboxList.search} onChange={(e) => inboxList.setSearch(e.target.value)} data-testid="leave-inbox-search" />
+              <TableViewsMenu pagination={inboxList.pagination} testidPrefix="leave-inbox" />
+            </div>
             <LeavesTable
               rows={inbox}
               showApproval
@@ -291,6 +299,7 @@ export default function Leave() {
               onReject={(row) => { setActionDialog({ row, mode: "reject" }); setRemarks(""); }}
               data-testid-prefix="inbox"
             />
+            <TablePager pagination={inboxList.pagination} testidPrefix="leave-inbox" />
           </TabsContent>
         )}
 

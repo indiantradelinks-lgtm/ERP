@@ -78,3 +78,25 @@ async def leaderboard(month: Optional[str] = None,
     return {"month": label, "rows": rows,
             "totals": {"enquiries": sum(r["enquiries"] for r in rows), "quotes": sum(r["quotes"] for r in rows),
                        "won": tw, "lost": tl, "win_rate": round(100 * tw / (tw + tl), 1) if (tw + tl) else None}}
+
+
+@router.get("/leaderboard/{user_id}/details")
+async def leaderboard_details(user_id: str, month: Optional[str] = None,
+                              user: dict = Depends(require_permission("sales_reports", "read"))):
+    label, start, end = _month_bounds(month)
+    in_month = {"$gte": start, "$lte": end}
+    proj = {"_id": 0, "id": 1, "enquiry_no": 1, "customer": 1, "client_name": 1, "site_name": 1, "status": 1,
+            "created_at": 1, "expected_value": 1, "status_history": 1, "quotation_id": 1}
+    enquiries = await db.enquiries.find({"created_by": user_id, "created_at": in_month}, proj).sort("created_at", -1).to_list(500)
+    decided = await db.enquiries.find(
+        {"created_by": user_id, "created_at": {"$lt": start}, "status_history": {"$elemMatch": {"status": {"$in": ["won", "lost"]}, "at": in_month}}},
+        proj).sort("created_at", -1).to_list(500)
+    qproj = {"_id": 0, "id": 1, "quote_no": 1, "quotation_no": 1, "client": 1, "client_name": 1, "customer": 1, "title": 1,
+             "status": 1, "created_at": 1, "total": 1, "grand_total": 1, "amount": 1, "enquiry_no": 1, "enquiry_id": 1, "revision_no": 1}
+    quotes = await db.quotations.find({"created_by": user_id, "created_at": in_month, "status": {"$in": sorted(QUOTE_SENT_STATUSES)}},
+                                      qproj).sort("created_at", -1).to_list(500)
+    for e in enquiries + decided:
+        hist = [h for h in (e.pop("status_history", None) or []) if h.get("status") in ("won", "lost") and start <= (h.get("at") or "") <= end]
+        e["decided_in_month"] = hist[-1]["status"] if hist else None
+    u = await db.users.find_one({"id": user_id}, {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1})
+    return {"month": label, "user": u, "enquiries": enquiries, "decided_earlier": decided, "quotes": quotes}

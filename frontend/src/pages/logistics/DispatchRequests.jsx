@@ -5,6 +5,9 @@
  */
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,30 +49,32 @@ const EMPTY = {
 };
 
 export default function DispatchRequests() {
-  const [rows, setRows] = useState([]);
+  const [statusFilter, setStatusFilter] = useState("");
+  const { rows, pagination, search, setSearch, reload } = usePagedList("/logistics/dispatch-requests", { status: statusFilter }, {
+    viewKey: "logistics_dispatch_requests", errorLabel: "dispatch requests",
+    searchKeys: "dr_no,request_no,project_name,project_code,from_location,to_location,status,dispatch_type,vehicle_no,driver_name",
+  });
   const [types, setTypes] = useState([]);
   const [projects, setProjects] = useState([]);
   const [points, setPoints] = useState([]);
   const [routes, setRoutes] = useState([]);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
-  const [statusFilter, setStatusFilter] = useState("");
 
-  const load = async () => {
+  const loadAux = async () => {
     try {
-      const q = statusFilter ? `?status=${statusFilter}` : "";
-      const [a, b, c, d, e] = await Promise.all([
-        api.get(`/logistics/dispatch-requests${q}`),
+      const [b, c, d, e] = await Promise.all([
         api.get("/logistics/dispatch-types"),
         lookupGet("/projects"),
         api.get("/logistics/loading-points"),
         api.get("/logistics/routes"),
       ]);
-      setRows(a.data || []); setTypes(b.data || []); setProjects(c.data || []);
+      setTypes(b.data || []); setProjects(c.data || []);
       setPoints(d.data || []); setRoutes(e.data || []);
     } catch (err) { toast.error(err.response?.data?.detail || "Load failed"); }
   };
-  useEffect(() => { load(); }, [statusFilter]);
+  const load = () => { reload(); loadAux(); };
+  useEffect(() => { loadAux(); }, []);
 
   const save = async () => {
     try {
@@ -97,6 +102,8 @@ export default function DispatchRequests() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Input className="h-10 w-56" placeholder="Search DR #, project, route…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="dr-search" />
+          <TableViewsMenu pagination={pagination} testidPrefix="dr" />
           <select className="border rounded h-10 px-2 text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} data-testid="dr-filter">
             <option value="">All statuses</option>
             {STATUSES.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
@@ -155,6 +162,7 @@ export default function DispatchRequests() {
             </tbody>
           </table>
         </div>
+        <div className="px-3 py-2 border-t border-border"><TablePager pagination={pagination} testidPrefix="dr" /></div>
       </div>
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>

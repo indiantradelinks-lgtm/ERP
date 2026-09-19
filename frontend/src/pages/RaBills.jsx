@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Plus, Search, FileText, CheckCircle2, XCircle, Send, Trash2, Eye, RefreshCw, X, Receipt, Banknote, Mail, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/DataTableShell";
 import { api } from "@/lib/api";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import SendEmailDialog from "@/components/SendEmailDialog";
@@ -38,11 +41,12 @@ const blankBill = (defaults = {}) => ({
 export default function RaBills() {
   const { user } = useAuth();
   const canApprove = user && APPROVE_ROLES.has(user.role);
-  const [rows, setRows] = useState([]);
   const [kpis, setKpis] = useState({});
   const [defaults, setDefaults] = useState({ gst_pct: 18, retention_pct: 0, tds_pct: 0, due_days: 30, currency_symbol: "₹", locale: "en-IN" });
   const [statusFilter, setStatusFilter] = useState("");
-  const [query, setQuery] = useState("");
+  const { rows, pagination, search: query, setSearch: setQuery, reload } = usePagedList("/ra-bills", { status: statusFilter }, {
+    viewKey: "ra_bills", errorLabel: "RA bills", searchKeys: "bill_number,bill_no,client_name,project_code,project_name,po_number,status,bill_type",
+  });
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(blankBill());
   const [viewing, setViewing] = useState(null);
@@ -86,19 +90,16 @@ export default function RaBills() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const load = async () => {
+  const loadAux = async () => {
     try {
-      const params = statusFilter ? `?status=${statusFilter}` : "";
-      const [r1, r2, r3] = await Promise.all([
-        api.get(`/ra-bills${params}`), api.get("/ra-bills/dashboard"),
-        api.get("/admin/billing-defaults"),
-      ]);
-      setRows(r1.data || []); setKpis(r2.data?.kpis || {}); setDefaults(r3.data || defaults);
+      const [r2, r3] = await Promise.all([api.get("/ra-bills/dashboard"), api.get("/admin/billing-defaults")]);
+      setKpis(r2.data?.kpis || {}); setDefaults(r3.data || defaults);
     } catch (e) { toast.error(e.response?.data?.detail || "Failed to load bills"); }
   };
-  useEffect(() => { load();
+  const load = () => { reload(); loadAux(); };
+  useEffect(() => { loadAux();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter]);
+  }, []);
 
   const create = async () => {
     if (!form.items.length) { toast.error("Add at least one item"); return; }
@@ -122,12 +123,7 @@ export default function RaBills() {
   const cancelBill = async (b) => { const reason = window.prompt("Cancellation reason (required)") || ""; if (!reason.trim()) return; try { await api.post(`/ra-bills/${b.id}/cancel`, { reason }); toast.success("Cancelled"); load(); } catch (e) { toast.error(e.response?.data?.detail || "Failed"); } };
   const remove = async (b) => { if (!window.confirm(`Delete ${b.bill_number}?`)) return; try { await api.delete(`/ra-bills/${b.id}`); toast.success("Deleted"); load(); } catch (e) { toast.error(e.response?.data?.detail || "Failed"); } };
 
-  const filtered = useMemo(() => {
-    if (!query.trim()) return rows;
-    const q = query.toLowerCase();
-    return rows.filter((r) => [r.bill_number, r.client_name, r.project_code, r.po_number, r.status, r.bill_type]
-      .some((v) => String(v ?? "").toLowerCase().includes(q)));
-  }, [rows, query]);
+  const filtered = rows;
 
   return (
     <div className="space-y-6" data-testid="ra-bills-page">
@@ -153,6 +149,7 @@ export default function RaBills() {
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input className="pl-9 h-9 rounded-sm" placeholder="Search bill #, client, project…" value={query} onChange={(e) => setQuery(e.target.value)} data-testid="ra-search" />
           </div>
+          <TableViewsMenu pagination={pagination} testidPrefix="ra" />
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-9 rounded-sm border border-input bg-background px-2 text-sm" data-testid="ra-status-filter">
             <option value="">All</option>
             {["draft", "submitted", "approved", "invoiced", "paid", "cancelled"].map((s) => <option key={s} value={s}>{s}</option>)}
@@ -209,6 +206,7 @@ export default function RaBills() {
             </TableBody>
           </Table>
         </div>
+        <div className="px-4 py-2 border-t border-border"><TablePager pagination={pagination} testidPrefix="ra" /></div>
       </div>
 
       {open && <FormDialog form={form} setForm={setForm} onClose={() => setOpen(false)} onSave={create} />}

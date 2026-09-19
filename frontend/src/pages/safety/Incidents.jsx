@@ -4,6 +4,9 @@
  */
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,20 +41,17 @@ const EMPTY = {
 };
 
 export default function Incidents() {
-  const [rows, setRows] = useState([]);
   const [projects, setProjects] = useState([]);
   const [typeFilter, setTypeFilter] = useState("");
+  const { rows, pagination, search, setSearch, reload } = usePagedList("/safety/incidents", { incident_type: typeFilter }, {
+    viewKey: "safety_incidents", errorLabel: "incidents", defaultSort: { by: "incident_datetime", dir: "desc" },
+    searchKeys: "incident_no,title,incident_type,severity,project_name,project_code,location,site_location,status,reported_by",
+  });
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
 
-  const load = async () => {
-    try {
-      const q = typeFilter ? `?incident_type=${typeFilter}` : "";
-      const [a, b] = await Promise.all([api.get(`/safety/incidents${q}`), lookupGet("/projects")]);
-      setRows(a.data || []); setProjects(b.data || []);
-    } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
-  };
-  useEffect(() => { load(); }, [typeFilter]);
+  const load = () => reload();
+  useEffect(() => { lookupGet("/projects").then((b) => setProjects(b.data || [])).catch((e) => toast.error(e.response?.data?.detail || "Load failed")); }, []);
 
   const save = async () => {
     if ((form.description || "").length < 10) { toast.error("Description must be at least 10 chars"); return; }
@@ -87,6 +87,8 @@ export default function Incidents() {
         </div>
         <div className="flex items-center gap-2">
           <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+          <Input className="h-8 w-52 text-xs" placeholder="Search incident #, title, project…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="inc-search" />
+          <TableViewsMenu pagination={pagination} testidPrefix="inc" />
           <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="h-8 rounded-sm border border-input bg-background text-xs px-2">
             <option value="">All types</option>{TYPES.map((t) => <option key={t.v} value={t.v}>{t.label}</option>)}
           </select>
@@ -127,6 +129,7 @@ export default function Incidents() {
             ))}
           </tbody>
         </table>
+        <div className="px-3 py-2 border-t border-border"><TablePager pagination={pagination} testidPrefix="inc" /></div>
       </div>
 
       <Dialog open={editing !== null} onOpenChange={(o) => !o && setEditing(null)}>

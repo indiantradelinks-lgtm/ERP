@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 
 from core import db, require_permission, now_iso, new_id
+from pagination import maybe_paged, paged_or_rows
 from audit import audit
 from sequences import next_sequence
 from approval_engine import build_chain, insert_approval, copy_approval_doc_fields
@@ -52,6 +53,7 @@ def _delta(txn_type: str, qty: float) -> float:
 
 @router.get("/store/transactions")
 async def list_txns(
+    request: Request,
     item_id: Optional[str] = None,
     txn_type: Optional[str] = None,
     limit: int = 200,
@@ -62,6 +64,10 @@ async def list_txns(
         q["item_id"] = item_id
     if txn_type:
         q["txn_type"] = txn_type
+    paged = await maybe_paged(request, "inventory_transactions", q, "created_at",
+                              ["txn_no", "item_name", "item_code", "txn_type", "project_code", "store", "reference", "remarks", "created_by_name"])
+    if paged:
+        return paged
     rows = await db.inventory_transactions.find(q, {"_id": 0}).sort("created_at", -1).to_list(max(1, min(limit, 1000)))
     return rows
 

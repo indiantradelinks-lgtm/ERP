@@ -8,6 +8,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { StatusBadge } from "@/components/DataTableShell";
 import BarcodeScanner from "@/components/BarcodeScanner";
 import { api } from "@/lib/api";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { downloadPdf } from "@/lib/exports";
 import { toast } from "sonner";
 
@@ -20,26 +23,16 @@ const TYPE_META = {
 };
 
 export default function StoreTransactions() {
-  const [txns, setTxns] = useState([]);
   const [open, setOpen] = useState(false);
   const [scanCode, setScanCode] = useState("");
   const [item, setItem] = useState(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [form, setForm] = useState({ txn_type: "inward", quantity: 1, project: "", to_location: "", from_location: "", received_from: "", issued_to: "", note: "" });
-  const [filter, setFilter] = useState({ q: "", type: "" });
-
-  const load = async () => {
-    try {
-      const params = new URLSearchParams();
-      if (filter.type) params.set("txn_type", filter.type);
-      params.set("limit", "200");
-      const { data } = await api.get(`/store/transactions?${params.toString()}`);
-      setTxns(data);
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Failed to load");
-    }
-  };
-  useEffect(() => { load(); }, [filter.type]);
+  const [filter, setFilter] = useState({ type: "" });
+  const { rows: filtered, pagination, search, setSearch, reload: load } = usePagedList("/store/transactions", { txn_type: filter.type }, {
+    viewKey: "store_transactions", errorLabel: "transactions",
+    searchKeys: "txn_no,item_name,item_sku,item_code,project,project_code,issued_to,received_from,txn_type",
+  });
 
   const lookup = async (codeOverride) => {
     const code = (codeOverride ?? scanCode).trim();
@@ -76,7 +69,6 @@ export default function StoreTransactions() {
     }
   };
 
-  const filtered = txns.filter((t) => !filter.q || [t.txn_no, t.item_name, t.item_sku, t.project, t.issued_to, t.received_from].some((v) => String(v ?? "").toLowerCase().includes(filter.q.toLowerCase())));
 
   return (
     <div className="space-y-6" data-testid="store-transactions-page">
@@ -90,8 +82,9 @@ export default function StoreTransactions() {
         <div className="flex flex-wrap items-center gap-2 p-4 border-b border-border">
           <div className="relative w-64">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input className="pl-9 h-9 rounded-sm" placeholder="Search…" value={filter.q} onChange={(e) => setFilter({ ...filter, q: e.target.value })} data-testid="store-txns-search" />
+            <Input className="pl-9 h-9 rounded-sm" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="store-txns-search" />
           </div>
+          <TableViewsMenu pagination={pagination} testidPrefix="store-txns" />
           <select className="h-9 rounded-sm border border-input bg-background px-2 text-sm" value={filter.type} onChange={(e) => setFilter({ ...filter, type: e.target.value })} data-testid="store-txns-filter">
             <option value="">All types</option>
             {Object.keys(TYPE_META).map((t) => <option key={t} value={t}>{TYPE_META[t].label}</option>)}
@@ -200,6 +193,7 @@ export default function StoreTransactions() {
             </TableBody>
           </Table>
         </div>
+        <div className="px-4 py-2 border-t border-border"><TablePager pagination={pagination} testidPrefix="store-txns" /></div>
       </div>
       <BarcodeScanner open={scannerOpen} onOpenChange={setScannerOpen} onDetected={onCameraDetected} />
     </div>

@@ -10,7 +10,7 @@ import { buildViewsApi } from "@/hooks/tableViewState";
  * Returns { rows, pagination, search, setSearch, reload, loading, total } — `pagination` plugs into <TablePager/>.
  */
 export default function usePagedList(url, filters = {}, opts = {}) {
-  const { pageSize: initial = 50, errorLabel = "records", viewKey = null, searchKeys = "", defaultSort = { by: "created_at", dir: "desc" } } = opts;
+  const { pageSize: initial = 50, errorLabel = "records", viewKey = null, searchKeys = "", defaultSort = { by: "created_at", dir: "desc" }, enabled = true } = opts;
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -46,7 +46,7 @@ export default function usePagedList(url, filters = {}, opts = {}) {
   }, [filterKey]);
 
   const load = useCallback(async () => {
-    if (!viewApplied) return;
+    if (!viewApplied || !enabled) return;
     const my = ++seq.current;
     setLoading(true);
     try {
@@ -63,7 +63,7 @@ export default function usePagedList(url, filters = {}, opts = {}) {
     } finally {
       if (my === seq.current) setLoading(false);
     }
-  }, [viewApplied, url, page, pageSize, debounced, sort.by, sort.dir, filterKey, errorLabel, searchKeys]);
+  }, [viewApplied, enabled, url, page, pageSize, debounced, sort.by, sort.dir, filterKey, errorLabel, searchKeys]);
 
   useEffect(() => { load(); }, [load]);
 

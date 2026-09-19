@@ -29,10 +29,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import Request, APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from core import db, now_iso, new_id, require_permission
+from pagination import maybe_paged, paged_or_rows
 from sequences import next_sequence
 from approval_engine import insert_approval
 
@@ -158,13 +159,17 @@ async def _create_approval_doc(permit: dict, user: dict) -> str:
 
 # ─── Endpoints ──────────────────────────────────────────────────────────
 @router.get("")
-async def list_permits(status: Optional[str] = None, project_id: Optional[str] = None,
+async def list_permits(request: Request, status: Optional[str] = None, project_id: Optional[str] = None,
                         user: dict = Depends(require_permission("ptws", "read"))):
     q: Dict[str, Any] = {}
     if status:
         q["status"] = status
     if project_id:
         q["project_id"] = project_id
+    paged = await maybe_paged(request, "safety_work_permits", q, "created_at",
+                              ["permit_no", "permit_type", "work_description", "project_name", "project_code", "location", "status", "issued_to", "contractor"])
+    if paged:
+        return paged
     return await db.safety_work_permits.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
 
 

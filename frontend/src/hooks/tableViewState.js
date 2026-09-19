@@ -15,8 +15,12 @@ export function buildViewsApi(view, current, setters, defaultPageSize = 50, defa
   };
   return {
     presets: view.presets,
+    shared: view.shared || [],
+    canPublish: !!view.canPublish,
+    publishShared: (name, department) => view.publishShared(name, state, department),
+    unpublishShared: view.unpublishShared,
     isDefault: same(state, defaults),
-    activePresetId: (view.presets.find((p) => same({ ...defaults, ...p.state }, state)) || {}).id || null,
+    activePresetId: ([...view.presets, ...(view.shared || [])].find((p) => same({ ...defaults, ...p.state }, state)) || {}).id || null,
     savePreset: (name) => view.savePreset(name, state),
     deletePreset: view.deletePreset,
     applyPreset: (p) => apply(p.state || {}),

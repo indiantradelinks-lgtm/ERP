@@ -28,6 +28,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 
 from core import db, require_permission, now_iso, new_id
+from pagination import maybe_paged, paged_or_rows
 from audit import audit
 from sequences import next_sequence, stamp_dept_doc
 from approval_engine import build_chain, insert_approval
@@ -135,7 +136,7 @@ def _prefix(bill_type: str) -> str:
 # Endpoints
 # ──────────────────────────────────────────────────────────────────────────────
 @router.get("/ra-bills")
-async def list_ra_bills(client_id: Optional[str] = None,
+async def list_ra_bills(request: Request, client_id: Optional[str] = None,
                         project_code: Optional[str] = None,
                         bill_type: Optional[str] = None,
                         status: Optional[str] = None,
@@ -152,7 +153,9 @@ async def list_ra_bills(client_id: Optional[str] = None,
         q["status"] = status
     if po_id:
         q["po_id"] = po_id
-    rows = await db.ra_bills.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    paged = await maybe_paged(request, "ra_bills", q, "created_at",
+                              ["bill_no", "bill_number", "client_name", "project_code", "project_name", "bill_type", "status", "po_number", "invoice_no"])
+    rows = paged["rows"] if paged else await db.ra_bills.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
     codes = {r.get("project_code") for r in rows if r.get("project_code")}
     if codes:
         pm_by_code: dict = {}
@@ -170,7 +173,7 @@ async def list_ra_bills(client_id: Optional[str] = None,
                                      or p.get("manager") or "")
         for r in rows:
             r["project_manager_name"] = pm_by_code.get(r.get("project_code"), "")
-    return rows
+    return paged_or_rows(paged, rows)
 
 
 @router.get("/ra-bills/dashboard")

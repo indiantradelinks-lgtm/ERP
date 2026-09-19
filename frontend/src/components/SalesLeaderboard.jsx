@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Trophy, ChevronLeft, ChevronRight, Medal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import LeaderboardDetail from "@/components/LeaderboardDetail";
 
 const shiftMonth = (ym, delta) => {
   const [y, m] = ym.split("-").map(Number);
@@ -18,6 +19,7 @@ export default function SalesLeaderboard() {
   const [month, setMonth] = useState(thisMonth());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [detailFor, setDetailFor] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -55,7 +57,9 @@ export default function SalesLeaderboard() {
       {rows.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 p-4">
           {rows.map((r) => (
-            <div key={r.user_id} className="border border-border rounded-sm p-3 flex gap-3 items-start hover:border-primary/40 transition-colors" data-testid={`leaderboard-user-${r.user_id}`}>
+            <button type="button" key={r.user_id} onClick={() => setDetailFor(r.user_id)} title="Click to see this month's enquiries and quotes"
+              className="text-left border border-border rounded-sm p-3 flex gap-3 items-start hover:border-primary/60 hover:bg-muted/30 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
+              data-testid={`leaderboard-user-${r.user_id}`}>
               <div className={`flex flex-col items-center w-8 shrink-0 ${RANK_TONE[r.rank - 1] || "text-muted-foreground"}`}>
                 <Medal className="h-5 w-5" />
                 <span className="text-[10px] font-bold">#{r.rank}</span>
@@ -73,10 +77,11 @@ export default function SalesLeaderboard() {
                   <span title="Value of quotes sent">{inr(r.quote_value)}</span>
                 </div>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       )}
+      <LeaderboardDetail userId={detailFor} month={month} open={!!detailFor} onOpenChange={(o) => !o && setDetailFor(null)} />
     </div>
   );
 }
