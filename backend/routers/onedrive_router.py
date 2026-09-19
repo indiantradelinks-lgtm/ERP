@@ -9,7 +9,7 @@ import logging
 import os
 import subprocess
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel
@@ -18,6 +18,7 @@ from core import db, get_current_user, now_iso, new_id
 from storage import get_object
 from rbac import can
 import onedrive_service as ods
+import httpx
 
 logger = logging.getLogger("erp.onedrive_router")
 router = APIRouter(prefix="/admin/onedrive", tags=["onedrive"])
@@ -78,8 +79,21 @@ async def enqueue_file(file_id: str, folder_segments: list[str] | None = None) -
         "folder_segments": folder_segments or [],
         "status": "pending",
         "attempts": 0,
+        "permanent": False,
+        "next_attempt_at": now_iso(),
+        "sanitizer_v": ods.SANITIZER_VERSION,
         "created_at": now_iso(),
     })
+
+
+MAX_ATTEMPTS = 8
+# Exponential-ish backoff between push attempts (minutes)
+BACKOFF_MINUTES = [1, 3, 10, 30, 60, 180, 360, 720]
+
+
+def _backoff_iso(attempts: int) -> str:
+    mins = BACKOFF_MINUTES[min(attempts, len(BACKOFF_MINUTES) - 1)]
+    return (datetime.now(timezone.utc) + timedelta(minutes=mins)).isoformat()
 
 
 async def _module_label(folder: str | None, parent_type: str | None) -> str:
@@ -110,19 +124,28 @@ async def _module_label(folder: str | None, parent_type: str | None) -> str:
 async def _push_queued_item(item: dict) -> dict:
     """Pushes a single queued file to OneDrive. Updates queue row."""
     f = await db.files.find_one({"id": item["file_id"]}, {"_id": 0})
-    if not f:
+    if not f or f.get("is_deleted"):
+        # The ERP document no longer exists (deleted/orphan queue row) — nothing to
+        # mirror. Mark it skipped so it never shows up as a sync failure.
         await db.onedrive_queue.update_one(
             {"id": item["id"]},
-            {"$set": {"status": "failed", "error": "file not found", "updated_at": now_iso()}},
+            {"$set": {"status": "skipped", "error": None,
+                      "error_code": "file_deleted" if f else "file_missing",
+                      "permanent": True, "next_attempt_at": None,
+                      "sanitizer_v": ods.SANITIZER_VERSION, "updated_at": now_iso()}},
         )
-        return {"ok": False, "error": "file_not_found"}
+        return {"ok": False, "error": "file_not_found", "skipped": True}
 
     try:
         data, ct = get_object(f["storage_path"])
     except Exception as e:
         await db.onedrive_queue.update_one(
             {"id": item["id"]},
-            {"$inc": {"attempts": 1}, "$set": {"status": "failed", "error": f"download: {e}", "updated_at": now_iso()}},
+            {"$inc": {"attempts": 1},
+             "$set": {"status": "pending" if int(item.get("attempts", 0)) + 1 < MAX_ATTEMPTS else "failed",
+                      "error_code": "storage_read",
+                      "next_attempt_at": _backoff_iso(int(item.get("attempts", 0)) + 1),
+                      "error": f"download: {e}", "updated_at": now_iso()}},
         )
         return {"ok": False, "error": str(e)}
 
@@ -155,6 +178,7 @@ async def _push_queued_item(item: dict) -> dict:
             return {"ok": True, "drive_item_id": prior["drive_item_id"], "deduped": True}
     try:
         result = await ods.upload_to_folder(segments, fname, data, content_type=ct or f.get("content_type"))
+        remote = "/".join(segments) + "/" + ods.safe_name(fname)
         await db.onedrive_queue.update_one(
             {"id": item["id"]},
             {"$set": {
@@ -163,35 +187,75 @@ async def _push_queued_item(item: dict) -> dict:
                 "sha256": f.get("sha256"),
                 "drive_item_id": result.get("id"),
                 "web_url": result.get("webUrl"),
-                "remote_path": "/".join(segments) + "/" + fname,
+                "remote_path": remote,
                 "size": result.get("size"),
+                "error": None,
+                "error_code": None,
+                "permanent": False,
+                "sanitizer_v": ods.SANITIZER_VERSION,
                 "updated_at": now_iso(),
             }, "$inc": {"attempts": 1}},
         )
         await db.files.update_one({"id": f["id"]}, {"$set": {
             "onedrive_item_id": result.get("id"), "onedrive_url": result.get("webUrl"),
-            "onedrive_path": "/".join(segments) + "/" + fname, "onedrive_pushed_at": now_iso()}})
+            "onedrive_path": remote, "onedrive_pushed_at": now_iso(),
+            "onedrive_error": None}})
         return {"ok": True, "drive_item_id": result.get("id")}
     except Exception as e:
         err = str(e)
-        logger.exception(f"OneDrive push failed for file {f.get('id')}: {err}")
+        if isinstance(e, httpx.HTTPStatusError):
+            err = f"{e.response.status_code} {e.response.reason_phrase}: {e.response.text[:300]}"
+        retryable, code = ods.is_retryable(e)
+        attempts = int(item.get("attempts", 0)) + 1
+        exhausted = attempts >= MAX_ATTEMPTS
+        logger.warning("OneDrive push failed for file %s (%s, attempt %s): %s",
+                       f.get("id"), code, attempts, err[:200])
         await db.onedrive_queue.update_one(
             {"id": item["id"]},
             {"$inc": {"attempts": 1},
-             "$set": {"status": "pending" if item.get("attempts", 0) < 4 else "failed",
-                      "error": err[:500], "updated_at": now_iso()}},
+             "$set": {"status": "pending" if (retryable and not exhausted) else "failed",
+                      "permanent": not retryable,
+                      "error": err[:500],
+                      "error_code": code,
+                      "sanitizer_v": ods.SANITIZER_VERSION,
+                      "next_attempt_at": _backoff_iso(attempts) if (retryable and not exhausted) else None,
+                      "updated_at": now_iso()}},
         )
-        return {"ok": False, "error": err}
+        # The ERP copy is untouched — only the mirror failed. Surface it on the file row.
+        await db.files.update_one({"id": f["id"]}, {"$set": {"onedrive_error": err[:300]}})
+        return {"ok": False, "error": err, "retryable": retryable}
 
 
 async def run_push_queue(limit: int = 25) -> dict:
-    """Process pending OneDrive push queue items."""
+    """Process due OneDrive push queue items (respects per-item backoff).
+
+    Self-healing: items that failed under an older name-sanitiser, and transient
+    failures that exhausted their attempts over an hour ago, are re-queued.
+    """
     s = await ods.get_settings()
     if not s.get("enabled") or not s.get("configured"):
         return {"processed": 0, "skipped": "disabled"}
+
+    now = now_iso()
+    healed = await db.onedrive_queue.update_many(
+        {"status": "failed",
+         "$or": [{"sanitizer_v": {"$lt": ods.SANITIZER_VERSION}},
+                 {"sanitizer_v": {"$exists": False}},
+                 {"permanent": {"$ne": True},
+                  "updated_at": {"$lt": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()}}]},
+        {"$set": {"status": "pending", "attempts": 0, "error": None,
+                  "next_attempt_at": now, "sanitizer_v": ods.SANITIZER_VERSION,
+                  "updated_at": now}},
+    )
+
     items = await db.onedrive_queue.find(
-        {"status": "pending", "attempts": {"$lt": 5}}, {"_id": 0}
-    ).limit(limit).to_list(limit)
+        {"status": "pending",
+         "attempts": {"$lt": MAX_ATTEMPTS},
+         "$or": [{"next_attempt_at": {"$lte": now}}, {"next_attempt_at": None},
+                 {"next_attempt_at": {"$exists": False}}]},
+        {"_id": 0},
+    ).sort("created_at", 1).limit(limit).to_list(limit)
+
     pushed = failed = 0
     for it in items:
         r = await _push_queued_item(it)
@@ -199,7 +263,8 @@ async def run_push_queue(limit: int = 25) -> dict:
             pushed += 1
         else:
             failed += 1
-    return {"processed": len(items), "pushed": pushed, "failed": failed}
+    return {"processed": len(items), "pushed": pushed, "failed": failed,
+            "requeued": healed.modified_count}
 
 
 @router.get("/queue")
@@ -238,7 +303,9 @@ async def retry_all_failed(background: BackgroundTasks, user: dict = Depends(get
     _require_admin(user)
     r = await db.onedrive_queue.update_many(
         {"status": "failed"},
-        {"$set": {"status": "pending", "error": None, "attempts": 0, "updated_at": now_iso()}},
+        {"$set": {"status": "pending", "error": None, "error_code": None, "attempts": 0,
+                  "permanent": False, "next_attempt_at": now_iso(),
+                  "sanitizer_v": ods.SANITIZER_VERSION, "updated_at": now_iso()}},
     )
     background.add_task(run_push_queue, 50)
     return {"ok": True, "requeued": r.modified_count}
@@ -253,19 +320,51 @@ async def onedrive_health(user: dict = Depends(get_current_user)):
     last_pushed = await db.onedrive_queue.find_one(
         {"status": "pushed"}, {"_id": 0, "pushed_at": 1}, sort=[("pushed_at", -1)])
     last_fail = await db.onedrive_queue.find_one(
-        {"status": "failed"}, {"_id": 0, "error": 1, "updated_at": 1}, sort=[("updated_at", -1)])
+        {"status": "failed"}, {"_id": 0, "error": 1, "error_code": 1, "updated_at": 1, "permanent": 1},
+        sort=[("updated_at", -1)])
     files_total = await db.files.count_documents({"is_deleted": False})
+    pending = stats.get("pending", 0)
+    failed = stats.get("failed", 0)
+    skipped = stats.get("skipped", 0)
+    permanent = await db.onedrive_queue.count_documents({"status": "failed", "permanent": True})
+    retrying = await db.onedrive_queue.count_documents(
+        {"status": "pending", "attempts": {"$gt": 0}})
+    auth_blocked = await db.onedrive_queue.count_documents(
+        {"status": {"$in": ["pending", "failed"]}, "error_code": "auth_or_config"})
+
+    if not s.get("enabled") or not s.get("configured"):
+        status = "disabled"
+    elif auth_blocked:
+        status = "config"
+    elif failed:
+        status = "failing"
+    elif retrying:
+        status = "retrying"
+    elif pending:
+        status = "syncing"
+    else:
+        status = "healthy"
+
     return {
         "enabled": s.get("enabled", False),
         "configured": s.get("configured", False),
         "last_test_ok": s.get("last_test_ok"),
-        "pending": stats.get("pending", 0),
+        "status": status,
+        "pending": pending,
         "pushed": stats.get("pushed", 0),
-        "failed": stats.get("failed", 0),
+        "failed": failed,
+        "skipped": skipped,
+        "permanent_failed": permanent,
+        "retrying": retrying,
+        "auth_blocked": auth_blocked,
         "files_total": files_total,
         "last_pushed_at": (last_pushed or {}).get("pushed_at"),
-        "last_error": (last_fail or {}).get("error"),
-        "last_error_at": (last_fail or {}).get("updated_at"),
+        # Only surface an error banner while something is genuinely outstanding
+        "last_error": (last_fail or {}).get("error") if failed else (
+            "Microsoft 365 connection is not accepting the app credentials — open Admin → OneDrive and re-test the connection."
+            if auth_blocked else None),
+        "last_error_code": (last_fail or {}).get("error_code") if failed else None,
+        "last_error_at": (last_fail or {}).get("updated_at") if failed else None,
     }
 
 
@@ -274,7 +373,9 @@ async def retry_item(queue_id: str, user: dict = Depends(get_current_user)):
     _require_admin(user)
     await db.onedrive_queue.update_one(
         {"id": queue_id},
-        {"$set": {"status": "pending", "error": None, "attempts": 0, "updated_at": now_iso()}},
+        {"$set": {"status": "pending", "error": None, "error_code": None, "attempts": 0,
+                  "permanent": False, "next_attempt_at": now_iso(),
+                  "sanitizer_v": ods.SANITIZER_VERSION, "updated_at": now_iso()}},
     )
     return {"ok": True}
 
@@ -372,7 +473,9 @@ async def retry_failed(user: dict = Depends(get_current_user)):
     _require_admin(user)
     r = await db.onedrive_queue.update_many(
         {"status": "failed"},
-        {"$set": {"status": "pending", "attempts": 0, "error": None, "updated_at": now_iso()}})
+        {"$set": {"status": "pending", "attempts": 0, "error": None, "error_code": None,
+                  "permanent": False, "next_attempt_at": now_iso(),
+                  "sanitizer_v": ods.SANITIZER_VERSION, "updated_at": now_iso()}})
     return {"ok": True, "requeued": r.modified_count}
 
 
@@ -394,6 +497,9 @@ async def migrate_historical(user: dict = Depends(get_current_user)):
             "folder_segments": [],
             "status": "pending",
             "attempts": 0,
+            "permanent": False,
+            "next_attempt_at": now_iso(),
+            "sanitizer_v": ods.SANITIZER_VERSION,
             "created_at": now_iso(),
             "migration": True,
         })

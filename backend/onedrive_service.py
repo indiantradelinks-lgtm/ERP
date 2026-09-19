@@ -29,7 +29,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from typing import Optional
+from urllib.parse import quote, unquote
 
 import httpx
 import msal
@@ -43,6 +45,67 @@ GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 DEFAULT_SCOPE = ["https://graph.microsoft.com/.default"]
 LARGE_FILE_THRESHOLD = 4 * 1024 * 1024  # 4 MB — anything larger uses upload session
 CHUNK_SIZE = 5 * 1024 * 1024            # 5 MB chunks for resumable uploads
+
+# ── Name sanitisation ───────────────────────────────────────────────────
+# OneDrive/SharePoint reject these characters in item names, and '#'/'%'
+# additionally break Graph's `root:/path:/content` addressing — the cause of
+# the repeated "400 Bad Request" push failures. Names are cleaned, then the
+# whole path is URL-encoded before it goes on the wire.
+SANITIZER_VERSION = 2
+_INVALID_CHARS = "\"*:<>?/\\|#%{}^~[]`'"
+_MAX_NAME_LEN = 180
+_RESERVED = {"con", "prn", "aux", "nul", "com1", "com2", "com3", "com4",
+             "lpt1", "lpt2", "lpt3", ".lock", "desktop.ini", "_vti_"}
+
+
+def safe_name(name: str) -> str:
+    """Make `name` a valid OneDrive file name (extension preserved)."""
+    raw = (name or "").strip()
+    # Undo accidental URL-encoding coming from upstream filenames ("MOB%20BILL.pdf")
+    if "%" in raw:
+        try:
+            unq = unquote(raw)
+            if unq and "%" not in unq:
+                raw = unq
+        except Exception:  # noqa: BLE001
+            pass
+    cleaned = "".join("_" if (c in _INVALID_CHARS or ord(c) < 32) else c for c in raw)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    cleaned = re.sub(r"_{2,}", "_", cleaned)
+    if not cleaned or cleaned.lower() in _RESERVED:
+        cleaned = ("file_" + cleaned).strip("_") or "file"
+    if len(cleaned) > _MAX_NAME_LEN:
+        stem, dot, ext = cleaned.rpartition(".")
+        if dot and 0 < len(ext) <= 8:
+            cleaned = stem[: _MAX_NAME_LEN - len(ext) - 1].strip(" ._") + "." + ext
+        else:
+            cleaned = cleaned[:_MAX_NAME_LEN].strip(" ._")
+    return cleaned
+
+
+def safe_segment(segment: str) -> str:
+    """Make `segment` a valid OneDrive folder name."""
+    return safe_name(str(segment or "").replace("/", "_").replace("\\", "_")).strip(" .")
+
+
+def _quote_path(path: str) -> str:
+    """URL-encode a drive path, keeping '/' separators intact."""
+    return quote(path, safe="/")
+
+
+def is_retryable(exc: Exception) -> tuple[bool, str]:
+    """(retryable?, short reason). 429/5xx/network are transient; other 4xx are permanent."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        code = exc.response.status_code
+        if code in (408, 429) or code >= 500:
+            return True, f"http_{code}"
+        return False, f"http_{code}"
+    if isinstance(exc, (httpx.TimeoutException, httpx.TransportError)):
+        return True, "network"
+    msg = str(exc).lower()
+    if any(k in msg for k in ("authority", "token", "credential", "disabled", "not configured")):
+        return True, "auth_or_config"   # admin-fixable → keep retrying
+    return True, "unknown"
 
 _FERNET_KEY = os.environ.get("M365_FERNET_KEY", "").strip()
 _fernet: Optional[Fernet] = Fernet(_FERNET_KEY.encode()) if _FERNET_KEY else None
@@ -234,13 +297,14 @@ async def _ensure_folder(drive_id: str, segments: list[str]) -> dict:
             resp.raise_for_status()
             return resp.json()
 
+    segments = [safe_segment(seg) for seg in segments if safe_segment(seg)]
     current_path = ""
     final_item: dict = {}
     async with httpx.AsyncClient(timeout=30) as client:
         for i, seg in enumerate(segments):
-            seg_safe = seg.strip().strip("/")
+            seg_safe = seg
             current_path = f"{current_path}/{seg_safe}" if current_path else seg_safe
-            url = f"{GRAPH_BASE}/drives/{drive_id}/root:/{current_path}"
+            url = f"{GRAPH_BASE}/drives/{drive_id}/root:/{_quote_path(current_path)}"
             r = await client.get(url, headers=await _headers())
             if r.status_code == 200:
                 final_item = r.json()
@@ -252,7 +316,7 @@ async def _ensure_folder(drive_id: str, segments: list[str]) -> dict:
                 parent_url = f"{GRAPH_BASE}/drives/{drive_id}/root/children"
             else:
                 parent_path = "/".join(segments[:i]).strip("/")
-                parent_url = f"{GRAPH_BASE}/drives/{drive_id}/root:/{parent_path}:/children"
+                parent_url = f"{GRAPH_BASE}/drives/{drive_id}/root:/{_quote_path(parent_path)}:/children"
             body = {
                 "name": seg_safe,
                 "folder": {},
@@ -348,9 +412,10 @@ async def upload_to_folder(
 
 
 async def _upload_small(drive_id: str, parent_id: str, filename: str, data: bytes, content_type: str | None) -> dict:
-    """Single-shot PUT for files ≤ 4 MB."""
-    safe_name = filename.replace("/", "_").replace("\\", "_")
-    url = f"{GRAPH_BASE}/drives/{drive_id}/items/{parent_id}:/{safe_name}:/content"
+    """Single-shot PUT for files ≤ 4 MB (replaces on retry, so pushes are idempotent)."""
+    name = safe_name(filename)
+    url = (f"{GRAPH_BASE}/drives/{drive_id}/items/{parent_id}:/{_quote_path(name)}:/content"
+           "?@microsoft.graph.conflictBehavior=replace")
     headers = await _headers({"Content-Type": content_type or "application/octet-stream"})
     async with httpx.AsyncClient(timeout=120) as client:
         r = await client.put(url, headers=headers, content=data)
@@ -360,9 +425,9 @@ async def _upload_small(drive_id: str, parent_id: str, filename: str, data: byte
 
 async def _upload_large(drive_id: str, parent_id: str, filename: str, data: bytes) -> dict:
     """Resumable upload session for files > 4 MB."""
-    safe_name = filename.replace("/", "_").replace("\\", "_")
-    create_url = f"{GRAPH_BASE}/drives/{drive_id}/items/{parent_id}:/{safe_name}:/createUploadSession"
-    body = {"item": {"@microsoft.graph.conflictBehavior": "replace"}}
+    name = safe_name(filename)
+    create_url = f"{GRAPH_BASE}/drives/{drive_id}/items/{parent_id}:/{_quote_path(name)}:/createUploadSession"
+    body = {"item": {"@microsoft.graph.conflictBehavior": "replace", "name": name}}
     async with httpx.AsyncClient(timeout=None) as client:
         r = await client.post(create_url, headers=await _headers({"Content-Type": "application/json"}), json=body)
         r.raise_for_status()

@@ -1,4 +1,5 @@
 """File upload / list / download / soft-delete."""
+import asyncio
 import io
 from typing import Any, Dict
 
@@ -64,13 +65,25 @@ async def upload_file(
         {"_id": 0})
     if dup:
         return {**dup, "duplicate": True}
-    try:
-        result = put_object(folder=folder, filename=file.filename or "file.bin", data=data, content_type=file.content_type)
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
-    except Exception as e:
-        logger.exception(f"upload failed: {e}")
-        raise HTTPException(status_code=500, detail="Upload failed")
+    # Persist to object storage with a short retry — a transient blip must never
+    # force the user to re-attach the document.
+    result = None
+    last_err: Exception | None = None
+    for attempt in range(3):
+        try:
+            result = put_object(folder=folder, filename=file.filename or "file.bin",
+                                data=data, content_type=file.content_type)
+            break
+        except RuntimeError as e:      # storage not configured — not retryable
+            raise HTTPException(status_code=503, detail=str(e))
+        except Exception as e:         # noqa: BLE001 — network/5xx from object store
+            last_err = e
+            logger.warning("upload attempt %s/3 failed for %s: %s", attempt + 1, file.filename, e)
+            if attempt < 2:
+                await asyncio.sleep(0.6 * (attempt + 1))
+    if result is None:
+        logger.exception(f"upload failed after retries: {last_err}")
+        raise HTTPException(status_code=503, detail="Storage temporarily unavailable — please retry")
     record = {
         "id": new_id(),
         "storage_path": result["path"],
