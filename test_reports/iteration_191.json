@@ -1,0 +1,27 @@
+{
+  "summary": "Iteration 191 — verified Phase-2 server-side paging (6 endpoints), shared team views RBAC, and Sales Leaderboard drill-down on both backend and frontend. Backend: 26/26 pytest passed — paged contract + legacy array for /store/transactions, /logistics/dispatch-requests, /safety/incidents, /safety/work-permits, /hr/leave-applications, /ra-bills; existing filters (txn_type=inward, status=pending on leave, status=draft on ra-bills with project_manager_name enrichment, search on incidents/work-permits); shared views: can_publish flag correct for super_admin/PM/safety_officer, admin '__all__' publish visible to PM (read-only, can_delete=false), PM publish defaults to own department, safety_officer 403 on publish, PM 403 when passing '__all__', non-admin cannot delete another's shared view (404); leaderboard details contract with decided_in_month, unknown user returns null user + empty lists, PM permission check. Frontend: all 6 Phase-2 screens render with correct pager+search+views testids (store-txns 236, dr 18, inc 6, wp 15, ra 12, leave-inbox 1); HR Leave Approval Inbox tab renders paged; Inventory saved views UI publish flow works (admin publishes __all__ → PM sees it in menu without delete icon, project_manager still sees 'Publish to my team…' item, safety_officer does NOT see the publish item on /app/safety/incidents); Leaderboard tile on /app/sales-reports opens drill-down dialog on card click, enquiry rows navigate to /app/enquiries with hl=<id> highlighting (URL param consumed by target page but row visibly highlighted). No pagination/TableViewsMenu/usePagedList console errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter191_phase2.py",
+    "/app/test_reports/pytest/iter191_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "table_views_router._shared_filter builds {kind:'shared', table_any:True, department:{$in:[__all__, user.dept]}} then get_views mutates it by popping table_any and setting table — clean but the auxiliary key 'table_any' is a code smell suggesting the helper was refactored mid-way; consider inlining.",
+    "table_views publish_shared upserts by (table, kind, department, name) — name collision across publishers in same dept silently overwrites the previous view (only user_id is updated). Consider blocking or namespacing by publisher if this is not desired.",
+    "sales_leaderboard_router.leaderboard_details performs 3 sequential .find() calls without a projection index hint — acceptable for now but if enquiries/quotations grow large, add composite index (created_by, created_at).",
+    "LeaderboardDetail.jsx go() navigates with ?hl=<id> — target pages already strip this param via useSearchParams after applying highlight (verified enquiry row visibly highlighted). Good pattern."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter191_phase2.py",
+    "/app/test_reports/iteration_191.json"
+  ],
+  "success_rate": {"backend": "100% (26/26)", "frontend": "100% (all Phase-2 screens + shared views RBAC + leaderboard drill-down verified)"},
+  "test_credentials": "admin@erp.com/Admin@123, test_pm@erp.com/PM@12345, safety@erp.com/Safety@123",
+  "seed_data_creation": "Ephemeral only — TEST_iter191_all / TEST_iter191_pm / TEST_iter191_ui shared views created and deleted within pytest/UI runs. A pre-existing 'Team 100 rows' shared view was inadvertently deleted during cleanup logic and immediately restored (department=__all__, page_size=100).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Phase-2 paged endpoints follow same contract as Phase-1 ({rows,total,page,page_size,pages} when page passed, legacy array otherwise). Shared views live at POST /api/table-views/{table}/shared with PUBLISH_ROLES={super_admin,director,general_manager,dept_head,project_manager}; only super_admin may pass department='__all__'. GET /api/table-views/{table} returns {last,presets,shared,can_publish}. Each shared row has can_delete flag driven by (role==super_admin OR user_id==publisher). Leaderboard drill-down: click testid leaderboard-user-<id> → dialog leaderboard-detail; row testids lb-detail-enq-<id> / lb-detail-quote-<id> navigate to /app/enquiries?hl=<id> and /app/quotations?hl=<id>.",
+  "rca of the issue": "N/A — no functional issues found."
+}
