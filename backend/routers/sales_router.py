@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 
 from core import db, require_permission, get_current_user, now_iso, new_id, logger, attach_user_names, user_display_name
+from pagination import maybe_paged, paged_or_rows
 from routers.quotation_builder_router import default_selected_conditions
 from audit import audit
 from sequences import next_sequence, stamp_dept_doc
@@ -120,9 +121,11 @@ class ConvertIn(BaseModel):
 
 
 @router.get("/enquiries")
-async def list_enquiries(user: dict = Depends(require_permission("quotations", "read"))):
-    rows = await db.enquiries.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
-    return await attach_user_names(rows)
+async def list_enquiries(request: Request, user: dict = Depends(require_permission("quotations", "read"))):
+    paged = await maybe_paged(request, "enquiries", {}, "created_at",
+                              ["enquiry_no", "customer", "client_name", "site_name", "status", "title", "service_type", "customer_enquiry_no"])
+    rows = paged["rows"] if paged else await db.enquiries.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return paged_or_rows(paged, await attach_user_names(rows))
 
 
 @router.post("/enquiries")

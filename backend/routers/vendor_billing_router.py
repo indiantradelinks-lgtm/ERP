@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFil
 from pydantic import BaseModel, Field
 
 from core import db, require_permission, get_current_user, now_iso, new_id
+from pagination import maybe_paged, paged_or_rows
 from audit import audit
 from sequences import next_sequence
 from accounting_service import post_vendor_invoice_verify, post_vendor_payment
@@ -356,7 +357,7 @@ async def create_vendor_bill(payload: VendorBillIn, request: Request,
 
 
 @router.get("/vendor-bills")
-async def list_vendor_bills(status: Optional[str] = None,
+async def list_vendor_bills(request: Request, status: Optional[str] = None,
                             vendor_id: Optional[str] = None, project_id: Optional[str] = None,
                             po_number: Optional[str] = None, payment_priority: Optional[str] = None,
                             start: Optional[str] = None, end: Optional[str] = None,
@@ -377,6 +378,10 @@ async def list_vendor_bills(status: Optional[str] = None,
         q["invoice_date"] = {**q.get("invoice_date", {}), "$gte": start}
     if end:
         q["invoice_date"] = {**q.get("invoice_date", {}), "$lte": end}
+    paged = await maybe_paged(request, "vendor_bills", q, "invoice_date",
+                              ["bill_no", "invoice_no", "vendor_name", "po_number", "project_code", "project_name", "status", "grn_number"])
+    if paged:
+        return paged
     return await db.vendor_bills.find(q, {"_id": 0}).sort("invoice_date", -1).limit(limit).to_list(limit)
 
 
@@ -862,7 +867,7 @@ async def create_vendor_payment(payload: VendorPaymentIn, request: Request,
 
 
 @router.get("/vendor-payments")
-async def list_vendor_payments(vendor_id: Optional[str] = None,
+async def list_vendor_payments(request: Request, vendor_id: Optional[str] = None,
                                start: Optional[str] = None, end: Optional[str] = None,
                                limit: int = 200,
                                user: dict = Depends(require_permission("accounting", "read"))):
@@ -873,6 +878,10 @@ async def list_vendor_payments(vendor_id: Optional[str] = None,
         q["payment_date"] = {**q.get("payment_date", {}), "$gte": start}
     if end:
         q["payment_date"] = {**q.get("payment_date", {}), "$lte": end}
+    paged = await maybe_paged(request, "vendor_payments", q, "payment_date",
+                              ["payment_no", "vendor_name", "utr_no", "reference", "mode", "status", "bill_no"])
+    if paged:
+        return paged
     return await db.vendor_payments.find(q, {"_id": 0}).sort("payment_date", -1).limit(limit).to_list(limit)
 
 

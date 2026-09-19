@@ -22,6 +22,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from core import db, require_permission, now_iso, new_id
+from pagination import maybe_paged, paged_or_rows
 from audit import audit
 from sequences import next_sequence
 from exports import to_excel, to_pdf
@@ -119,7 +120,7 @@ async def expense_settings(user: dict = Depends(require_permission("project_expe
 
 
 @router.get("/project-expenses")
-async def list_expenses(project_code: Optional[str] = None, status: Optional[str] = None,
+async def list_expenses(request: Request, project_code: Optional[str] = None, status: Optional[str] = None,
                         expense_type: Optional[str] = None, cost_center_id: Optional[str] = None,
                         scope: Optional[str] = None,
                         from_date: Optional[str] = None, to_date: Optional[str] = None,
@@ -144,10 +145,12 @@ async def list_expenses(project_code: Optional[str] = None, status: Optional[str
         if to_date:
             rng["$lte"] = to_date
         q["expense_date"] = rng
-    rows = await db.project_expenses.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    paged = await maybe_paged(request, "project_expenses", q, "created_at",
+                              ["expense_no", "project_code", "project_name", "expense_type", "category", "vendor", "payee", "status", "description", "cost_center_name"])
+    rows = paged["rows"] if paged else await db.project_expenses.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
     for r in rows:
         r["attachment_count"] = await db.files.count_documents({"parent_type": "project_expenses", "parent_id": r["id"]})
-    return rows
+    return paged_or_rows(paged, rows)
 
 
 @router.get("/project-expenses/summary")

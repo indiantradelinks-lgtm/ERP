@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from core import db, require_permission, now_iso, new_id
+from pagination import maybe_paged, paged_or_rows
 from audit import audit
 from sequences import next_sequence
 from accounting_service import (
@@ -376,7 +377,7 @@ async def create_voucher(payload: VoucherIn, request: Request,
 
 
 @router.get("/vouchers")
-async def list_vouchers(voucher_type: Optional[str] = None,
+async def list_vouchers(request: Request, voucher_type: Optional[str] = None,
                         status: Optional[str] = None,
                         start: Optional[str] = None, end: Optional[str] = None,
                         limit: int = 200,
@@ -390,6 +391,10 @@ async def list_vouchers(voucher_type: Optional[str] = None,
         q["date"] = {**q.get("date", {}), "$gte": start}
     if end:
         q["date"] = {**q.get("date", {}), "$lte": end}
+    paged = await maybe_paged(request, "journal_entries", q, "date",
+                              ["voucher_no", "narration", "description", "status", "source_module", "project_code", "lines.account_name"])
+    if paged:
+        return paged
     rows = await db.journal_entries.find(q, {"_id": 0}).sort("date", -1).limit(limit).to_list(limit)
     return rows
 

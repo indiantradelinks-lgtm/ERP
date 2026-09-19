@@ -141,6 +141,8 @@ from routers.logistics_phase2_router import router as logistics_phase2_router
 from routers.logistics_phase3_router import router as logistics_phase3_router
 from routers.logistics_phase4_router import router as logistics_phase4_router
 from routers.logistics_phase5_router import router as logistics_phase5_router
+from routers.table_views_router import router as table_views_router
+from routers.sales_leaderboard_router import router as sales_leaderboard_router
 
 
 # ─── Ordered include list ───────────────────────────────────────────────────
@@ -279,6 +281,8 @@ ROUTERS_IN_ORDER: List[Tuple[str, APIRouter]] = [
     ("logistics_phase3", logistics_phase3_router),
     ("logistics_phase4", logistics_phase4_router),
     ("logistics_phase5", logistics_phase5_router),
+    ("table_views", table_views_router),
+    ("sales_leaderboard", sales_leaderboard_router),
 ]
 
 

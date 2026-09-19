@@ -25,6 +25,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { api, apiErrorMessage } from "@/lib/api";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { fmtDT } from "@/lib/datetime";
@@ -62,13 +65,16 @@ const PAYMENT_ROLES = ["super_admin", "accounts_executive", "general_manager", "
 export default function Advances() {
   const { user } = useAuth();
   const [tab, setTab] = useState("register");
-  const [advances, setAdvances] = useState([]);
   const [types, setTypes] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [canOnBehalf, setCanOnBehalf] = useState(false);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState({ status: "", advance_type: "", department: "" });
+  const { rows: filtered, pagination, search, setSearch, reload } = usePagedList("/advances", filter, {
+    viewKey: "hr_advances", errorLabel: "advances",
+    searchKeys: "advance_no,employee_name,employee_code,department,project,project_code,project_name,advance_type,status,purpose",
+  });
   const [showCreate, setShowCreate] = useState(false);
   const [showDetail, setShowDetail] = useState(null);
   const [showPayment, setShowPayment] = useState(null);
@@ -77,37 +83,27 @@ export default function Advances() {
   const canCreateOnBehalf = canOnBehalf || ON_BEHALF_ROLES.includes(user?.role);
   const canPay = PAYMENT_ROLES.includes(user?.role);
 
-  const load = async () => {
+  const loadAux = async () => {
     setLoading(true);
     try {
       const reqs = [
-        api.get("/advances"),
         api.get("/advance-types?active_only=true"),
         api.get("/advances/eligible-employees"),
       ];
       if (isPrivileged) reqs.push(api.get("/advances/dashboard/summary"));
       const results = await Promise.all(reqs);
-      setAdvances(results[0].data || []);
-      setTypes(results[1].data || []);
-      setEmployees(results[2].data?.employees || []);
-      setCanOnBehalf(!!results[2].data?.can_on_behalf);
-      if (results[3]) setSummary(results[3].data);
+      setTypes(results[0].data || []);
+      setEmployees(results[1].data?.employees || []);
+      setCanOnBehalf(!!results[1].data?.can_on_behalf);
+      if (results[2]) setSummary(results[2].data);
     } catch (e) {
       toast.error(apiErrorMessage(e, "Failed to load advances"));
     } finally {
       setLoading(false);
     }
   };
-  useEffect(() => { load(); }, []);
-
-  const filtered = useMemo(() => {
-    return advances.filter((a) => {
-      if (filter.status && a.status !== filter.status) return false;
-      if (filter.advance_type && a.advance_type !== filter.advance_type) return false;
-      if (filter.department && a.department !== filter.department) return false;
-      return true;
-    });
-  }, [advances, filter]);
+  const load = () => { reload(); loadAux(); };
+  useEffect(() => { loadAux(); }, []);
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6" data-testid="advances-page">
@@ -166,6 +162,8 @@ export default function Advances() {
                 <div className="w-44">
                   <DepartmentSelect label="" value={filter.department} onChange={(v) => setFilter({ ...filter, department: v })} testid="filter-department" />
                 </div>
+                <Input className="h-9 w-52" placeholder="Search advance #, employee…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="advances-search" />
+                <TableViewsMenu pagination={pagination} testidPrefix="advances" />
               </div>
             </CardHeader>
             <CardContent>
@@ -228,6 +226,7 @@ export default function Advances() {
                       ))}
                     </TableBody>
                   </Table>
+                  <div className="pt-2"><TablePager pagination={pagination} testidPrefix="advances" /></div>
                 </div>
               )}
             </CardContent>

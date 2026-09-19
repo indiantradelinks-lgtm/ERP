@@ -64,6 +64,7 @@ INDEXES = {
     "measurements": ["id", "project_id", [("created_at", -1)]],
     "sites": ["id", "status"],
     "users": ["role", "department", "is_active"],
+    "table_views": ["id", [("user_id", 1), ("table", 1), ("kind", 1)]],
     "email_outbox": ["status", [("created_at", -1)]],
 }
 

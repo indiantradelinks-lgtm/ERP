@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import useTableView from "@/hooks/useTableView";
+import { buildViewsApi, DEFAULT_SORT } from "@/hooks/tableViewState";
 
 // Map URL slug -> backend permission key (collection name).
 const SLUG_TO_PERM = {
@@ -26,11 +28,11 @@ export const DEFAULT_PAGE_SIZE = 50;
 
 /**
  * Server-paged resource hook. `data` holds ONLY the current page; `pagination`
- * drives DataTableShell's search / sort / pager controls.
- * opts: { enabled=true, pageSize=50, params={} (extra query, e.g. f_status) }
+ * drives DataTableShell's search / sort / pager / saved-views controls.
+ * opts: { enabled=true, pageSize=50, params={} (extra query, e.g. f_status), viewKey=resource }
  */
 export default function useResource(resource, opts = {}) {
-  const { enabled = true, pageSize: initialPageSize = DEFAULT_PAGE_SIZE, params: extraParams } = opts;
+  const { enabled = true, pageSize: initialPageSize = DEFAULT_PAGE_SIZE, params: extraParams, viewKey = resource } = opts;
   const { can } = useAuth() || { can: () => true };
   const [data, setData] = useState([]);
   const [total, setTotal] = useState(0);
@@ -39,9 +41,11 @@ export default function useResource(resource, opts = {}) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(initialPageSize);
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState({ by: "created_at", dir: "desc" });
+  const [sort, setSort] = useState(DEFAULT_SORT);
   const searchKeysRef = useRef("");
   const reqSeq = useRef(0);
+  const view = useTableView(viewKey, enabled);
+  const [viewApplied, setViewApplied] = useState(false);
 
   const permKey = SLUG_TO_PERM[resource] || resource;
   const canRead = can(permKey, "read");
@@ -49,8 +53,20 @@ export default function useResource(resource, opts = {}) {
   const canDelete = can(permKey, "delete");
   const extraKey = JSON.stringify(extraParams || {});
 
+  // Apply the remembered view once before the first fetch
+  useEffect(() => {
+    if (!view.ready || viewApplied) return;
+    const s = view.initial;
+    if (s) {
+      if (typeof s.search === "string") setSearch(s.search);
+      if (s.sort_by) setSort({ by: s.sort_by, dir: s.sort_dir === "asc" ? "asc" : "desc" });
+      if (s.page_size) setPageSize(Number(s.page_size));
+    }
+    setViewApplied(true);
+  }, [view.ready, view.initial, viewApplied]);
+
   const load = useCallback(async (override = {}) => {
-    if (!enabled) return;
+    if (!enabled || !viewApplied) return;
     const seq = ++reqSeq.current;
     setLoading(true);
     const p = override.page ?? page;
@@ -77,9 +93,15 @@ export default function useResource(resource, opts = {}) {
     } finally {
       if (seq === reqSeq.current) setLoading(false);
     }
-  }, [enabled, resource, permKey, page, pageSize, sort.by, sort.dir, search, extraKey]);
+  }, [enabled, viewApplied, resource, permKey, page, pageSize, sort.by, sort.dir, search, extraKey]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Remember the user's view (debounced, server-side) whenever it changes
+  useEffect(() => {
+    if (viewApplied) view.persist({ search, sort_by: sort.by, sort_dir: sort.dir, page_size: pageSize });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewApplied, search, sort.by, sort.dir, pageSize]);
 
   // Filters / page-size changed from outside → restart from page 1
   const firstExtra = useRef(extraKey);
@@ -130,15 +152,19 @@ export default function useResource(resource, opts = {}) {
     }
   }, [resource]);
 
-  const pagination = useMemo(() => ({
-    page, pageSize, total, loading, search, sort,
-    pages: Math.max(1, Math.ceil(total / pageSize)),
-    setPage,
-    setPageSize: (n) => { setPageSize(n); setPage(1); },
-    setSearch: setSearchDebounced,
-    setSort: (by) => { setSort((s) => ({ by, dir: s.by === by && s.dir === "desc" ? "asc" : "desc" })); setPage(1); },
-    setSearchKeys: (csv) => { searchKeysRef.current = csv; },
-  }), [page, pageSize, total, loading, search, sort, setSearchDebounced]);
+  const pagination = useMemo(() => {
+    const setters = { setSearch, setSort, setPageSize, setPage };
+    return {
+      page, pageSize, total, loading, search, sort,
+      pages: Math.max(1, Math.ceil(total / pageSize)),
+      setPage,
+      setPageSize: (n) => { setPageSize(n); setPage(1); },
+      setSearch: setSearchDebounced,
+      setSort: (by) => { setSort((s) => ({ by, dir: s.by === by && s.dir === "desc" ? "asc" : "desc" })); setPage(1); },
+      setSearchKeys: (csv) => { searchKeysRef.current = csv; },
+      views: buildViewsApi(view, { search, sort, pageSize }, setters, initialPageSize),
+    };
+  }, [page, pageSize, total, loading, search, sort, setSearchDebounced, view, initialPageSize]);
 
   return { data, total, loading, loadError, reload: load, create, update, remove, canRead, canWrite, canDelete, exportResource: resource, pagination };
 }

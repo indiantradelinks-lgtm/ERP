@@ -11,10 +11,11 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import Request, APIRouter, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from core import db, get_current_user, now_iso, new_id
+from pagination import maybe_paged, paged_or_rows
 from rbac import can
 from approval_engine import build_chain, apply_action, current_step, insert_approval, copy_approval_doc_fields
 from sequences import next_sequence, next_dept_doc
@@ -668,6 +669,7 @@ async def submit_advance(advance_id: str, body: Optional[dict] = None, user: dic
 
 @router.get("/advances")
 async def list_advances(
+    request: Request,
     status: str = "",
     employee_id: str = "",
     site: str = "",
@@ -711,7 +713,9 @@ async def list_advances(
     if advance_type:
         q["advance_type"] = advance_type
 
-    rows = await db.employee_advances.find(q, {"_id": 0}).sort("created_at", -1).limit(500).to_list(500)
+    paged = await maybe_paged(request, "employee_advances", q, "created_at",
+                              ["advance_no", "employee_name", "employee_code", "department", "project", "project_code", "advance_type", "status", "purpose"])
+    rows = paged["rows"] if paged else await db.employee_advances.find(q, {"_id": 0}).sort("created_at", -1).limit(500).to_list(500)
     # Enrich project details (id / name / manager) from the projects master
     pcodes = {r.get("project") for r in rows if r.get("project")} | {r.get("project_code") for r in rows if r.get("project_code")}
     if pcodes:
@@ -733,7 +737,7 @@ async def list_advances(
             step = await _approval_pending_step(r["id"])
             r["awaiting_role"] = step.get("role") if step else None
             r["awaiting_label"] = step.get("label") if step else None
-    return rows
+    return paged_or_rows(paged, rows)
 
 
 @router.get("/advances/{advance_id}")

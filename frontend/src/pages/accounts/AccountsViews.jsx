@@ -11,6 +11,9 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -287,7 +290,10 @@ export function CoAView() {
 /* ═══════════════════════════ Vouchers (unified) ═══════════════════════════ */
 /** Renders create + list for a SINGLE voucher type. Used by every voucher submenu. */
 export function VoucherView({ voucherType, title }) {
-  const [rows, setRows] = useState([]);
+  const { rows, pagination, search, setSearch, reload } = usePagedList("/accounts/vouchers", { voucher_type: voucherType }, {
+    viewKey: `accounts_vouchers_${voucherType.toLowerCase()}`, errorLabel: "vouchers", defaultSort: { by: "date", dir: "desc" },
+    searchKeys: "voucher_number,je_number,voucher_no,party_name,narration,status",
+  });
   const [coa, setCoa] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
@@ -301,13 +307,9 @@ export function VoucherView({ voucherType, title }) {
     status: "posted",
   });
 
-  const load = () => {
-    api.get(`/accounts/vouchers?voucher_type=${voucherType}&limit=200`).then(r => setRows(r.data || []));
-  };
+  const load = () => reload();
   useEffect(() => {
     api.get("/accounts/chart-of-accounts").then(r => setCoa(r.data || []));
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voucherType]);
 
   const totalDr = form.lines.reduce((a, b) => a + Number(b.debit || 0), 0);
@@ -344,8 +346,10 @@ export function VoucherView({ voucherType, title }) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-base">{title} <span className="text-xs text-slate-500 font-normal">({rows.length})</span></CardTitle>
-        <div className="flex gap-2">
+        <CardTitle className="text-base">{title} <span className="text-xs text-slate-500 font-normal">({pagination.total})</span></CardTitle>
+        <div className="flex gap-2 items-center">
+          <Input className="h-8 w-56 rounded-sm" placeholder="Search voucher #, party, narration…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid={`acc-vch-${voucherType.toLowerCase()}-search`} />
+          <TableViewsMenu pagination={pagination} testidPrefix={`acc-vch-${voucherType.toLowerCase()}`} />
           <Button size="sm" variant="outline" onClick={load}><RefreshCcw className="h-3.5 w-3.5 mr-1" />Refresh</Button>
           <Button size="sm" onClick={() => setOpen(true)} data-testid={`acc-vch-${voucherType.toLowerCase()}-add`}>
             <Plus className="h-3.5 w-3.5 mr-1" />New {title}
@@ -387,6 +391,7 @@ export function VoucherView({ voucherType, title }) {
             </tbody>
           </table>
         </div>
+        <div className="pt-2"><TablePager pagination={pagination} testidPrefix={`acc-vch-${voucherType.toLowerCase()}`} /></div>
       </CardContent>
 
       <Dialog open={open} onOpenChange={setOpen}>

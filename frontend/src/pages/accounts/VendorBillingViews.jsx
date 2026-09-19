@@ -6,6 +6,9 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -75,8 +78,11 @@ function Field({ label, children, className = "" }) {
 
 /* ═══════════════════ Vendor Bills ═══════════════════ */
 export function VendorBillsView() {
-  const [rows, setRows] = useState([]);
   const [filter, setFilter] = useState({ status: "", payment_priority: "" });
+  const { rows, pagination, search, setSearch, reload } = usePagedList("/payables/vendor-bills", filter, {
+    viewKey: "payables_vendor_bills", errorLabel: "vendor bills", defaultSort: { by: "invoice_date", dir: "desc" },
+    searchKeys: "bill_no,bill_number,invoice_no,vendor_invoice_no,vendor_name,po_number,grn_number,project_code,status",
+  });
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(newFormState());
   const [pendingGrns, setPendingGrns] = useState([]);
@@ -100,12 +106,7 @@ export function VendorBillsView() {
     };
   }
 
-  const load = () => {
-    const params = new URLSearchParams(Object.entries(filter).filter(([, v]) => v));
-    api.get(`/payables/vendor-bills?${params}`).then(r => setRows(r.data || []));
-  };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); }, [filter.status, filter.payment_priority]);
+  const load = () => reload();
 
   useEffect(() => {
     if (open) api.get("/payables/reports/grn-pending-invoice").then(r => setPendingGrns(r.data?.rows || [])).catch(() => {});
@@ -289,8 +290,10 @@ export function VendorBillsView() {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-base">Vendor Bills <span className="text-xs text-slate-500 font-normal">({rows.length})</span></CardTitle>
-        <div className="flex gap-2">
+        <CardTitle className="text-base">Vendor Bills <span className="text-xs text-slate-500 font-normal">({pagination.total})</span></CardTitle>
+        <div className="flex gap-2 items-center">
+          <Input className="h-8 w-52 rounded-sm" placeholder="Search bill #, vendor, PO…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="pay-vb-search" />
+          <TableViewsMenu pagination={pagination} testidPrefix="pay-vb" />
           <select className="h-8 rounded-sm border bg-background px-2 text-sm" value={filter.status} onChange={e => setFilter({ ...filter, status: e.target.value })}>
             <option value="">All statuses</option>
             <option value="draft">Draft</option>
@@ -398,6 +401,7 @@ export function VendorBillsView() {
             </tbody>
           </table>
         </div>
+        <div className="pt-2"><TablePager pagination={pagination} testidPrefix="pay-vb" /></div>
       </CardContent>
       {directOpen && <DirectBookingDialog onClose={(saved) => { setDirectOpen(false); if (saved) load(); }} />}
 
@@ -547,7 +551,10 @@ export function VendorBillsView() {
 
 /* ═══════════════════ Vendor Payments ═══════════════════ */
 export function VendorPaymentsView() {
-  const [rows, setRows] = useState([]);
+  const { rows, pagination, search, setSearch, reload } = usePagedList("/payables/vendor-payments", {}, {
+    viewKey: "payables_vendor_payments", errorLabel: "vendor payments", defaultSort: { by: "payment_date", dir: "desc" },
+    searchKeys: "payment_no,payment_number,vendor_name,utr,utr_no,cheque_no,mode,status",
+  });
   const [bills, setBills] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(newFormState());
@@ -561,9 +568,8 @@ export function VendorPaymentsView() {
     };
   }
 
-  const load = () => api.get("/payables/vendor-payments").then(r => setRows(r.data || []));
+  const load = () => reload();
   const loadBills = () => api.get("/payables/vendor-bills?status=approved").then(r => setBills(r.data || []));
-  useEffect(() => { load(); }, []);
 
   const openCreate = () => { loadBills(); setForm(newFormState()); setOpen(true); };
   const totalSet = Number(form.amount || 0) + Number(form.retention_held || 0) + Number(form.other_deduction || 0);
@@ -580,8 +586,10 @@ export function VendorPaymentsView() {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-base">Vendor Payments <span className="text-xs text-slate-500 font-normal">({rows.length})</span></CardTitle>
-        <div className="flex gap-2">
+        <CardTitle className="text-base">Vendor Payments <span className="text-xs text-slate-500 font-normal">({pagination.total})</span></CardTitle>
+        <div className="flex gap-2 items-center">
+          <Input className="h-8 w-52 rounded-sm" placeholder="Search payment #, vendor, UTR…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="pay-vpay-search" />
+          <TableViewsMenu pagination={pagination} testidPrefix="pay-vpay" />
           <Button size="sm" variant="outline" onClick={load}><RefreshCcw className="h-3.5 w-3.5 mr-1" />Refresh</Button>
           <Button size="sm" onClick={openCreate} data-testid="pay-vpay-add"><Plus className="h-3.5 w-3.5 mr-1" />New Payment</Button>
         </div>
@@ -610,6 +618,7 @@ export function VendorPaymentsView() {
             </tbody>
           </table>
         </div>
+        <div className="pt-2"><TablePager pagination={pagination} testidPrefix="pay-vpay" /></div>
       </CardContent>
 
       <Dialog open={open} onOpenChange={setOpen}>

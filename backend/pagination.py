@@ -83,3 +83,27 @@ async def paged_find(collection: str, q: dict, page: int, page_size: int,
             .limit(page_size).to_list(page_size)
     return {"rows": rows, "total": total, "page": page, "page_size": page_size,
             "pages": max(1, -(-total // page_size))}
+
+
+async def maybe_paged(request: Request, collection: str, q: dict, default_sort: str = "created_at",
+                      default_keys: Iterable[str] = ()) -> Optional[dict]:
+    """Return a paged result when `page>=1` is in the query string, else None (legacy path)."""
+    qp = request.query_params
+    try:
+        page = int(qp.get("page") or 0)
+    except ValueError:
+        page = 0
+    if page < 1:
+        return None
+    keys = parse_keys(qp.get("search_keys", "")) or list(default_keys)
+    full_q = combine(q, search_clause(qp.get("search", ""), keys), *extra_filters(request))
+    try:
+        page_size = int(qp.get("page_size") or DEFAULT_PAGE_SIZE)
+    except ValueError:
+        page_size = DEFAULT_PAGE_SIZE
+    return await paged_find(collection, full_q, page, page_size,
+                            sort_spec(qp.get("sort_by", ""), qp.get("sort_dir", "desc"), default_sort))
+
+
+def paged_or_rows(paged: Optional[dict], rows: list):
+    return {**paged, "rows": rows} if paged else rows

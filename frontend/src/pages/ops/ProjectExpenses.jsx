@@ -8,6 +8,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProjectSelect } from "@/components/MasterSelect";
@@ -34,11 +37,14 @@ const STATUS_BADGE = {
 
 export default function ProjectExpenses({ embedded = false }) {
   const { user } = useAuth();
-  const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState(null);
   const [types, setTypes] = useState([]);
   const [threshold, setThreshold] = useState(10000);
   const [filters, setFilters] = useState({ project_code: "", status: "", expense_type: "" });
+  const { rows, pagination, search, setSearch, reload } = usePagedList("/project-expenses", filters, {
+    viewKey: "project_expenses", errorLabel: "expenses",
+    searchKeys: "expense_no,project_code,project_name,expense_type,category,vendor,payee,status,description,cost_center_name",
+  });
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState(blank());
   const [ccList, setCcList] = useState([]);
@@ -53,17 +59,13 @@ export default function ProjectExpenses({ embedded = false }) {
   const [hoCCs, setHoCCs] = useState([]);
   const isHO = form.booking_scope === "head_office";
 
-  const load = async () => {
+  const loadSummary = async () => {
     try {
-      const params = {};
-      Object.entries(filters).forEach(([k, v]) => { if (v) params[k] = v; });
-      const [r, s] = await Promise.all([
-        api.get("/project-expenses", { params }),
-        api.get("/project-expenses/summary", { params: filters.project_code ? { project_code: filters.project_code } : {} }),
-      ]);
-      setRows(r.data || []); setSummary(s.data);
+      const s = await api.get("/project-expenses/summary", { params: filters.project_code ? { project_code: filters.project_code } : {} });
+      setSummary(s.data);
     } catch { toast.error("Failed to load expenses"); }
   };
+  const load = () => { reload(); loadSummary(); };
   useEffect(() => {
     api.get("/project-expenses/types").then((r) => setTypes(r.data || [])).catch(() => {});
     api.get("/project-expenses/settings").then((r) => setThreshold(r.data?.large_threshold || 10000)).catch(() => {});
@@ -72,8 +74,8 @@ export default function ProjectExpenses({ embedded = false }) {
     api.get("/office-locations").then((r) => setOffices(r.data || [])).catch(() => {});
     api.get("/head-office-cost-centers").then((r) => setHoCCs(r.data || [])).catch(() => {});
   }, []);
-  useEffect(() => { load(); }, [filters]); // eslint-disable-line
-  useAutoSync(load);
+  useEffect(() => { loadSummary(); }, [filters]); // eslint-disable-line
+  useAutoSync(load, { interval: 10000 });
 
   const onProjectPicked = async (code, row) => {
     setForm((f) => ({ ...f, project_code: code, project_id: row?.id || "", cost_center_id: "" }));
@@ -204,6 +206,9 @@ export default function ProjectExpenses({ embedded = false }) {
             <option value="">All types</option>
             {types.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
           </select>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search expense #, vendor, description…"
+            className="h-8 w-56 rounded-sm border border-input bg-background px-2 text-xs" data-testid="pex-search" />
+          <TableViewsMenu pagination={pagination} testidPrefix="pex" />
         </div>
         <Table>
           <TableHeader><TableRow className="bg-muted/30 hover:bg-muted/30">
@@ -279,6 +284,7 @@ export default function ProjectExpenses({ embedded = false }) {
             ))}
           </TableBody>
         </Table>
+        <div className="px-3 py-2 border-t border-border"><TablePager pagination={pagination} testidPrefix="pex" /></div>
       </div>
 
       <Dialog open={creating} onOpenChange={setCreating}>

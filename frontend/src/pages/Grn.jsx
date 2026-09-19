@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { Plus, Search, PackageCheck, Trash2, AlertTriangle, Network, FileDown, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,25 +18,23 @@ import { toast } from "sonner";
 const STATUS_TONE = { pending_inspection: "warning", approved: "success", rejected: "danger", partial_accepted: "info" };
 
 export default function Grn() {
-  const [rows, setRows] = useState([]);
+  const { rows, pagination, search: query, setSearch: setQuery, reload } = usePagedList("/procurement/grns", {}, {
+    viewKey: "procurement_grns", errorLabel: "GRNs", searchKeys: "grn_number,po_number,vendor_name,store_location,status",
+  });
   const [pos, setPos] = useState([]);
-  const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [lineageFor, setLineageFor] = useState(null);
   const [attachFor, setAttachFor] = useState(null);
 
-  const load = async () => {
+  const loadAux = async () => {
     try {
-      const [g, p] = await Promise.all([
-        api.get("/procurement/grns"),
-        api.get("/purchase-orders"),
-      ]);
-      setRows(g.data || []);
+      const { data } = await api.get("/purchase-orders");
       // Open POs only — exclude received & cancelled
-      setPos((p.data || []).filter((po) => !["received", "cancelled"].includes(po.status)));
+      setPos((data || []).filter((po) => !["received", "cancelled"].includes(po.status)));
     } catch (e) { toast.error(e.response?.data?.detail || "Failed to load"); }
   };
-  useEffect(() => { load(); }, []);
+  const load = () => { reload(); loadAux(); };
+  useEffect(() => { loadAux(); }, []);
 
   const remove = async (g) => {
     if (!window.confirm(`Delete ${g.grn_number}? This reverses the inventory inward.`)) return;
@@ -41,11 +42,7 @@ export default function Grn() {
     catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
 
-  const filtered = useMemo(() => {
-    if (!query.trim()) return rows;
-    const q = query.toLowerCase();
-    return rows.filter((r) => [r.grn_number, r.po_number, r.vendor_name, r.store_location, r.status].some((v) => String(v ?? "").toLowerCase().includes(q)));
-  }, [rows, query]);
+  const filtered = rows;
 
   return (
     <div className="space-y-6" data-testid="grn-page">
@@ -63,6 +60,7 @@ export default function Grn() {
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input className="pl-9 h-9 rounded-sm" placeholder="Search GRN #, PO #, vendor…" value={query} onChange={(e) => setQuery(e.target.value)} data-testid="grn-search" />
           </div>
+          <TableViewsMenu pagination={pagination} testidPrefix="grn" />
           <div className="ml-auto">
             <Button className="h-9 rounded-sm" onClick={() => setOpen(true)} data-testid="grn-add">
               <Plus className="h-4 w-4 mr-1" /> New GRN
@@ -118,6 +116,7 @@ export default function Grn() {
             </TableBody>
           </Table>
         </div>
+        <div className="px-4 py-2 border-t border-border"><TablePager pagination={pagination} testidPrefix="grn" /></div>
       </div>
 
       {open && <GrnDialog pos={pos} onClose={() => setOpen(false)} onSaved={() => { setOpen(false); load(); }} />}

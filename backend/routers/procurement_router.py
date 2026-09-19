@@ -21,6 +21,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 
 from core import db, require_permission, now_iso, new_id, logger
+from pagination import maybe_paged, paged_or_rows
 from audit import audit
 from sequences import next_sequence, stamp_dept_doc
 from approval_engine import build_chain, insert_approval, copy_approval_doc_fields
@@ -185,11 +186,15 @@ class PRIn(BaseModel):
 
 
 @router.get("/procurement/prs")
-async def list_prs(status: Optional[str] = None,
+async def list_prs(request: Request, status: Optional[str] = None,
                    user: dict = Depends(require_permission("purchase_requisitions", "read"))):
     q: dict = {}
     if status:
         q["status"] = status
+    paged = await maybe_paged(request, "purchase_requisitions", q, "created_at",
+                              ["pr_number", "project_code", "project_name", "department", "status", "requested_by", "purpose"])
+    if paged:
+        return paged
     rows = await db.purchase_requisitions.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
     return rows
 
@@ -410,7 +415,10 @@ class RFQResponse(BaseModel):
 
 
 @router.get("/procurement/rfqs")
-async def list_rfqs(user: dict = Depends(require_permission("rfqs", "read"))):
+async def list_rfqs(request: Request, user: dict = Depends(require_permission("rfqs", "read"))):
+    paged = await maybe_paged(request, "rfqs", {}, "created_at", ["rfq_number", "pr_number", "project_code", "status", "title"])
+    if paged:
+        return paged
     rows = await db.rfqs.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
     return rows
 
@@ -968,7 +976,10 @@ class GRNIn(BaseModel):
 
 
 @router.get("/procurement/grns")
-async def list_grns(user: dict = Depends(require_permission("grn", "read"))):
+async def list_grns(request: Request, user: dict = Depends(require_permission("grn", "read"))):
+    paged = await maybe_paged(request, "grn", {}, "created_at", ["grn_number", "po_number", "vendor_name", "project_code", "status"])
+    if paged:
+        return paged
     rows = await db.grn.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
     return rows
 

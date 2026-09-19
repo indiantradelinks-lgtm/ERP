@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 
 from core import db, require_permission, now_iso, new_id
+from pagination import maybe_paged, paged_or_rows
 from audit import audit
 from sequences import next_sequence, stamp_dept_doc
 
@@ -133,11 +134,14 @@ async def record_payment(payload: PaymentIn, request: Request,
 
 
 @router.get("/payments-in")
-async def list_payments(client_id: Optional[str] = None,
+async def list_payments(request: Request, client_id: Optional[str] = None,
                         user: dict = Depends(require_permission("payments_in", "read"))):
     q: dict = {}
     if client_id:
         q["client_id"] = client_id
+    paged = await maybe_paged(request, "payments_in", q, "payment_date", ["receipt_no", "client_name", "utr_no", "reference", "mode", "bill_no"])
+    if paged:
+        return paged
     return await db.payments_in.find(q, {"_id": 0}).sort("payment_date", -1).to_list(1000)
 
 

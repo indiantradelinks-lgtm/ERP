@@ -10,6 +10,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProjectSelect, SiteLocationSelect } from "@/components/MasterSelect";
@@ -57,10 +60,13 @@ export default function ProjectRequests() {
   const canRaise = RAISE_ROLES.has(user?.role);
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get("tab") === "expenses" ? "expenses" : "requests";
-  const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState(null);
   const [types, setTypes] = useState([]);
   const [filters, setFilters] = useState({ project_code: "", status: "", request_type: "", dept: "" });
+  const { rows, pagination, search, setSearch, reload } = usePagedList("/project-requests", filters, {
+    viewKey: "project_requests", errorLabel: "requests",
+    searchKeys: "request_no,project_code,project_name,client_name,request_type_label,owning_dept,status,description,vendor,created_by",
+  });
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState(blank());
   const [attFiles, setAttFiles] = useState([]);
@@ -116,17 +122,13 @@ export default function ProjectRequests() {
   }, [isHO]);
   const isPayment = meta?.payment;
 
-  const load = async () => {
+  const loadSummary = async () => {
     try {
-      const params = {};
-      Object.entries(filters).forEach(([k, v]) => { if (v) params[k] = v; });
-      const [r, s] = await Promise.all([
-        api.get("/project-requests", { params }),
-        api.get("/project-requests/summary", { params: filters.project_code ? { project_code: filters.project_code } : {} }),
-      ]);
-      setRows(r.data || []); setSummary(s.data);
+      const s = await api.get("/project-requests/summary", { params: filters.project_code ? { project_code: filters.project_code } : {} });
+      setSummary(s.data);
     } catch { toast.error("Failed to load requests"); }
   };
+  const load = () => { reload(); loadSummary(); };
   useEffect(() => { api.get("/project-requests/types").then((r) => setTypes(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { api.get("/ops/resource-requests/meta/designations").then((r) => setDesignations(r.data || [])).catch(() => {}); }, []);
   useEffect(() => { api.get("/procurement/master/categories").then((r) => setCategories(r.data || [])).catch(() => {}); }, []);
@@ -134,8 +136,8 @@ export default function ProjectRequests() {
   useEffect(() => {
     api.get("/vendors/approved-lite").then((r) => setVendors(r.data || [])).catch(() => {});
   }, []);
-  useEffect(() => { load(); }, [filters]); // eslint-disable-line
-  useAutoSync(load);
+  useEffect(() => { loadSummary(); }, [filters]); // eslint-disable-line
+  useAutoSync(load, { interval: 10000 });
   useEffect(() => {
     if (searchParams.get("new") === "service" && canRaise) {
       openDialog("service");
@@ -386,6 +388,9 @@ export default function ProjectRequests() {
             <option value="">All statuses</option>
             {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v[0]}</option>)}
           </select>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search request #, project, description…"
+            className="h-8 w-56 rounded-sm border border-input bg-background px-2 text-xs" data-testid="req-search" />
+          <TableViewsMenu pagination={pagination} testidPrefix="req" />
         </div>
         <Table>
           <TableHeader><TableRow className="bg-muted/30 hover:bg-muted/30">
@@ -454,6 +459,7 @@ export default function ProjectRequests() {
             })}
           </TableBody>
         </Table>
+        <div className="px-3 py-2 border-t border-border"><TablePager pagination={pagination} testidPrefix="req" /></div>
       </div>
 
         </TabsContent>

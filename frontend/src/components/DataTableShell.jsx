@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { Plus, Search, Trash2, Pencil, FileSpreadsheet, FileText, Paperclip, ArrowUp, ArrowDown, ArrowUpDown, Loader2 } from "lucide-react";
 import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -263,6 +264,7 @@ export default function DataTableShell({
           </div>
           {rightSlot}
           {extraActions}
+          {serverMode && <TableViewsMenu pagination={pagination} testidPrefix={testidPrefix} />}
           {exportResource && (
             <>
               <Button variant="outline" className="h-9 rounded-sm" onClick={() => downloadExport(exportResource, "xlsx", exportParams)} data-testid={`${testidPrefix}-export-xlsx`} title="Export Excel">

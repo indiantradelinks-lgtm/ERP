@@ -15,6 +15,9 @@ import { cn } from "@/lib/utils";
 import { toneFor } from "@/lib/statusTone";
 import { fmtD, fmtT } from "@/lib/datetime";
 import { lookupGet } from "@/lib/lookups";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 
 const STATUS_TONE = {
   open: "info", under_review: "primary", submitted: "primary",
@@ -54,11 +57,13 @@ const initialForm = () => ({
 });
 
 export default function Enquiries() {
-  const [rows, setRows] = useState([]);
+  const { rows, pagination, search: query, setSearch: setQuery, reload } = usePagedList("/enquiries", {}, {
+    viewKey: "enquiries", errorLabel: "enquiries",
+    searchKeys: "enquiry_no,customer,site_location,status,customer_enquiry_no,priority,service_categories,rfq_type",
+  });
   const [clients, setClients] = useState([]);
   const [sites, setSites] = useState([]);
   const [pulse, setPulse] = useState(null);
-  const [query, setQuery] = useState("");
   useSearchLanding(setQuery, [rows]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(initialForm());
@@ -67,21 +72,20 @@ export default function Enquiries() {
   const [selected, setSelected] = useState(null);
   const [attachOpen, setAttachOpen] = useState(null);   // an enquiry row
 
-  const load = async () => {
+  const loadAux = async () => {
     try {
-      const [eq, cl, s, p] = await Promise.all([
-        api.get("/enquiries"),
+      const [cl, s, p] = await Promise.all([
         lookupGet("/clients"),
         api.get("/sites"),
         api.get("/sales/enquiry-pulse"),
       ]);
-      setRows(eq.data || []);
       setClients(cl.data || []);
       setSites(s.data || []);
       setPulse(p.data || null);
     } catch (e) { toast.error(e.response?.data?.detail || "Failed to load"); }
   };
-  useEffect(() => { load(); }, []);
+  const load = () => { reload(); loadAux(); };
+  useEffect(() => { loadAux(); }, []);
 
   const downloadExport = async (fmt) => {
     try {
@@ -175,12 +179,7 @@ export default function Enquiries() {
     } catch (e) { toast.error(e.response?.data?.detail || "Conversion failed"); }
   };
 
-  const filtered = rows.filter((r) => {
-    if (!query) return true;
-    const q = query.toLowerCase();
-    return [r.enquiry_no, r.customer, r.site_location, r.status, r.customer_enquiry_no, r.priority, ...(r.service_categories || []), ...(r.rfq_type || [])]
-      .some((v) => String(v ?? "").toLowerCase().includes(q));
-  });
+  const filtered = rows;
 
   return (
     <div className="space-y-6" data-testid="enquiries-page">
@@ -208,6 +207,7 @@ export default function Enquiries() {
             <Input className="pl-9 h-9 rounded-sm" placeholder="Search by code, client, service, RFQ type…" value={query} onChange={(e) => setQuery(e.target.value)} data-testid="enquiries-search" />
           </div>
           <div className="ml-auto flex items-center gap-2">
+            <TableViewsMenu pagination={pagination} testidPrefix="enquiries" />
             <Button
               variant="outline"
               size="sm"
@@ -311,6 +311,7 @@ export default function Enquiries() {
             </TableBody>
           </Table>
         </div>
+        <div className="px-4 py-2 border-t border-border"><TablePager pagination={pagination} testidPrefix="enquiries" /></div>
       </div>
 
       {/* Convert dialog */}

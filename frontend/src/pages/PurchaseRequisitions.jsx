@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import useSearchLanding from "@/hooks/useSearchLanding";
 import { useNavigate } from "react-router-dom";
 import { Plus, Search, Trash2, Send, ClipboardCheck, Briefcase, AlertTriangle, RefreshCw, X, Network, FileDown, ListTree } from "lucide-react";
@@ -35,7 +38,10 @@ const blankForm = () => ({
 
 export default function PurchaseRequisitions() {
   const navigate = useNavigate();
-  const [rows, setRows] = useState([]);
+  const { rows, pagination, search: query, setSearch: setQuery, reload } = usePagedList("/procurement/prs", {}, {
+    viewKey: "procurement_prs", errorLabel: "PRs",
+    searchKeys: "pr_number,department,project_code,site_code,priority,status,budget_reference,items.name",
+  });
   const [projMap, setProjMap] = useState({});
   useEffect(() => {
     lookupGet("/projects").then((res) => {
@@ -48,7 +54,6 @@ export default function PurchaseRequisitions() {
       setProjMap(m);
     }).catch(() => {});
   }, []);
-  const [query, setQuery] = useState("");
   useSearchLanding(setQuery, [rows]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(blankForm());
@@ -57,10 +62,7 @@ export default function PurchaseRequisitions() {
   const [submitFor, setSubmitFor] = useState(null);
   const [dropdowns, setDropdowns] = useState({ departments: [], projects: [], sites: [], categories: [], items_by_category: {}, cost_centers: [] });
 
-  const load = async () => {
-    try { const { data } = await api.get("/procurement/prs"); setRows(data || []); }
-    catch (e) { toast.error(e.response?.data?.detail || "Failed to load PRs"); }
-  };
+  const load = () => reload();
   const loadDropdowns = async (projectId) => {
     try {
       const url = projectId ? `/procurement/master/pr-dropdowns?project_id=${projectId}` : "/procurement/master/pr-dropdowns";
@@ -68,7 +70,7 @@ export default function PurchaseRequisitions() {
       setDropdowns(data);
     } catch { /* non-fatal */ }
   };
-  useEffect(() => { load(); loadDropdowns(); }, []);
+  useEffect(() => { loadDropdowns(); }, []);
   useEffect(() => { if (open) loadDropdowns(form.project_id || ""); }, [open, form.project_id]);
 
   const create = async () => {
@@ -96,15 +98,7 @@ export default function PurchaseRequisitions() {
     catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); }
   };
 
-  const filtered = useMemo(() => {
-    if (!query.trim()) return rows;
-    const q = query.toLowerCase();
-    return rows.filter((r) =>
-      [r.pr_number, r.department, r.project_code, r.site_code, r.priority, r.status, r.budget_reference]
-        .some((v) => String(v ?? "").toLowerCase().includes(q))
-      || (r.items || []).some((i) => String(i.name || "").toLowerCase().includes(q)),
-    );
-  }, [rows, query]);
+  const filtered = rows;
 
   return (
     <div className="space-y-6" data-testid="prs-page">
@@ -122,6 +116,7 @@ export default function PurchaseRequisitions() {
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input className="pl-9 h-9 rounded-sm" placeholder="Search PR #, department, item…" value={query} onChange={(e) => setQuery(e.target.value)} data-testid="prs-search" />
           </div>
+          <TableViewsMenu pagination={pagination} testidPrefix="prs" />
           <div className="ml-auto">
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
@@ -221,6 +216,7 @@ export default function PurchaseRequisitions() {
             </TableBody>
           </Table>
         </div>
+        <div className="px-4 py-2 border-t border-border"><TablePager pagination={pagination} testidPrefix="prs" /></div>
       </div>
 
       {coverageFor && <PRCoverageDialog pr={coverageFor} onClose={() => setCoverageFor(null)} />}

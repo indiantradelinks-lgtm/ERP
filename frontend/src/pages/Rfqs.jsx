@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState, Fragment } from "react";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Plus, RefreshCw, Search, Trophy, FileText, ChevronRight, Send, Mail, Network, FileDown, Mails, History, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -29,10 +32,11 @@ export default function Rfqs() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const initialPr = searchParams.get("pr") || "";
-  const [rows, setRows] = useState([]);
+  const { rows, pagination, search: query, setSearch: setQuery, reload } = usePagedList("/procurement/rfqs", {}, {
+    viewKey: "procurement_rfqs", errorLabel: "RFQs", searchKeys: "rfq_number,pr_number,status,project_code",
+  });
   const [prs, setPrs] = useState([]);
   const [vendors, setVendors] = useState([]);
-  const [query, setQuery] = useState("");
   const [open, setOpen] = useState(!!initialPr);
   const [form, setForm] = useState({ pr_id: initialPr, vendor_ids: [], notes: "", response_due_date: "", item_indexes: [] });
   const [respondOpen, setRespondOpen] = useState(null);
@@ -47,20 +51,19 @@ export default function Rfqs() {
   const [tagOpen, setTagOpen] = useState(false);
   const [catMaster, setCatMaster] = useState([]);
 
-  const load = async () => {
+  const loadAux = async () => {
     try {
-      const [r, p, v] = await Promise.all([
-        api.get("/procurement/rfqs"),
+      const [p, v] = await Promise.all([
         api.get("/procurement/prs"),
         lookupGet("/vendors"),
       ]);
-      setRows(r.data || []);
       setPrs((p.data || []).filter((x) => RFQ_PR_STATUSES.includes(x.status)));
       setVendors(v.data || []);
       api.get("/vendor-categories").then((c) => setCatMaster(c.data || [])).catch(() => {});
     } catch (e) { toast.error(e.response?.data?.detail || "Failed to load"); }
   };
-  useEffect(() => { load(); }, []);
+  const load = () => { reload(); loadAux(); };
+  useEffect(() => { loadAux(); }, []);
 
   const selectedPr = useMemo(() => prs.find((p) => p.id === form.pr_id), [prs, form.pr_id]);
   // indexes already released in LIVE (non-cancelled) RFQs — balance items only
@@ -140,11 +143,7 @@ export default function Rfqs() {
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
 
-  const filtered = useMemo(() => {
-    if (!query.trim()) return rows;
-    const q = query.toLowerCase();
-    return rows.filter((r) => [r.rfq_number, r.pr_number, r.status].some((v) => String(v ?? "").toLowerCase().includes(q)));
-  }, [rows, query]);
+  const filtered = rows;
 
   return (
     <div className="space-y-6" data-testid="rfqs-page">
@@ -162,6 +161,7 @@ export default function Rfqs() {
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input className="pl-9 h-9 rounded-sm" placeholder="Search RFQ #, PR #…" value={query} onChange={(e) => setQuery(e.target.value)} data-testid="rfqs-search" />
           </div>
+          <TableViewsMenu pagination={pagination} testidPrefix="rfqs" />
           <div className="ml-auto">
             <Button className="h-9 rounded-sm" onClick={() => setOpen(true)} data-testid="rfqs-add"><Plus className="h-4 w-4 mr-1" /> New RFQ</Button>
           </div>
@@ -244,6 +244,7 @@ export default function Rfqs() {
             </TableBody>
           </Table>
         </div>
+        <div className="px-4 py-2 border-t border-border"><TablePager pagination={pagination} testidPrefix="rfqs" /></div>
       </div>
 
       {/* Create dialog */}

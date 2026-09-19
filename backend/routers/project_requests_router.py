@@ -32,6 +32,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from core import db, require_permission, get_current_user, now_iso, new_id
+from pagination import maybe_paged, paged_or_rows
 from scope import apply_project_scope, ensure_project_access
 from datetime import datetime, timezone
 from audit import audit
@@ -294,7 +295,7 @@ async def stock_check(p: RequestIn, user: dict = Depends(require_permission("pro
 
 
 @router.get("/project-requests")
-async def list_requests(project_code: Optional[str] = None, request_type: Optional[str] = None,
+async def list_requests(request: Request, project_code: Optional[str] = None, request_type: Optional[str] = None,
                         status: Optional[str] = None, dept: Optional[str] = None,
                         user: dict = Depends(require_permission("project_requests", "read"))):
     q: Dict[str, Any] = {}
@@ -312,7 +313,10 @@ async def list_requests(project_code: Optional[str] = None, request_type: Option
     # to Head Office with no project scope) with live status.
     q = scoped if scoped is q else {"$or": [scoped, {**base, "created_by_id": user.get("id")}]}
     q["source"] = {"$ne": "vendor_bill"}  # vendor-bill shadow rows live only in the Accounts queue
-    rows = await db.project_requests.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    paged = await maybe_paged(request, "project_requests", q, "created_at",
+                              ["request_no", "project_code", "project_name", "client_name", "request_type_label", "request_type",
+                               "owning_dept", "status", "description", "vendor", "created_by"])
+    rows = paged["rows"] if paged else await db.project_requests.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
     pay_ids = [r["id"] for r in rows if r.get("is_payment")]
     vmap: Dict[str, Any] = {}
     if pay_ids:
@@ -326,7 +330,7 @@ async def list_requests(project_code: Optional[str] = None, request_type: Option
             v = vmap.get(r["id"])
             r["pay_stage"] = (v or {}).get("stage") or "pending_verification"
             r["pay_info"] = v
-    return rows
+    return paged_or_rows(paged, rows)
 
 
 @router.get("/project-requests/summary")

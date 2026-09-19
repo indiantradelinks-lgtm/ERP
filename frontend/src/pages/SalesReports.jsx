@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge } from "@/components/DataTableShell";
 import { api } from "@/lib/api";
+import SalesLeaderboard from "@/components/SalesLeaderboard";
 import { toast } from "sonner";
 
 const TABS = [
@@ -50,6 +51,8 @@ export default function SalesReports() {
         <h1 className="font-display font-black text-3xl tracking-tight">Sales Reports</h1>
         <p className="text-sm text-muted-foreground mt-1">Pipeline trend, win-rates, deadlines, and global search across enquiries / quotes / orders.</p>
       </div>
+
+      <SalesLeaderboard />
 
       <div className="flex flex-wrap gap-2">
         {TABS.map((t) => {
