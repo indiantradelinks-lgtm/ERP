@@ -45,6 +45,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from core import db, require_permission, now_iso, new_id
+from pagination import paginate_list
 from audit import audit
 from accounting_service import post_journal_entry
 
@@ -151,6 +152,7 @@ async def budget_check(
 # ═════════════════════════════════════════════════════════════════════════
 @router.get("/reports/po-commitment")
 async def po_commitment_report(
+    request: Request,
     project_id: Optional[str] = None,
     vendor_id: Optional[str] = None,
     user: dict = Depends(require_permission("accounting", "read")),
@@ -189,7 +191,8 @@ async def po_commitment_report(
             "open_commitment": round(open_commit, 2),
         })
 
-    return {"count": len(out), "total_open_commitment": round(total_committed, 2), "rows": out}
+    paged = paginate_list(request, out, ["po_number", "vendor_name", "project_code", "status"], "po_date")
+    return {"count": len(out), "total_open_commitment": round(total_committed, 2), **(paged or {"rows": out})}
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -197,6 +200,7 @@ async def po_commitment_report(
 # ═════════════════════════════════════════════════════════════════════════
 @router.get("/reports/grn-not-billed")
 async def grn_not_billed(
+    request: Request,
     project_id: Optional[str] = None,
     vendor_id: Optional[str] = None,
     days_old: int = Query(0, description="Only GRNs older than this many days"),
@@ -246,7 +250,8 @@ async def grn_not_billed(
             "grn_amount": round(amt, 2),
             "severity": ("critical" if (age or 0) > 60 else "warning" if (age or 0) > 30 else "info"),
         })
-    return {"count": len(out), "total_open_grni": round(total_open, 2), "rows": out}
+    paged = paginate_list(request, out, ["grn_number", "po_number", "vendor_name", "project_code", "status"], "grn_date")
+    return {"count": len(out), "total_open_grni": round(total_open, 2), **(paged or {"rows": out})}
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -254,6 +259,7 @@ async def grn_not_billed(
 # ═════════════════════════════════════════════════════════════════════════
 @router.get("/reports/bill-without-grn")
 async def bill_without_grn(
+    request: Request,
     project_id: Optional[str] = None,
     vendor_id: Optional[str] = None,
     user: dict = Depends(require_permission("accounting", "read")),
@@ -297,7 +303,8 @@ async def bill_without_grn(
             "is_service": bool(r.get("is_service") or (r.get("expense_category") in ("service", "labour", "transport", "consultancy"))),
         })
     audit_risk = [x for x in out if not x["is_service"] and not x.get("po_number")]
-    return {"count": len(out), "audit_risk_count": len(audit_risk), "rows": out}
+    paged = paginate_list(request, out, ["bill_no", "invoice_no", "vendor_name", "po_number", "project_code", "status", "expense_category"], "invoice_date")
+    return {"count": len(out), "audit_risk_count": len(audit_risk), **(paged or {"rows": out})}
 
 
 # ═════════════════════════════════════════════════════════════════════════

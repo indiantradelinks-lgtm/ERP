@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 
 from core import db, require_permission, now_iso, new_id
+from pagination import maybe_paged, paginate_list
 from audit import audit
 
 router = APIRouter(prefix="/inv3", tags=["store-inventory-phase3"])
@@ -65,7 +66,7 @@ async def _mr_number() -> str:
 
 
 @router.get("/material-requests")
-async def list_mr(status: Optional[str] = None, project_code: Optional[str] = None,
+async def list_mr(request: Request, status: Optional[str] = None, project_code: Optional[str] = None,
                   site_id: Optional[str] = None,
                   user: dict = Depends(require_permission("material_allocations", "read"))):
     q: dict = {}
@@ -75,6 +76,10 @@ async def list_mr(status: Optional[str] = None, project_code: Optional[str] = No
         q["project_code"] = project_code
     if site_id:
         q["site_id"] = site_id
+    paged = await maybe_paged(request, "material_requests", q, "created_at",
+                              ["mr_no", "request_no", "project_code", "project_name", "site_name", "requested_by", "status", "priority", "items.item_name"])
+    if paged:
+        return paged
     return await db.material_requests.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
 
 
@@ -357,13 +362,17 @@ class TransferIn(BaseModel):
 
 
 @router.get("/transfers")
-async def list_transfers(status: Optional[str] = None, project_code: Optional[str] = None,
+async def list_transfers(request: Request, status: Optional[str] = None, project_code: Optional[str] = None,
                           user: dict = Depends(require_permission("inventory", "read"))):
     q: dict = {}
     if status:
         q["status"] = status
     if project_code:
         q["project_code"] = project_code
+    paged = await maybe_paged(request, "material_transfers", q, "created_at",
+                              ["transfer_no", "from_store_name", "to_store_name", "project_code", "status", "items.item_name"])
+    if paged:
+        return paged
     return await db.material_transfers.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
 
 
@@ -666,7 +675,7 @@ async def project_consumption(project_code: Optional[str] = None,
 # 4. Pending Returnable Material
 # ─────────────────────────────────────────────────────────────────────
 @router.get("/pending-returnable")
-async def pending_returnable(project_code: Optional[str] = None,
+async def pending_returnable(request: Request, project_code: Optional[str] = None,
                              user: dict = Depends(require_permission("material_allocations", "read"))):
     """Material_allocations marked returnable=true that are still out
     (status in issued / partially_returned) — high-value scaffolding pipe,
@@ -715,7 +724,8 @@ async def pending_returnable(project_code: Optional[str] = None,
             "overdue": bool(overdue),
         })
     enriched.sort(key=lambda r: (not r["overdue"], -r["outstanding_value"]))
-    return {"count": len(enriched), "total_value": round(total_value, 2), "rows": enriched}
+    paged = paginate_list(request, enriched, ["item_name", "item_code", "project_code", "project_name", "issued_to", "status"], "issue_date")
+    return {"count": len(enriched), "total_value": round(total_value, 2), **(paged or {"rows": enriched})}
 
 
 # ─────────────────────────────────────────────────────────────────────

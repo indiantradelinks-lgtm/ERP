@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 
 from core import db, require_permission, now_iso, new_id
+from pagination import paginate_list
 from audit import audit
 
 router = APIRouter(prefix="/inv2", tags=["store-inventory-phase2"])
@@ -217,7 +218,7 @@ async def pending_pos_for_grn(user: dict = Depends(require_permission("grn", "re
 # 3. Stock Inward Report
 # ─────────────────────────────────────────────────────────────────────
 @router.get("/stock-inward-report")
-async def stock_inward_report(date_from: Optional[str] = None, date_to: Optional[str] = None,
+async def stock_inward_report(request: Request, date_from: Optional[str] = None, date_to: Optional[str] = None,
                               store_id: Optional[str] = None, vendor_id: Optional[str] = None,
                               user: dict = Depends(require_permission("inventory", "read"))):
     """Inward transactions (GRN-driven + opening stock + manual inward) within
@@ -254,7 +255,8 @@ async def stock_inward_report(date_from: Optional[str] = None, date_to: Optional
         "count": len(rows),
         "total_value": total_value,
         "by_type": by_type,
-        "rows": rows[:1500],            # cap response size
+        **(paginate_list(request, rows, ["txn_no", "item_name", "item_code", "vendor_name", "po_number", "store_name", "txn_type"], "created_at")
+           or {"rows": rows[:1500]}),   # legacy cap
     }
 
 

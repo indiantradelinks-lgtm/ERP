@@ -6,6 +6,9 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -236,18 +239,11 @@ export function PendingPOsView() {
 export function StockInwardReportView() {
   const [df, setDf] = useState("");
   const [dt, setDt] = useState("");
-  const [data, setData] = useState({ rows: [], count: 0, total_value: 0, by_type: {} });
-
-  const load = async () => {
-    try {
-      const params = new URLSearchParams();
-      if (df) params.set("date_from", df);
-      if (dt) params.set("date_to", dt);
-      const r = await api.get(`/inv2/stock-inward-report?${params}`);
-      setData(r.data);
-    } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
-  };
-  useEffect(() => { load(); }, []);
+  const [applied, setApplied] = useState({ date_from: "", date_to: "" });
+  const { rows, pagination, search, setSearch, meta, reload: load } = usePagedList("/inv2/stock-inward-report", applied, {
+    viewKey: "inv2_stock_inward", errorLabel: "inward report", searchKeys: "txn_no,item_name,item_code,vendor_name,po_number,store_name,txn_type",
+  });
+  const data = { rows, count: meta.count ?? 0, total_value: meta.total_value ?? 0, by_type: meta.by_type || {} };
 
   return (
     <Card data-testid="inward-report-view">
@@ -256,7 +252,9 @@ export function StockInwardReportView() {
         <div className="flex gap-2 items-center">
           <Label className="text-xs">From</Label><Input type="date" className="h-8" value={df} onChange={e => setDf(e.target.value)} />
           <Label className="text-xs">To</Label><Input type="date" className="h-8" value={dt} onChange={e => setDt(e.target.value)} />
-          <Button size="sm" variant="outline" onClick={load}><RefreshCcw className="h-3.5 w-3.5 mr-1" />Apply</Button>
+          <Button size="sm" variant="outline" onClick={() => { setApplied({ date_from: df, date_to: dt }); load(); }}><RefreshCcw className="h-3.5 w-3.5 mr-1" />Apply</Button>
+          <Input className="h-8 w-44" placeholder="Search item, vendor, PO…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="inward-search" />
+          <TableViewsMenu pagination={pagination} testidPrefix="inward" />
           <Button size="sm" variant="outline" onClick={() => exportCSV(data.rows, "stock_inward.csv")} data-testid="inward-csv"><FileDown className="h-3.5 w-3.5 mr-1" />CSV</Button>
         </div>
       </CardHeader>
@@ -298,6 +296,7 @@ export function StockInwardReportView() {
             </tbody>
           </table>
         </div>
+        <div className="pt-2"><TablePager pagination={pagination} testidPrefix="inward" /></div>
       </CardContent>
     </Card>
   );

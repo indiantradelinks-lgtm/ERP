@@ -23,15 +23,54 @@ def is_first_working_day(today: Optional[date] = None) -> bool:
     return d == first
 
 
+DEFAULT_SETTINGS = {"roles": sorted(DIGEST_ROLES), "include_sales_dept_head": True, "user_ids": [], "extra_emails": []}
+
+
+async def get_digest_settings() -> dict:
+    doc = await db.settings.find_one({"key": "sales_digest_recipients"}, {"_id": 0, "value": 1})
+    return {**DEFAULT_SETTINGS, **((doc or {}).get("value") or {})}
+
+
+async def save_digest_settings(value: dict, by: str) -> dict:
+    clean = {
+        "roles": sorted({str(r) for r in (value.get("roles") or [])}),
+        "include_sales_dept_head": bool(value.get("include_sales_dept_head", True)),
+        "user_ids": [str(u) for u in (value.get("user_ids") or [])],
+        "extra_emails": sorted({e.strip().lower() for e in (value.get("extra_emails") or []) if e and "@" in e}),
+    }
+    await db.settings.update_one({"key": "sales_digest_recipients"},
+                                 {"$set": {"value": clean, "updated_at": now_iso(), "updated_by": by}}, upsert=True)
+    return clean
+
+
 async def digest_recipients() -> list[dict]:
-    q = {"is_active": {"$ne": False}, "email": {"$exists": True, "$ne": ""},
-         "$or": [{"role": {"$in": sorted(DIGEST_ROLES)}},
-                 {"role": "dept_head", "department": {"$regex": "sales", "$options": "i"}}]}
-    return await db.users.find(q, {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1}).to_list(200)
+    cfg = await get_digest_settings()
+    ors = []
+    if cfg["roles"]:
+        ors.append({"role": {"$in": cfg["roles"]}})
+    if cfg["include_sales_dept_head"]:
+        ors.append({"role": "dept_head", "department": {"$regex": "sales", "$options": "i"}})
+    if cfg["user_ids"]:
+        ors.append({"id": {"$in": cfg["user_ids"]}})
+    users = []
+    if ors:
+        q = {"is_active": {"$ne": False}, "email": {"$exists": True, "$ne": ""}, "$or": ors}
+        users = await db.users.find(q, {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1}).to_list(300)
+    seen = {u["email"].lower() for u in users}
+    for e in cfg["extra_emails"]:
+        if e not in seen:
+            users.append({"id": None, "name": e, "email": e, "role": "extra"})
+    return users
 
 
 def _inr(n) -> str:
     return "₹" + f"{float(n or 0):,.0f}"
+
+
+def _deal(d) -> str:
+    if not d:
+        return "<span style='color:#9ca3af'>—</span>"
+    return f"<b>{d.get('ref') or '—'}</b> · {d.get('client') or '—'}<br>{_inr(d.get('value'))}"
 
 
 def build_digest_html(data: dict, app_url: str = "") -> str:
@@ -44,8 +83,10 @@ def build_digest_html(data: dict, app_url: str = "") -> str:
         f"<td style='padding:6px 10px;text-align:center'>{r['enquiries']}</td><td style='padding:6px 10px;text-align:center'>{r['quotes']}</td>"
         f"<td style='padding:6px 10px;text-align:center'>{r['won']} / {r['lost']}</td>"
         f"<td style='padding:6px 10px;text-align:center'>{'—' if r['win_rate'] is None else str(r['win_rate']) + '%'}</td>"
-        f"<td style='padding:6px 10px;text-align:right'>{_inr(r.get('quote_value'))}</td></tr>"
-        for r in rows) or "<tr><td colspan='7' style='padding:12px;color:#6b7280'>No sales-role users had activity.</td></tr>"
+        f"<td style='padding:6px 10px;text-align:right'>{_inr(r.get('quote_value'))}</td>"
+        f"<td style='padding:6px 10px;font-size:11px'>{_deal(r.get('top_won'))}</td>"
+        f"<td style='padding:6px 10px;font-size:11px'>{_deal(r.get('biggest_open_quote'))}</td></tr>"
+        for r in rows) or "<tr><td colspan='9' style='padding:12px;color:#6b7280'>No sales-role users had activity.</td></tr>"
     link = f"<p style='margin-top:16px'><a href='{app_url}/app/sales-reports' style='color:#1d4ed8'>Open the Sales Dashboard →</a></p>" if app_url else ""
     return f"""
 <div style="font-family:Segoe UI,Arial,sans-serif;max-width:720px;color:#111827">
@@ -64,6 +105,7 @@ def build_digest_html(data: dict, app_url: str = "") -> str:
       <th style="padding:6px 10px">Rank</th><th style="padding:6px 10px">Salesperson</th><th style="padding:6px 10px;text-align:center">Enquiries</th>
       <th style="padding:6px 10px;text-align:center">Quotes</th><th style="padding:6px 10px;text-align:center">Won / Lost</th>
       <th style="padding:6px 10px;text-align:center">Win rate</th><th style="padding:6px 10px;text-align:right">Quote value</th>
+      <th style="padding:6px 10px">Top won deal</th><th style="padding:6px 10px">Biggest open quote</th>
     </tr></thead>
     <tbody>{tr}</tbody>
   </table>

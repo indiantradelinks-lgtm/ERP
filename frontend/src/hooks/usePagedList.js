@@ -13,6 +13,7 @@ export default function usePagedList(url, filters = {}, opts = {}) {
   const { pageSize: initial = 50, errorLabel = "records", viewKey = null, searchKeys = "", defaultSort = { by: "created_at", dir: "desc" }, enabled = true, transform = null } = opts;
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
+  const [meta, setMeta] = useState({});
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(initial);
   const [search, setSearch] = useState("");
@@ -61,6 +62,7 @@ export default function usePagedList(url, filters = {}, opts = {}) {
       if (my !== seq.current) return;
       setRows(list);
       setTotal(Array.isArray(data) ? data.length : (data.total || 0));
+      if (!Array.isArray(data)) { const { rows: _r, ...rest } = data; setMeta(rest); }
     } catch (e) {
       if (my === seq.current) toast.error(e.response?.data?.detail || `Failed to load ${errorLabel}`);
     } finally {
@@ -88,5 +90,5 @@ export default function usePagedList(url, filters = {}, opts = {}) {
     };
   }, [page, pageSize, total, loading, search, debounced, sort, view, initial, defaultSort]);
 
-  return { rows, pagination, search, setSearch, reload: load, loading, total };
+  return { rows, pagination, search, setSearch, reload: load, loading, total, meta };
 }

@@ -6,6 +6,9 @@
  */
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,7 +22,9 @@ const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN", { maximumFractio
 
 /* ═══════════════════ 1. Material Request ═══════════════════ */
 export function MaterialRequestView() {
-  const [rows, setRows] = useState([]);
+  const { rows, pagination, search, setSearch, reload } = usePagedList("/inv3/material-requests", {}, {
+    viewKey: "inv3_material_requests", errorLabel: "material requests", searchKeys: "mr_no,request_no,project_code,project_name,site_name,requested_by,status,priority",
+  });
   const [items, setItems] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -33,15 +38,11 @@ export function MaterialRequestView() {
   const [issueRet, setIssueRet] = useState(false);
 
   const load = async () => {
-    try {
-      const [r, i] = await Promise.all([
-        api.get("/inv3/material-requests"),
-        api.get("/inventory"),
-      ]);
-      setRows(r.data); setItems(i.data);
-    } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
+    reload();
+    try { const i = await api.get("/inventory"); setItems(i.data); }
+    catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { api.get("/inventory").then((i) => setItems(i.data)).catch(() => {}); }, []);
 
   const addLine = () => setForm(f => ({ ...f, lines: [...f.lines, { item_id: "", required_qty: "", purpose: "" }] }));
   const removeLine = (i) => setForm(f => ({ ...f, lines: f.lines.filter((_, idx) => idx !== i) }));
@@ -249,6 +250,11 @@ export function MaterialRequestView() {
             </tbody>
           </table>
         </div>
+        <div className="pt-2 flex items-center gap-2">
+          <Input className="h-8 w-52" placeholder="Search MR #, project…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="mr-search" />
+          <TableViewsMenu pagination={pagination} testidPrefix="mr" />
+          <div className="flex-1"><TablePager pagination={pagination} testidPrefix="mr" /></div>
+        </div>
       </CardContent>
     </Card>
   );
@@ -256,7 +262,9 @@ export function MaterialRequestView() {
 
 /* ═══════════════════ 2. Material Transfer ═══════════════════ */
 export function MaterialTransferView() {
-  const [rows, setRows] = useState([]);
+  const { rows, pagination, search, setSearch, reload } = usePagedList("/inv3/transfers", {}, {
+    viewKey: "inv3_transfers", errorLabel: "transfers", searchKeys: "transfer_no,from_store_name,to_store_name,project_code,status",
+  });
   const [stores, setStores] = useState([]);
   const [items, setItems] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -271,17 +279,14 @@ export function MaterialTransferView() {
   const [receiveRemarks, setReceiveRemarks] = useState("");
   const [receiveAttach, setReceiveAttach] = useState("");
 
-  const load = async () => {
+  const loadAux = async () => {
     try {
-      const [r, s, i] = await Promise.all([
-        api.get("/inv3/transfers"),
-        api.get("/inv/stores"),
-        api.get("/inventory"),
-      ]);
-      setRows(r.data); setStores(s.data); setItems(i.data);
+      const [s, i] = await Promise.all([api.get("/inv/stores"), api.get("/inventory")]);
+      setStores(s.data); setItems(i.data);
     } catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
   };
-  useEffect(() => { load(); }, []);
+  const load = () => { reload(); loadAux(); };
+  useEffect(() => { loadAux(); }, []);
 
   const submit = async () => {
     if (!form.from_store_id || !form.to_store_id) { toast.error("Pick source and destination"); return; }
@@ -458,6 +463,11 @@ export function MaterialTransferView() {
             </tbody>
           </table>
         </div>
+        <div className="pt-2 flex items-center gap-2">
+          <Input className="h-8 w-52" placeholder="Search transfer #, store…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid="xfer-search" />
+          <TableViewsMenu pagination={pagination} testidPrefix="xfer" />
+          <div className="flex-1"><TablePager pagination={pagination} testidPrefix="xfer" /></div>
+        </div>
       </CardContent>
     </Card>
   );
@@ -465,18 +475,20 @@ export function MaterialTransferView() {
 
 /* ═══════════════════ 3-7. Read-only reports ═══════════════════ */
 function ReportShell({ title, endpoint, columns, testid, rowKey = "id", emptyText = "No records." }) {
-  const [data, setData] = useState({ rows: [] });
-  const load = async () => {
-    try { const r = await api.get(endpoint); setData(r.data); }
-    catch (e) { toast.error(e.response?.data?.detail || "Load failed"); }
-  };
-  useEffect(() => { load(); // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const { rows, pagination, search, setSearch, meta, reload: load } = usePagedList(endpoint, {}, {
+    viewKey: `inv3_report_${endpoint.split("/").pop()}`, errorLabel: title,
+    searchKeys: columns.map((c) => c.key).filter((k) => k && !k.startsWith("_")).join(","),
+  });
+  const data = { rows, ...meta };
   return (
     <Card data-testid={testid}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-base">{title} <span className="text-xs text-slate-400">({data.rows?.length || 0}{data.total_value !== undefined ? ` · ${fmt(data.total_value)}` : ""})</span></CardTitle>
-        <Button size="sm" variant="outline" onClick={load}><RefreshCcw className="h-3.5 w-3.5 mr-1" />Refresh</Button>
+        <CardTitle className="text-base">{title} <span className="text-xs text-slate-400">({data.count ?? pagination.total}{data.total_value !== undefined ? ` · ${fmt(data.total_value)}` : ""})</span></CardTitle>
+        <div className="flex items-center gap-2">
+          <Input className="h-8 w-44" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} data-testid={`${testid}-search`} />
+          <TableViewsMenu pagination={pagination} testidPrefix={testid} />
+          <Button size="sm" variant="outline" onClick={load}><RefreshCcw className="h-3.5 w-3.5 mr-1" />Refresh</Button>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="border rounded-md overflow-hidden max-h-[600px] overflow-y-auto">
@@ -494,6 +506,7 @@ function ReportShell({ title, endpoint, columns, testid, rowKey = "id", emptyTex
             </tbody>
           </table>
         </div>
+        <div className="pt-2"><TablePager pagination={pagination} testidPrefix={testid} /></div>
       </CardContent>
     </Card>
   );

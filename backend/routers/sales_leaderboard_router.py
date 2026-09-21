@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from core import db, require_permission, get_current_user
 
@@ -58,6 +59,26 @@ async def compute_leaderboard(month: Optional[str] = None) -> dict:
         decided.setdefault(r["_id"]["u"], {}).setdefault(r["_id"]["s"], 0)
         decided[r["_id"]["u"]][r["_id"]["s"]] += r["n"]
 
+    # Extras: top won deal (largest won quote in month) + biggest still-open quote
+    OPEN = ["sent", "submitted", "under_review", "revised", "approved"]
+    top_won: Dict[str, dict] = {}
+    async for r in db.quotations.aggregate([
+        {"$match": {"created_by": {"$in": ids}, "status": "won", "$or": [
+            {"won_at": in_month},
+            {"won_at": {"$exists": False}, "updated_at": in_month},
+            {"won_at": {"$exists": False}, "updated_at": {"$exists": False}, "created_at": in_month}]}},
+        {"$addFields": {"_v": {"$toDouble": {"$ifNull": ["$total", {"$ifNull": ["$grand_total", {"$ifNull": ["$amount", 0]}]}]}}}},
+        {"$sort": {"_v": -1}}, {"$group": {"_id": "$created_by", "doc": {"$first": "$$ROOT"}}}]):
+        d = r["doc"]
+        top_won[r["_id"]] = {"id": d.get("id"), "ref": d.get("quote_no") or d.get("quotation_no"), "client": d.get("client") or d.get("client_name") or d.get("customer"), "value": round(d.get("_v") or 0, 2)}
+    biggest_open: Dict[str, dict] = {}
+    async for r in db.quotations.aggregate([
+        {"$match": {"created_by": {"$in": ids}, "status": {"$in": OPEN}}},
+        {"$addFields": {"_v": {"$toDouble": {"$ifNull": ["$total", {"$ifNull": ["$grand_total", {"$ifNull": ["$amount", 0]}]}]}}}},
+        {"$sort": {"_v": -1}}, {"$group": {"_id": "$created_by", "doc": {"$first": "$$ROOT"}}}]):
+        d = r["doc"]
+        biggest_open[r["_id"]] = {"id": d.get("id"), "ref": d.get("quote_no") or d.get("quotation_no"), "client": d.get("client") or d.get("client_name") or d.get("customer"), "value": round(d.get("_v") or 0, 2), "status": d.get("status")}
+
     rows = []
     for u in users:
         won = decided.get(u["id"], {}).get("won", 0)
@@ -68,6 +89,7 @@ async def compute_leaderboard(month: Optional[str] = None) -> dict:
             "quote_value": round(quote_value.get(u["id"], 0.0), 2),
             "won": won, "lost": lost,
             "win_rate": round(100 * won / (won + lost), 1) if (won + lost) else None,
+            "top_won": top_won.get(u["id"]), "biggest_open_quote": biggest_open.get(u["id"]),
         })
     rows.sort(key=lambda r: (-(r["won"]), -(r["quotes"]), -(r["enquiries"]), r["name"].lower()))
     for i, r in enumerate(rows, 1):
@@ -125,3 +147,35 @@ async def leaderboard_details(user_id: str, month: Optional[str] = None,
         e["decided_in_month"] = hist[-1]["status"] if hist else None
     u = await db.users.find_one({"id": user_id}, {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1})
     return {"month": label, "user": u, "enquiries": enquiries, "decided_earlier": decided, "quotes": quotes}
+
+
+class DigestSettingsIn(BaseModel):
+    roles: List[str] = []
+    include_sales_dept_head: bool = True
+    user_ids: List[str] = []
+    extra_emails: List[str] = []
+
+
+@router.get("/leaderboard/digest/settings")
+async def digest_settings(user: dict = Depends(get_current_user)):
+    if user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="super_admin only")
+    from sales_digest import get_digest_settings, digest_recipients
+    roles = sorted({r async for r in _distinct_roles()})
+    users = await db.users.find({"is_active": {"$ne": False}}, {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1}).sort("name", 1).to_list(500)
+    return {"settings": await get_digest_settings(), "roles": roles, "users": users, "resolved": await digest_recipients()}
+
+
+async def _distinct_roles():
+    for r in await db.users.distinct("role"):
+        if r:
+            yield r
+
+
+@router.put("/leaderboard/digest/settings")
+async def update_digest_settings(body: DigestSettingsIn, user: dict = Depends(get_current_user)):
+    if user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="super_admin only")
+    from sales_digest import save_digest_settings, digest_recipients
+    saved = await save_digest_settings(body.model_dump(), user.get("email") or user["id"])
+    return {"settings": saved, "resolved": await digest_recipients()}

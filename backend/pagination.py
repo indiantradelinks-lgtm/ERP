@@ -107,3 +107,30 @@ async def maybe_paged(request: Request, collection: str, q: dict, default_sort: 
 
 def paged_or_rows(paged: Optional[dict], rows: list):
     return {**paged, "rows": rows} if paged else rows
+
+
+def paginate_list(request: Request, rows: list, keys: Iterable[str] = (), default_sort: str = "") -> Optional[dict]:
+    """Page/search/sort an already-computed list (for report endpoints that need full-set totals). None when no `page`."""
+    qp = request.query_params
+    try:
+        page = int(qp.get("page") or 0)
+    except ValueError:
+        page = 0
+    if page < 1:
+        return None
+    s = (qp.get("search") or "").strip().lower()
+    ks = parse_keys(qp.get("search_keys", "")) or [k for k in keys]
+    if s and ks:
+        rows = [r for r in rows if any(s in str(r.get(k) or "").lower() for k in ks)]
+    sort_by = qp.get("sort_by") or default_sort
+    if sort_by and SAFE_FIELD.match(sort_by):
+        rev = (qp.get("sort_dir") or "desc").lower() != "asc"
+        rows = sorted(rows, key=lambda r: (r.get(sort_by) is None, str(r.get(sort_by)) if not isinstance(r.get(sort_by), (int, float)) else r.get(sort_by)), reverse=rev)
+    try:
+        page_size = int(qp.get("page_size") or DEFAULT_PAGE_SIZE)
+    except ValueError:
+        page_size = DEFAULT_PAGE_SIZE
+    page, page_size = clamp_page(page, page_size)
+    total = len(rows)
+    return {"rows": rows[(page - 1) * page_size: page * page_size], "total": total, "page": page,
+            "page_size": page_size, "pages": max(1, -(-total // page_size))}

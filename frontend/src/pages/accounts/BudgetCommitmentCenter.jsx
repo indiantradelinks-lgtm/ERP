@@ -11,6 +11,9 @@
  */
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import usePagedList from "@/hooks/usePagedList";
+import TablePager from "@/components/TablePager";
+import TableViewsMenu from "@/components/TableViewsMenu";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,9 +39,12 @@ export default function BudgetCommitmentCenter() {
   const [projectId, setProjectId] = useState("");
   const [amount, setAmount] = useState(0);
   const [budget, setBudget] = useState(null);
-  const [poRows, setPoRows] = useState({ count: 0, rows: [], total_open_commitment: 0 });
-  const [grnRows, setGrnRows] = useState({ count: 0, rows: [], total_open_grni: 0 });
-  const [billRows, setBillRows] = useState({ count: 0, rows: [], audit_risk_count: 0 });
+  const poList = usePagedList("/finance/reports/po-commitment", {}, { viewKey: "fin_po_commitment", errorLabel: "PO commitment", pageSize: 25, defaultSort: { by: "po_date", dir: "desc" }, searchKeys: "po_number,vendor_name,project_code,status" });
+  const grnList = usePagedList("/finance/reports/grn-not-billed", { days_old: 0 }, { viewKey: "fin_grn_not_billed", errorLabel: "GRN not billed", pageSize: 25, defaultSort: { by: "grn_date", dir: "desc" }, searchKeys: "grn_number,po_number,vendor_name,project_code,status" });
+  const billList = usePagedList("/finance/reports/bill-without-grn", {}, { viewKey: "fin_bill_without_grn", errorLabel: "bills without GRN", pageSize: 25, defaultSort: { by: "invoice_date", dir: "desc" }, searchKeys: "bill_no,invoice_no,vendor_name,po_number,project_code,status,expense_category" });
+  const poRows = { rows: poList.rows, count: poList.meta.count ?? 0, total_open_commitment: poList.meta.total_open_commitment ?? 0 };
+  const grnRows = { rows: grnList.rows, count: grnList.meta.count ?? 0, total_open_grni: grnList.meta.total_open_grni ?? 0 };
+  const billRows = { rows: billList.rows, count: billList.meta.count ?? 0, audit_risk_count: billList.meta.audit_risk_count ?? 0 };
   const [rollup, setRollup] = useState({ count: 0, rows: [] });
   const [loading, setLoading] = useState(false);
 
@@ -66,13 +72,9 @@ export default function BudgetCommitmentCenter() {
   const loadReports = async () => {
     setLoading(true);
     try {
-      const [po, grn, bills, ru] = await Promise.all([
-        api.get("/finance/reports/po-commitment"),
-        api.get("/finance/reports/grn-not-billed", { params: { days_old: 0 } }),
-        api.get("/finance/reports/bill-without-grn"),
-        api.get("/finance/reports/project-procurement-cost"),
-      ]);
-      setPoRows(po.data); setGrnRows(grn.data); setBillRows(bills.data); setRollup(ru.data);
+      poList.reload(); grnList.reload(); billList.reload();
+      const ru = await api.get("/finance/reports/project-procurement-cost");
+      setRollup(ru.data);
     } catch (e) { toast.error("Failed to load reports"); }
     finally { setLoading(false); }
   };
@@ -167,6 +169,11 @@ export default function BudgetCommitmentCenter() {
                 {!poRows.rows.length && <tr><td colSpan={7} className="px-3 py-8 text-center text-emerald-600">No open commitments</td></tr>}
               </tbody>
             </table>
+            <div className="px-3 py-2 border-t flex items-center gap-2">
+              <Input className="h-8 w-48" placeholder="Search…" value={poList.search} onChange={(e) => poList.setSearch(e.target.value)} data-testid="bc-po-search" />
+              <TableViewsMenu pagination={poList.pagination} testidPrefix="bc-po" />
+              <div className="flex-1"><TablePager pagination={poList.pagination} testidPrefix="bc-po" /></div>
+            </div>
           </CardContent></Card>
         </TabsContent>
 
@@ -193,6 +200,11 @@ export default function BudgetCommitmentCenter() {
                 {!grnRows.rows.length && <tr><td colSpan={7} className="px-3 py-8 text-center text-emerald-600">All GRNs are matched to vendor bills</td></tr>}
               </tbody>
             </table>
+            <div className="px-3 py-2 border-t flex items-center gap-2">
+              <Input className="h-8 w-48" placeholder="Search…" value={grnList.search} onChange={(e) => grnList.setSearch(e.target.value)} data-testid="bc-grn-search" />
+              <TableViewsMenu pagination={grnList.pagination} testidPrefix="bc-grn" />
+              <div className="flex-1"><TablePager pagination={grnList.pagination} testidPrefix="bc-grn" /></div>
+            </div>
           </CardContent></Card>
         </TabsContent>
 
@@ -222,6 +234,11 @@ export default function BudgetCommitmentCenter() {
                 {!billRows.rows.length && <tr><td colSpan={7} className="px-3 py-8 text-center text-emerald-600">No bills without GRN</td></tr>}
               </tbody>
             </table>
+            <div className="px-3 py-2 border-t flex items-center gap-2">
+              <Input className="h-8 w-48" placeholder="Search…" value={billList.search} onChange={(e) => billList.setSearch(e.target.value)} data-testid="bc-bill-search" />
+              <TableViewsMenu pagination={billList.pagination} testidPrefix="bc-bill" />
+              <div className="flex-1"><TablePager pagination={billList.pagination} testidPrefix="bc-bill" /></div>
+            </div>
           </CardContent></Card>
         </TabsContent>
 

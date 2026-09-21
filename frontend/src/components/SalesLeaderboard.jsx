@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import LeaderboardDetail from "@/components/LeaderboardDetail";
+import DigestSettingsDialog from "@/components/DigestSettingsDialog";
 
 const shiftMonth = (ym, delta) => {
   const [y, m] = ym.split("-").map(Number);
@@ -55,6 +56,7 @@ export default function SalesLeaderboard() {
         <h2 className="font-display font-bold text-base md:text-lg tracking-tight">Sales Leaderboard</h2>
         <span className="text-xs text-muted-foreground hidden md:inline">Enquiries raised · quotes sent · win rate (won ÷ decided) — sales roles only</span>
         <div className="ml-auto flex items-center gap-1">
+          {user?.role === "super_admin" && <DigestSettingsDialog />}
           {user?.role === "super_admin" && (
             <Button size="sm" variant="outline" className="h-7 rounded-sm text-xs mr-2" onClick={sendDigest} disabled={sending} title="Auto-sent on the first working day of each month at 09:00 IST" data-testid="leaderboard-send-digest">
               <Mail className="h-3.5 w-3.5 mr-1" /> {sending ? "Sending…" : "Send digest now"}
@@ -95,6 +97,16 @@ export default function SalesLeaderboard() {
                 <div className="mt-1.5 text-[11px] text-muted-foreground flex justify-between">
                   <span>Won {r.won} · Lost {r.lost}</span>
                   <span title="Value of quotes sent">{inr(r.quote_value)}</span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] border-t border-border pt-2">
+                  <div data-testid={`lb-topwon-${r.user_id}`}>
+                    <div className="text-[9px] uppercase tracking-wider text-muted-foreground">Top won deal</div>
+                    {r.top_won ? <><span className="font-semibold text-success">{inr(r.top_won.value)}</span><div className="truncate text-muted-foreground">{r.top_won.ref} · {r.top_won.client || "—"}</div></> : <span className="text-muted-foreground">—</span>}
+                  </div>
+                  <div data-testid={`lb-openquote-${r.user_id}`}>
+                    <div className="text-[9px] uppercase tracking-wider text-muted-foreground">Biggest open quote</div>
+                    {r.biggest_open_quote ? <><span className="font-semibold text-warning">{inr(r.biggest_open_quote.value)}</span><div className="truncate text-muted-foreground">{r.biggest_open_quote.ref} · {r.biggest_open_quote.client || "—"}</div></> : <span className="text-muted-foreground">—</span>}
+                  </div>
                 </div>
               </div>
             </button>
