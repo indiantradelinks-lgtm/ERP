@@ -26,7 +26,7 @@ const STATUS_TONE = {
 const STATUSES = ["open", "under_review", "submitted", "negotiation", "hold", "lost", "won"];
 
 const RFQ_TYPES = ["supply", "service", "supply_service"];
-const SERVICE_CATEGORIES = ["scaffolding", "painting", "roof_sheeting", "insulation", "rope_access"];
+const SERVICE_CATEGORIES = ["scaffolding", "painting", "roof_sheeting", "insulation", "rope_access", "design_and_engineering"];
 const PRIORITIES = ["high", "medium", "low"];
 const PRIORITY_TONE = { high: "danger", medium: "warning", low: "success" };
 
