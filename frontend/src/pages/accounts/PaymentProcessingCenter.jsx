@@ -376,7 +376,6 @@ export default function PaymentProcessingCenter() {
               <Input value={debitAcNo} onChange={(e) => setDebitAcNo(e.target.value)}
                 className="rounded-sm mt-1 h-9 w-52 font-mono" data-testid="ppc-debit-ac-no" />
             </div>
-            {canWrite && <BulkUtrDialog onDone={load} />}
             {canWrite && <Button size="sm" className="rounded-sm h-9" onClick={generateBankFile} disabled={busy}
               data-testid="ppc-generate-bank-file">
               <FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> Generate Bank File ({Object.values(selected).filter(Boolean).length})
@@ -411,7 +410,10 @@ export default function PaymentProcessingCenter() {
         </TabsContent>
 
         <TabsContent value="bank" className="mt-3 space-y-4">
-          <ExportButtons stage="bank" />
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <ExportButtons stage="bank" />
+            {canWrite && <BulkUtrDialog onDone={load} />}
+          </div>
           <QueueTable testid="ppc-bank-table" emptyText="No payments in bank files awaiting UTR"
             cols={["Request No", "Type", "Project", "Paid To", "Net Payable", "Bank File", "Docs", "Action"]}
             rows={byStage.bank}

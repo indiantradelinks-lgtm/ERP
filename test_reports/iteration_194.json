@@ -1,0 +1,57 @@
+{
+  "summary": "Iteration 194 — Bulk UTR upload/apply + Bill Request 360° view. Backend 8/8 pytest passing (template xlsx download; validate returns exactly one valid row for the first real Request No; errors include 'not found', 'Duplicate Request No', 'UTR already used'; skipped=1; non-xlsx→400; apply marks 1 paid; queue reflects stage=paid with UTR; re-upload→'Already paid'; PM/test_pm@erp.com→403. Bill request /full returns request BR-2026-0008 (status bill_generated) with 4-step approval chain, bill RA-2026-0024, bill_pdf_url, files[], history[]; unknown rid→404; deleted-bill rid returns bill:null gracefully; /api/ra-bills/<id>/pdf returns 25+KB application/pdf; GET /full is read-only). FRONTEND: Bill Request view dialog fully works — all 6 sections render, 4 approval steps, PDF href ends /pdf, iframe present, deleted-bill scenario correctly shows 'Bill RA-... is no longer available.'. CRITICAL FRONTEND BUG: BulkUtrDialog crashes React with runtime error 'Objects are not valid as a React child (found: object with keys {type, loc, msg, input, url})' as soon as a file is selected — validate POST fails with 422 because axios instance defaults to Content-Type: application/json (see /app/frontend/src/lib/api.js line 9) but /bulk-utr/validate expects multipart/form-data; FastAPI returns Pydantic error array which is then passed directly to sonner toast.error() and rendered as React children. Bulk UTR UI is completely blocked end-to-end. Additionally the BulkUtrDialog button is placed inside the 'Verified / Bank File' tab (line 379 of PaymentProcessingCenter.jsx) rather than the 'Bank Files & Mark Paid' tab specified in the task. Regression checks pass: single ppc-mark-paid-btn-<req> present, ppc-generate-bank-file button present, no console errors mentioning BulkUtrDialog/BillRequestViewDialog components themselves.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "BulkUtrDialog",
+        "issue": "Uploading a file triggers 'Uncaught runtime error: Objects are not valid as a React child (found: object with keys {type, loc, msg, input, url})'. Root cause: `api.post('/accounts/payment-queue/bulk-utr/validate', fd)` in BulkUtrDialog.jsx (lines 36, 51) uses the shared axios instance from /app/frontend/src/lib/api.js which sets default header `Content-Type: application/json`. When axios sees an existing Content-Type it does NOT override to multipart/form-data, so FastAPI receives an application/json request without a body field named 'file', returning HTTP 422 with `detail=[{type,loc,msg,input,url}]`. The catch handler does `toast.error(e.response?.data?.detail || 'Validation failed')` which passes the array directly to sonner and sonner attempts to render Pydantic error dicts as JSX children → runtime crash. Fix: either pass `{ headers: { 'Content-Type': 'multipart/form-data' } }` (or `{'Content-Type': undefined}` and let axios auto-detect) on the two FormData posts, and/or route the detail through `formatApiErrorDetail()` already exported by api.js.",
+        "selector": "[data-testid=\"ppc-bulk-utr-file\"] → after set_input_files",
+        "priority": "CRITICAL"
+      },
+      {
+        "component": "PaymentProcessingCenter",
+        "issue": "BulkUtrDialog button (ppc-bulk-utr-btn) is rendered inside the 'Verified / Bank File' tab (TabsContent value='verified', line 379) but the task specifies it should live on the 'Bank Files & Mark Paid' tab (TabsContent value='bank'). Currently ppc-tab-bank shows the button as NOT visible while ppc-tab-verified shows it. Backend accepts both stages so functionality is unaffected — placement only.",
+        "selector": "[data-testid=\"ppc-tab-bank\"]",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "BillRequestViewDialog",
+        "issue": "For a fully-approved & bill-generated request whose approval chain has 4 steps, the approval trail header renders 'Step 5 of 4' (current_step is incremented past end after Director approval). Minor cosmetic — expected 'Step 4 of 4'. See /app/frontend/src/components/BillRequestViewDialog.jsx around line 84.",
+        "selector": "[data-testid=\"br-view-approval\"]",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [
+      {"flow": "Bulk UTR validate/apply from UI", "issue": "Wrong Content-Type header sent by axios shared instance causes 422 + React render crash; completely blocks UI flow. Backend endpoints are correct (verified via pytest with requests multipart).", "affected_selectors": ["[data-testid=\"ppc-bulk-utr-file\"]", "[data-testid=\"ppc-bulk-utr-summary\"]", "[data-testid=\"ppc-bulk-utr-apply\"]"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter194.py",
+    "/app/test_reports/pytest/iter194_results.xml"
+  ],
+  "action_items": [
+    "FIX (critical): In /app/frontend/src/components/BulkUtrDialog.jsx, override Content-Type for the two multipart POSTs. Simplest: `api.post(url, fd, { headers: { 'Content-Type': 'multipart/form-data' } })` for both validate and apply. Also route the error into formatApiErrorDetail() so a Pydantic 422 array never reaches sonner as a raw object.",
+    "FIX (medium): Move `<BulkUtrDialog onDone={load} />` from line 379 (inside <TabsContent value=\"verified\">) to inside <TabsContent value=\"bank\"> to match the task spec ('Bank Files & Mark Paid' tab).",
+    "FIX (low, optional): Clamp the 'Step N of M' display in BillRequestViewDialog to `Math.min(current_step+1, chain.length)` so a completed 4-step chain shows 'Step 4 of 4' instead of 'Step 5 of 4'."
+  ],
+  "critical_code_review_comments": [
+    "api.js line 9 hard-codes `Content-Type: application/json` on the shared axios instance. Any FormData upload through this client will silently fail with 422 unless the call site explicitly overrides the header. This has now bitten BulkUtrDialog. Consider dropping the global default and letting axios pick per-request (it already sets application/json for JSON payloads automatically), or add a `apiForm` helper wrapper that clears the header.",
+    "BulkUtrDialog.jsx catches error and does `toast.error(e.response?.data?.detail || …)` — this pattern must always go through formatApiErrorDetail() (already exported from api.js) otherwise a 422 detail array crashes React. Same anti-pattern likely exists elsewhere; consider a global sonner-safe helper.",
+    "BulkUtrDialog is placed under `<TabsContent value=\"verified\">` in PaymentProcessingCenter.jsx while the tab is labelled 'Verified / Bank File'. Spec says it belongs under 'Bank Files & Mark Paid' — either move the component or rename the tab. The DB stages 'verified' and 'in_bank_file' both feed the template so functionality is unaffected.",
+    "BillRequestViewDialog approval header uses `current_step + 1` without clamping to chain length — a completed workflow prints 'Step 5 of 4'.",
+    "BillRequestViewDialog fetches on every open but has no cleanup / abort — if the user opens then rapidly closes/reopens with a different id, the older /full response can overwrite the newer state. Minor race condition; guard with a cancel token or effect ref."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter194.py",
+    "/app/test_reports/iteration_194.json"
+  ],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "50% — Bill Request view fully passes; Bulk UTR UI completely blocked by React runtime error on file select"},
+  "test_credentials": "admin@erp.com/Admin@123, test_pm@erp.com/PM@12345",
+  "seed_data_creation": "Backend test marked REQ-2026-0063 as paid with UTR-T194-<ts> via bulk-utr/apply (real state change on TEST_Iter169_Vendor row, PYV voucher generated). This is acceptable per task note (TEST_* vendor). Remaining verified/in_bank_file rows in queue: 3.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bulk UTR fix requires: (1) BulkUtrDialog.jsx pass `headers: { 'Content-Type': 'multipart/form-data' }` on api.post for /bulk-utr/validate and /bulk-utr/apply, and pipe errors through formatApiErrorDetail; (2) move <BulkUtrDialog/> from TabsContent value='verified' (line 379) to TabsContent value='bank'. After fix, retest by (a) opening Bank Files & Mark Paid tab, (b) clicking ppc-bulk-utr-btn, (c) set_input_files on ppc-bulk-utr-file with a template row + duplicates + bogus request + duplicate UTR file (see /tmp/bulk_ui.xlsx generation snippet in test_iter194.py), (d) verify ppc-bulk-utr-summary shows counts and no React crash, (e) confirm apply and check ppc-bulk-utr-result. Test artifacts in /tmp: /tmp/tpl_download.xlsx, /tmp/bulk_ui.xlsx, /tmp/real_req.txt, /tmp/utr.txt. Remaining verified/in_bank_file rows in queue at end of run: 3 real rows (was 4). BR-view scenario RIDs used: 010758f6-... (normal), b8aba2a0-... (deleted bill).",
+  "rca of the issue": "BulkUtrDialog frontend crash — chain of events: (1) User picks file; (2) BulkUtrDialog calls `api.post('/accounts/payment-queue/bulk-utr/validate', fd)`; (3) shared axios instance in /app/frontend/src/lib/api.js has `headers: { 'Content-Type': 'application/json' }` default so the multipart request is mis-labelled; (4) FastAPI cannot parse the `file` UploadFile field and returns 422 with body `{ detail: [{type, loc: ['body','file'], msg, input, url}] }`; (5) the catch handler `toast.error(e.response?.data?.detail || 'Validation failed')` passes the array-of-objects directly to sonner; (6) sonner renders detail as React children → 'Objects are not valid as a React child' crash. Mitigation: force multipart header on the two FormData posts in BulkUtrDialog.jsx and always wrap error details in formatApiErrorDetail()."
+}

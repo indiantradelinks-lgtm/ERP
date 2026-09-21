@@ -83,7 +83,7 @@ export default function BillRequestViewDialog({ requestId, open, onOpenChange })
               {!data.approval && <div className="text-xs text-muted-foreground">No approval record linked.</div>}
               {data.approval && (
                 <div className="space-y-1.5">
-                  <div className="text-xs">Status: <b>{data.approval.status}</b> · Step {Number(data.approval.current_step || 0) + 1} of {(data.approval.chain || []).length}</div>
+                  <div className="text-xs">Status: <b>{data.approval.status}</b> · Step {Math.min(Number(data.approval.current_step || 0) + 1, (data.approval.chain || []).length)} of {(data.approval.chain || []).length}</div>
                   {(data.approval.chain || []).map((st, i) => (
                     <div key={i} className="flex items-center gap-2 text-xs" data-testid={`br-view-step-${i}`}>
                       <span className={`h-2 w-2 rounded-full ${st.status === "approved" ? "bg-success" : st.status === "rejected" ? "bg-destructive" : "bg-muted-foreground/40"}`} />

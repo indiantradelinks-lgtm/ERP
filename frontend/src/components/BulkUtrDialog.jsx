@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { api } from "@/lib/api";
+import { api, apiErrorMessage } from "@/lib/api";
 
 const inr = (n) => Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
@@ -26,17 +26,17 @@ export default function BulkUtrDialog({ onDone }) {
       const a = document.createElement("a");
       a.href = url; a.download = `bulk_utr_template_${new Date().toISOString().slice(0, 10)}.xlsx`; a.click();
       URL.revokeObjectURL(url);
-    } catch (e) { toast.error(e.response?.data?.detail || "Template download failed"); }
+    } catch (e) { toast.error(apiErrorMessage(e, "Template download failed")); }
   };
 
   const validate = async (f) => {
     setBusy(true); setResult(null);
     try {
       const fd = new FormData(); fd.append("file", f);
-      const { data } = await api.post("/accounts/payment-queue/bulk-utr/validate", fd);
+      const { data } = await api.post("/accounts/payment-queue/bulk-utr/validate", fd, { headers: { "Content-Type": "multipart/form-data" } });
       setCheck(data);
       if (!data.valid.length) toast.warning("No valid rows to mark paid — see errors below");
-    } catch (e) { toast.error(e.response?.data?.detail || "Validation failed"); setCheck(null); }
+    } catch (e) { toast.error(apiErrorMessage(e, "Validation failed")); setCheck(null); }
     finally { setBusy(false); }
   };
 
@@ -48,12 +48,12 @@ export default function BulkUtrDialog({ onDone }) {
     setBusy(true);
     try {
       const fd = new FormData(); fd.append("file", file);
-      const { data } = await api.post("/accounts/payment-queue/bulk-utr/apply", fd);
+      const { data } = await api.post("/accounts/payment-queue/bulk-utr/apply", fd, { headers: { "Content-Type": "multipart/form-data" } });
       setResult(data);
       if (data.paid.length) toast.success(`${data.paid.length} payment(s) marked paid`);
       if (data.failed.length) toast.error(`${data.failed.length} row(s) failed — see details`);
       onDone?.();
-    } catch (e) { toast.error(e.response?.data?.detail || "Bulk update failed"); }
+    } catch (e) { toast.error(apiErrorMessage(e, "Bulk update failed")); }
     finally { setBusy(false); }
   };
 
