@@ -6,10 +6,11 @@ into a bank payment file (xlsx for direct bank upload) → after bank processes,
 Accounts marks paid (UTR) which posts a Journal Entry (DR expense / CR bank).
 Attachments live on parent_type 'payment_request' visible to all linked users.
 """
+import re
 from io import BytesIO
 from typing import Optional, List, Dict, Any
 
-from fastapi import APIRouter, HTTPException, Depends, Request, Response
+from fastapi import APIRouter, HTTPException, Depends, Request, Response, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -505,3 +506,134 @@ async def mark_paid(rid: str, p: MarkPaidIn, request: Request,
     await audit(user=user, action="payment_paid", resource="payment_queue", record_id=rid,
                 after={"utr": p.utr_no, "amount": amt, "je": (je or {}).get("voucher_number")}, ip=_ip(request))
     return await db.payment_verifications.find_one({"request_id": rid}, {"_id": 0})
+
+
+# ─── Bulk UTR upload / bulk Mark Paid ─────────────────────────────────────────
+BULK_HEADERS = ["Request No", "UTR No", "Paid Date (YYYY-MM-DD)", "Vendor", "Net Payable", "Stage"]
+
+
+@router.get("/bulk-utr/template")
+async def bulk_utr_template(stage: str = "", user: dict = Depends(require_permission("accounting", "read"))):
+    """Excel template pre-filled with every payment awaiting UTR (verified / in bank file)."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    q: Dict[str, Any] = {"stage": {"$in": ["verified", "in_bank_file"]}}
+    if stage in ("verified", "in_bank_file"):
+        q["stage"] = stage
+    rows = await db.payment_verifications.find(q, {"_id": 0, "request_no": 1, "vendor_name": 1, "net_payable": 1,
+                                                   "verified_amount": 1, "stage": 1}).sort("request_no", 1).to_list(5000)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Bulk UTR"
+    ws.append(BULK_HEADERS)
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="1F2937")
+    today = now_iso()[:10]
+    for r in rows:
+        ws.append([r.get("request_no"), "", today, r.get("vendor_name"),
+                   r.get("net_payable") if r.get("net_payable") is not None else r.get("verified_amount"), r.get("stage")])
+    for col, w in zip("ABCDEF", (18, 24, 22, 32, 14, 14)):
+        ws.column_dimensions[col].width = w
+    ws2 = wb.create_sheet("Instructions")
+    for line in ["Fill column B (UTR No) for each Request No you have paid.",
+                 "Column C (Paid Date) is optional — defaults to today when blank.",
+                 "Leave a row's UTR blank to skip it. Do not rename or reorder columns A–C.",
+                 "Only payments in stage 'verified' or 'in_bank_file' can be marked paid."]:
+        ws2.append([line])
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f'attachment; filename="bulk_utr_template_{today}.xlsx"'})
+
+
+def _parse_bulk_rows(content: bytes) -> List[Dict[str, Any]]:
+    from openpyxl import load_workbook
+    wb = load_workbook(BytesIO(content), read_only=True, data_only=True)
+    ws = wb[wb.sheetnames[0]]
+    out: List[Dict[str, Any]] = []
+    for i, row in enumerate(ws.iter_rows(values_only=True), start=1):
+        if i == 1:
+            continue  # header
+        if not row or all(v in (None, "") for v in row[:3]):
+            continue
+        req = str(row[0] or "").strip()
+        utr = str(row[1] or "").strip() if len(row) > 1 else ""
+        pd = row[2] if len(row) > 2 else None
+        if hasattr(pd, "strftime"):
+            pd = pd.strftime("%Y-%m-%d")
+        out.append({"row": i, "request_no": req, "utr_no": utr, "paid_date": str(pd or "").strip()[:10]})
+    return out
+
+
+async def _validate_bulk(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    today = now_iso()[:10]
+    valid, errors = [], []
+    seen_req, seen_utr = set(), {}
+    nos = [r["request_no"] for r in rows if r["request_no"]]
+    vmap = {v["request_no"]: v async for v in db.payment_verifications.find({"request_no": {"$in": nos}}, {"_id": 0})}
+    used = {u["utr_no"]: u["request_no"] async for u in db.payment_verifications.find(
+        {"stage": "paid", "utr_no": {"$in": [r["utr_no"] for r in rows if r["utr_no"]]}}, {"_id": 0, "utr_no": 1, "request_no": 1})}
+    for r in rows:
+        err = None
+        if not r["request_no"]:
+            err = "Request No is blank"
+        elif not r["utr_no"]:
+            continue  # intentionally skipped row
+        elif r["request_no"] in seen_req:
+            err = "Duplicate Request No in file"
+        elif r["request_no"] not in vmap:
+            err = "Request No not found in payment queue"
+        elif vmap[r["request_no"]].get("stage") == "paid":
+            err = f"Already paid (UTR {vmap[r['request_no']].get('utr_no') or '—'})"
+        elif vmap[r["request_no"]].get("stage") not in ("verified", "in_bank_file"):
+            err = f"Not ready — stage is '{vmap[r['request_no']].get('stage')}' (must be verified / in bank file)"
+        elif r["utr_no"] in used:
+            err = f"UTR already used on {used[r['utr_no']]}"
+        elif r["utr_no"] in seen_utr:
+            err = f"Duplicate UTR in file (also on {seen_utr[r['utr_no']]})"
+        elif r["paid_date"] and not re.match(r"^\d{4}-\d{2}-\d{2}$", r["paid_date"]):
+            err = "Paid Date must be YYYY-MM-DD"
+        if err:
+            errors.append({**r, "error": err})
+            continue
+        seen_req.add(r["request_no"])
+        seen_utr[r["utr_no"]] = r["request_no"]
+        v = vmap[r["request_no"]]
+        valid.append({**r, "paid_date": r["paid_date"] or today, "request_id": v["request_id"],
+                      "vendor_name": v.get("vendor_name"), "stage": v.get("stage"),
+                      "net_payable": v.get("net_payable") if v.get("net_payable") is not None else v.get("verified_amount")})
+    return {"valid": valid, "errors": errors, "skipped": len([r for r in rows if r["request_no"] and not r["utr_no"]])}
+
+
+@router.post("/bulk-utr/validate")
+async def bulk_utr_validate(file: UploadFile = File(...), user: dict = Depends(require_permission("accounting", "write"))):
+    if not (file.filename or "").lower().endswith((".xlsx", ".xlsm")):
+        raise HTTPException(400, "Upload the .xlsx template")
+    try:
+        rows = _parse_bulk_rows(await file.read())
+    except Exception as e:
+        raise HTTPException(400, f"Could not read Excel: {e}")
+    res = await _validate_bulk(rows)
+    return {**res, "total_rows": len(rows)}
+
+
+@router.post("/bulk-utr/apply")
+async def bulk_utr_apply(file: UploadFile = File(...), request: Request = None,
+                         user: dict = Depends(require_permission("accounting", "write"))):
+    """Re-validates the uploaded file and marks every valid row paid (same logic as single Mark Paid)."""
+    rows = _parse_bulk_rows(await file.read())
+    res = await _validate_bulk(rows)
+    done, failed = [], []
+    for r in res["valid"]:
+        try:
+            await mark_paid(r["request_id"], MarkPaidIn(utr_no=r["utr_no"], paid_date=r["paid_date"]), request, user)
+            done.append({"request_no": r["request_no"], "utr_no": r["utr_no"], "paid_date": r["paid_date"], "vendor_name": r.get("vendor_name")})
+        except HTTPException as e:
+            failed.append({**r, "error": str(e.detail)})
+        except Exception as e:  # noqa: BLE001
+            failed.append({**r, "error": str(e)[:200]})
+    await audit(user=user, action="payment_bulk_paid", resource="payment_queue", record_id="bulk",
+                after={"paid": len(done), "errors": len(res["errors"]) + len(failed)}, ip=_ip(request))
+    return {"paid": done, "failed": failed, "errors": res["errors"], "skipped": res["skipped"], "total_rows": len(rows)}

@@ -323,6 +323,36 @@ async def list_bill_requests(status: Optional[str] = None,
     return out
 
 
+@router.get("/bill-requests/{rid}/full")
+async def get_bill_request_full(rid: str,
+                                user: dict = Depends(require_permission("bill_requests", "read"))):
+    """Read-only 360° view: request as submitted + approval trail + generated RA bill + attachments."""
+    r = await db.bill_requests.find_one({"id": rid}, {"_id": 0})
+    if not r:
+        raise HTTPException(404, "Bill request not found")
+    a = await db.approvals.find_one({"id": r.get("approval_id")}, {"_id": 0}) if r.get("approval_id") else None
+    bill = await db.ra_bills.find_one({"id": r.get("bill_id")}, {"_id": 0}) if r.get("bill_id") else None
+    parent_ids = [rid] + ([r["bill_id"]] if r.get("bill_id") else [])
+    files = await db.files.find({"parent_id": {"$in": parent_ids}, "is_deleted": False}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    history = await db.audit_logs.find({"resource": "bill_requests", "record_id": rid}, {"_id": 0, "ts": 1, "action": 1, "actor_name": 1, "after": 1}) \
+        .sort("ts", 1).to_list(100)
+    return {"request": {**r, "status": _request_status(r, a)}, "approval": a, "bill": bill, "files": files, "history": history,
+            "bill_pdf_url": f"/api/ra-bills/{r['bill_id']}/pdf" if bill else None}
+
+
+@router.get("/ra-bills/{bill_id}/pdf")
+async def ra_bill_pdf_download(bill_id: str, user: dict = Depends(require_permission("bill_requests", "read"))):
+    from fastapi.responses import Response
+    from document_pdf import ra_bill_pdf
+    rec = await db.ra_bills.find_one({"id": bill_id}, {"_id": 0})
+    if not rec:
+        raise HTTPException(404, "RA bill not found")
+    c = await db.clients.find_one({"id": rec.get("client_id")}, {"_id": 0}) if rec.get("client_id") else None
+    pdf = ra_bill_pdf(rec, c)
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="RA-Bill-{rec.get("bill_number") or bill_id[:8]}.pdf"'})
+
+
 @router.get("/bill-requests/{rid}")
 async def get_bill_request(rid: str,
                            user: dict = Depends(require_permission("bill_requests", "read"))):

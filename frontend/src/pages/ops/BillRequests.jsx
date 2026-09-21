@@ -12,6 +12,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProjectSelect } from "@/components/MasterSelect";
+import BillRequestViewDialog from "@/components/BillRequestViewDialog";
 import FileUploader from "@/components/FileUploader";
 import RowAttachments from "@/components/RowAttachments";
 
@@ -39,6 +40,7 @@ export default function BillRequests() {
   const canRequest = !!can && can("bill_requests", "write");
   const canGenerate = (user && GENERATE_ROLES.has(user.role)) || (!!can && can("ra_bills", "write"));
   const [rows, setRows] = useState([]);
+  const [viewFor, setViewFor] = useState(null);
   const [statusFilter, setStatusFilter] = useState("");
   const [rejectFor, setRejectFor] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -231,7 +233,12 @@ export default function BillRequests() {
                     </Button>
                   )}
                   {r.status === "bill_generated" && (
-                    <span className="text-xs font-mono-data text-blue-800" data-testid={`br-billno-${r.id}`}>{r.bill_number}</span>
+                    <>
+                      <span className="text-xs font-mono-data text-blue-800" data-testid={`br-billno-${r.id}`}>{r.bill_number}</span>
+                      <Button size="sm" variant="outline" className="h-7 rounded-sm ml-2" onClick={() => setViewFor(r.id)} data-testid={`br-view-${r.id}`} title="Open the complete, read-only bill request with the generated bill">
+                        <FileText className="h-3.5 w-3.5 mr-1" /> View Bill Request
+                      </Button>
+                    </>
                   )}
                   {r.status === "pending_approval" && (
                     <span className="text-[11px] text-muted-foreground">Awaiting {(r.chain || [])[r.current_step]?.label || "approval"}</span>
@@ -372,6 +379,7 @@ export default function BillRequests() {
       <RowAttachments open={!!attachFor} onOpenChange={() => setAttachFor(null)}
         parentType="bill_requests" parentId={attachFor?.id} recordTitle={`Documents — ${attachFor?.request_no || ""}`} />
 
+      <BillRequestViewDialog requestId={viewFor} open={!!viewFor} onOpenChange={(o) => !o && setViewFor(null)} />
       <Dialog open={!!rejectFor} onOpenChange={(o) => !o && setRejectFor(null)}>
         <DialogContent className="max-w-md rounded-sm" data-testid="br-reject-dialog">
           <DialogHeader>

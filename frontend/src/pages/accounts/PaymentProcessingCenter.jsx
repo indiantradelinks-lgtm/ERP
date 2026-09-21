@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api";
+import BulkUtrDialog from "@/components/BulkUtrDialog";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import RowAttachments from "@/components/RowAttachments";
@@ -375,6 +376,7 @@ export default function PaymentProcessingCenter() {
               <Input value={debitAcNo} onChange={(e) => setDebitAcNo(e.target.value)}
                 className="rounded-sm mt-1 h-9 w-52 font-mono" data-testid="ppc-debit-ac-no" />
             </div>
+            {canWrite && <BulkUtrDialog onDone={load} />}
             {canWrite && <Button size="sm" className="rounded-sm h-9" onClick={generateBankFile} disabled={busy}
               data-testid="ppc-generate-bank-file">
               <FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> Generate Bank File ({Object.values(selected).filter(Boolean).length})
