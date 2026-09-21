@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 193 — verified Phase-4 server-side paging on 7 endpoints, digest recipients settings CRUD, and leaderboard extras (top_won / biggest_open_quote). Backend 14/14 pytest passing (backend/tests/test_iter193.py). Frontend all 4 Store & Inventory tabs and all 3 Budget Commitment tabs render pager/search testids with correct counts; digest settings dialog opens with 17 role checkboxes, 26 user checkboxes, digest-user-filter, digest-sales-dept-head, digest-extra-emails, digest-resolved and digest-settings-save; save persists (extra_emails value round-trips and resolved recount shows 3 recipients: director@erp.com, gm@erp.com, test-iter193@example.com); leaderboard cards render lb-topwon-* and lb-openquote-* blocks. Digest defaults restored (roles:[sales_manager,sales_head,director,general_manager], include_sales_dept_head:true, extras:[]). test_pm@erp.com cannot access /app/sales-reports (route-level access denied — no 'sales_reports' read permission); digest-settings-btn absent for PM.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter193.py",
+    "/app/test_reports/pytest/iter193_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "finance_phase3_router.bill_without_grn: paginate_list search keys include both 'bill_no' and 'invoice_no' but the output only carries a 'bill_number' field derived from invoice_no OR bill_number. Searching 'bill_no' key is a no-op. Consider adding 'bill_number' to search keys and dropping the alias.",
+    "inventory_phase2_router.stock_inward_report: `total_value` is computed on ALL matched rows (correct for report totals), but rows in-memory are also processed for GRN enrichment BEFORE pagination which is fine while capped at 5000 (Motor .to_list(5000)). If the report ever exceeds 5000 the totals silently truncate — surface a warning header or add a hard cap breach guard.",
+    "sales_leaderboard_router.compute_leaderboard: `top_won` aggregation matches created_at in-month when won_at/updated_at missing, but if won_at is present but for a prior month it can still include quotes whose current month created_at matches — logic ok but subtle. Add a comment for future maintainers.",
+    "sales_digest.save_digest_settings drops invalid emails silently — good — but neither the response nor UI shows a validation message about dropped emails. UX nit: return dropped list alongside settings so UI can toast.",
+    "PM/test_pm@erp.com is blocked at /app/sales-reports by the ProtectedShell (missing 'sales_reports' read perm), so the DigestSettingsDialog visibility guard is functionally OK but the frontend never renders the SalesLeaderboard for PM. Guard is transitively enforced but not by the visibility rule itself — worth verifying if any lower-role sales user has read access without super_admin/director role because DigestSettingsDialog should still be hidden for them."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter193.py",
+    "/app/test_reports/iteration_193.json"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% (Store & Inventory 4 pagers + Budget Commitment 3 tabs + digest settings dialog + leaderboard extras + PM RBAC negative case)"},
+  "test_credentials": "admin@erp.com/Admin@123, test_pm@erp.com/PM@12345",
+  "seed_data_creation": "Digest settings temporarily changed to include extra_emails=[test-iter193@example.com, ops@example.com]; ALL RESTORED via PUT to defaults (roles=[sales_manager,sales_head,director,general_manager], include_sales_dept_head=true, user_ids=[], extra_emails=[]) at end of tests (both backend pytest and frontend flow). Digest send generated real email_outbox rows for 2026-08 via POST /api/sales/leaderboard/digest/send.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Phase-4 paged endpoints follow same contract as Phase-1/2/3 (paginate_list). Report endpoints (stock-inward-report / pending-returnable / po-commitment / grn-not-billed / bill-without-grn) ALWAYS return dict with count+summary_key; when page omitted rows[] is full list capped at 1500/1000. List endpoints (material-requests, transfers) return plain array when page omitted, paged dict when page=1+. Digest settings testids: digest-settings-btn, digest-settings-dialog, digest-resolved, digest-settings-save, digest-extra-emails, digest-user-filter, digest-sales-dept-head, digest-role-<role>, digest-user-<id>. Leaderboard extras testids: lb-topwon-<uid> / lb-openquote-<uid>. Store & Inventory testids: si-nav-inward_report/material_req/material_trf/returnable + inward-pager-range/mr-pager-range/xfer-pager-range/returnable-view-pager-range + inward-search/mr-search/returnable-view-search. Budget commitment center at /app/accounts/budget with tabs bc-tab-po/bc-tab-grn/bc-tab-bill.",
+  "rca of the issue": "N/A — no functional issues found."
+}
