@@ -18,6 +18,8 @@ const FLAG_TONE = {
   locked: "bg-red-100 text-red-800 border-red-300",
   future_date: "bg-slate-100 text-slate-600 border-slate-300",
   no_punch_time: "bg-slate-100 text-slate-600 border-slate-300",
+  machine_absent: "bg-rose-50 text-rose-700 border-rose-200",
+  existing_kept: "bg-sky-50 text-sky-700 border-sky-200",
 };
 
 export default function AttendanceImport() {
@@ -40,7 +42,9 @@ export default function AttendanceImport() {
       fd.append("file", file);
       const r = await api.post("/hr2/attendance-plus/punch-import/preview", fd, { headers: { "Content-Type": "multipart/form-data" } });
       setPreview(r.data);
-      toast.success(`AI mapped ${r.data.total_rows} record(s) — review & confirm`);
+      const um = r.data.unmatched_employees?.length || 0;
+      const msg = `${r.data.total_rows} record(s) · ${r.data.matched_employees} employee(s) matched by Legacy Emp Code${um ? ` · ${um} unmatched` : ""} — review & confirm`;
+      um ? toast.warning(msg) : toast.success(msg);
     } catch (e) { toast.error(e.response?.data?.detail || "AI import failed"); }
     finally { setBusy(""); if (aiRef.current) aiRef.current.value = ""; }
   };
@@ -96,7 +100,7 @@ export default function AttendanceImport() {
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
             <h3 className="font-display font-bold text-lg flex items-center gap-2"><Bot className="h-5 w-5 text-violet-600" /> AI Punch Machine Import</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Upload any biometric export (Excel / CSV / TXT / DAT) — AI detects the format, maps employees, computes in/out, hours, OT, late & early flags. Duplicates are overwritten on confirm.</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Upload any biometric export (Excel / CSV / TXT / DAT). Per-employee machine reports (e.g. MyOfficeGuardian) are parsed directly; other layouts are AI-detected. Punch-machine Employee ID is matched to Employee Master → Legacy Emp Code. Duplicates are overwritten on confirm.</p>
           </div>
           <input ref={aiRef} type="file" accept=".xlsx,.xls,.csv,.txt,.dat" className="hidden" onChange={(e) => aiUpload(e.target.files?.[0])} data-testid="ai-punch-file" />
           <Button className="bg-violet-600 hover:bg-violet-700" disabled={busy === "ai"} onClick={() => aiRef.current?.click()} data-testid="ai-punch-upload-btn">
@@ -109,6 +113,8 @@ export default function AttendanceImport() {
             <div className="flex items-center gap-3 flex-wrap text-sm">
               <span className="font-semibold">{preview.total_rows} record(s)</span>
               <span className="text-emerald-700">{preview.importable} importable</span>
+              <span className="text-slate-600" data-testid="ai-punch-matched">{preview.matched_employees ?? 0} employee(s) matched</span>
+              {preview.unmatched_employees?.length > 0 && <span className="text-red-600" data-testid="ai-punch-unmatched">{preview.unmatched_employees.length} unmatched Legacy Emp Code(s)</span>}
               <span className="text-amber-700">{preview.duplicates} duplicate(s) will be overwritten</span>
               {preview.exceptions.length > 0 && <span className="text-red-600">{preview.exceptions.length} exception(s)</span>}
               <div className="ml-auto flex gap-2">
@@ -130,7 +136,7 @@ export default function AttendanceImport() {
                 <tbody>
                   {preview.rows.map((r, i) => (
                     <tr key={i} className="border-t">
-                      <td className="px-2 py-1">{r.employee_name || r.employee_code}</td>
+                      <td className="px-2 py-1">{r.employee_name || r.employee_code}{r.employee_code ? <span className="ml-1 font-mono-data text-slate-500">[{r.employee_code}]</span> : null}</td>
                       <td className="px-2 py-1 font-mono-data">{r.date}</td>
                       <td className="px-2 py-1">{r.in_time || "—"}</td>
                       <td className="px-2 py-1">{r.out_time || "—"}</td>
@@ -148,6 +154,11 @@ export default function AttendanceImport() {
                 </tbody>
               </table>
             </div>
+            {preview.unmatched_employees?.length > 0 && (
+              <div className="text-xs bg-amber-50 border border-amber-200 rounded-sm p-2" data-testid="ai-punch-unmatched-list">
+                <span className="font-semibold">Not in Employee Master (add the punch-machine ID as Legacy Emp Code to map):</span> {preview.unmatched_employees.join(", ")}
+              </div>
+            )}
             {preview.exceptions.length > 0 && (
               <div className="text-xs bg-red-50 border border-red-200 rounded-sm p-2 max-h-28 overflow-y-auto" data-testid="ai-punch-exceptions">
                 {preview.exceptions.slice(0, 30).map((x, i) => <div key={i}>• {x.date} — {x.who}: {x.issue}</div>)}

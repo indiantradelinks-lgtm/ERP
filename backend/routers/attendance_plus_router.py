@@ -592,17 +592,50 @@ async def bulk_rows_template(user: dict = Depends(require_permission("attendance
                              headers={"Content-Disposition": 'attachment; filename="attendance_bulk_rows_template.xlsx"'})
 
 
+def _norm_code(v) -> str:
+    s = str(v if v is not None else "").strip().upper()
+    if re.fullmatch(r"\d+\.0", s):
+        s = s[:-2]
+    return re.sub(r"\s+", "", s)
+
+
+def _norm_name(v) -> str:
+    return re.sub(r"\s+", " ", str(v or "").strip().upper())
+
+
 async def _employee_lookup() -> Dict[str, dict]:
+    """Keys: LEGACY::<emp_code> (punch-machine ID), ID::<employee_id>, NAME::<name>.
+    Active employees win when two records share a key."""
     out: Dict[str, dict] = {}
-    async for p in db.employees.find({"status": {"$ne": "inactive"}},
-                                     {"_id": 0, "id": 1, "employee_id": 1, "emp_code": 1, "name": 1,
-                                      "department": 1, "designation": 1, "current_project_code": 1}):
-        for key in (p.get("employee_id"), p.get("emp_code")):
-            if key:
-                out[str(key).strip().upper()] = p
+
+    def put(key: str, p: dict):
+        cur = out.get(key)
+        if cur is None or (cur.get("status") not in ("active", None) and p.get("status") == "active"):
+            out[key] = p
+
+    async for p in db.employees.find({}, {"_id": 0, "id": 1, "employee_id": 1, "emp_code": 1, "name": 1,
+                                          "status": 1, "department": 1, "designation": 1, "current_project_code": 1}):
+        if p.get("emp_code"):
+            put("LEGACY::" + _norm_code(p["emp_code"]), p)
+        if p.get("employee_id"):
+            put("ID::" + _norm_code(p["employee_id"]), p)
         if p.get("name"):
-            out.setdefault("NAME::" + p["name"].strip().upper(), p)
+            put("NAME::" + _norm_name(p["name"]), p)
     return out
+
+
+def _match_employee(lookup: Dict[str, dict], code: str, name: str) -> tuple:
+    """Legacy Emp Code (punch-machine ID) first, then Employee ID, then exact name."""
+    c = _norm_code(code)
+    if c:
+        if "LEGACY::" + c in lookup:
+            return lookup["LEGACY::" + c], "legacy_emp_code"
+        if "ID::" + c in lookup:
+            return lookup["ID::" + c], "employee_id"
+    n = _norm_name(name)
+    if n and "NAME::" + n in lookup:
+        return lookup["NAME::" + n], "name"
+    return None, None
 
 
 async def _write_attendance(person: dict, date: str, status: str, in_time: Optional[str],
@@ -681,7 +714,7 @@ async def bulk_rows_upload(file: UploadFile = File(...),
             continue
         vals = list(row) + [None] * 9
         code, name, date_v, shift, status_raw, tin, tout, ot_raw, remarks = vals[:9]
-        person = lookup.get(str(code or "").strip().upper()) or lookup.get("NAME::" + str(name or "").strip().upper())
+        person, _ = _match_employee(lookup, str(code or ""), str(name or ""))
         if not person:
             errors.append({"row": rn, "error": f"Unknown employee '{code or name}'"})
             continue
@@ -838,6 +871,59 @@ def _parse_dt(value: str, fmt: Optional[str]):
     return None
 
 
+def _hhmm_or_none(v) -> Optional[str]:
+    s = str(v or "").strip()
+    return s[:5] if re.fullmatch(r"\d{1,2}:\d{2}(:\d{2})?", s) else None
+
+
+_MONTHS = {m: i for i, m in enumerate(["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"], 1)}
+
+
+def _parse_block_report(content: bytes) -> Optional[dict]:
+    """Deterministic parser for per-employee 'block' biometric reports (e.g. MyOfficeGuardian):
+    a header line with the report range, then per employee: <name> / 'Emp_code:' <id> / day rows
+    '(Tue) 01' Shift In Out Late Early Hours OT Status. Returns None if the sheet isn't this format."""
+    try:
+        wb = load_workbook(io.BytesIO(content), data_only=True)
+    except Exception:
+        return None
+    rows = [list(r) for r in wb.active.iter_rows(values_only=True) if r]
+    if not any(str(r[0] or "").strip().lower().startswith("emp_code") for r in rows if r):
+        return None
+    year = month = None
+    for r in rows[:15]:
+        m = re.search(r"(\d{1,2})[/-]([A-Za-z]{3})[/-](\d{4})", " ".join(str(c) for c in r if c is not None))
+        if m:
+            month, year = _MONTHS.get(m.group(2).upper()), int(m.group(3))
+            break
+    if not (year and month):
+        return None
+    records: List[dict] = []
+    cur: Optional[dict] = None
+    for i, r in enumerate(rows):
+        c0 = str(r[0] or "").strip()
+        if c0.lower().startswith("emp_code"):
+            name = str(rows[i - 1][0] or "").strip() if i > 0 else ""
+            cur = {"code": _norm_code(r[1] if len(r) > 1 else ""), "name": name}
+            continue
+        dm = re.match(r"^\((\w{3})\)\s*(\d{1,2})$", c0)
+        if not dm or cur is None:
+            continue
+        day = int(dm.group(2))
+        try:
+            date = datetime(year, month, day).date().isoformat()
+        except ValueError:
+            continue
+        r = r + [None] * 9
+        records.append({"code": cur["code"], "name": cur["name"], "date": date, "weekday": dm.group(1).upper(),
+                        "shift": str(r[1] or "").strip() or None, "in": _hhmm_or_none(r[2]), "out": _hhmm_or_none(r[3]),
+                        "machine_status": str(r[8] or "").strip().upper()})
+    if not records:
+        return None
+    return {"format": "block_report", "year": year, "month": month, "records": records,
+            "employees": len({(x["code"], x["name"]) for x in records})}
+
+
 @router.post("/punch-import/preview")
 async def punch_preview(file: UploadFile = File(...),
                         user: dict = Depends(require_permission("attendance", "write"))):
@@ -848,16 +934,35 @@ async def punch_preview(file: UploadFile = File(...),
         raise HTTPException(400, "Empty file")
     if len(content) > 10 * 1024 * 1024:
         raise HTTPException(400, "File too large (max 10 MB)")
-    lines = _file_to_lines(file.filename or "punches.txt", content)
-    if not lines:
-        raise HTTPException(400, "No data lines found in the file")
-    mapping = await _ai_map(lines)
-
-    delim = mapping.get("delimiter") or ","
-    start_idx = 1 if mapping.get("has_header") else 0
     lookup = await _employee_lookup()
     shifts = await _shift_map()
     auto_settings = await _auto_settings()
+
+    # Collect punches per (employee_key, date)
+    punches: Dict[tuple, dict] = {}
+    parse_errors: List[dict] = []
+    ext = (file.filename or "").rsplit(".", 1)[-1].lower()
+    block = _parse_block_report(content) if ext in ("xlsx", "xls") else None
+    if block:
+        mapping = {"format": "block_report", "year": block["year"], "month": block["month"],
+                   "employees": block["employees"], "notes": "Per-employee block report parsed deterministically (no AI)."}
+        for rec in block["records"]:
+            key = ("LEGACY::" + rec["code"]) if rec["code"] else ("NAME::" + _norm_name(rec["name"]))
+            if not rec["in"] and not rec["out"]:
+                if rec["machine_status"] != "A" or rec["weekday"] == "SUN":
+                    continue
+            punches[(key, rec["date"])] = {"code": rec["code"], "name": rec["name"], "times": [],
+                                           "in": rec["in"], "out": rec["out"], "shift": rec["shift"],
+                                           "machine_absent": not rec["in"] and not rec["out"]}
+        delim, start_idx = ",", 0
+        lines = []
+    else:
+        lines = _file_to_lines(file.filename or "punches.txt", content)
+        if not lines:
+            raise HTTPException(400, "No data lines found in the file")
+        mapping = await _ai_map(lines)
+        delim = mapping.get("delimiter") or ","
+        start_idx = 1 if mapping.get("has_header") else 0
 
     def col(row: List[str], idx) -> Optional[str]:
         if idx is None:
@@ -867,9 +972,6 @@ async def punch_preview(file: UploadFile = File(...),
         except Exception:
             return None
 
-    # Collect punches per (employee_key, date)
-    punches: Dict[tuple, dict] = {}
-    parse_errors: List[dict] = []
     in_tokens = {str(t).strip().upper() for t in (mapping.get("in_tokens") or ["IN", "0", "I"])}
     for ln_no, line in enumerate(lines[start_idx:], start=start_idx + 1):
         cells = _split_line(line, delim)
@@ -878,7 +980,7 @@ async def punch_preview(file: UploadFile = File(...),
         if not code and not name:
             parse_errors.append({"line": ln_no, "error": "No employee identifier"})
             continue
-        key = code.upper() or "NAME::" + name.upper()
+        key = ("CODE::" + _norm_code(code)) if code else ("NAME::" + _norm_name(name))
         if mapping.get("in_col") is not None or mapping.get("out_col") is not None:
             d = _parse_dt(col(cells, mapping.get("date_col")) or "", mapping.get("date_format"))
             if not d:
@@ -910,18 +1012,37 @@ async def punch_preview(file: UploadFile = File(...),
     today = datetime.now(timezone.utc).date().isoformat()
     preview_rows: List[dict] = []
     exceptions: List[dict] = []
+    unmatched_seen: set = set()
     seen_dates = set()
     for (key, date), rec in sorted(punches.items(), key=lambda kv: (kv[0][1], kv[0][0])):
-        person = lookup.get(key)
-        row: dict = {"employee_code": rec["code"], "employee_name": rec["name"], "date": date, "flags": []}
+        person, matched_by = _match_employee(lookup, rec["code"], rec["name"])
+        row: dict = {"employee_code": rec["code"], "employee_name": rec["name"], "date": date, "flags": [],
+                     "shift_code": rec.get("shift") if rec.get("shift") in shifts else "GEN"}
         if not person:
             row["flags"].append("unmatched_employee")
-            exceptions.append({"date": date, "who": rec["code"] or rec["name"], "issue": "Employee not found in master"})
+            who = f"{rec['name']} [{rec['code']}]".strip() if rec["code"] else rec["name"]
+            if who not in unmatched_seen:
+                unmatched_seen.add(who)
+                exceptions.append({"date": date, "who": who, "issue": "No employee with this Legacy Emp Code / name in Employee Master"})
             preview_rows.append(row)
             continue
         row["employee_id"] = person["id"]
         row["employee_name"] = person.get("name")
-        row["employee_code"] = person.get("employee_id") or person.get("emp_code")
+        row["employee_code"] = person.get("emp_code") or person.get("employee_id")
+        row["matched_by"] = matched_by
+        if rec.get("machine_absent"):
+            row.update({"in_time": None, "out_time": None, "working_hours": 0.0, "overtime_hours": 0.0,
+                        "late_minutes": 0, "early_exit_minutes": 0, "status": "absent"})
+            row["flags"].append("machine_absent")
+            if date > today:
+                row["flags"].append("future_date")
+            existing = await db.attendance.find_one({"employee_id": person["id"], "date": date}, {"_id": 0, "status": 1, "locked": 1})
+            if existing:
+                row["flags"].append("locked" if existing.get("locked") else "existing_kept")
+                row["status"] = existing.get("status") or "absent"
+            seen_dates.add(date)
+            preview_rows.append(row)
+            continue
         if rec["times"]:
             ins = [t for t, d in rec["times"] if d in in_tokens] or [t for t, _ in rec["times"]]
             outs = [t for t, d in rec["times"] if d and d not in in_tokens] or [t for t, _ in rec["times"]]
@@ -938,7 +1059,9 @@ async def punch_preview(file: UploadFile = File(...),
         if date > today:
             row["flags"].append("future_date")
             exceptions.append({"date": date, "who": row["employee_name"], "issue": "Future date — will be skipped"})
-        sh = shifts.get("GEN") or {}
+        sh_code = rec.get("shift") if rec.get("shift") in shifts else "GEN"
+        row["shift_code"] = sh_code
+        sh = shifts.get(sh_code) or {}
         total = _hours_between(_hhmm(row.get("in_time")), _hhmm(row.get("out_time")),
                                float(sh.get("break_minutes") or 0))
         row["working_hours"] = total
@@ -948,7 +1071,7 @@ async def punch_preview(file: UploadFile = File(...),
             row["status"] = "present"
         ot_after = float(sh.get("overtime_after") or 8.0)
         row["overtime_hours"] = max(0.0, round(total - ot_after, 2))
-        late, early = _late_early({"shift_code": "GEN", "in_time": row.get("in_time"), "out_time": row.get("out_time")}, shifts)
+        late, early = _late_early({"shift_code": sh_code, "in_time": row.get("in_time"), "out_time": row.get("out_time")}, shifts)
         row["late_minutes"], row["early_exit_minutes"] = late, early
         existing = await db.attendance.find_one({"employee_id": person["id"], "date": date}, {"_id": 0, "id": 1, "status": 1, "locked": 1})
         if existing:
@@ -967,11 +1090,14 @@ async def punch_preview(file: UploadFile = File(...),
     }
     await db.punch_import_batches.insert_one({**batch})
     batch.pop("_id", None)
-    importable = len([r for r in preview_rows if "unmatched_employee" not in r["flags"]
-                      and "locked" not in r["flags"] and "future_date" not in r["flags"]])
+    skip_flags = {"unmatched_employee", "locked", "future_date", "existing_kept"}
+    importable = len([r for r in preview_rows if not skip_flags & set(r["flags"])])
+    unmatched = sorted({f"{r['employee_name']} [{r['employee_code']}]" for r in preview_rows if "unmatched_employee" in r["flags"]})
     return {"ok": True, "batch_id": batch["id"], "mapping": mapping,
             "rows": preview_rows, "exceptions": exceptions, "parse_errors": parse_errors[:50],
             "total_rows": len(preview_rows), "importable": importable,
+            "matched_employees": len({r["employee_id"] for r in preview_rows if r.get("employee_id")}),
+            "unmatched_employees": unmatched,
             "duplicates": len([r for r in preview_rows if "duplicate" in r["flags"]])}
 
 
@@ -997,7 +1123,7 @@ async def punch_commit(batch_id: str, p: CommitIn,
     created = updated = skipped = 0
     for row in batch.get("rows") or []:
         flags = row.get("flags") or []
-        if "unmatched_employee" in flags or "locked" in flags or "future_date" in flags or row.get("date") > today:
+        if ({"unmatched_employee", "locked", "future_date", "existing_kept"} & set(flags)) or row.get("date") > today:
             skipped += 1
             continue
         person = await db.employees.find_one({"id": row["employee_id"]}, {"_id": 0})
@@ -1008,7 +1134,8 @@ async def punch_commit(batch_id: str, p: CommitIn,
             action, aid, prev = await _write_attendance(
                 person, row["date"], row.get("status") or "present",
                 row.get("in_time"), row.get("out_time"), row.get("overtime_hours"),
-                "Punch machine import", None, "biometric", user, shifts,
+                "Punch machine import", row.get("shift_code") if row.get("shift_code") in shifts else None,
+                "biometric", user, shifts,
                 overwrite=p.overwrite, settings=settings)
         except ValueError:
             skipped += 1
