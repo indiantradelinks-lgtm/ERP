@@ -595,7 +595,7 @@ function AllocateDialog({ handover, onClose, onSaved }) {
   // Iter 90 — Employee-source options for PM / Coordinator. Show designation
   // and a subtle hint when no linked ERP user (notifications won't reach them).
   const empOpt = (e) => {
-    const base = `${e.name || "—"} · ${e.designation || "—"}`;
+    const base = [e.name || "—", e.employee_id, e.designation].filter(Boolean).join(" · ");
     return e.linked_user_id ? base : `${base}  ⚠ no ERP login`;
   };
 
@@ -615,7 +615,7 @@ function AllocateDialog({ handover, onClose, onSaved }) {
                           value={form.project_manager_id}
                           onChange={(v) => setForm({ ...form, project_manager_id: v })}
                           options={users.project_manager} optLabel={empOpt} testid="alloc-pm"
-                          emptyHint="No HRMS employee found with designation 'Projects & Operations'. Update an employee's designation in HRMS → Employees first." />
+                          emptyHint="No active HRMS employee found in the Projects & Operations family (designation or department). Update the employee's designation in HRMS → Employees first." />
             <SelectField label="Project Coordinator (Data Entry Operator)"
                           value={form.project_coordinator_id}
                           onChange={(v) => setForm({ ...form, project_coordinator_id: v })}

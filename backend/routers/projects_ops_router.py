@@ -580,7 +580,12 @@ async def allocate_handover(hid: str, payload: AllocateIn, request: Request,
         if not uid:
             return None
         u = await db.users.find_one({"id": uid}, {"_id": 0, "name": 1, "email": 1})
-        return (u or {}).get("name") or (u or {}).get("email")
+        if u:
+            return u.get("name") or u.get("email")
+        # HRMS employee without an ERP login (the dropdown flags these) — allow
+        # the allocation and label it from the employee master.
+        e = await db.employees.find_one({"id": uid}, {"_id": 0, "name": 1, "employee_id": 1})
+        return (e or {}).get("name")
 
     pm_label = await _label(payload.project_manager_id)
     pc_label = await _label(payload.project_coordinator_id)
@@ -779,19 +784,43 @@ async def assignable_users(user: dict = Depends(get_current_user)):
     when a link is found, otherwise the employee id — keeping the existing
     `project_manager_id` / `project_coordinator_id` field semantics intact.
     """
-    PM_DESIGNATION = "projects & operations"
-    PC_DESIGNATION = "data entry operator"
+    # Iter 195 — the old rule was an exact designation string match
+    # ("projects & operations" / "data entry operator"), which silently hid
+    # every PM recorded with a variant designation (e.g. "Project Manager",
+    # "Sr. Project Manager", "Projects and Operations") or with the
+    # designation on the department field instead. Matching is now family-based.
+    INACTIVE_STATUSES = {"inactive", "exited", "resigned", "left", "terminated", "separated"}
+    PC_RE = re.compile(r"data\s*entry|coordinator", re.I)
+    PM_DESIG_RE = re.compile(r"project|operations", re.I)
+    PM_DEPT_RE = re.compile(r"project", re.I)
+    PM_SENIORITY_RE = re.compile(r"manager|head|in.?charge|lead|\bpm\b", re.I)
 
     def _norm(s):
         return (s or "").strip().lower()
 
-    async def _hrms_by_designation(designation: str):
+    def _is_pm(r) -> bool:
+        desig, dept = r.get("designation") or "", r.get("department") or ""
+        if PC_RE.search(desig):
+            return False
+        if PM_DESIG_RE.search(desig):
+            return True
+        # designation kept generic ("Manager", "Site Incharge") but the employee
+        # sits in a Projects department
+        return bool(PM_DEPT_RE.search(dept) and PM_SENIORITY_RE.search(desig))
+
+    def _is_pc(r) -> bool:
+        return bool(PC_RE.search(r.get("designation") or ""))
+
+    async def _hrms_where(predicate):
         rows = await db.employees.find(
-            {"status": {"$ne": "inactive"}},
+            {},
             {"_id": 0, "id": 1, "name": 1, "designation": 1,
-             "department": 1, "employee_id": 1, "phone": 1, "email": 1},
-        ).sort("name", 1).to_list(1000)
-        rows = [r for r in rows if _norm(r.get("designation")) == designation]
+             "department": 1, "employee_id": 1, "phone": 1, "email": 1, "status": 1},
+        ).sort("name", 1).to_list(5000)
+        rows = [r for r in rows
+                if _norm(r.get("status")) not in INACTIVE_STATUSES
+                and (r.get("name") or "").strip()
+                and predicate(r)]
         # Bridge employee → user account by name (case-insensitive exact match)
         for r in rows:
             r["employee_record_id"] = r.get("id")
@@ -810,8 +839,26 @@ async def assignable_users(user: dict = Depends(get_current_user)):
                 r["id"] = u["id"]
         return rows
 
-    pm = await _hrms_by_designation(PM_DESIGNATION)
-    pc = await _hrms_by_designation(PC_DESIGNATION)
+    pm = await _hrms_where(_is_pm)
+    pc = await _hrms_where(_is_pc)
+
+    # Also surface active ERP logins with a PM role that have no HRMS employee
+    # row (or whose employee name differs) so the list is never short.
+    pm_names = {_norm(r.get("name")) for r in pm}
+    pm_ids = {r.get("id") for r in pm}
+    pm_users = await db.users.find(
+        {"role": {"$in": ["project_manager", "project_head"]}, "active": {"$ne": False}},
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1, "department": 1},
+    ).sort("name", 1).to_list(500)
+    for u in pm_users:
+        if u["id"] in pm_ids or _norm(u.get("name")) in pm_names:
+            continue
+        pm.append({"id": u["id"], "name": u.get("name") or u.get("email"),
+                   "designation": "Project Manager (ERP login)",
+                   "department": u.get("department"), "email": u.get("email"),
+                   "linked_user_id": u["id"], "linked_user_email": u.get("email")})
+    pm.sort(key=lambda r: _norm(r.get("name")))
+    pc.sort(key=lambda r: _norm(r.get("name")))
 
     rm = await db.users.find(
         {"role": {"$in": ["dept_head", "general_manager", "director", "project_manager"]},
