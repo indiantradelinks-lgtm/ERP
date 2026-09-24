@@ -121,8 +121,7 @@ export default function ServicePos() {
                 <TableCell><StatusChip status={r.status} testid={`svc-po-status-${r.po_no}`} /></TableCell>
                 <TableCell><StatusChip status={r.payment_status} />{(r.paid_amount || 0) > 0 && <div className="text-[10px] text-muted-foreground tabular-nums">{inr(r.paid_amount)} paid</div>}</TableCell>
                 <TableCell className="text-right whitespace-nowrap">
-                  {!["draft", "pending_approval"].includes(r.status) &&
-                    <Button variant="ghost" size="icon" className="h-7 w-7" title="Print / View PO PDF" onClick={() => window.open(`${API}/service-workflow/pos/${r.id}/pdf`, "_blank")} data-testid={`svc-po-pdf-${r.po_no}`}><Printer className="h-3.5 w-3.5" /></Button>}
+                  <Button variant="ghost" size="icon" className="h-7 w-7" title={["draft", "pending_approval"].includes(r.status) ? "View draft PO PDF (review before submitting)" : "Print / View PO PDF"} onClick={() => window.open(`${API}/service-workflow/pos/${r.id}/pdf`, "_blank")} data-testid={`svc-po-pdf-${r.po_no}`}><Printer className="h-3.5 w-3.5" /></Button>
                   {caps.procurement && !["draft", "pending_approval"].includes(r.status) &&
                     <Button variant="ghost" size="icon" className={`h-7 w-7 ${r.emailed_at ? "text-emerald-600" : ""}`} title={r.emailed_at ? `Emailed to ${r.emailed_to} on ${dt(r.emailed_at)} — send again` : "Email PO PDF to vendor"} onClick={() => openMail(r)} data-testid={`svc-po-email-${r.po_no}`}><Mail className="h-3.5 w-3.5" /></Button>}
                   {caps.procurement && r.status === "draft" &&

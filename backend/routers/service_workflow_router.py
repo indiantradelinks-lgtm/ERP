@@ -763,8 +763,10 @@ async def service_po_pdf(po_id: str,
     sr = await db.svc_requests.find_one({"id": po.get("sr_id")}, {"_id": 0})
     from pdf_generator import render_service_po_pdf
     pdf = render_service_po_pdf(po, vendor, sr)
+    draft = str(po.get("status") or "").lower() in ("draft", "pending_approval")
+    fname = f"{po['po_no']}{'-DRAFT' if draft else ''}.pdf"
     return Response(content=pdf, media_type="application/pdf",
-                    headers={"Content-Disposition": f'inline; filename="{po["po_no"]}.pdf"'})
+                    headers={"Content-Disposition": f'inline; filename="{fname}"'})
 
 
 class EmailPoIn(BaseModel):

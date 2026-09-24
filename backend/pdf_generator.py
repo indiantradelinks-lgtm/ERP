@@ -914,7 +914,16 @@ def render_service_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] =
         for i, t in enumerate(tnc_items)) or "<div class='note'>As mutually agreed.</div>"
     tnc_title = f" — {_esc(po.get('terms_title'))}" if po.get("terms_title") else ""
     approval = po.get("po_approval") or {}
+    _st = str(po.get("status") or "").lower()
+    draft_banner = ""
+    if _st in ("draft", "pending_approval"):
+        _label = "DRAFT — FOR INTERNAL REVIEW ONLY" if _st == "draft" else "PENDING APPROVAL — NOT YET ISSUED"
+        draft_banner = (f"<div style='border:1.5px solid #64748b;background:#f1f5f9;padding:6px 10px;"
+                        f"margin:0 0 8px 0;text-align:center;letter-spacing:1px;'>"
+                        f"<b>{_label}</b><div class='note' style='margin-top:2px;'>"
+                        f"This is not a valid Purchase Order. Review and amend before submission.</div></div>")
     body = f"""
+{draft_banner}
 {exc}
 <div class="kv" style="grid-template-columns: 130px 1fr 130px 1fr;">
   <div><b>Service PO No.</b></div><div>{_esc(po.get('po_no'))}</div>
