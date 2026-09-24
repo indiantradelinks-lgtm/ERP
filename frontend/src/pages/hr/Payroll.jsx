@@ -12,9 +12,10 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Wallet, Play, Eye, Download, Upload, Users, Calculator, AlertCircle, CheckCircle2, Mail } from "lucide-react";
+import { Wallet, Play, Eye, Download, Upload, Users, Calculator, AlertCircle, CheckCircle2, Mail, BadgeIndianRupee } from "lucide-react";
 import { toast } from "sonner";
 import { lookupGet } from "@/lib/lookups";
+import BulkSalaryBooking from "./BulkSalaryBooking";
 
 const inr = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
 const currentMonth = () => new Date().toISOString().slice(0, 7);
@@ -34,10 +35,12 @@ export default function Payroll() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="run" data-testid="tab-run"><Play className="h-4 w-4 mr-1" />Monthly Run</TabsTrigger>
+          <TabsTrigger value="bulk-booking" data-testid="tab-bulk-booking"><BadgeIndianRupee className="h-4 w-4 mr-1" />Bulk Salary Booking</TabsTrigger>
           <TabsTrigger value="payslips" data-testid="tab-payslips">Payslips</TabsTrigger>
           <TabsTrigger value="master" data-testid="tab-master"><Users className="h-4 w-4 mr-1" />Payroll Master</TabsTrigger>
         </TabsList>
         <TabsContent value="run"><RunTab /></TabsContent>
+        <TabsContent value="bulk-booking"><BulkSalaryBooking /></TabsContent>
         <TabsContent value="payslips"><PayslipsTab /></TabsContent>
         <TabsContent value="master"><MasterTab /></TabsContent>
       </Tabs>

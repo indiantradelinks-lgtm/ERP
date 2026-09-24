@@ -444,6 +444,11 @@ async def _project_pnl(project: dict) -> dict:
     for r in preqs:
         key = f"Service Payments — {(r.get('request_type') or 'other').replace('_', ' ').title()}"
         expenses[key] = round(expenses.get(key, 0) + float(r.get("amount") or r.get("est_value") or 0), 2)
+    # 7) Booked monthly salary (HR → Payroll → Bulk Salary Booking, project-wise allocation)
+    sal = await db.salary_project_allocations.find({"project_code": code}, {"_id": 0, "gross": 1}).to_list(20000)
+    sal_total = round(sum(float(x.get("gross") or 0) for x in sal), 2)
+    if sal_total:
+        expenses["Salary & Wages (Payroll)"] = sal_total
 
     total_expense = round(sum(expenses.values()), 2)
     gross_profit = round(income_billed - total_expense, 2)
