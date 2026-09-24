@@ -914,6 +914,33 @@ def render_service_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] =
         for i, t in enumerate(tnc_items)) or "<div class='note'>As mutually agreed.</div>"
     tnc_title = f" — {_esc(po.get('terms_title'))}" if po.get("terms_title") else ""
     approval = po.get("po_approval") or {}
+    lines = po.get("line_items") or []
+    _rates = sorted({float(ln.get("tax_pct") or 0) for ln in lines}) if lines else [tax_pct]
+    gst_label = f"GST @ {_rates[0]:g}%" if len(_rates) == 1 else "GST (as per line items)"
+    if lines:
+        _parts = []
+        for i, ln in enumerate(lines, 1):
+            note = f"<div class='note'>{_esc(ln.get('remarks'))}</div>" if ln.get("remarks") else ""
+            _parts.append(
+                f"<tr><td>{i}</td>"
+                f"<td><b>{_esc(ln.get('description') or s.get('service_category') or 'Service')}</b>{note}</td>"
+                f"<td class='num'>{_money(ln.get('quantity') or 0)}</td>"
+                f"<td>{_esc(ln.get('unit') or 'Lot')}</td>"
+                f"<td class='num'>{_money(ln.get('rate') or 0)}</td>"
+                f"<td class='num'>{_money(ln.get('amount') or 0)}</td>"
+                f"<td class='num'>{float(ln.get('tax_pct') or 0):g}%</td>"
+                f"<td class='num'>{_money(ln.get('tax_amount') or 0)}</td>"
+                f"<td class='num'>{_money(ln.get('total') or 0)}</td></tr>")
+        rows_html = "".join(_parts)
+    else:
+        rows_html = (
+            f"<tr><td>1</td>"
+            f"<td><b>{_esc(s.get('service_category') or 'Service')}</b>"
+            f"<div class='note'>{_esc(po.get('service_details') or s.get('service_description') or '')}</div></td>"
+            f"<td class='num'>{_money(qty)}</td><td>{_esc(po.get('unit') or 'Lot')}</td>"
+            f"<td class='num'>{_money(rate)}</td><td class='num'>{_money(subtotal)}</td>"
+            f"<td class='num'>{tax_pct:g}%</td><td class='num'>{_money(tax_amt)}</td>"
+            f"<td class='num'>{_money(subtotal + tax_amt)}</td></tr>")
     _st = str(po.get("status") or "").lower()
     draft_banner = ""
     if _st in ("draft", "pending_approval"):
@@ -959,20 +986,10 @@ def render_service_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] =
 <div class="note">{_esc(po.get('scope_of_work') or po.get('service_details') or '—')}</div>
 <div class="section-title">Service Value</div>
 <table><thead><tr><th>#</th><th>Service Description</th><th class="num">Qty</th><th>Unit</th><th class="num">Rate</th><th class="num">Amount</th><th class="num">GST %</th><th class="num">GST Amt</th><th class="num">Total</th></tr></thead>
-<tbody><tr>
-<td>1</td>
-<td><b>{_esc(s.get('service_category') or 'Service')}</b><div class="note">{_esc(po.get('service_details') or s.get('service_description') or '')}</div></td>
-<td class="num">{_money(qty)}</td>
-<td>{_esc(po.get('unit') or 'Lot')}</td>
-<td class="num">{_money(rate)}</td>
-<td class="num">{_money(subtotal)}</td>
-<td class="num">{tax_pct:g}%</td>
-<td class="num">{_money(tax_amt)}</td>
-<td class="num">{_money(subtotal + tax_amt)}</td>
-</tr></tbody></table>
+<tbody>{rows_html}</tbody></table>
 <table class="totals">
 <tr><td>Sub-total</td><td class="num">₹ {_money(subtotal)}</td></tr>
-<tr><td>GST @ {tax_pct:g}%</td><td class="num">₹ {_money(tax_amt)}</td></tr>
+<tr><td>{gst_label}</td><td class="num">₹ {_money(tax_amt)}</td></tr>
 {f"<tr><td>Other Charges</td><td class='num'>₹ {_money(other)}</td></tr>" if other else ""}
 <tr class="grand"><td>Grand Total</td><td class="num">₹ {_money(total)}</td></tr>
 </table>

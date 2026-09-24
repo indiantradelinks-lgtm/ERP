@@ -6,11 +6,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Paperclip, Send, FileSignature, PackageCheck, Printer, BookText, Mail } from "lucide-react";
+import { Paperclip, Send, FileSignature, PackageCheck, Printer, BookText, Mail, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { api, apiErrorMessage, API } from "@/lib/api";
 import RowAttachments from "@/components/RowAttachments";
 import TermsMasterDialog from "./TermsMasterDialog";
+import PoEditDialog from "./PoEditDialog";
 import { StatusChip, inr, dt, useSvcMeta } from "./shared";
 
 const PO_STATUSES = ["draft", "pending_approval", "approved", "issued", "in_progress", "completed", "closed"];
@@ -28,6 +29,7 @@ export default function ServicePos() {
   const [srn, setSrn] = useState(blankSrn());
   const [docsFor, setDocsFor] = useState(null);
   const [tncOpen, setTncOpen] = useState(false);
+  const [editFor, setEditFor] = useState(null);
   const [mailFor, setMailFor] = useState(null);
   const [mail, setMail] = useState({ to: "", message: "" });
   const [busy, setBusy] = useState(false);
@@ -122,6 +124,8 @@ export default function ServicePos() {
                 <TableCell><StatusChip status={r.payment_status} />{(r.paid_amount || 0) > 0 && <div className="text-[10px] text-muted-foreground tabular-nums">{inr(r.paid_amount)} paid</div>}</TableCell>
                 <TableCell className="text-right whitespace-nowrap">
                   <Button variant="ghost" size="icon" className="h-7 w-7" title={["draft", "pending_approval"].includes(r.status) ? "View draft PO PDF (review before submitting)" : "Print / View PO PDF"} onClick={() => window.open(`${API}/service-workflow/pos/${r.id}/pdf`, "_blank")} data-testid={`svc-po-pdf-${r.po_no}`}><Printer className="h-3.5 w-3.5" /></Button>
+                  {caps.procurement && r.status === "draft" &&
+                    <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit PO — line items & Terms" onClick={() => setEditFor(r)} data-testid={`svc-po-edit-${r.po_no}`}><Pencil className="h-3.5 w-3.5" /></Button>}
                   {caps.procurement && !["draft", "pending_approval"].includes(r.status) &&
                     <Button variant="ghost" size="icon" className={`h-7 w-7 ${r.emailed_at ? "text-emerald-600" : ""}`} title={r.emailed_at ? `Emailed to ${r.emailed_to} on ${dt(r.emailed_at)} — send again` : "Email PO PDF to vendor"} onClick={() => openMail(r)} data-testid={`svc-po-email-${r.po_no}`}><Mail className="h-3.5 w-3.5" /></Button>}
                   {caps.procurement && r.status === "draft" &&
@@ -201,6 +205,7 @@ export default function ServicePos() {
       <RowAttachments open={!!docsFor} onOpenChange={(o) => !o && setDocsFor(null)}
         parentType="service_pos" parentId={docsFor?.id} recordTitle={docsFor?.po_no} testidPrefix="svc-po-attach" />
       <TermsMasterDialog open={tncOpen} onOpenChange={setTncOpen} />
+      <PoEditDialog po={editFor} open={!!editFor} onOpenChange={(o) => !o && setEditFor(null)} onSaved={load} />
 
       <Dialog open={!!mailFor} onOpenChange={(o) => !o && setMailFor(null)}>
         <DialogContent className="max-w-md rounded-sm" data-testid="svc-po-mail-dialog">

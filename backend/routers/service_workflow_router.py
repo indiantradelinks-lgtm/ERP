@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core import db, get_current_user, require_permission, now_iso, new_id
 from audit import audit
@@ -652,6 +652,104 @@ async def _po(po_id: str) -> dict:
     if not r:
         raise HTTPException(404, "Service PO not found")
     return r
+
+
+class PoLineIn(BaseModel):
+    description: str = ""
+    unit: str = "Lot"
+    quantity: float = 1.0
+    rate: float = 0.0
+    tax_pct: float = 18.0
+    remarks: str = ""
+
+
+class PoEditIn(BaseModel):
+    """Draft PO edit — line items + header + Terms & Conditions selection."""
+    line_items: List[PoLineIn] = Field(default_factory=list)
+    scope_of_work: str = ""
+    service_details: str = ""
+    site_location: str = ""
+    other_charges: float = 0.0
+    service_period_from: str = ""
+    service_period_to: str = ""
+    completion_date: str = ""
+    payment_terms: str = ""
+    terms_id: str = ""
+    terms_conditions: str = ""
+
+
+def _price_lines(lines: List[PoLineIn], other_charges: float) -> dict:
+    out, subtotal, tax_amount = [], 0.0, 0.0
+    for i, ln in enumerate(lines, 1):
+        qty = float(ln.quantity or 0)
+        rate = float(ln.rate or 0)
+        amount = round(qty * rate, 2)
+        tax = round(amount * float(ln.tax_pct or 0) / 100, 2)
+        subtotal = round(subtotal + amount, 2)
+        tax_amount = round(tax_amount + tax, 2)
+        out.append({"sr": i, "description": (ln.description or "").strip(),
+                    "unit": ln.unit or "Lot", "quantity": qty, "rate": rate,
+                    "amount": amount, "tax_pct": float(ln.tax_pct or 0), "tax_amount": tax,
+                    "total": round(amount + tax, 2), "remarks": (ln.remarks or "").strip()})
+    other = round(float(other_charges or 0), 2)
+    return {"line_items": out, "subtotal": subtotal, "tax_amount": tax_amount,
+            "other_charges": other, "total_value": round(subtotal + tax_amount + other, 2)}
+
+
+@router.put("/pos/{po_id}")
+async def edit_po(po_id: str, p: PoEditIn, request: Request, user: dict = Depends(get_current_user)):
+    """Edit a draft Service PO before submission — line items, header and T&C."""
+    _require_role(user, PROC_ROLES, "edit Service POs")
+    po = await _po(po_id)
+    if po["status"] != "draft":
+        raise HTTPException(400, f"Only draft POs can be edited (status '{po['status']}')")
+    lines = [ln for ln in p.line_items
+             if (ln.description or "").strip() or float(ln.rate or 0) or float(ln.quantity or 0) != 1.0]
+    if not lines:
+        raise HTTPException(400, "At least one line item with a description or rate is required")
+    priced = _price_lines(lines, p.other_charges)
+    if priced["total_value"] <= 0:
+        raise HTTPException(400, "PO total value must be greater than zero")
+
+    terms_text = (p.terms_conditions or "").strip()
+    terms_title = ""
+    if p.terms_id:
+        t = await db.svc_terms_master.find_one({"id": p.terms_id}, {"_id": 0})
+        if not t:
+            raise HTTPException(400, "Selected Terms & Conditions template not found")
+        terms_title = t.get("title") or ""
+        if not terms_text:
+            terms_text = t.get("body") or ""
+
+    first = priced["line_items"][0]
+    upd = {
+        **priced,
+        # legacy single-line mirrors kept in sync for list/approval/invoice views
+        "rate": first["rate"], "quantity": first["quantity"], "unit": first["unit"],
+        "tax_pct": first["tax_pct"],
+        "scope_of_work": p.scope_of_work.strip() or po.get("scope_of_work") or "",
+        "service_details": p.service_details.strip() or po.get("service_details") or "",
+        "site_location": p.site_location.strip() or po.get("site_location") or "",
+        "service_period_from": p.service_period_from, "service_period_to": p.service_period_to,
+        "completion_date": p.completion_date or po.get("completion_date") or "",
+        "payment_terms": p.payment_terms.strip(),
+        "terms_id": p.terms_id, "terms_title": terms_title, "terms_conditions": terms_text,
+        "updated_by": _uname(user), "updated_at": now_iso(),
+    }
+    await db.svc_pos.update_one({"id": po_id}, {
+        "$set": upd,
+        "$push": {"history": _hist(user, "po_edited",
+                                   f"{len(priced['line_items'])} line item(s), total ₹{priced['total_value']:,.2f}",
+                                   "draft", "draft")}})
+    await audit(user=user, action="svc_po_edit", resource="service_workflow", record_id=po_id,
+                before={"total_value": po.get("total_value")},
+                after={"po_no": po["po_no"], "total_value": priced["total_value"]}, ip=_ip(request))
+    return await _po(po_id)
+
+
+@router.get("/pos/{po_id}")
+async def get_po(po_id: str, user: dict = Depends(require_permission("service_workflow", "read"))):
+    return await _po(po_id)
 
 
 @router.post("/pos/{po_id}/submit")
