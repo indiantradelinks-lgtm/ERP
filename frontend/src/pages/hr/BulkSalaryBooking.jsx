@@ -83,6 +83,8 @@ export default function BulkSalaryBooking() {
   };
 
   const commit = async (overwrite) => {
+    if (overwrite && !window.confirm(
+      `Salary for ${month} is already booked. Continuing will REPLACE the existing booking and its payslips. Continue?`)) return;
     setBusy("commit");
     try {
       const { data } = await api.post(`/payroll/bulk-booking/${preview.id}/commit`, { overwrite });

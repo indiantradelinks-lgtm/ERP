@@ -1,0 +1,27 @@
+{
+  "summary": "Iter195 · HR → Payroll → Month-wise Bulk Salary Booking: full backend + UI E2E. Backend pytest 16/16 PASS covering template download (38-col Salary Export sheet), preview (with unknown-emp skip path), commit (BSB-2026-08-003, 14 employees, ₹64,439 net across PRJ-2025-01), summary, bookings list, payslips carrying project_code/source='bulk_booking', project P&L salary line, hr4 project-cost, month-level partial payment ₹5000, employee-wise full clear payment, payments list, export booked xlsx, project-report and regression on payroll-master/salary-structures/attendance. UI verified end-to-end: bulk-booking tab renders, all data-testid selectors present (bsb-month-input, bsb-template-btn, bsb-upload-btn, bsb-file-input, bsb-stat-booked/paid/pending/gross/headcount, bsb-filter-*, bsb-pay-month-btn, bsb-pay-selected-btn, bsb-payment-dialog & its sub-fields, bsb-booking-no, bsb-finance-status, bsb-export-btn). Loading month 2026-09 shows the pre-seeded BSB-2026-09-001; loading 2026-08 shows the freshly booked BSB-2026-08-003 with partial state. Regression: Monthly Run / Payslips / Payroll Master tabs all still render. Attendance and Salary Breakup screens untouched.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter195_bulk_salary_booking.py",
+    "/app/test_reports/pytest/iter195.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "salary_booking_router.py commit endpoint is not wrapped in a transaction — if any of the payslip / allocation / booking / payroll_run writes fails midway, the DB will be left half-booked. Consider a Mongo session with transaction or at least a defensive rollback.",
+    "Preview regex-matches Emp ID case-insensitively but is unanchored on both employee_id and emp_code; a partial code could still match if it shares the exact string (currently mitigated by ^...$ anchors — OK, but note that emp_code containing regex meta chars was correctly escaped).",
+    "Advance recovery on re-book with overwrite=true is NOT reversed for the previous 'replaced' booking — a re-book could double-recover advances if the previous month's recoveries are not deleted. Consider deleting advance_recoveries for the same month when replacing.",
+    "Template endpoint filters employees by status not in exited/terminated/inactive AND active!=false — this is fine but should be documented so that agents matching 'onboarding' status are also included.",
+    "BulkSalaryBooking.jsx auto-detects preview.already_booked and sends overwrite=true automatically — this is convenient but a small confirmation dialog before overwrite would prevent accidental double-run."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter195_bulk_salary_booking.py (new)"
+  ],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "100% (all tested selectors present, dialogs and month-switching verified)"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin)",
+  "seed_data_creation": "BSB-2026-08-003 booked in the test run with 14 employees on PRJ-2025-01 (net ₹64,439). Partial payment ₹5,000 + employee-wise full clear applied during the test (Deepa Nair E-1004 fully paid ₹4,410). Reference UTRs prefixed 'TEST_'.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Bulk booking test data for 2026-08 and 2026-09 is now present. Use a DIFFERENT month (e.g. 2026-11) for fresh flows. The Mongo session uses httpOnly cookies (no bearer 'access_token' in login response), so tests must use requests.Session for auth.",
+  "rca of the issue": "N/A — no bugs found. Only initial pytest setup gotcha: /api/auth/login returns user JSON (no access_token key) — auth is via cookie session. Test rewritten to use requests.Session and passes 16/16."
+}
