@@ -54,6 +54,13 @@ const STATUS = {
 };
 const DEPT_ICON = { stores: Boxes, logistics: Truck, admin: Home, hr: Users };
 
+const iso = (d) => d.toISOString().slice(0, 10);
+const DATE_PRESETS = [
+  ["Today", () => { const t = iso(new Date()); return [t, t]; }],
+  ["7d", () => { const e = new Date(); const s = new Date(); s.setDate(s.getDate() - 6); return [iso(s), iso(e)]; }],
+  ["This Month", () => { const n = new Date(); return [iso(new Date(n.getFullYear(), n.getMonth(), 1)), iso(n)]; }],
+];
+
 export default function ProjectRequests() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -62,7 +69,7 @@ export default function ProjectRequests() {
   const tab = searchParams.get("tab") === "expenses" ? "expenses" : "requests";
   const [summary, setSummary] = useState(null);
   const [types, setTypes] = useState([]);
-  const [filters, setFilters] = useState({ project_code: "", status: "", request_type: "", dept: "" });
+  const [filters, setFilters] = useState({ project_code: "", status: "", request_type: "", dept: "", date_from: "", date_to: "" });
   const { rows, pagination, search, setSearch, reload } = usePagedList("/project-requests", filters, {
     viewKey: "project_requests", errorLabel: "requests",
     searchKeys: "request_no,project_code,project_name,client_name,request_type_label,owning_dept,status,description,vendor,created_by",
@@ -124,7 +131,13 @@ export default function ProjectRequests() {
 
   const loadSummary = async () => {
     try {
-      const s = await api.get("/project-requests/summary", { params: filters.project_code ? { project_code: filters.project_code } : {} });
+      const s = await api.get("/project-requests/summary", {
+        params: {
+          ...(filters.project_code ? { project_code: filters.project_code } : {}),
+          ...(filters.date_from ? { date_from: filters.date_from } : {}),
+          ...(filters.date_to ? { date_to: filters.date_to } : {}),
+        },
+      });
       setSummary(s.data);
     } catch { toast.error("Failed to load requests"); }
   };
@@ -390,6 +403,28 @@ export default function ProjectRequests() {
           </select>
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search request #, project, description…"
             className="h-8 w-56 rounded-sm border border-input bg-background px-2 text-xs" data-testid="req-search" />
+          <div className="flex items-center gap-1 border-l border-border pl-2 ml-1">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Date</span>
+            <input type="date" value={filters.date_from} max={filters.date_to || undefined}
+              onChange={(e) => setFilters({ ...filters, date_from: e.target.value })}
+              className="h-8 rounded-sm border border-input bg-background px-2 text-xs" title="From date"
+              data-testid="req-filter-date-from" />
+            <span className="text-xs text-muted-foreground">→</span>
+            <input type="date" value={filters.date_to} min={filters.date_from || undefined}
+              onChange={(e) => setFilters({ ...filters, date_to: e.target.value })}
+              className="h-8 rounded-sm border border-input bg-background px-2 text-xs" title="To date"
+              data-testid="req-filter-date-to" />
+            {DATE_PRESETS.map(([label, fn]) => (
+              <button key={label} onClick={() => { const [a, b] = fn(); setFilters({ ...filters, date_from: a, date_to: b }); }}
+                className="h-8 rounded-sm border border-input bg-background px-2 text-[11px] hover:bg-muted"
+                data-testid={`req-filter-date-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>{label}</button>
+            ))}
+            {(filters.date_from || filters.date_to) && (
+              <button onClick={() => setFilters({ ...filters, date_from: "", date_to: "" })}
+                className="h-8 rounded-sm border border-input bg-background px-2 text-[11px] text-red-600 hover:bg-muted"
+                data-testid="req-filter-date-clear">Clear</button>
+            )}
+          </div>
           <TableViewsMenu pagination={pagination} testidPrefix="req" />
         </div>
         <Table>

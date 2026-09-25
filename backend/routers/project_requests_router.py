@@ -34,7 +34,7 @@ from pydantic import BaseModel
 from core import db, require_permission, get_current_user, now_iso, new_id
 from pagination import maybe_paged, paged_or_rows
 from scope import apply_project_scope, ensure_project_access
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from audit import audit
 from routers.project_expenses_router import EXPENSE_TYPES as PEX_TYPES
 from routers.project_expenses_router import get_expense_types as _pex_types
@@ -294,9 +294,25 @@ async def stock_check(p: RequestIn, user: dict = Depends(require_permission("pro
             "all_in_stock": bool(lines) and all(l["in_stock"] for l in lines)}
 
 
+IST_TZ = timezone(timedelta(hours=5, minutes=30))
+
+
+def _ist_date_range(date_from: Optional[str], date_to: Optional[str]) -> Dict[str, str]:
+    """Custom date-range filter on `created_at` (UTC ISO) using IST calendar dates."""
+    rng: Dict[str, str] = {}
+    if date_from:
+        rng["$gte"] = datetime.fromisoformat(f"{date_from}T00:00:00").replace(
+            tzinfo=IST_TZ).astimezone(timezone.utc).isoformat()
+    if date_to:
+        rng["$lte"] = datetime.fromisoformat(f"{date_to}T23:59:59.999999").replace(
+            tzinfo=IST_TZ).astimezone(timezone.utc).isoformat()
+    return rng
+
+
 @router.get("/project-requests")
 async def list_requests(request: Request, project_code: Optional[str] = None, request_type: Optional[str] = None,
                         status: Optional[str] = None, dept: Optional[str] = None,
+                        date_from: Optional[str] = None, date_to: Optional[str] = None,
                         user: dict = Depends(require_permission("project_requests", "read"))):
     q: Dict[str, Any] = {}
     if project_code:
@@ -307,6 +323,9 @@ async def list_requests(request: Request, project_code: Optional[str] = None, re
         q["status"] = status
     if dept:
         q["owning_dept"] = dept
+    rng = _ist_date_range(date_from, date_to)
+    if rng:
+        q["created_at"] = rng
     base = dict(q)
     scoped = await apply_project_scope(user, q, "project_id")
     # Users must always see requests THEY raised (e.g. self/expense payments routed
@@ -335,8 +354,12 @@ async def list_requests(request: Request, project_code: Optional[str] = None, re
 
 @router.get("/project-requests/summary")
 async def summary(project_code: Optional[str] = None,
+                  date_from: Optional[str] = None, date_to: Optional[str] = None,
                   user: dict = Depends(require_permission("project_requests", "read"))):
     q: Dict[str, Any] = {"project_code": project_code} if project_code else {}
+    rng = _ist_date_range(date_from, date_to)
+    if rng:
+        q["created_at"] = rng
     base = dict(q)
     scoped = await apply_project_scope(user, q, "project_id")
     q = scoped if scoped is q else {"$or": [scoped, {**base, "created_by_id": user.get("id")}]}
@@ -1251,6 +1274,7 @@ async def _ai_extract_items(rows: List[List[str]]) -> List[dict]:
 @router.get("/project-requests/export.{fmt}")
 async def export_requests(fmt: str, project_code: Optional[str] = None, status: Optional[str] = None,
                           request_type: Optional[str] = None,
+                          date_from: Optional[str] = None, date_to: Optional[str] = None,
                           user: dict = Depends(require_permission("project_requests", "read"))):
     if fmt not in ("xlsx", "pdf"):
         raise HTTPException(400, "Format must be xlsx or pdf")
@@ -1259,6 +1283,9 @@ async def export_requests(fmt: str, project_code: Optional[str] = None, status: 
         q["project_code"] = project_code
     if status:
         q["status"] = status
+    rng = _ist_date_range(date_from, date_to)
+    if rng:
+        q["created_at"] = rng
     q = await apply_project_scope(user, q, "project_id")
     if request_type:
         q["request_type"] = request_type
