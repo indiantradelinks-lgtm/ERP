@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Truck, Plus, RefreshCcw, Pencil, AlertTriangle } from "lucide-react";
 import { lookupGet } from "@/lib/lookups";
+import { VendorSearchSelect } from "@/components/VendorSearchSelect";
 
 const VEHICLE_TYPES = ["truck", "trailer", "pickup", "crane", "hydra", "forklift", "tempo", "car", "bus", "two_wheeler", "other"];
 const OWNERSHIP = ["own", "hired", "vendor"];
@@ -203,11 +204,10 @@ export default function VehicleMaster() {
               </select>
             </div>
             <div>
-              <Label>Transport Vendor</Label>
-              <select className="w-full border rounded h-10 px-2 text-sm" value={form.transport_vendor_id} onChange={(e) => setForm({ ...form, transport_vendor_id: e.target.value })}>
-                <option value="">—</option>
-                {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
+              <VendorSearchSelect label="Transport Vendor" valueKey="id" vendors={vendors}
+                value={form.transport_vendor_id}
+                onChange={(id) => setForm({ ...form, transport_vendor_id: id })}
+                testid="veh-transport-vendor" />
             </div>
             <div className="col-span-3"><Label>Remarks</Label><Textarea rows={2} value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} /></div>
           </div>

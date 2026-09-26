@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { User2, Plus, RefreshCcw, Pencil, AlertTriangle } from "lucide-react";
 import { lookupGet } from "@/lib/lookups";
+import { VendorSearchSelect } from "@/components/VendorSearchSelect";
 
 const STATUSES = ["available", "assigned", "on_trip", "on_leave", "inactive"];
 const STATUS_TONE = {
@@ -143,14 +144,10 @@ export default function DriverMaster() {
             <div><Label>ID Proof</Label><Input value={form.id_proof} onChange={(e) => setForm({ ...form, id_proof: e.target.value })} /></div>
             <div><Label>Emergency Contact</Label><Input value={form.emergency_contact} onChange={(e) => setForm({ ...form, emergency_contact: e.target.value })} /></div>
             <div>
-              <Label>Vendor (if vendor driver)</Label>
-              <select className="w-full border rounded h-10 px-2 text-sm" value={form.vendor_id} onChange={(e) => {
-                const v = vendors.find((x) => x.id === e.target.value);
-                setForm({ ...form, vendor_id: e.target.value, vendor_name: v?.name || "" });
-              }}>
-                <option value="">— Own driver —</option>
-                {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
+              <VendorSearchSelect label="Vendor (if vendor driver)" valueKey="id" vendors={vendors}
+                value={form.vendor_id} placeholder="Search vendor… (blank = own driver)"
+                onChange={(id, v) => setForm({ ...form, vendor_id: id, vendor_name: v?.name || "" })}
+                testid="drv-vendor" />
             </div>
             <div>
               <Label>Status</Label>

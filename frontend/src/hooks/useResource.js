@@ -47,7 +47,7 @@ export default function useResource(resource, opts = {}) {
   const view = useTableView(viewKey, enabled);
   const [viewApplied, setViewApplied] = useState(false);
 
-  const permKey = SLUG_TO_PERM[resource] || resource;
+  const permKey = SLUG_TO_PERM[resource] || resource.replace(/-/g, "_");
   const canRead = can(permKey, "read");
   const canWrite = can(permKey, "write");
   const canDelete = can(permKey, "delete");

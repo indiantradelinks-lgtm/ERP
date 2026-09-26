@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProjectSelect, SiteLocationSelect } from "@/components/MasterSelect";
 import { EmployeeSearchSelect } from "@/components/EmployeeSearchSelect";
+import { VendorSearchSelect } from "@/components/VendorSearchSelect";
 import FileUploader from "@/components/FileUploader";
 import RowAttachments from "@/components/RowAttachments";
 import useAutoSync from "@/hooks/useAutoSync";
@@ -604,15 +605,14 @@ export default function ProjectRequests() {
                   </select>
                 </div>
                 {form.paid_to_type === "vendor" ? (
-                  <div>
-                    <Label className="text-[10px] uppercase tracking-wider">Vendor (approved) *</Label>
-                    <select value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })}
-                      className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-vendor-select">
-                      <option value="">— select approved vendor —</option>
-                      {vendors.map((v) => <option key={v.id} value={v.name}>{v.name}</option>)}
-                    </select>
-                    {vendors.length === 0 && <p className="text-[10px] text-amber-700 mt-0.5">No approved vendors in Vendor Master.</p>}
-                  </div>
+                  <VendorSearchSelect
+                    label="Vendor (approved)" required
+                    vendors={vendors}
+                    value={form.vendor}
+                    onChange={(name) => setForm({ ...form, vendor: name })}
+                    emptyNote="No approved vendors in Vendor Master."
+                    testid="req-form-vendor-select"
+                  />
                 ) : (
                   <div className="text-[10px] text-muted-foreground self-end pb-2">Select the person via Emp ID below — name auto-fills from HR master.</div>
                 )}

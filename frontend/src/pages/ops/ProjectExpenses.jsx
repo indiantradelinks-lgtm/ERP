@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProjectSelect } from "@/components/MasterSelect";
 import { EmployeeSearchSelect } from "@/components/EmployeeSearchSelect";
+import { VendorSearchSelect } from "@/components/VendorSearchSelect";
 import useAutoSync from "@/hooks/useAutoSync";
 import FileUploader from "@/components/FileUploader";
 import RowAttachments from "@/components/RowAttachments";
@@ -361,14 +362,14 @@ export default function ProjectExpenses({ embedded = false }) {
               </select>
             </div>
             {form.paid_to_type === "vendor" ? (
-              <div>
-                <Label className="text-[10px] uppercase tracking-wider">Vendor (approved) *</Label>
-                <select value={form.paid_to} onChange={(e) => setForm({ ...form, paid_to: e.target.value })}
-                  className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="pex-form-paidto">
-                  <option value="">— select approved vendor —</option>
-                  {vendors.map((v) => <option key={v.id} value={v.name}>{v.name}</option>)}
-                </select>
-              </div>
+              <VendorSearchSelect
+                label="Vendor (approved)" required
+                vendors={vendors}
+                value={form.paid_to}
+                onChange={(name) => setForm({ ...form, paid_to: name })}
+                emptyNote="No approved vendors in Vendor Master."
+                testid="pex-form-paidto"
+              />
             ) : (
               <EmployeeSearchSelect
                 label="Emp ID *"

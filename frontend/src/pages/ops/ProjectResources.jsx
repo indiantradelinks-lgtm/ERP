@@ -27,6 +27,7 @@ import { BulkUploadDialog, QuickQtyDialog } from "./ResourcePlanBulkDialogs";
 import { useAuth } from "@/contexts/AuthContext";
 import { fmtD } from "@/lib/datetime";
 import { lookupGet } from "@/lib/lookups";
+import { VendorSearchSelect } from "@/components/VendorSearchSelect";
 
 const EMPTY = {
   resource_type: "manpower",
@@ -575,14 +576,10 @@ function ResourceForm({ type, form, setForm, wbsNodes, activities, designations,
           </F>
           {form.tool_owned_or_rented === "rented" && (
             <F label="Rental Vendor">
-              <select value={form.rental_vendor_id || ""} onChange={(e) => {
-                const id = e.target.value;
-                const v = vendors.find((x) => x.id === id);
-                setForm({ ...form, rental_vendor_id: id, rental_vendor_name: v?.name || "" });
-              }} className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm" data-testid="rp-form-rental-vendor">
-                <option value="">— select vendor —</option>
-                {vendors.map((v) => <option key={v.id} value={v.id}>{v.vendor_code} · {v.name}</option>)}
-              </select>
+              <VendorSearchSelect label="" valueKey="id" vendors={vendors}
+                value={form.rental_vendor_id || ""}
+                onChange={(id, v) => setForm({ ...form, rental_vendor_id: id, rental_vendor_name: v?.name || "" })}
+                testid="rp-form-rental-vendor" />
             </F>
           )}
           <F label="Count"><Input type="number" value={form.count_required} onChange={(e) => setForm({ ...form, count_required: e.target.value })} /></F>
@@ -594,14 +591,10 @@ function ResourceForm({ type, form, setForm, wbsNodes, activities, designations,
       {type === "subcontract" && (
         <>
           <F label="Vendor *">
-            <select value={form.vendor_id || ""} onChange={(e) => {
-              const id = e.target.value;
-              const v = vendors.find((x) => x.id === id);
-              setForm({ ...form, vendor_id: id, vendor_code: v?.vendor_code || "", vendor_name: v?.name || "" });
-            }} className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm" data-testid="rp-form-vendor">
-              <option value="">— select vendor —</option>
-              {vendors.map((v) => <option key={v.id} value={v.id}>{v.vendor_code} · {v.name}</option>)}
-            </select>
+            <VendorSearchSelect label="" valueKey="id" vendors={vendors}
+              value={form.vendor_id || ""}
+              onChange={(id, v) => setForm({ ...form, vendor_id: id, vendor_code: v?.vendor_code || "", vendor_name: v?.name || "" })}
+              testid="rp-form-vendor" />
           </F>
           <F label="Basis">
             <select value={form.basis} onChange={(e) => setForm({ ...form, basis: e.target.value })} className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm" data-testid="rp-form-basis">

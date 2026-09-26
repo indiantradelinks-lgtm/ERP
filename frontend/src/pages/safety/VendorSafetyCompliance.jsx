@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Truck, Plus, RefreshCcw } from "lucide-react";
 import { lookupGet } from "@/lib/lookups";
+import { VendorSearchSelect } from "@/components/VendorSearchSelect";
 
 const APPROVAL_TONE = {
   approved: "bg-emerald-100 text-emerald-800",
@@ -124,14 +125,10 @@ export default function VendorSafetyCompliance() {
           <DialogHeader><DialogTitle>New Vendor Safety Compliance Record</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Vendor</Label>
-              <select className="w-full border rounded h-10 px-2 text-sm" value={form.vendor_id} onChange={(e) => {
-                const v = vendors.find((x) => x.id === e.target.value);
-                setForm({ ...form, vendor_id: e.target.value, vendor_name: v?.name || "", vendor_type: v?.category || "" });
-              }} data-testid="vsc-vendor">
-                <option value="">— Select —</option>
-                {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
+              <VendorSearchSelect label="Vendor" valueKey="id" vendors={vendors}
+                value={form.vendor_id}
+                onChange={(id, v) => setForm({ ...form, vendor_id: id, vendor_name: v?.name || "", vendor_type: v?.category || "" })}
+                testid="vsc-vendor" />
             </div>
             <div>
               <Label>Project</Label>
