@@ -55,7 +55,17 @@ const STATUS = {
 const DEPT_ICON = { stores: Boxes, logistics: Truck, admin: Home, hr: Users };
 
 const iso = (d) => d.toISOString().slice(0, 10);
-const DATE_PRESETS = [
+const RECRUIT_TONE = {
+  open: "bg-amber-50 text-amber-800 border-amber-300",
+  approved: "bg-emerald-50 text-emerald-800 border-emerald-300",
+  shortlisting: "bg-sky-50 text-sky-800 border-sky-300",
+  interview: "bg-sky-50 text-sky-800 border-sky-300",
+  offer: "bg-indigo-50 text-indigo-800 border-indigo-300",
+  filled: "bg-emerald-50 text-emerald-800 border-emerald-300",
+  completed: "bg-emerald-50 text-emerald-800 border-emerald-300",
+  closed: "bg-secondary text-muted-foreground border-border",
+  rejected: "bg-rose-50 text-rose-800 border-rose-300",
+};const DATE_PRESETS = [
   ["Today", () => { const t = iso(new Date()); return [t, t]; }],
   ["7d", () => { const e = new Date(); const s = new Date(); s.setDate(s.getDate() - 6); return [iso(s), iso(e)]; }],
   ["This Month", () => { const n = new Date(); return [iso(new Date(n.getFullYear(), n.getMonth(), 1)), iso(n)]; }],
@@ -485,6 +495,16 @@ export default function ProjectRequests() {
                         {r.pay_stage === "rejected" && r.pay_info?.remarks && (
                           <div className="text-[9px] text-rose-700 mt-0.5 max-w-[180px]" title={`Rejected by ${r.pay_info.verified_by || "Accounts"}: ${r.pay_info.remarks}`} data-testid={`req-payreject-${r.id}`}>✗ {r.pay_info.remarks}</div>
                         )}
+                      </div>
+                    )}
+                    {r.recruitment_summary && (
+                      <div className="mt-1" data-testid={`req-recruit-${r.id}`}>
+                        <Badge variant="outline" className={`rounded-sm text-[9px] ${RECRUIT_TONE[r.recruitment_summary.latest_status] || "bg-orange-50 text-orange-800 border-orange-300"}`}>
+                          HR: {String(r.recruitment_summary.latest_status || "open").replace(/_/g, " ")}
+                        </Badge>
+                        <div className="text-[9px] text-muted-foreground mt-0.5">
+                          {r.recruitment_summary.hired} of {r.recruitment_summary.vacancies} hired · {r.recruitment_summary.requisitions} requisition(s)
+                        </div>
                       </div>
                     )}
                   </TableCell>
@@ -977,6 +997,30 @@ export default function ProjectRequests() {
                 </div>
                 {detail.pr_number && <div className="text-xs text-violet-700">Purchase Request raised: <b>{detail.pr_number}</b></div>}
                 {(detail.recruitment_nos || []).length > 0 && <div className="text-xs text-orange-700">Recruitment raised: <b>{detail.recruitment_nos.join(", ")}</b> — HR is sourcing.</div>}
+                {detail.recruitment_summary && (
+                  <div className="border border-border rounded-sm p-2 space-y-1" data-testid="req-detail-recruitment">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                      Recruitment Tracking — HR · {detail.recruitment_summary.hired} of {detail.recruitment_summary.vacancies} hired
+                    </div>
+                    {detail.recruitment_summary.lines.map((l) => (
+                      <div key={l.req_no} className="text-xs flex flex-wrap items-center gap-2" data-testid={`req-detail-recruit-${l.req_no}`}>
+                        <span className="font-mono-data">{l.req_no}</span>
+                        <span className="font-medium">{l.position}</span>
+                        <Badge variant="outline" className={`rounded-sm text-[9px] ${RECRUIT_TONE[l.status] || ""}`}>{String(l.status || "open").replace(/_/g, " ")}</Badge>
+                        <span className="text-muted-foreground">{l.hired || 0} / {l.vacancies || 0} hired</span>
+                        {l.pm_info_received != null && <span className="text-muted-foreground">PM info: {l.pm_info_received ? "received" : "pending"}</span>}
+                        {l.pool_covered && <span className="text-emerald-700">pool available</span>}
+                        {l.hr_outcome_remarks && <span className="text-muted-foreground italic">“{l.hr_outcome_remarks}”</span>}
+                      </div>
+                    ))}
+                    {detail.recruitment_summary.latest_at && (
+                      <div className="text-[10px] text-muted-foreground">
+                        Last HR update {fmtDT(detail.recruitment_summary.latest_at)}
+                        {detail.recruitment_summary.latest_by ? ` · ${detail.recruitment_summary.latest_by}` : ""}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {detail.request_type === "manpower" && (detail.period_from || detail.period_to) && (
                   <div className="text-xs text-muted-foreground">Deployment timeline: <b>{detail.period_from || "—"} → {detail.period_to || "—"}</b>{detail.months ? ` · ${detail.months} month(s)` : ""} · Budget: <b>{inr(detail.est_value)}</b></div>
                 )}

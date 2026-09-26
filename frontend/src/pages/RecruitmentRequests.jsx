@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { toast } from "sonner";
 import { fmtDT } from "@/lib/datetime";
 import { lookupGet } from "@/lib/lookups";
+import { RefreshCw } from "lucide-react";
 
 const RECRUIT_STATUS_TONE = {
   filled: "success", closed: "neutral", approved: "success", completed: "success",
@@ -25,6 +26,18 @@ export default function RecruitmentRequests() {
   const [acting, setActing] = useState(null);
   const [act, setAct] = useState({ status: "", pm_info_received: null, hired: "", remarks: "" });
   const [busy, setBusy] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
+  const syncApproved = async () => {
+    setSyncing(true);
+    try {
+      const { data } = await api.post("/project-requests/sync-recruitment");
+      toast.success(data.count
+        ? `${data.count} requisition(s) pulled in from ${data.requests_synced} approved manpower request(s)`
+        : "All approved manpower requests are already in this list");
+      r.reload();
+    } catch (e) { toast.error(apiErrorMessage(e)); } finally { setSyncing(false); }
+  };
   useEffect(() => {
     lookupGet("/projects").then((res) => {
       const m = {};
@@ -60,6 +73,7 @@ export default function RecruitmentRequests() {
   };
 
   const columns = [
+    { key: "req_no", label: "Req #", render: (row) => <span className="font-mono text-xs" data-testid={`recruit-no-${row.id}`}>{row.req_no || "—"}</span> },
     { key: "position", label: "Position" },
     {
       key: "project", label: "Project",
@@ -86,6 +100,12 @@ export default function RecruitmentRequests() {
     { key: "source", label: "Source", badge: (row) => row.source === "project_request"
         ? { text: "Project Request", tone: "info" }
         : { text: "Manual", tone: "neutral" } },
+    { key: "source_request_no", label: "Source Request", render: (row) => (
+      <div data-testid={`recruit-src-${row.id}`}>
+        <div className="font-mono text-[11px]">{row.source_request_no || "—"}</div>
+        {row.requested_by && <div className="text-[10px] text-muted-foreground">by {row.requested_by}</div>}
+      </div>
+    ) },
     { key: "vacancies", label: "Vacancies" },
     { key: "hired", label: "Hired", badge: (row) => ({ text: `${row.hired || 0} / ${row.vacancies || 0}`, tone: (row.hired || 0) >= (row.vacancies || 0) && row.vacancies ? "success" : "warning" }) },
     { key: "needed_by", label: "Needed By" },
@@ -119,7 +139,12 @@ export default function RecruitmentRequests() {
   ];
   return (
     <>
-      <DataTableShell title="Recruitment Requests" description="Hiring requisitions raised by departments / project managers — HR updates outcomes; every change is history-tracked." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="recruit" exportResource="recruitment-requests" canWrite={r.canWrite} pagination={r.pagination} canDelete={r.canDelete} attachmentsParentType="documents" />
+      <DataTableShell title="Recruitment Requests" description="Every approved Manpower / Site Staff request lands here automatically — HR updates outcomes; every change is history-tracked and visible to the requester." data={r.data} columns={columns} fields={fields} onCreate={r.create} onUpdate={r.update} onDelete={r.remove} testidPrefix="recruit" exportResource="recruitment-requests" canWrite={r.canWrite} pagination={r.pagination} canDelete={r.canDelete} attachmentsParentType="documents"
+        rightSlot={r.canWrite ? (
+          <Button variant="outline" size="sm" className="h-8 rounded-sm text-xs" disabled={syncing} onClick={syncApproved} data-testid="recruit-sync-approved">
+            <RefreshCw className={`h-3.5 w-3.5 mr-1 ${syncing ? "animate-spin" : ""}`} /> {syncing ? "Syncing…" : "Sync Approved Requests"}
+          </Button>
+        ) : null} />
 
       <Dialog open={!!acting} onOpenChange={(o) => !o && setActing(null)}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto rounded-sm" data-testid="recruit-action-dialog">
