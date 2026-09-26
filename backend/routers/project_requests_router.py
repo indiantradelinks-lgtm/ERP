@@ -1080,6 +1080,37 @@ async def raise_recruitment(rid: str, request: Request,
     return {"recruitment_nos": created, "count": len(created)}
 
 
+@router.get("/recruitment-requests/{rid}/source")
+async def recruitment_source_detail(rid: str,
+                                    user: dict = Depends(require_permission("recruitment_requests", "read"))):
+    """Everything the project user entered while raising the manpower request —
+    shown to HR on the Recruitment Requests page so hiring decisions are informed."""
+    rec = await db.recruitment_requests.find_one({"id": rid}, {"_id": 0})
+    if not rec:
+        raise HTTPException(404, "Recruitment request not found")
+    src = None
+    if rec.get("source_request_id"):
+        src = await db.project_requests.find_one({"id": rec["source_request_id"]}, {"_id": 0})
+    code = rec.get("project_code") or (src or {}).get("project_code")
+    project = await db.projects.find_one(
+        {"code": code},
+        {"_id": 0, "code": 1, "name": 1, "client_name": 1, "site_location": 1,
+         "project_manager_name": 1, "manager": 1, "start_date": 1, "end_date": 1}) if code else None
+    attachments = []
+    if src:
+        attachments = await db.files.find(
+            {"parent_type": "project_requests", "parent_id": src["id"]},
+            {"_id": 0, "id": 1, "filename": 1, "size": 1, "uploaded_at": 1, "uploaded_by": 1}).to_list(50)
+    line = None
+    for it in ((src or {}).get("items") or []):
+        if it.get("recruitment_no") == rec.get("req_no") or \
+           (it.get("name") or "").strip().lower() == (rec.get("source_line_name") or "").strip().lower():
+            line = it
+            break
+    return {"recruitment": rec, "source_request": src, "project": project,
+            "source_line": line, "attachments": attachments}
+
+
 class RecruitHrActionIn(BaseModel):
     status: str  # approved | rejected | shortlisting | interview | offer | filled | completed | closed
     pm_info_received: Optional[bool] = None

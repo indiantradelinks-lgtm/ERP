@@ -275,6 +275,14 @@ export default function PaymentProcessingCenter() {
         {r.employee_name && <div className="text-[10px] text-slate-500 whitespace-nowrap">{r.employee_code ? `${r.employee_code} · ` : ""}{r.employee_name}</div>}
         {r.upi_any_name && !r.vendor && !r.employee_name && <div className="text-[10px] text-amber-600">Manual name (UPI)</div>}
       </TableCell>
+      <TableCell className="text-xs whitespace-nowrap" data-testid={`ppc-approved-at-${r.request_no}`}>
+        {r.approved_at ? (
+          <>
+            <div>{fmtDT(r.approved_at)}</div>
+            {r.approved_by && <div className="text-[10px] text-slate-500">by {r.approved_by}</div>}
+          </>
+        ) : <span className="text-slate-400">—</span>}
+      </TableCell>
     </>
   );
 
@@ -353,7 +361,7 @@ export default function PaymentProcessingCenter() {
         <TabsContent value="pending" className="mt-3">
           <ExportButtons stage="pending" />
           <QueueTable testid="ppc-pending-table" emptyText="No payments awaiting verification"
-            cols={["Request No", "Type", "Project", "Paid To", "Est. Value", "Stage", "Docs", "Action"]}
+            cols={["Request No", "Type", "Project", "Paid To", "Approved On", "Est. Value", "Stage", "Docs", "Action"]}
             rows={byStage.pending}
             renderActions={(r) => (
               <TableRow key={r.id} data-testid={`ppc-pending-row-${r.request_no}`}>
@@ -383,7 +391,7 @@ export default function PaymentProcessingCenter() {
           </div>
           <p className="text-[11px] text-slate-500 text-right">CMS bank-upload format · Pay Mod "N" (blank for ICICI beneficiaries) · Date auto-stamped</p>
           <QueueTable testid="ppc-verified-table" emptyText="No verified payments waiting for a bank file"
-            cols={["", "Request No", "Type", "Project", "Paid To", "Verified Amt", "TDS", "Advance Adj.", "Net Payable", "Verified At", "Docs"]}
+            cols={["", "Request No", "Type", "Project", "Paid To", "Approved On", "Verified Amt", "TDS", "Advance Adj.", "Net Payable", "Verified At", "Docs"]}
             rows={byStage.verified}
             renderActions={(r) => {
               const v = r.verification || {};
@@ -415,7 +423,7 @@ export default function PaymentProcessingCenter() {
             {canWrite && <BulkUtrDialog onDone={load} />}
           </div>
           <QueueTable testid="ppc-bank-table" emptyText="No payments in bank files awaiting UTR"
-            cols={["Request No", "Type", "Project", "Paid To", "Net Payable", "Bank File", "Docs", "Action"]}
+            cols={["Request No", "Type", "Project", "Paid To", "Approved On", "Net Payable", "Bank File", "Docs", "Action"]}
             rows={byStage.bank}
             renderActions={(r) => {
               const v = r.verification || {};
@@ -459,7 +467,7 @@ export default function PaymentProcessingCenter() {
         <TabsContent value="paid" className="mt-3">
           <ExportButtons stage="paid" />
           <QueueTable testid="ppc-paid-table" emptyText="No payments completed yet"
-            cols={["Request No", "Type", "Project", "Paid To", "Paid Amt", "UTR", "Paid Date", "Voucher", "Advice", "Docs"]}
+            cols={["Request No", "Type", "Project", "Paid To", "Approved On", "Paid Amt", "UTR", "Paid Date", "Voucher", "Advice", "Docs"]}
             rows={byStage.paid}
             renderActions={(r) => {
               const v = r.verification || {};

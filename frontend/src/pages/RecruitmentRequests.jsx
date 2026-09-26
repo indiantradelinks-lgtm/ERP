@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { toast } from "sonner";
 import { fmtDT } from "@/lib/datetime";
 import { lookupGet } from "@/lib/lookups";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Eye } from "lucide-react";
+import RecruitmentDetailDialog from "./RecruitmentDetailDialog";
 
 const RECRUIT_STATUS_TONE = {
   filled: "success", closed: "neutral", approved: "success", completed: "success",
@@ -24,6 +25,7 @@ export default function RecruitmentRequests() {
   const r = useResource("recruitment-requests");
   const [projMap, setProjMap] = useState({});
   const [acting, setActing] = useState(null);
+  const [viewing, setViewing] = useState(null);
   const [act, setAct] = useState({ status: "", pm_info_received: null, hired: "", remarks: "" });
   const [busy, setBusy] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -118,9 +120,16 @@ export default function RecruitmentRequests() {
     { key: "status", label: "Status", badge: (row) => ({ text: row.status || "open", tone: toneFor(RECRUIT_STATUS_TONE, row.status, "warning") }) },
     {
       key: "hr_action", label: "HR Action",
-      render: (row) => r.canWrite
-        ? <Button size="sm" variant="outline" className="h-7 text-xs rounded-sm" onClick={(e) => { e.stopPropagation(); openAction(row); }} data-testid={`recruit-hr-action-${row.id}`}>Update</Button>
-        : null,
+      render: (row) => (
+        <div className="flex gap-1">
+          <Button size="sm" variant="ghost" className="h-7 text-xs rounded-sm" onClick={(e) => { e.stopPropagation(); setViewing(row); }} data-testid={`recruit-view-${row.id}`}>
+            <Eye className="h-3.5 w-3.5" />
+          </Button>
+          {r.canWrite && (
+            <Button size="sm" variant="outline" className="h-7 text-xs rounded-sm" onClick={(e) => { e.stopPropagation(); openAction(row); }} data-testid={`recruit-hr-action-${row.id}`}>Update</Button>
+          )}
+        </div>
+      ),
     },
   ];
   const fields = [
@@ -145,6 +154,9 @@ export default function RecruitmentRequests() {
             <RefreshCw className={`h-3.5 w-3.5 mr-1 ${syncing ? "animate-spin" : ""}`} /> {syncing ? "Syncing…" : "Sync Approved Requests"}
           </Button>
         ) : null} />
+
+      <RecruitmentDetailDialog row={viewing} open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}
+        onUpdate={r.canWrite ? openAction : null} />
 
       <Dialog open={!!acting} onOpenChange={(o) => !o && setActing(null)}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto rounded-sm" data-testid="recruit-action-dialog">

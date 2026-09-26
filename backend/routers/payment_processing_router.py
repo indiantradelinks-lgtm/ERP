@@ -34,6 +34,15 @@ def _stage(v: Optional[dict]) -> str:
     return (v or {}).get("stage") or "pending_verification"
 
 
+def _approval_stamp(r: dict) -> tuple[Optional[str], Optional[str]]:
+    """Final approval timestamp + approver for a payment request."""
+    steps = [s for s in (r.get("chain") or []) if s.get("status") == "approved" and s.get("at")]
+    last = max(steps, key=lambda s: str(s.get("at"))) if steps else None
+    at = r.get("approved_at") or (last or {}).get("at") or r.get("dept_approved_at")
+    by = (last or {}).get("by") or r.get("approved_by")
+    return at, by
+
+
 @router.get("")
 async def payment_queue(stage: str = "", project_code: str = "",
                         user: dict = Depends(require_permission("accounting", "read"))):
@@ -58,7 +67,8 @@ async def payment_queue(stage: str = "", project_code: str = "",
     adv_ids = list({r.get("source_id") for r in reqs if r.get("source") == "advance" and r.get("source_id")})
     amap = {a["id"]: a async for a in db.employee_advances.find(
         {"id": {"$in": adv_ids}},
-        {"_id": 0, "id": 1, "created_by": 1, "project_code": 1, "project_name": 1, "project_manager": 1})} if adv_ids else {}
+        {"_id": 0, "id": 1, "created_by": 1, "project_code": 1, "project_name": 1, "project_manager": 1,
+         "approved_at": 1, "approved_by": 1})} if adv_ids else {}
     emp_ids = list({r.get("employee_id") for r in reqs if r.get("employee_id")})
     emap = {e["id"]: e async for e in db.employees.find(
         {"id": {"$in": emp_ids}},
@@ -78,6 +88,17 @@ async def payment_queue(stage: str = "", project_code: str = "",
     ccmap = {c["id"]: c async for c in db.cost_centers.find(
         {"id": {"$in": cc_ids}},
         {"_id": 0, "id": 1, "name": 1, "code": 1, "category_code": 1, "category_name": 1})} if cc_ids else {}
+    # Approval timestamps for shadow rows raised from other modules
+    vb_ids = list({r.get("source_id") for r in reqs
+                   if r.get("source") == "accounts_vendor_bill" and r.get("source_id")})
+    vbmap = {b["id"]: b async for b in db.vendor_bills.find(
+        {"id": {"$in": vb_ids}},
+        {"_id": 0, "id": 1, "approved_at": 1, "approved_by": 1, "approved_l1_at": 1,
+         "approved_l1_by": 1, "verified_at": 1})} if vb_ids else {}
+    si_ids = list({r.get("source_id") for r in reqs
+                   if r.get("source") == "service_invoice" and r.get("source_id")})
+    simap = {i["id"]: i async for i in db.svc_invoices.find(
+        {"id": {"$in": si_ids}}, {"_id": 0, "id": 1, "invoice_approval": 1})} if si_ids else {}
     out = []
     for r in reqs:
         v = ver.get(r["id"])
@@ -94,8 +115,19 @@ async def payment_queue(stage: str = "", project_code: str = "",
         cc_name = r.get("cost_center_label") or (
             (f"{cc.get('category_code') or ''} · {cc.get('category_name') or ''}".strip(" ·") or cc.get("name"))
             if cc else None)
+        appr_at, appr_by = _approval_stamp(r)
+        if not appr_at and r.get("source_id"):
+            vb = vbmap.get(r["source_id"])
+            si = (simap.get(r["source_id"]) or {}).get("invoice_approval") or {}
+            if vb:
+                appr_at = vb.get("approved_at") or vb.get("approved_l1_at") or vb.get("verified_at")
+                appr_by = vb.get("approved_by") or vb.get("approved_l1_by")
+            elif si:
+                appr_at, appr_by = si.get("at"), si.get("by")
+            elif adv:
+                appr_at, appr_by = adv.get("approved_at"), adv.get("approved_by")
         out.append({**r, "verification": v, "pay_stage": st, "cost_center_name": cc_name,
-                    "project_name": r.get("project_name") or proj.get("name") or (adv or {}).get("project_name"),
+                    "approved_at": appr_at, "approved_by": appr_by,                    "project_name": r.get("project_name") or proj.get("name") or (adv or {}).get("project_name"),
                     "project_code": r.get("project_code") or proj.get("code") or (adv or {}).get("project_code"),
                     "raised_by": raised_by,
                     "project_manager": r.get("project_manager") or proj.get("project_manager_name")
