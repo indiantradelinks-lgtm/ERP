@@ -1,0 +1,44 @@
+{
+  "summary": "Iter196 · Manpower → Recruitment auto-raise + HR link-back E2E. Backend pytest 8/9 PASS (test_iter196_recruitment_sync.py). Approval-time auto-raise works for (a) normal manpower line, (b) pool-covered line (still creates requisition with pool_covered flag), and (c) header-only manpower request (no items) — all three end up in status='sourcing' with recruitment_nos populated and visible on /api/recruitment-requests with source='project_request', source_request_no, requested_by, vacancies and open status. HR action lifecycle verified: interview→hired=1 mirrors line.hired_count + recruitment_status onto the source request (status stays 'sourcing'); filled→hired=2 flips the source line to fulfil_status='fulfilled' and the request to status='fulfilled'. Reject without remarks returns 400. GET /api/project-requests returns recruitment_summary with requisitions/vacancies/hired/latest_status/by_status/lines. Material request regression clean (no recruitment_summary key). /api/project-requests/summary and date_from/date_to filter still function. UI verified live on preview: /app/recruitment shows the Sync Approved button (data-testid=recruit-sync-approved) and 26 rows all carrying recruit-no-<id>, recruit-src-<id>, recruit-hr-action-<id> test-ids; Update dialog opens on click. /app/ops/requests loads (residual session filter in URL prevented recruit chip visibility in this run — page rendering itself is intact). 1 idempotency bug in sync-recruitment endpoint: header-only manpower requests get a fresh duplicate recruitment on every sync call — see RCA.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/project-requests/sync-recruitment",
+        "issue": "NOT idempotent for header-only manpower requests (empty items array). Every call creates an additional recruitment_requests row for the same source request. Test evidence: 2nd sync call returned {requests_synced:1, created:['REQ-2026-0127'], count:1} instead of 0. This will spam the Recruitment page with duplicate REQ numbers.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/app/ops/requests", "issues": ["Residual search filter 'REQ-TEST-POOL' persists across sessions in localStorage — restricts row visibility until user clears it. Minor UX papercut; not a blocker."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter196_recruitment_sync.py",
+    "/app/test_reports/pytest/iter196.xml"
+  ],
+  "action_items": [
+    "Fix _do_raise_recruitment / sync_recruitment idempotency for header-only manpower requests. Recommended fix: in sync_recruitment (project_requests_router.py L1029–1034) and backfill_manpower_recruitment (L1002–1017), skip rows where `row.get('sourcing_raised_at')` or `row.get('recruitment_ids')` is non-empty regardless of items list. OR persist a synthetic item onto the source request so the existing `items and all(...recruitment_no)` guard fires on the second pass."
+  ],
+  "critical_code_review_comments": [
+    "project_requests_router.py: _do_raise_recruitment does not persist synthetic items back to the source project_request document (`if not synthetic: patch['items']=items`), so the guard in sync_recruitment (`if items and all(i.get('recruitment_no') for i in items)`) never trips for header-only requests → duplicate recruitments on every sync/backfill invocation.",
+    "recruitment_link_back only matches by lowercased line-name equality. If HR later edits the recruitment.position label (or source_line_name is empty on synthetic requests where line name = description[:80]), the hire count won't sync back and the source request will stay stuck in 'sourcing' forever.",
+    "_do_raise_recruitment uses `vac = 1 if vac <= 0 else vac` when quantity is missing, which is reasonable, but pool_covered is force-True only when qty>0 and shortfall<=0 — the header-only path always gets pool_covered=False regardless of actual internal pool, which may mislead HR.",
+    "recruitment_hr_action doesn't validate `hired <= vacancies` — HR can set hired=99 on a vacancies=2 requisition and it will persist. link-back clamps min(hired, vacancies) onto the line but the requisition itself keeps the inflated number.",
+    "sync-recruitment response shape mixes 'count' and 'requests_synced' (both integers with the same value) — one is redundant."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter196_recruitment_sync.py (new — 9 tests)"
+  ],
+  "success_rate": {"backend": "89% (8/9)", "frontend": "100% (all required data-testids present; sync button, recruit-no/src/hr-action rows, Update dialog rendering all verified)"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin)",
+  "seed_data_creation": "5 fresh manpower project-requests created against PRJ-2025-01 (descriptions 'TEST_iter196 …'), each auto-raised to recruitment (REQ-2026-01xx). One material request created for regression. HR actions applied on TEST_iter196_Rigger line (interview→hired=1, then filled→hired=2 — line + request now 'fulfilled').",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Idempotency bug is deterministic — create ANY manpower project-request with items=[] and approve it, then hit POST /api/project-requests/sync-recruitment twice. Second call still creates a new REQ. Cleanup: db.project_requests.deleteMany({description:{$regex:'TEST_iter196'}}) + db.recruitment_requests.deleteMany({remarks:{$regex:'Auto-raised from manpower request'}}) if you want a clean slate.",
+  "rca of the issue": "In /app/backend/routers/project_requests_router.py::_do_raise_recruitment (line 921), when the source manpower request has no items, the function operates on a synthetic in-memory item list but explicitly does NOT persist it to the DB: `if not synthetic: patch['items']=items`. Consequently the source row remains with items=[] in Mongo. The sync endpoint (line 1029-1034) filters candidates with `if items and all(i.get('recruitment_no') for i in items): continue` — because empty `items` is falsy, that skip-guard never triggers for header-only requests, and each subsequent sync call re-invokes _do_raise_recruitment, minting yet another REQ-YYYY-NNNN. The same bug applies to backfill_manpower_recruitment on server startup. Fix: guard on `row.get('sourcing_raised_at')` or non-empty `row.get('recruitment_ids')` instead of / in addition to the items check."
+}

@@ -878,10 +878,23 @@ async def recruitment_link_back(rec: dict, actor: str = "System") -> None:
     hired = int(float(rec.get("hired") or 0))
     status_done = rec.get("status") in ("filled", "closed")
     fully_hired = vacancies > 0 and hired >= vacancies
+    if not items:
+        # Header-only manpower request (no line items) — track on the request itself.
+        patch: Dict[str, Any] = {"recruitment_status": rec.get("status"),
+                                 "recruitment_hired": min(hired, vacancies) if vacancies else hired,
+                                 "recruitment_updated_at": now_iso()}
+        if status_done or fully_hired:
+            patch.update({"status": "fulfilled", "fulfilled_at": now_iso(),
+                          "fulfilled_by": f"System (recruitment {rec.get('status')})",
+                          "fulfil_note": f"Recruitment {rec.get('req_no')} complete"})
+        await db.project_requests.update_one({"id": rid}, {"$set": patch})
+        return
     changed = False
     line_fulfilled = False
     for it in items:
-        if (it.get("name") or "").strip().lower() != target or it.get("fulfil_status") == "fulfilled":
+        matches = (it.get("recruitment_no") and it["recruitment_no"] == rec.get("req_no")) or \
+                  (it.get("name") or "").strip().lower() == target
+        if not matches or it.get("fulfil_status") == "fulfilled":
             continue
         it["vacancy_count"] = vacancies or it.get("vacancy_count")
         it["hired_count"] = min(hired, vacancies) if vacancies else hired
@@ -999,14 +1012,21 @@ async def _notify_hr_recruitment(row: dict, created: List[str]) -> None:
         logger.warning("HR recruitment notify failed: %s", exc)
 
 
+def _missing_recruitment(row: dict) -> bool:
+    """True when an approved manpower request still has lines without a requisition."""
+    items = row.get("items") or []
+    if items:
+        return any(not i.get("recruitment_no") for i in items)
+    return not (row.get("recruitment_ids") or row.get("sourcing_raised_at"))
+
+
 async def backfill_manpower_recruitment() -> int:
     """Startup backfill: every approved manpower request that is missing recruitment
     requisitions (approved before auto-raise existed, or lines added later) gets them."""
     n = 0
     async for row in db.project_requests.find(
             {"request_type": "manpower", "status": {"$in": ["with_dept", "sourcing"]}}, {"_id": 0}):
-        items = row.get("items") or []
-        if items and all(i.get("recruitment_no") for i in items):
+        if not _missing_recruitment(row):
             continue
         try:
             created = await _do_raise_recruitment(row, "System (backfill)")
@@ -1027,8 +1047,7 @@ async def sync_recruitment(request: Request,
     synced, req_nos = 0, []
     async for row in db.project_requests.find(
             {"request_type": "manpower", "status": {"$in": ["with_dept", "sourcing"]}}, {"_id": 0}):
-        items = row.get("items") or []
-        if items and all(i.get("recruitment_no") for i in items):
+        if not _missing_recruitment(row):
             continue
         created = await _do_raise_recruitment(row, actor)
         if created:
@@ -1091,6 +1110,9 @@ async def recruitment_hr_action(rid: str, p: RecruitHrActionIn, request: Request
     if p.hired is not None:
         if p.hired < 0:
             raise HTTPException(400, "Hired count cannot be negative")
+        vac = int(float(row.get("vacancies") or 0))
+        if vac and p.hired > vac:
+            raise HTTPException(400, f"Hired count cannot exceed the {vac} vacancy(ies) on this requisition")
         patch["hired"] = int(p.hired)
     if p.remarks.strip():
         patch["hr_outcome_remarks"] = p.remarks.strip()
