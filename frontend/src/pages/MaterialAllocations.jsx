@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Search, Boxes, Trash2, Undo2, ArrowUpRight } from "lucide-react";
+import { Plus, Search, Boxes, Trash2, Undo2, ArrowUpRight, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,12 +11,14 @@ import { toast } from "sonner";
 import { DepartmentSelect } from "@/components/DepartmentSelect";
 import { ProjectSelect, SiteSelect } from "@/components/MasterSelect";
 import { lookupGet } from "@/lib/lookups";
+import BulkIssueDialog from "./BulkIssueDialog";
 
 const STATUS_TONE = { issued: "warning", returned: "success", partially_returned: "info", written_off: "danger" };
 const KIND_TONE = { material: "primary", tool: "info", consumable: "warning", asset: "success" };
 
 const blankForm = () => ({
   kind: "material",
+  category: "",
   item_id: "",
   item_name: "",
   quantity: 1,
@@ -44,22 +46,26 @@ export default function MaterialAllocations() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [open, setOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [categories, setCategories] = useState([]);
   const [returnDlg, setReturnDlg] = useState(null);
   const [form, setForm] = useState(blankForm());
 
   const load = async () => {
     try {
       const url = statusFilter ? `/allocations?status=${statusFilter}` : "/allocations";
-      const [a, inv, as, emp] = await Promise.all([
+      const [a, inv, as, emp, cats] = await Promise.all([
         api.get(url),
         api.get("/inventory").catch(() => ({ data: [] })),
         api.get("/assets").catch(() => ({ data: [] })),
         lookupGet("/employees").catch(() => ({ data: [] })),
+        api.get("/inv/categories").catch(() => ({ data: [] })),
       ]);
       setRows(a.data || []);
       setInventory(inv.data || []);
       setAssets(as.data || []);
       setEmployees(emp.data || []);
+      setCategories(cats.data || []);
     } catch (e) { toast.error(e.response?.data?.detail || "Failed to load"); }
   };
   useEffect(() => { load();
@@ -93,6 +99,22 @@ export default function MaterialAllocations() {
         .some((v) => String(v ?? "").toLowerCase().includes(q)));
   }, [rows, query]);
 
+  const pickList = useMemo(() => (
+    form.kind === "asset" ? assets : inventory.filter((i) => Number(i.quantity || 0) > 0)
+  ), [form.kind, assets, inventory]);
+
+  const categoryOptions = useMemo(() => {
+    const counts = {};
+    pickList.forEach((i) => { const c = i.category || "Uncategorised"; counts[c] = (counts[c] || 0) + 1; });
+    const master = categories.map((c) => c.name).filter((n) => counts[n]);
+    return Array.from(new Set([...master, ...Object.keys(counts)])).sort()
+      .map((name) => ({ name, count: counts[name] || 0 }));
+  }, [pickList, categories]);
+
+  const filteredPickList = useMemo(() => (
+    form.category ? pickList.filter((i) => (i.category || "Uncategorised") === form.category) : pickList
+  ), [pickList, form.category]);
+
   return (
     <div className="space-y-6" data-testid="allocations-page">
       <div>
@@ -116,7 +138,10 @@ export default function MaterialAllocations() {
             <option value="returned">Returned</option>
             <option value="written_off">Written off</option>
           </select>
-          <div className="ml-auto">
+          <div className="ml-auto flex gap-2">
+            <Button variant="outline" className="h-9 rounded-sm" onClick={() => setBulkOpen(true)} data-testid="alloc-bulk-issue">
+              <Layers className="h-4 w-4 mr-1" /> Bulk Issue
+            </Button>
             <Button className="h-9 rounded-sm" onClick={() => setOpen(true)} data-testid="alloc-add">
               <Plus className="h-4 w-4 mr-1" /> Issue
             </Button>
@@ -191,29 +216,38 @@ export default function MaterialAllocations() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 py-2">
             <div>
               <Label className="text-xs uppercase tracking-wider">Kind</Label>
-              <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value, item_id: "", item_name: "" })} className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="alloc-kind">
+              <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value, category: "", item_id: "", item_name: "" })} className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="alloc-kind">
                 <option value="material">Material</option>
                 <option value="tool">Tool</option>
                 <option value="consumable">Consumable</option>
                 <option value="asset">Asset</option>
               </select>
             </div>
-            <div className="md:col-span-2">
-              <Label className="text-xs uppercase tracking-wider">Pick from {form.kind === "asset" ? "Asset Master" : "Inventory"} (optional)</Label>
+            <div>
+              <Label className="text-xs uppercase tracking-wider">Category</Label>
+              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value, item_id: "", item_name: "" })} className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="alloc-category">
+                <option value="">All categories ({pickList.length} available)</option>
+                {categoryOptions.map((c) => <option key={c.name} value={c.name}>{c.name} ({c.count})</option>)}
+              </select>
+            </div>
+            <div>
+              <Label className="text-xs uppercase tracking-wider">Pick from {form.kind === "asset" ? "Asset Master" : "Stock"} (optional)</Label>
               <select
                 value={form.item_id}
                 onChange={(e) => {
                   const id = e.target.value;
-                  const list = form.kind === "asset" ? assets : inventory;
-                  const found = list.find((x) => x.id === id);
-                  setForm({ ...form, item_id: id, item_name: found ? (found.name || found.item_name || "") : form.item_name, unit: found?.unit || form.unit });
+                  const found = pickList.find((x) => x.id === id);
+                  setForm({ ...form, item_id: id, item_name: found ? (found.name || found.item_name || "") : form.item_name, unit: found?.unit || found?.uom || form.unit });
                 }}
                 className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="alloc-item-select">
                 <option value="">— free text below —</option>
-                {(form.kind === "asset" ? assets : inventory).map((x) => (
-                  <option key={x.id} value={x.id}>{x.name || x.item_name} {x.quantity != null ? `(stock ${x.quantity} ${x.unit || ""})` : ""}</option>
+                {filteredPickList.map((x) => (
+                  <option key={x.id} value={x.id}>{x.name || x.item_name} {x.quantity != null ? `(stock ${x.quantity} ${x.unit || x.uom || ""})` : ""}</option>
                 ))}
               </select>
+              {form.kind !== "asset" && filteredPickList.length === 0 && (
+                <p className="text-[10px] text-amber-700 mt-1" data-testid="alloc-no-stock">No items in stock for this category.</p>
+              )}
             </div>
             <div>
               <Label className="text-xs uppercase tracking-wider">Item Name *</Label>
@@ -297,6 +331,9 @@ export default function MaterialAllocations() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <BulkIssueDialog open={bulkOpen} onOpenChange={setBulkOpen} inventory={inventory}
+        categories={categories} employees={employees} onDone={load} />
 
       {/* Return dialog */}
       {returnDlg && <ReturnDialog alloc={returnDlg} onClose={() => { setReturnDlg(null); load(); }} />}

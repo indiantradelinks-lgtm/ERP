@@ -162,6 +162,130 @@ async def create_allocation(payload: AllocateIn, request: Request,
     return doc
 
 
+class BulkAllocLine(BaseModel):
+    item_id: Optional[str] = None
+    item_name: str
+    kind: str = "material"
+    category: Optional[str] = None
+    quantity: float = 1
+    unit: str = "Nos"
+    condition_on_issue: Optional[str] = None
+
+
+class BulkAllocateIn(BaseModel):
+    """Issue many stock items to one project / site / department / employee in one go."""
+    lines: List[BulkAllocLine] = Field(default_factory=list)
+    allocated_to_type: str = "project"
+    project_id: Optional[str] = None
+    project_code: Optional[str] = None
+    site_id: Optional[str] = None
+    site_code: Optional[str] = None
+    department: Optional[str] = None
+    employee_id: Optional[str] = None
+    employee_name: Optional[str] = None
+    issue_date: Optional[str] = None
+    expected_return_date: Optional[str] = None
+    returnable: bool = True
+    remarks: Optional[str] = None
+
+
+@router.post("/allocations/bulk")
+async def create_allocations_bulk(payload: BulkAllocateIn, request: Request,
+                                  user: dict = Depends(require_permission("material_allocations", "write"))):
+    if not payload.lines:
+        raise HTTPException(status_code=400, detail="Select at least one item to issue")
+    if payload.allocated_to_type not in ("project", "site", "department", "employee"):
+        raise HTTPException(status_code=400, detail="allocated_to_type must be project|site|department|employee")
+    if payload.allocated_to_type == "project":
+        if not (payload.project_id or payload.project_code):
+            raise HTTPException(status_code=400, detail="Select the project to issue against")
+        if payload.project_id:
+            from scope import ensure_project_access
+            await ensure_project_access(user, payload.project_id)
+
+    # 1) Validate every line up-front so nothing is issued on a bad batch
+    errors: List[str] = []
+    for ln in payload.lines:
+        if ln.kind not in ALLOCATION_KINDS:
+            errors.append(f"{ln.item_name}: kind must be one of {ALLOCATION_KINDS}")
+            continue
+        if ln.quantity <= 0:
+            errors.append(f"{ln.item_name}: quantity must be > 0")
+            continue
+        if ln.item_id and ln.kind in ("material", "tool", "consumable"):
+            item = await db.inventory.find_one({"id": ln.item_id}, {"_id": 0, "quantity": 1, "unit": 1})
+            if not item:
+                errors.append(f"{ln.item_name}: inventory item not found")
+            elif float(item.get("quantity") or 0) < ln.quantity:
+                errors.append(f"{ln.item_name}: only {float(item.get('quantity') or 0):g} "
+                              f"{item.get('unit') or ''} in stock")
+    if errors:
+        raise HTTPException(status_code=400, detail=" · ".join(errors[:8]))
+
+    batch_id = new_id()
+    batch_no = await next_sequence("BIS")
+    target = (payload.employee_name or payload.project_code or payload.site_code or payload.department)
+    by_name = user.get("name") or user.get("email")
+    created: List[dict] = []
+    decremented: List[tuple[str, float]] = []
+    try:
+        for ln in payload.lines:
+            if ln.item_id and ln.kind in ("material", "tool", "consumable"):
+                res = await db.inventory.update_one(
+                    {"id": ln.item_id, "quantity": {"$gte": ln.quantity}},
+                    {"$inc": {"quantity": -ln.quantity}})
+                if res.matched_count == 0:
+                    raise HTTPException(status_code=400,
+                                        detail=f"{ln.item_name}: stock changed while issuing — batch cancelled")
+                decremented.append((ln.item_id, ln.quantity))
+
+            doc = {
+                "id": new_id(), "allocation_no": await next_sequence("ALC"),
+                "kind": ln.kind, "item_id": ln.item_id, "item_name": ln.item_name,
+                "category": ln.category, "quantity": ln.quantity, "unit": ln.unit,
+                "allocated_to_type": payload.allocated_to_type,
+                "project_id": payload.project_id, "project_code": payload.project_code,
+                "site_id": payload.site_id, "site_code": payload.site_code,
+                "department": payload.department,
+                "employee_id": payload.employee_id, "employee_name": payload.employee_name,
+                "issue_date": payload.issue_date or now_iso()[:10],
+                "expected_return_date": payload.expected_return_date,
+                "returnable": payload.returnable,
+                "condition_on_issue": ln.condition_on_issue,
+                "remarks": payload.remarks,
+                "status": "issued", "returned_qty": 0.0, "actual_return_date": None,
+                "bulk_batch_id": batch_id, "bulk_issue_no": batch_no,
+                "issued_by": by_name, "issued_by_id": user["id"], "created_at": now_iso(),
+            }
+            await db.material_allocations.insert_one(dict(doc))
+            created.append(doc)
+
+            if ln.item_id and ln.kind in ("material", "tool", "consumable"):
+                await db.inventory_transactions.insert_one({
+                    "id": new_id(), "txn_type": "outward", "item_id": ln.item_id,
+                    "item_name": ln.item_name, "quantity": ln.quantity, "unit": ln.unit,
+                    "issued_to": target, "note": f"Bulk issue {batch_no} · {doc['allocation_no']}",
+                    "ref_type": "material_allocation", "ref_id": doc["id"], "status": "posted",
+                    "created_by": user["id"], "created_at": now_iso()})
+            if ln.kind == "asset" and ln.item_id:
+                await db.assets.update_one({"id": ln.item_id}, {"$set": {
+                    "allocated_to_type": payload.allocated_to_type, "allocated_to": target,
+                    "allocation_id": doc["id"], "allocation_no": doc["allocation_no"]}})
+    except Exception:
+        for item_id, qty in decremented:            # give the stock back
+            await db.inventory.update_one({"id": item_id}, {"$inc": {"quantity": qty}})
+        if created:
+            await db.material_allocations.delete_many({"bulk_batch_id": batch_id})
+            await db.inventory_transactions.delete_many({"ref_id": {"$in": [c["id"] for c in created]}})
+        raise
+
+    await audit(user=user, action="bulk_issue", resource="material_allocations", record_id=batch_id,
+                after={"bulk_issue_no": batch_no, "lines": len(created), "allocated_to": target,
+                       "allocation_nos": [c["allocation_no"] for c in created]}, ip=_ip(request))
+    return {"bulk_issue_no": batch_no, "batch_id": batch_id, "count": len(created),
+            "allocations": created}
+
+
 @router.post("/allocations/{alloc_id}/return")
 async def record_return(alloc_id: str, payload: ReturnIn, request: Request,
                         user: dict = Depends(require_permission("material_allocations", "write"))):
