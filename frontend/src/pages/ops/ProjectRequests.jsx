@@ -122,12 +122,18 @@ export default function ProjectRequests() {
   const isHO = form.request_type === "head_office_expense";
   const [hoCCs, setHoCCs] = useState([]);
   const [offices, setOffices] = useState([]);
+  const isHoProject = form.project_code === "HEAD-OFFICE";
   useEffect(() => {
-    if ((isSelf || isHO) && hoCCs.length === 0) {
+    if ((isSelf || isHO || isHoProject) && hoCCs.length === 0) {
       api.get("/head-office-cost-centers").then((r) => setHoCCs(r.data || [])).catch(() => {});
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSelf, isHO]);
+  }, [isSelf, isHO, isHoProject]);
+  // Head Office – Delhi selected as the project → offer the HO cost centers
+  useEffect(() => {
+    if (isHoProject && hoCCs.length) setCcList(hoCCs);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHoProject, hoCCs]);
   useEffect(() => {
     if (!isHO || offices.length) return;
     api.get("/office-locations").then((r) => {
@@ -195,7 +201,8 @@ export default function ProjectRequests() {
     if (cc) setForm((f) => ({ ...f, cost_center_id: f.cost_center_id || cc.id }));
   }, [ccList, form.material_category_id]); // eslint-disable-line
 
-  const loadCostCenters = (projectId) => {
+  const loadCostCenters = (projectId, projectCode) => {
+    if (projectCode === "HEAD-OFFICE") { setCcList(hoCCs); return; }
     if (!projectId) { setCcList([]); return; }
     api.get("/procurement/master/cost-centers", { params: { project_id: projectId } }).then((r) => setCcList(r.data || [])).catch(() => setCcList([]));
   };
@@ -536,7 +543,7 @@ export default function ProjectRequests() {
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-1">
             {!isSelf && !isHO ? (
-              <ProjectSelect label="Project *" value={form.project_code} onChange={(code, row) => { setForm({ ...form, project_code: code, project_id: row?.id || "", cost_center_id: "", employee_id: "" }); loadCostCenters(row?.id); }} testid="req-form-project" />
+              <ProjectSelect label="Project *" value={form.project_code} onChange={(code, row) => { setForm({ ...form, project_code: code, project_id: row?.id || "", cost_center_id: "", employee_id: "" }); loadCostCenters(row?.id, code); }} testid="req-form-project" />
             ) : isHO ? (
               <>
                 <div className="border border-sky-200 bg-sky-50 rounded-sm p-2 text-xs text-sky-900 self-end" data-testid="req-ho-banner">
@@ -564,7 +571,7 @@ export default function ProjectRequests() {
                   </label>
                 </div>
                 {form.self_for_project && (
-                  <ProjectSelect label="Project *" value={form.project_code}
+                  <ProjectSelect label="Project *" value={form.project_code} excludeHeadOffice
                     onChange={(code, row) => { setForm({ ...form, project_code: code, project_id: row?.id || "", cost_center_id: "" }); loadCostCenters(row?.id); }}
                     testid="req-self-project" />
                 )}
@@ -672,7 +679,7 @@ export default function ProjectRequests() {
             )}
             {(!isSelf && !isHO) || form.self_for_project ? (
             <div>
-              <Label className="text-[10px] uppercase tracking-wider">{(isSelf || isHO) ? "Project Cost Center *" : "Cost Center *"}</Label>
+              <Label className="text-[10px] uppercase tracking-wider">{form.project_code === "HEAD-OFFICE" ? "Head Office Cost Center *" : (isSelf || isHO) ? "Project Cost Center *" : "Cost Center *"}</Label>
               <select value={form.cost_center_id} onChange={(e) => setForm({ ...form, cost_center_id: e.target.value })}
                 className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-costcenter">
                 <option value="">{(isSelf || isHO) && !form.project_code ? "— select project first —" : "— select cost center —"}</option>

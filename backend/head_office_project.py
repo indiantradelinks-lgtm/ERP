@@ -17,10 +17,19 @@ HO_NAME = "Head Office – Delhi"
 
 
 async def ensure_head_office_project() -> bool:
-    """Idempotently create/refresh the Head Office – Delhi internal project."""
+    """Idempotently create the Head Office – Delhi internal project.
+
+    Existing records are only re-stamped with the identity flags — any field an
+    admin edits in the Projects master (name, site, status…) is left alone.
+    """
     existing = await db.projects.find_one({"code": HO_CODE}, {"_id": 0, "id": 1})
-    doc = {
-        "id": (existing or {}).get("id") or HO_ID,
+    if existing:
+        await db.projects.update_one({"id": existing["id"]},
+                                     {"$set": {"is_head_office": True, "internal": True}})
+        return False
+    now = datetime.now(timezone.utc).isoformat()
+    await db.projects.insert_one({
+        "id": HO_ID,
         "code": HO_CODE,
         "name": HO_NAME,
         "client": "Indian Trade Links",
@@ -30,12 +39,8 @@ async def ensure_head_office_project() -> bool:
         "is_head_office": True,
         "internal": True,
         "billing_type": "non_billable",
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
-    if existing:
-        await db.projects.update_one({"id": doc["id"]}, {"$set": doc})
-        return False
-    doc["created_at"] = datetime.now(timezone.utc).isoformat()
-    doc["created_by"] = "system"
-    await db.projects.insert_one(doc)
+        "created_at": now,
+        "created_by": "system",
+        "updated_at": now,
+    })
     return True

@@ -455,6 +455,14 @@ async def create_request(p: RequestIn, request: Request,
             project = {"id": None, "code": "HEAD-OFFICE", "name": office_location or "Head Office", "client": None}
         else:
             raise HTTPException(400, "Select a valid project")
+    if project.get("is_head_office"):
+        # Picking "Head Office – Delhi" in any project dropdown books the request
+        # against the Head Office cost centers, not against a project.
+        if not office_location:
+            default_office = await db.office_locations.find_one({"is_default": True}, {"_id": 0, "name": 1})
+            office_location = (default_office or {}).get("name") or OFFICE_SEED[0][1]
+        project = {"id": None, "code": "HEAD-OFFICE",
+                   "name": project.get("name") or "Head Office – Delhi", "client": None}
     if project.get("id") and p.request_type not in HO_TYPES:
         await ensure_project_access(user, project["id"])
     est = _estimate_value(p)
@@ -544,7 +552,7 @@ async def create_request(p: RequestIn, request: Request,
         "cost_center_label": f"{(cc or {}).get('category_code') or ''} · {(cc or {}).get('category_name') or ''}".strip(" ·") if cc else None,
         "site_location": p.site_location,
         "office_location": office_location,
-        "is_head_office": p.request_type in HO_TYPES and not project.get("id"),
+        "is_head_office": not project.get("id") and project.get("code") == "HEAD-OFFICE",
         "material_category_id": (mcat or {}).get("id"),
         "material_category_code": (mcat or {}).get("code"),
         "material_category": (mcat or {}).get("name"),

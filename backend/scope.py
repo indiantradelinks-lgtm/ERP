@@ -123,6 +123,12 @@ async def resolve_scope(user: dict) -> Dict[str, list]:
     }
 
 
+async def head_office_project_id() -> str | None:
+    """Id of the internal Head Office – Delhi project (shared cost center)."""
+    row = await db.projects.find_one({"is_head_office": True}, {"_id": 0, "id": 1})
+    return (row or {}).get("id")
+
+
 async def allowed_project_ids(user: dict) -> List[str] | None:
     """Project ids the user may access. None = unrestricted."""
     role = user.get("role")
@@ -136,7 +142,11 @@ async def allowed_project_ids(user: dict) -> List[str] | None:
                                         {"_id": 0, "id": 1}).to_list(500)
         return [r["id"] for r in rows]
     if role in PM_SCOPED_ROLES or is_pm_scoped(user):
-        return [p["id"] for p in await assigned_projects_for(user)]
+        ids = [p["id"] for p in await assigned_projects_for(user)]
+        ho = await head_office_project_id()
+        if ho and ho not in ids:
+            ids.append(ho)
+        return ids
     return None
 
 
