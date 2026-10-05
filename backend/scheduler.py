@@ -308,6 +308,11 @@ def start_scheduler() -> None:
 
     _scheduler.add_job(_vendor_payment_due_job, CronTrigger(hour=8, minute=15),
                        id="vendor_payment_due", replace_existing=True)
+
+    # Google Sheets attendance auto-sync — checks every 15 min, runs at the configured IST time
+    from routers.attendance_gsheet_router import scheduled_gsheet_attendance_sync
+    _scheduler.add_job(scheduled_gsheet_attendance_sync, CronTrigger(minute="0,15,30,45"),
+                       id="gsheet_attendance_sync", replace_existing=True)
     # Email outbox retry — every 10 minutes
     _scheduler.add_job(_email_retry_job, IntervalTrigger(minutes=10), id="email_retry", replace_existing=True)
     # OneDrive push queue worker — every 2 minutes

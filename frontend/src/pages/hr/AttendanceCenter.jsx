@@ -5,7 +5,7 @@
  *  • Project-wise register with date & designation filters
  */
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { CalendarDays, Save, Upload, ListChecks, Building2, Search, Bot, Wand2, ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarDays, Save, Upload, ListChecks, Building2, Search, Bot, Wand2, ChevronLeft, ChevronRight, Sheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +18,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { AttendanceBulkDialog } from "./HrPhase2";
 import AttendanceImport from "./AttendanceImport";
+import GoogleSheetSync from "./GoogleSheetSync";
 import { lookupGet } from "@/lib/lookups";
 
 const hoursBetween = (tin, tout) => {
@@ -43,7 +44,7 @@ const parseIso = (iso) => new Date(iso + "T00:00:00");
 const toIso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 export default function AttendanceCenter() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const isProjectRole = ["project_coordinator", "project_manager", "supervisor", "site_engineer"].includes(user?.role);
   const [tab, setTab] = useState("daily");
   const [projects, setProjects] = useState([]);
@@ -99,6 +100,7 @@ export default function AttendanceCenter() {
           <TabsTrigger value="daily" data-testid="ac-tab-daily"><CalendarDays className="h-3.5 w-3.5 mr-1" />Daily Sheet</TabsTrigger>
           <TabsTrigger value="register" data-testid="ac-tab-register"><ListChecks className="h-3.5 w-3.5 mr-1" />Register</TabsTrigger>
           <TabsTrigger value="import" data-testid="ac-tab-import"><Bot className="h-3.5 w-3.5 mr-1" />AI Import & Bulk Update</TabsTrigger>
+          <TabsTrigger value="gsheet" data-testid="ac-tab-gsheet"><Sheet className="h-3.5 w-3.5 mr-1" />Google Sheet Sync</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -110,6 +112,8 @@ export default function AttendanceCenter() {
         )
       ) : tab === "register" ? (
         <Register scope={scope} />
+      ) : tab === "gsheet" ? (
+        <GoogleSheetSync canWrite={can("attendance", "write")} />
       ) : (
         <AttendanceImport />
       )}
