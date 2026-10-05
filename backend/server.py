@@ -250,6 +250,12 @@ async def seed_quotation_conditions_on_startup():
     except Exception as e:
         logger.warning(f"[department-master] Seed skipped: {e}")
     try:
+        from head_office_project import ensure_head_office_project
+        if await ensure_head_office_project():
+            logger.info("[head-office] Seeded 'Head Office – Delhi' internal project (HEAD-OFFICE)")
+    except Exception as e:
+        logger.warning(f"[head-office] Seed skipped: {e}")
+    try:
         n_mig = await migrate_legacy_resource_requests()
         if n_mig:
             logger.info(f"[legacy-rr-migration] Migrated {n_mig} legacy resource request(s) to Project Requests")

@@ -142,12 +142,16 @@ export const useProjects = _projects.useList;
 
 export function ProjectSelect({ value, onChange, label = "Project", testid = "project-select",
                                 valueKey = "code", disabled = false, required = false, hint,
-                                includeBlank = true, includeHeadOffice = false,
+                                includeBlank = true, includeHeadOffice = false, excludeHeadOffice = false,
                                 placeholder = "— select project —", className = "" }) {
   const rows = useProjects();
+  const visible = excludeHeadOffice
+    ? rows.filter((p) => !p.is_head_office && p.code !== "HEAD-OFFICE")
+    : rows;
+  const hasRealHo = visible.some((p) => p.is_head_office || p.code === "HEAD-OFFICE");
   const options = [
-    ...(includeHeadOffice ? [{ value: "HEAD-OFFICE", label: "HEAD-OFFICE · Head Office (Delhi)" }] : []),
-    ...rows.map((p) => ({
+    ...(includeHeadOffice && !hasRealHo ? [{ value: "HEAD-OFFICE", label: "HEAD-OFFICE · Head Office (Delhi)" }] : []),
+    ...visible.map((p) => ({
       value: p[valueKey] ?? p.code ?? p.id,
       label: [p.code, p.name].filter(Boolean).join(" · ") || p.name || p.code || p.id,
       row: p,

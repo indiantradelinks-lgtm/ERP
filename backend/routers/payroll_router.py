@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field
 
 from core import db, get_current_user, now_iso, new_id
 from pagination import maybe_paged, paged_or_rows
+from hr_worker_rules import is_worker_master, paid_weights
 
 logger = logging.getLogger("erp.payroll")
 router = APIRouter(prefix="/payroll", tags=["payroll"])
@@ -385,8 +386,9 @@ async def _compute_payslip(month: str, emp: dict, master: dict) -> dict:
         {"_id": 0, "status": 1, "overtime_hours": 1},
     ).to_list(400)
     ot_hours = 0.0
+    is_worker = await is_worker_master(emp)
     if att_rows:
-        w = {"present": 1, "on_duty": 1, "leave": 1, "weekly_off": 1, "holiday": 1, "half_day": 0.5}
+        w = paid_weights(week_off_paid=not is_worker)
         paid_days = sum(w.get(r.get("status") or "", 0) for r in att_rows)
         ot_hours = round(sum(float(r.get("overtime_hours") or 0) for r in att_rows), 2)
         lop_days = max(0.0, total_days - paid_days)

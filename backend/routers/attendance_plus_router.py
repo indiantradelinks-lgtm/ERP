@@ -30,6 +30,7 @@ from openpyxl import Workbook, load_workbook
 from core import db, require_permission, get_current_user, now_iso, new_id
 from pagination import maybe_paged, paged_or_rows
 from audit import audit
+from hr_worker_rules import worker_key_set, is_worker_row
 
 logger = logging.getLogger("erp.attendance_plus")
 router = APIRouter(prefix="/hr2/attendance-plus", tags=["attendance-plus"])
@@ -154,7 +155,7 @@ async def _summary_data(month: str, project_code: Optional[str], department: Opt
         late, early = _late_early(r, shifts) if r.get("in_time") or r.get("out_time") else (0, 0)
         eid = r.get("employee_id") or "?"
         e = emps.setdefault(eid, {**_blank(), "employee_id": eid,
-                                  "employee_code": r.get("employee_code") or "",
+                                  "employee_code": r.get("employee_code") or r.get("emp_code") or "",
                                   "employee_name": r.get("employee_name") or "",
                                   "department": r.get("department") or "",
                                   "projects": set(), "shifts": set()})
@@ -176,12 +177,18 @@ async def _summary_data(month: str, project_code: Optional[str], department: Opt
         bump(by_shift, r.get("shift_code") or "—", code, r, late, early)
 
     emp_rows = []
+    worker_keys = await worker_key_set()
     for eid, e in emps.items():
         present_days = e["P"] + e["OD"] + 0.5 * e["HD"]
-        paid_days = round(e["P"] + 0.5 * e["HD"] + e["L"] + e["WO"] + e["H"] + e["OD"], 1)
+        # Worker / Labour Master: weekly off is NOT a paid day (staff unchanged)
+        is_worker = is_worker_row({"id": eid, "emp_code": e.get("employee_code"),
+                                   "employee_id": e.get("employee_code")}, worker_keys)
+        paid_days = round(e["P"] + 0.5 * e["HD"] + e["L"] + e["H"] + e["OD"]
+                          + (0 if is_worker else e["WO"]), 1)
         emp_rows.append({
             **{k: v for k, v in e.items() if k not in ("projects", "shifts")},
             "projects": sorted(e["projects"]), "shift_codes": sorted(e["shifts"]),
+            "is_worker_master": is_worker, "week_off_paid": not is_worker,
             "working_days": e["days"], "paid_days": paid_days,
             "present_days": round(present_days, 1),
             "leave_balance": round(lb.get(eid, 0), 1),
@@ -408,6 +415,7 @@ async def my_monthly_attendance(month: str = Query(...), user: dict = Depends(ge
         ors.append({"email": {"$regex": f"^{re.escape(user['email'])}$", "$options": "i"}})
     emp = await db.employees.find_one(
         {"$or": ors}, {"_id": 0, "id": 1, "name": 1, "employee_id": 1, "emp_code": 1,
+                       "master_category": 1, "is_worker": 1, "employee_category": 1,
                        "department": 1, "designation": 1, "current_project_code": 1}) if ors else None
     if not emp:
         return {"linked": False, "month": month, "employee": None, "rows": [], "summary": None}
@@ -424,11 +432,14 @@ async def my_monthly_attendance(month: str = Query(...), user: dict = Depends(ge
             counts[code] += 1
         ot += float(r.get("overtime_hours") or 0)
         th += float(r.get("total_hours") or 0)
-    paid = counts["P"] + counts["L"] + counts["WO"] + counts["H"] + counts["OD"] + 0.5 * counts["HD"]
+    is_worker = is_worker_row(emp, await worker_key_set())
+    paid = (counts["P"] + counts["L"] + counts["H"] + counts["OD"] + 0.5 * counts["HD"]
+            + (0 if is_worker else counts["WO"]))
     return {"linked": True, "month": month,
             "employee": {"name": emp.get("name"), "code": emp.get("employee_id") or emp.get("emp_code"),
                          "department": emp.get("department"), "designation": emp.get("designation"),
-                         "project_code": emp.get("current_project_code")},
+                         "project_code": emp.get("current_project_code"),
+                         "is_worker_master": is_worker, "week_off_paid": not is_worker},
             "rows": rows,
             "summary": {**counts, "paid_days": round(paid, 1), "ot_hours": round(ot, 1),
                         "total_hours": round(th, 1), "marked_days": len(rows)}}

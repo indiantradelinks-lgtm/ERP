@@ -276,7 +276,14 @@ export default function AttendanceSummary() {
               {(data?.employees || []).map((e) => (
                 <tr key={e.employee_id} className="border-t hover:bg-blue-50/40 cursor-pointer" onClick={() => setDrill(e)} data-testid={`summary-emp-${e.employee_id}`}>
                   <td className="px-3 py-1.5 font-mono-data text-xs">{e.employee_code || "—"}</td>
-                  <td className="px-3 py-1.5 font-medium text-primary underline-offset-2 hover:underline">{e.employee_name}</td>
+                  <td className="px-3 py-1.5 font-medium text-primary underline-offset-2 hover:underline">
+                    {e.employee_name}
+                    {e.is_worker_master && (
+                      <span className="ml-2 rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800"
+                            title="Worker / Labour Master — weekly off is not a paid day"
+                            data-testid={`summary-worker-tag-${e.employee_id}`}>Worker</span>
+                    )}
+                  </td>
                   <td className="px-3 py-1.5 text-xs">{e.department || "—"}</td>
                   {CODES.map((c) => <td key={c} className={`text-right px-2 py-1.5 tabular ${CODE_TONE[c]}`}>{e[c] || 0}</td>)}
                   <td className="text-right px-2 py-1.5 tabular">{e.late_count}</td>

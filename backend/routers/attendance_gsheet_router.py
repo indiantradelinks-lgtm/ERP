@@ -21,6 +21,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+import asyncio
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -56,13 +57,21 @@ TITLE_MONTH_RE = re.compile(r"([A-Za-z]{3,})[\s'`_-]*(\d{2,4})")
 # Config
 # ──────────────────────────────────────────────────────────────────────────────
 class ConfigIn(BaseModel):
-    sheet_url: str
-    gid: Optional[str] = None
+    """Global connector settings (sheets are managed separately)."""
     enabled: bool = True
     auto_sync: bool = True
-    sync_hour_ist: int = 7          # daily auto-sync time (IST)
+    sync_hour_ist: int = 7
     sync_minute_ist: int = 0
+
+
+class SheetIn(BaseModel):
+    sheet_url: str
+    gid: Optional[str] = None
     label: str = ""
+    enabled: bool = True
+
+
+MAX_SHEETS = 40
 
 
 def _parse_sheet_url(url: str) -> tuple[str, str]:
@@ -76,31 +85,96 @@ def _parse_sheet_url(url: str) -> tuple[str, str]:
     return m.group(1), gid
 
 
+async def _migrate_single_sheet() -> None:
+    """Older single-sheet config → first row of the multi-sheet list."""
+    cfg = await db.gsheet_attendance_config.find_one({"id": CONFIG_ID}, {"_id": 0})
+    if not cfg or not cfg.get("sheet_id"):
+        return
+    if await db.gsheet_attendance_sheets.find_one({"sheet_id": cfg["sheet_id"], "gid": cfg.get("gid") or "0"}):
+        return
+    await db.gsheet_attendance_sheets.insert_one({
+        "id": new_id(), "sheet_url": cfg.get("sheet_url"), "sheet_id": cfg["sheet_id"],
+        "gid": cfg.get("gid") or "0", "label": cfg.get("label") or "Sheet 1", "enabled": True,
+        "created_at": cfg.get("updated_at") or now_iso(), "created_by": cfg.get("updated_by"),
+        "last_sync_at": cfg.get("last_sync_at"), "last_sync_status": cfg.get("last_sync_status"),
+        "last_sync_counts": cfg.get("last_sync_counts")})
+
+
 @router.get("/config")
 async def get_config(user: dict = Depends(require_permission("attendance", "read"))):
+    await _migrate_single_sheet()
     cfg = await db.gsheet_attendance_config.find_one({"id": CONFIG_ID}, {"_id": 0})
+    sheets = await db.gsheet_attendance_sheets.find({}, {"_id": 0}).sort("created_at", 1).to_list(MAX_SHEETS + 10)
     last = await db.gsheet_attendance_runs.find_one({}, {"_id": 0}, sort=[("started_at", -1)])
-    return {"config": cfg, "last_run": last}
+    return {"config": cfg, "sheets": sheets, "max_sheets": MAX_SHEETS, "last_run": last}
 
 
 @router.put("/config")
 async def save_config(p: ConfigIn, request: Request,
                       user: dict = Depends(require_permission("attendance", "write"))):
-    sheet_id, url_gid = _parse_sheet_url(p.sheet_url)
-    gid = (p.gid or url_gid or "0").strip()
     doc = {
-        "id": CONFIG_ID, "sheet_url": p.sheet_url.strip(), "sheet_id": sheet_id, "gid": gid,
-        "enabled": p.enabled, "auto_sync": p.auto_sync,
+        "id": CONFIG_ID, "enabled": p.enabled, "auto_sync": p.auto_sync,
         "sync_hour_ist": max(0, min(23, p.sync_hour_ist)),
         "sync_minute_ist": max(0, min(59, p.sync_minute_ist)),
-        "label": p.label.strip(), "updated_at": now_iso(),
-        "updated_by": user.get("name") or user.get("email"),
+        "updated_at": now_iso(), "updated_by": user.get("name") or user.get("email"),
     }
     await db.gsheet_attendance_config.update_one({"id": CONFIG_ID}, {"$set": doc}, upsert=True)
     await audit(user=user, action="gsheet_attendance_config", resource="attendance",
                 record_id=CONFIG_ID, after=doc,
                 ip=request.headers.get("x-forwarded-for", "unknown"))
     return doc
+
+
+@router.post("/sheets")
+async def add_sheet(p: SheetIn, request: Request,
+                    user: dict = Depends(require_permission("attendance", "write"))):
+    if await db.gsheet_attendance_sheets.count_documents({}) >= MAX_SHEETS:
+        raise HTTPException(400, f"Maximum {MAX_SHEETS} Google Sheets can be connected")
+    sheet_id, url_gid = _parse_sheet_url(p.sheet_url)
+    gid = (p.gid or url_gid or "0").strip()
+    if await db.gsheet_attendance_sheets.find_one({"sheet_id": sheet_id, "gid": gid}):
+        raise HTTPException(409, "That sheet tab is already connected")
+    doc = {"id": new_id(), "sheet_url": p.sheet_url.strip(), "sheet_id": sheet_id, "gid": gid,
+           "label": p.label.strip() or f"Sheet {await db.gsheet_attendance_sheets.count_documents({}) + 1}",
+           "enabled": p.enabled, "created_at": now_iso(),
+           "created_by": user.get("name") or user.get("email")}
+    await db.gsheet_attendance_sheets.insert_one(dict(doc))
+    await db.gsheet_attendance_config.update_one(
+        {"id": CONFIG_ID}, {"$setOnInsert": {"id": CONFIG_ID, "enabled": True, "auto_sync": True,
+                                             "sync_hour_ist": 7, "sync_minute_ist": 0}}, upsert=True)
+    await audit(user=user, action="gsheet_sheet_add", resource="attendance", record_id=doc["id"],
+                after=doc, ip=request.headers.get("x-forwarded-for", "unknown"))
+    doc.pop("_id", None)
+    return doc
+
+
+@router.put("/sheets/{sid}")
+async def update_sheet(sid: str, p: SheetIn, request: Request,
+                       user: dict = Depends(require_permission("attendance", "write"))):
+    row = await db.gsheet_attendance_sheets.find_one({"id": sid}, {"_id": 0})
+    if not row:
+        raise HTTPException(404, "Sheet not connected")
+    sheet_id, url_gid = _parse_sheet_url(p.sheet_url)
+    upd = {"sheet_url": p.sheet_url.strip(), "sheet_id": sheet_id,
+           "gid": (p.gid or url_gid or "0").strip(), "label": p.label.strip() or row.get("label"),
+           "enabled": p.enabled, "updated_at": now_iso(),
+           "updated_by": user.get("name") or user.get("email")}
+    await db.gsheet_attendance_sheets.update_one({"id": sid}, {"$set": upd})
+    await audit(user=user, action="gsheet_sheet_update", resource="attendance", record_id=sid,
+                before=row, after=upd, ip=request.headers.get("x-forwarded-for", "unknown"))
+    return {**row, **upd}
+
+
+@router.delete("/sheets/{sid}")
+async def delete_sheet(sid: str, request: Request,
+                       user: dict = Depends(require_permission("attendance", "write"))):
+    row = await db.gsheet_attendance_sheets.find_one({"id": sid}, {"_id": 0})
+    if not row:
+        raise HTTPException(404, "Sheet not connected")
+    await db.gsheet_attendance_sheets.delete_one({"id": sid})
+    await audit(user=user, action="gsheet_sheet_delete", resource="attendance", record_id=sid,
+                before=row, ip=request.headers.get("x-forwarded-for", "unknown"))
+    return {"ok": True, "removed": row.get("label")}
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -195,62 +269,58 @@ def _num(v: str) -> float:
 # ──────────────────────────────────────────────────────────────────────────────
 class SyncIn(BaseModel):
     dry_run: bool = False
+    sheet_ids: List[str] = []       # empty = every enabled sheet
 
 
-async def _run_sync(*, actor: str, trigger: str, dry_run: bool = False) -> Dict[str, Any]:
-    cfg = await db.gsheet_attendance_config.find_one({"id": CONFIG_ID}, {"_id": 0})
-    if not cfg:
-        raise HTTPException(400, "Connect the Google attendance sheet first")
-    if not cfg.get("enabled") and trigger != "manual":
-        return {"skipped": "connection disabled"}
-
+async def _sync_one(sheet: dict, *, actor: str, trigger: str, dry_run: bool,
+                    by_code: Dict[str, dict], proj_names: Dict[str, str]) -> Dict[str, Any]:
+    """Sync a single connected sheet and return its own result block."""
     started = now_iso()
-    rows = await _fetch_csv(cfg["sheet_id"], cfg.get("gid") or "0")
-    parsed = _parse_sheet(rows)
+    res: Dict[str, Any] = {
+        "sheet_row_id": sheet["id"], "label": sheet.get("label"), "sheet_id": sheet["sheet_id"],
+        "gid": sheet.get("gid"), "sheet_url": sheet.get("sheet_url"), "started_at": started,
+        "imported": 0, "updated": 0, "unchanged": 0, "skipped_locked": 0, "failed": 0,
+        "sheet_employees": 0, "matched_employees": 0, "unmatched_employees": 0, "errors": [],
+    }
+    try:
+        parsed = _parse_sheet(await _fetch_csv(sheet["sheet_id"], sheet.get("gid") or "0"))
+    except HTTPException as exc:
+        res.update({"status": "failed", "finished_at": now_iso(),
+                    "errors": [{"error": str(exc.detail)}]})
+        return res
 
-    emps = await db.employees.find(
-        {}, {"_id": 0, "id": 1, "name": 1, "emp_code": 1, "employee_id": 1,
-             "current_project_code": 1, "current_project_name": 1, "departments": 1,
-             "department": 1, "designation": 1}).to_list(20000)
-    by_code: Dict[str, dict] = {}
-    for e in emps:
-        for key in (e.get("emp_code"), e.get("employee_id")):
-            if key:
-                by_code.setdefault(str(key).strip().upper(), e)
-    proj_names = {p["code"]: p.get("name") async for p in
-                  db.projects.find({}, {"_id": 0, "code": 1, "name": 1})}
-
-    imported = updated = skipped_locked = unchanged = failed = 0
+    res.update({"month": parsed["month"], "date_from": parsed["date_from"],
+                "date_to": parsed["date_to"], "sheet_employees": len(parsed["employees"])})
     unmatched: Dict[str, str] = {}
     errors: List[Dict[str, str]] = []
-    matched_employees = 0
 
     for emp_row in parsed["employees"]:
         emp = by_code.get(emp_row["emp_code"].upper())
         if not emp:
             unmatched[emp_row["emp_code"]] = emp_row["name"]
-            failed += sum(1 for d in emp_row["days"] if d["status_raw"])
+            res["failed"] += sum(1 for d in emp_row["days"] if d["status_raw"])
             continue
-        matched_employees += 1
+        res["matched_employees"] += 1
         pcode = (emp.get("current_project_code") or "").strip()
         base = {
             "employee_id": emp["id"], "employee_name": emp.get("name"),
             "emp_code": emp.get("emp_code") or emp.get("employee_id"),
+            "employee_code": emp.get("emp_code") or emp.get("employee_id"),
             "department": (emp.get("departments") or [None])[0] or emp.get("department") or "",
             "designation": emp.get("designation") or "",
             "project_code": pcode or None,
             "project_name": emp.get("current_project_name") or proj_names.get(pcode),
-            "source": "google_sheet", "source_sheet_id": cfg["sheet_id"],
+            "source": "google_sheet", "source_sheet_id": sheet["sheet_id"],
+            "source_sheet_label": sheet.get("label"),
         }
         for d in emp_row["days"]:
             raw = (d["status_raw"] or "").strip()
             ot = _num(d["ot_raw"])
             if not raw and ot <= 0:
                 continue
-            token = raw.upper().replace(" ", "")
-            mapped = STATUS_MAP.get(token)
+            mapped = STATUS_MAP.get(raw.upper().replace(" ", ""))
             if raw and not mapped:
-                failed += 1
+                res["failed"] += 1
                 if len(errors) < 200:
                     errors.append({"emp_code": emp_row["emp_code"], "employee_name": emp.get("name"),
                                    "date": d["date"],
@@ -264,49 +334,99 @@ async def _run_sync(*, actor: str, trigger: str, dry_run: bool = False) -> Dict[
                              or existing.get("status_locked")
                              or existing.get("approval_status") == "approved"
                              or existing.get("payroll_locked")):
-                skipped_locked += 1
+                res["skipped_locked"] += 1
                 continue
             doc = {**base, "date": d["date"], "status": status,
                    "leave_type": leave_type, "overtime_hours": ot,
                    "synced_at": now_iso(), "synced_by": actor, "sync_trigger": trigger}
             if existing:
-                same = (existing.get("status") == status
+                if (existing.get("status") == status
                         and _num(existing.get("overtime_hours")) == ot
-                        and (existing.get("project_code") or None) == base["project_code"])
-                if same:
-                    unchanged += 1
+                        and (existing.get("project_code") or None) == base["project_code"]):
+                    res["unchanged"] += 1
                     continue
                 if not dry_run:
                     await db.attendance.update_one({"id": existing["id"]}, {"$set": doc})
-                updated += 1
+                res["updated"] += 1
             else:
                 if not dry_run:
                     await db.attendance.insert_one({"id": new_id(), **doc,
                                                     "created_at": now_iso(), "created_by": actor})
-                imported += 1
+                res["imported"] += 1
 
     for code, name in list(unmatched.items())[:200]:
         errors.append({"emp_code": code, "employee_name": name, "date": "",
                        "error": "E-Code not found in ERP Employee Master (add the employee or fix the Legacy Emp Code)"})
+    res["unmatched_employees"] = len(unmatched)
+    res["errors"] = errors[:300]
+    res["status"] = "success" if not res["failed"] else "partial"
+    res["finished_at"] = now_iso()
+
+    if not dry_run:
+        await db.gsheet_attendance_sheets.update_one({"id": sheet["id"]}, {"$set": {
+            "last_sync_at": res["finished_at"], "last_sync_status": res["status"],
+            "last_sync_trigger": trigger, "last_sync_by": actor,
+            "last_sync_month": res.get("month"),
+            "last_sync_counts": {k: res[k] for k in
+                                 ("imported", "updated", "unchanged", "skipped_locked", "failed")},
+            "last_error": (res["errors"][0]["error"] if res["status"] == "failed" and res["errors"] else None)}})
+    return res
+
+
+async def _run_sync(*, actor: str, trigger: str, dry_run: bool = False,
+                    sheet_ids: Optional[List[str]] = None) -> Dict[str, Any]:
+    await _migrate_single_sheet()
+    cfg = await db.gsheet_attendance_config.find_one({"id": CONFIG_ID}, {"_id": 0}) or {}
+    q: Dict[str, Any] = {} if sheet_ids else {"enabled": {"$ne": False}}
+    if sheet_ids:
+        q["id"] = {"$in": sheet_ids}
+    sheets = await db.gsheet_attendance_sheets.find(q, {"_id": 0}).sort("created_at", 1).to_list(MAX_SHEETS + 10)
+    if not sheets:
+        raise HTTPException(400, "Connect at least one Google attendance sheet first")
+    if not cfg.get("enabled", True) and trigger != "manual":
+        return {"skipped": "connection disabled"}
+
+    started = now_iso()
+    emps = await db.employees.find(
+        {}, {"_id": 0, "id": 1, "name": 1, "emp_code": 1, "employee_id": 1,
+             "current_project_code": 1, "current_project_name": 1, "departments": 1,
+             "department": 1, "designation": 1}).to_list(20000)
+    by_code: Dict[str, dict] = {}
+    for e in emps:
+        for key in (e.get("emp_code"), e.get("employee_id")):
+            if key:
+                by_code.setdefault(str(key).strip().upper(), e)
+    proj_names = {p["code"]: p.get("name") async for p in
+                  db.projects.find({}, {"_id": 0, "code": 1, "name": 1})}
+
+    results = await asyncio.gather(*[
+        _sync_one(s, actor=actor, trigger=trigger, dry_run=dry_run,
+                  by_code=by_code, proj_names=proj_names) for s in sheets])
+    results = list(results)
+
+    tot = {k: sum(int(r.get(k) or 0) for r in results) for k in
+           ("imported", "updated", "unchanged", "skipped_locked", "failed",
+            "sheet_employees", "matched_employees", "unmatched_employees")}
+    months = sorted({r.get("month") for r in results if r.get("month")})
+    failed_sheets = [r["label"] for r in results if r.get("status") == "failed"]
+    status = ("failed" if failed_sheets and len(failed_sheets) == len(results)
+              else "partial" if (failed_sheets or tot["failed"]) else "success")
 
     run = {
         "id": new_id(), "started_at": started, "finished_at": now_iso(),
         "trigger": trigger, "dry_run": dry_run, "by": actor,
-        "sheet_id": cfg["sheet_id"], "gid": cfg.get("gid"), "sheet_url": cfg.get("sheet_url"),
-        "month": parsed["month"], "date_from": parsed["date_from"], "date_to": parsed["date_to"],
-        "sheet_employees": len(parsed["employees"]), "matched_employees": matched_employees,
-        "unmatched_employees": len(unmatched),
-        "imported": imported, "updated": updated, "unchanged": unchanged,
-        "skipped_locked": skipped_locked, "failed": failed,
-        "errors": errors[:300], "status": "success" if not failed else "partial",
+        "sheets_synced": len(results), "sheets_failed": len(failed_sheets),
+        "month": ", ".join(months), "status": status, **tot,
+        "sheets": results,
+        "errors": [{**e, "sheet": r.get("label")} for r in results for e in (r.get("errors") or [])][:400],
     }
     await db.gsheet_attendance_runs.insert_one(dict(run))
     if not dry_run:
         await db.gsheet_attendance_config.update_one({"id": CONFIG_ID}, {"$set": {
             "last_sync_at": run["finished_at"], "last_sync_by": actor,
-            "last_sync_trigger": trigger, "last_sync_status": run["status"],
-            "last_sync_counts": {k: run[k] for k in
-                                 ("imported", "updated", "unchanged", "skipped_locked", "failed")}}})
+            "last_sync_trigger": trigger, "last_sync_status": status,
+            "last_sync_counts": {k: tot[k] for k in
+                                 ("imported", "updated", "unchanged", "skipped_locked", "failed")}}}, upsert=True)
     run.pop("_id", None)
     return run
 
@@ -315,10 +435,12 @@ async def _run_sync(*, actor: str, trigger: str, dry_run: bool = False) -> Dict[
 async def manual_sync(p: SyncIn, request: Request,
                       user: dict = Depends(require_permission("attendance", "write"))):
     actor = user.get("name") or user.get("email")
-    run = await _run_sync(actor=actor, trigger="manual", dry_run=p.dry_run)
+    run = await _run_sync(actor=actor, trigger="manual", dry_run=p.dry_run,
+                          sheet_ids=p.sheet_ids or None)
     await audit(user=user, action="gsheet_attendance_sync", resource="attendance",
                 record_id=run.get("id"),
-                after={k: run.get(k) for k in ("month", "imported", "updated", "failed", "dry_run")},
+                after={k: run.get(k) for k in ("month", "sheets_synced", "imported", "updated",
+                                               "failed", "dry_run")},
                 ip=request.headers.get("x-forwarded-for", "unknown"))
     return run
 
@@ -330,12 +452,15 @@ async def list_runs(limit: int = 20,
 
 
 @router.get("/preview")
-async def preview_sheet(user: dict = Depends(require_permission("attendance", "read"))):
-    """Show what the connector can see — used to validate the sheet before syncing."""
-    cfg = await db.gsheet_attendance_config.find_one({"id": CONFIG_ID}, {"_id": 0})
-    if not cfg:
-        raise HTTPException(400, "Connect the Google attendance sheet first")
-    parsed = _parse_sheet(await _fetch_csv(cfg["sheet_id"], cfg.get("gid") or "0"))
+async def preview_sheet(sheet_row_id: str = "",
+                        user: dict = Depends(require_permission("attendance", "read"))):
+    """Show what the connector can see — used to validate a sheet before syncing."""
+    await _migrate_single_sheet()
+    q = {"id": sheet_row_id} if sheet_row_id else {"enabled": {"$ne": False}}
+    sheet = await db.gsheet_attendance_sheets.find_one(q, {"_id": 0}, sort=[("created_at", 1)])
+    if not sheet:
+        raise HTTPException(400, "Connect a Google attendance sheet first")
+    parsed = _parse_sheet(await _fetch_csv(sheet["sheet_id"], sheet.get("gid") or "0"))
     emps = await db.employees.find({}, {"_id": 0, "emp_code": 1, "employee_id": 1}).to_list(20000)
     known = {str(e.get(k)).strip().upper() for e in emps for k in ("emp_code", "employee_id") if e.get(k)}
     sample = []
@@ -346,7 +471,8 @@ async def preview_sheet(user: dict = Depends(require_permission("attendance", "r
                        "days_with_status": len(days),
                        "total_ot": round(sum(_num(d["ot_raw"]) for d in e["days"]), 2),
                        "first_days": days[:5]})
-    return {"month": parsed["month"], "date_from": parsed["date_from"], "date_to": parsed["date_to"],
+    return {"sheet_row_id": sheet["id"], "label": sheet.get("label"),
+            "month": parsed["month"], "date_from": parsed["date_from"], "date_to": parsed["date_to"],
             "date_count": parsed["date_count"], "employees_in_sheet": len(parsed["employees"]),
             "matched": sum(1 for e in parsed["employees"] if e["emp_code"].upper() in known),
             "sample": sample}
@@ -365,7 +491,7 @@ async def scheduled_gsheet_attendance_sync() -> None:
             return
         run = await _run_sync(actor="System (scheduled)", trigger="scheduled")
         logger.info("gsheet attendance auto-sync: %s", {k: run.get(k) for k in
-                                                        ("imported", "updated", "failed")})
+                                                        ("sheets_synced", "imported", "updated", "failed")})
     except Exception as exc:  # noqa: BLE001
         logger.warning("gsheet attendance auto-sync failed: %s", exc)
         await db.gsheet_attendance_runs.insert_one({

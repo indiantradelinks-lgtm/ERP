@@ -213,11 +213,14 @@ async def projects_collection_filter(user: dict) -> dict | None:
             return {"_no_match_sentinel_": True}
         return {"$or": [{"code": {"$in": active}}, {"name": {"$in": active}}]}
     if role in PM_SCOPED_ROLES or is_pm_scoped(user):
-        return pm_scope_clause(user) or {"$or": [
+        clause = pm_scope_clause(user) or {"$or": [
             {"project_manager_id": uid},
             {"project_coordinator_id": uid},
             {"reporting_manager_id": uid},
         ]}
+        # Head Office – Delhi is an internal cost center every PM / Coordinator
+        # may book against (same roles as the HO expense flow).
+        return {"$or": [clause, {"is_head_office": True}]}
     return None
 
 

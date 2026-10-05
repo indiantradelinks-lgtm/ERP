@@ -285,7 +285,7 @@ function FormDialog({ form, setForm, onClose, onSave }) {
             <Field label="Bill date" type="date" value={form.bill_date} onChange={(v) => setForm({ ...form, bill_date: v })} testid="ra-form-date" />
             <ClientSelect label="Client name" value={form.client_name}
               onChange={(v, row) => setForm({ ...form, client_name: v, client_id: row?.id || "" })} testid="ra-form-client" />
-            <ProjectSelect label="Project code" value={form.project_code}
+            <ProjectSelect label="Project code" excludeHeadOffice value={form.project_code}
               onChange={onProjectPicked} testid="ra-form-project" hint={autoFilling ? "Auto-filling…" : "Selecting a project auto-fills client, site, customer PO & offer line items"} />
             <POSelect label="Customer PO number" value={form.po_number} projectCode={form.project_code}
               onChange={(v, row) => setForm({ ...form, po_number: v, po_id: row?.id || "" })} testid="ra-form-po" />

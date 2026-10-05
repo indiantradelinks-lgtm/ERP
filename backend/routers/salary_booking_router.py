@@ -40,6 +40,7 @@ from pydantic import BaseModel, Field
 
 from core import db, require_permission, now_iso, new_id
 from pagination import maybe_paged
+from hr_worker_rules import is_worker_master, paid_weights
 
 logger = logging.getLogger("erp.salary_booking")
 router = APIRouter(prefix="/payroll/bulk-booking", tags=["salary-booking"])
@@ -134,7 +135,8 @@ def _seq_no(month: str, n: int) -> str:
 PAID_WEIGHTS = {"present": 1, "on_duty": 1, "leave": 1, "weekly_off": 1, "holiday": 1, "half_day": 0.5}
 
 
-async def _att_stats(employee_id: str, month: str, total_days: int) -> Dict[str, float]:
+async def _att_stats(employee_id: str, month: str, total_days: int,
+                     week_off_paid: bool = True) -> Dict[str, float]:
     rows = await db.attendance.find(
         {"employee_id": employee_id, "date": {"$regex": f"^{month}-"}},
         {"_id": 0, "status": 1, "overtime_hours": 1, "leave_type": 1},
@@ -142,7 +144,8 @@ async def _att_stats(employee_id: str, month: str, total_days: int) -> Dict[str,
     if not rows:
         return {"pay_days": float(total_days), "present_days": float(total_days),
                 "ot_hours": 0.0, "el": 0.0, "cl": 0.0, "linked": False}
-    pay = sum(PAID_WEIGHTS.get(r.get("status") or "", 0) for r in rows)
+    pay = sum(PAID_WEIGHTS.get(r.get("status") or "", 0) for r in rows) if week_off_paid else \
+        sum(paid_weights(False).get(r.get("status") or "", 0) for r in rows)
     present = sum(1 if (r.get("status") in {"present", "on_duty"}) else (0.5 if r.get("status") == "half_day" else 0)
                   for r in rows)
     ot = round(sum(_num(r.get("overtime_hours")) for r in rows), 2)
@@ -190,7 +193,8 @@ async def _project_maps() -> tuple[Dict[str, str], Dict[str, str]]:
 async def _system_row(emp: dict, month: str, total_days: int,
                       master: dict, proj_by_code: Dict[str, str]) -> Dict[str, Any]:
     """System-calculated salary row for one employee (pre-fill + variance base)."""
-    att = await _att_stats(emp["id"], month, total_days)
+    att = await _att_stats(emp["id"], month, total_days,
+                           week_off_paid=not await is_worker_master(emp))
     pay_days = att["pay_days"]
     factor = max(0.0, min(1.0, pay_days / total_days)) if total_days else 0.0
 
