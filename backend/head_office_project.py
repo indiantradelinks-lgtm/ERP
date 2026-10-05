@@ -22,6 +22,11 @@ async def ensure_head_office_project() -> bool:
     Existing records are only re-stamped with the identity flags — any field an
     admin edits in the Projects master (name, site, status…) is left alone.
     """
+    try:
+        await db.projects.create_index("code", unique=True, name="uniq_ho_code",
+                                       partialFilterExpression={"is_head_office": True})
+    except Exception:
+        pass
     existing = await db.projects.find_one({"code": HO_CODE}, {"_id": 0, "id": 1})
     if existing:
         await db.projects.update_one({"id": existing["id"]},

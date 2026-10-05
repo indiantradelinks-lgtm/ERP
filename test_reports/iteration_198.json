@@ -1,0 +1,39 @@
+{
+  "summary": "Iter198 — Head Office as REAL internal project master + scope/PR regressions. Backend pytest 15 passed / 1 skipped / 1 xfail (/app/backend/tests/test_iter198_head_office_project.py) and iter197 regression 6/6 PASS. Verified: (1) HEAD-OFFICE project exists exactly once in GET /api/projects with is_head_office=true, billing_type=non_billable; (2) Material request POST /api/project-requests with project_id='ho-delhi' + HO cost center succeeds for BOTH super_admin and test_pm@erp.com → server stores project_id=null, project_code='HEAD-OFFICE', project_name='Head Office – Delhi', is_head_office=true, office_location='Delhi Head Office' and the HO cost-center label (confirms iter198's PM allowed_project_ids fix for comment #4); (3) Normal project material request still works (project_id/project_code preserved, is_head_office=false); (4) head_office_expense POSTED against a project is 400-rejected; HO expense with HO CC succeeds; (5) PM scope regression — /api/project-requests, /api/allocations, /api/procurement/master/cost-centers, /api/dprs lists do NOT leak other projects' rows for test_pm (own-request rows are permitted by design via the `created_by_id==user.id` OR branch at list_requests ~L333); (6) store_incharge store@erp.com does NOT see HEAD-OFFICE in /api/projects (scope unchanged); (7) Idempotency: admin edit to HO project `site` persists after two consecutive ensure_head_office_project() calls, and only one HEAD-OFFICE row exists (confirms iter198 fix for comment #3 — seed no longer stomps admin edits). Frontend verified on preview URL as super_admin: PR Center `/app/ops/requests` new Material dialog → project dropdown shows exactly ONE 'HEAD-OFFICE · Head Office – Delhi' entry at the top (no duplicate), and RA Bills `/app/ra-bills` → New RA Bill → Project Code <select> has 28 project options with HEAD-OFFICE correctly EXCLUDED. Noted gap documented as XFAIL: backend does NOT reject HO cost center on a non-HO *material* request (CC guard at project_requests_router.py L482 short-circuits when cc.project_id is None); this isn't a regression — HO-CC rejection has historically only been enforced for head_office_expense/self_expense types.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/project-requests (request_type=material, project.id!=None, cost_center_id=HO)", "issue": "Backend currently accepts a Head-Office cost center on a non-HO material request. The sanity check `cc.get('project_id') and cc['project_id'] != project['id']` short-circuits when the HO CC has project_id=None. Documented via XFAIL. Not a regression but a long-standing gap worth tightening — reject when cc.get('head_office') is True (or cc.project_id is None) and the target project is not HEAD-OFFICE."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter198_head_office_project.py",
+    "/app/backend/tests/test_iter197_worker_rule_and_ho.py",
+    "/app/test_reports/pytest/iter198.xml"
+  ],
+  "action_items": [
+    "(Minor) Tighten CC guard in project_requests_router.create_request() to reject HO cost centers on material requests booked against a real (non-HO) project. Current guard only checks mismatched project_id; it misses HO CCs (project_id=None).",
+    "(Code review carry-over from iter197) Add unique partial index on projects.code where is_head_office:true to defend against race on first boot (comment #5)."
+  ],
+  "critical_code_review_comments": [
+    "project_requests_router.create_request(): cost-center guard at L480-483 only checks `cc.project_id != project.id` and short-circuits when `cc.project_id` is falsy; a Head-Office cost center (project_id=None) therefore sails through on a non-HO material request. Add `if cc and cc.get('head_office') and project.get('id'): raise 400 'HO cost center not allowed on a project material request'`.",
+    "scope.allowed_project_ids() PM/Coordinator branch now unconditionally appends head_office_project_id() — correct for the Project Requests flow but means every PM-scoped list endpoint using allowed_project_ids will include ho-delhi; verify downstream collections (expenses, PR vouchers, GRNs) all have an `is_head_office` convention or handle null project_id gracefully.",
+    "head_office_project.ensure_head_office_project(): now only $sets `is_head_office` and `internal` on existing rows — admin edits to name/site/status/billing_type survive. Good. Still re-stamps `internal:true` which is probably immutable; consider dropping the $set-on-existing entirely in favour of an $setOnInsert-only flow if the identity flags are already present.",
+    "project_requests_router.list_requests ~L333 ORs in `{**base, created_by_id: user.id}` so users always see their own requests. Combined with iter198's PM scope expansion this means a PM can continue to see any legacy request they personally raised against projects they are NOT currently assigned to — intended behaviour, but worth documenting in the role matrix."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter198_head_office_project.py (new)"
+  ],
+  "success_rate": {"backend": "100% (iter198: 15 passed / 1 skipped / 1 xfail-documented-gap; iter197: 6/6)", "frontend": "100% (PR Center HO dedupe + RA Bills HO exclusion both verified live)"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin), test_pm@erp.com / PM@12345 (project_manager), store@erp.com / Store@1234 (store_incharge)",
+  "seed_data_creation": "Each test POSTs TEST_iter198-* material requests then DELETEs them in the `test_cleanup` method of its class. Idempotency test mutates HO project `site` field in DB directly then reverts to the original value. No lingering fixtures.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend test file for iter198 is idempotent and re-runnable. The one skipped test is for /api/purchase-requisitions — endpoint may be mounted at a different path in this build; the sister endpoints /api/allocations, /api/procurement/master/cost-centers, /api/dprs are covered. The xfail'd test (test_ho_cc_rejected_on_project) documents a long-standing CC guard gap — not blocking for iter198 success but noted under action_items. HO project id is 'ho-delhi'; code is 'HEAD-OFFICE'; name is 'Head Office – Delhi' (en-dash). PM own-request visibility is by design (list_requests ~L333).",
+  "rca of the issue": "N/A — iter198 regression validated. Iter197 fixes carried: (a) scope.allowed_project_ids() PM branch now appends HO project id (verified by PM-POST success in TestMaterialAgainstHO.test_pm_can_create — before fix PM got 403), (b) project_requests_router treats project.is_head_office=true as HO booking (verified via assertions on project_id/project_code/is_head_office/office_location in the response doc), (c) head_office_project.ensure() no longer stomps admin edits (verified via TestHOIdempotency.test_admin_edit_survives_restart by direct DB mutation + double ensure call)."
+}

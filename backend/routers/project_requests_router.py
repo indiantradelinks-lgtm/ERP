@@ -481,6 +481,9 @@ async def create_request(p: RequestIn, request: Request,
                                             {"_id": 0, "id": 1, "category_code": 1, "category_name": 1, "project_id": 1})
         if cc and cc.get("project_id") and cc["project_id"] != project["id"]:
             raise HTTPException(400, "Selected cost center belongs to a different project")
+        if cc and not cc.get("project_id") and project.get("id"):
+            raise HTTPException(400, "This request is for a project — select that project's cost center, "
+                                     "not a Head Office cost center")
     mcat = None
     if p.material_category_id:
         mcat = await db.inv_categories.find_one({"id": p.material_category_id}, {"_id": 0, "id": 1, "code": 1, "name": 1})
