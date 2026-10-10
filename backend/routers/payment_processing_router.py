@@ -43,6 +43,66 @@ def _approval_stamp(r: dict) -> tuple[Optional[str], Optional[str]]:
     return at, by
 
 
+def _vendor_bank(v: Optional[dict]) -> Optional[dict]:
+    """Default bank account of a Vendor Master record."""
+    if not v:
+        return None
+    accts = [a for a in (v.get("bank_accounts") or []) if (a.get("account_no") or "").strip()]
+    if not accts:
+        return None
+    acct = next((a for a in accts if a.get("is_default")), accts[0])
+    return {"account_no": str(acct.get("account_no") or "").strip(),
+            "ifsc": (acct.get("ifsc") or "").upper(),
+            "bank_name": acct.get("bank_name") or "",
+            "branch": acct.get("branch") or "",
+            "account_type": acct.get("account_type") or "",
+            "beneficiary_name": acct.get("beneficiary_name") or v.get("name") or ""}
+
+
+async def _vendor_master_map(reqs: List[dict], vbmap: dict, simap: dict) -> Dict[str, dict]:
+    """Resolve the Vendor Master record for every payment row.
+
+    Keyed by request id. Vendor bills / service invoices carry a vendor_id; plain
+    department payment requests only carry the vendor name, matched case-insensitively.
+    """
+    ids, names = set(), set()
+    for r in reqs:
+        src = vbmap.get(r.get("source_id")) or simap.get(r.get("source_id")) or {}
+        vid = r.get("vendor_id") or src.get("vendor_id")
+        if vid:
+            ids.add(vid)
+        else:
+            nm = (r.get("vendor") or r.get("vendor_name") or src.get("vendor_name") or "").strip()
+            if nm:
+                names.add(nm)
+    if not ids and not names:
+        return {}
+    proj = {"_id": 0, "id": 1, "name": 1, "code": 1, "email": 1, "gst": 1, "pan": 1,
+            "phone": 1, "bank_accounts": 1}
+    or_q: List[dict] = []
+    if ids:
+        or_q.append({"id": {"$in": list(ids)}})
+    if names:
+        or_q.append({"name": {"$in": [re.compile(f"^{re.escape(n)}$", re.I) for n in names]}})
+    rows = await db.vendors.find({"$or": or_q}, proj).to_list(2000)
+    by_id = {v["id"]: v for v in rows}
+    by_name = {}
+    for v in rows:
+        by_name.setdefault((v.get("name") or "").strip().lower(), v)
+    out: Dict[str, dict] = {}
+    for r in reqs:
+        src = vbmap.get(r.get("source_id")) or simap.get(r.get("source_id")) or {}
+        vid = r.get("vendor_id") or src.get("vendor_id")
+        nm = (r.get("vendor") or r.get("vendor_name") or src.get("vendor_name") or "").strip()
+        v = by_id.get(vid) or by_name.get(nm.lower())
+        if not v:
+            continue
+        out[r["id"]] = {"id": v["id"], "name": v.get("name"), "code": v.get("code"),
+                        "email": v.get("email") or "", "gstin": v.get("gst") or src.get("vendor_gstin") or "",
+                        "pan": v.get("pan") or "", "bank": _vendor_bank(v)}
+    return out
+
+
 @router.get("")
 async def payment_queue(stage: str = "", project_code: str = "",
                         user: dict = Depends(require_permission("accounting", "read"))):
@@ -94,11 +154,14 @@ async def payment_queue(stage: str = "", project_code: str = "",
     vbmap = {b["id"]: b async for b in db.vendor_bills.find(
         {"id": {"$in": vb_ids}},
         {"_id": 0, "id": 1, "approved_at": 1, "approved_by": 1, "approved_l1_at": 1,
-         "approved_l1_by": 1, "verified_at": 1})} if vb_ids else {}
+         "approved_l1_by": 1, "verified_at": 1, "vendor_id": 1, "vendor_name": 1,
+         "vendor_gstin": 1, "invoice_no": 1, "invoice_date": 1})} if vb_ids else {}
     si_ids = list({r.get("source_id") for r in reqs
                    if r.get("source") == "service_invoice" and r.get("source_id")})
     simap = {i["id"]: i async for i in db.svc_invoices.find(
-        {"id": {"$in": si_ids}}, {"_id": 0, "id": 1, "invoice_approval": 1})} if si_ids else {}
+        {"id": {"$in": si_ids}}, {"_id": 0, "id": 1, "invoice_approval": 1, "vendor_id": 1,
+                                  "vendor_name": 1, "vendor_invoice_no": 1})} if si_ids else {}
+    vendor_map = await _vendor_master_map(reqs, vbmap, simap)
     out = []
     for r in reqs:
         v = ver.get(r["id"])
@@ -133,6 +196,7 @@ async def payment_queue(stage: str = "", project_code: str = "",
                     "project_manager": r.get("project_manager") or proj.get("project_manager_name")
                                        or proj.get("manager") or (adv or {}).get("project_manager"),
                     "employee_bank": _employee_bank(emp),
+                    "vendor_master": vendor_map.get(r["id"]),
                     "employee_record_id": (emp or {}).get("id")})
     return out
 
@@ -214,6 +278,150 @@ async def save_bank_details(rid: str, p: BankDetailsIn, request: Request,
                        "via": f"payment_verification:{row.get('request_no')}"},
                 ip=_ip(request))
     return {"ok": True, "employee_id": emp["id"], "emp_code": emp.get("emp_code"), **upd}
+
+
+@router.post("/{rid}/save-vendor-bank-details")
+async def save_vendor_bank_details(rid: str, p: BankDetailsIn, request: Request,
+                                   user: dict = Depends(require_permission("accounting", "write"))):
+    """Save bank details entered during verification back to the Vendor Master
+    so the next payment for the same vendor is auto-filled."""
+    row = await db.project_requests.find_one({"id": rid}, {"_id": 0})
+    if not row:
+        raise HTTPException(404, "Payment queue row not found")
+    src = {}
+    if row.get("source_id"):
+        src = await db.vendor_bills.find_one({"id": row["source_id"]}, {"_id": 0, "vendor_id": 1, "vendor_name": 1}) \
+            or await db.svc_invoices.find_one({"id": row["source_id"]}, {"_id": 0, "vendor_id": 1, "vendor_name": 1}) or {}
+    vid = row.get("vendor_id") or src.get("vendor_id")
+    name = (row.get("vendor") or row.get("vendor_name") or src.get("vendor_name") or "").strip()
+    vendor = None
+    if vid:
+        vendor = await db.vendors.find_one({"id": vid}, {"_id": 0, "id": 1, "name": 1, "bank_accounts": 1})
+    if not vendor and name:
+        vendor = await db.vendors.find_one({"name": re.compile(f"^{re.escape(name)}$", re.I)},
+                                           {"_id": 0, "id": 1, "name": 1, "bank_accounts": 1})
+    if not vendor:
+        raise HTTPException(400, "This payment is not linked to a Vendor Master record")
+    acct = (p.account_no or "").strip().replace(" ", "")
+    ifsc = (p.ifsc or "").strip().upper()
+    if not re.fullmatch(r"[A-Za-z0-9]{6,20}", acct):
+        raise HTTPException(400, "Account number must be 6–20 letters/digits")
+    if not re.fullmatch(r"[A-Z]{4}0[A-Z0-9]{6}", ifsc):
+        raise HTTPException(400, "IFSC must be 11 characters, e.g. HDFC0001234")
+    accounts = [a for a in (vendor.get("bank_accounts") or []) if (a.get("account_no") or "").strip()]
+    entry = {"bank_name": (p.bank_name or "").strip(), "branch": (p.branch or "").strip(),
+             "account_no": acct, "ifsc": ifsc, "account_type": "Current", "is_default": True,
+             "beneficiary_name": (p.beneficiary_name or "").strip() or vendor.get("name"),
+             "updated_by": user.get("name") or user.get("email"), "updated_at": now_iso()}
+    rest = [{**a, "is_default": False} for a in accounts
+            if str(a.get("account_no") or "").strip().replace(" ", "") != acct]
+    await db.vendors.update_one({"id": vendor["id"]},
+                                {"$set": {"bank_accounts": [entry] + rest, "updated_at": now_iso()}})
+    await audit(user=user, action="vendor_bank_update", resource="vendors", record_id=vendor["id"],
+                after={"vendor": vendor.get("name"), "account_no": acct, "ifsc": ifsc,
+                       "via": f"payment_verification:{row.get('request_no')}"},
+                ip=_ip(request))
+    return {"ok": True, "vendor_id": vendor["id"], "vendor_name": vendor.get("name"), "bank": entry}
+
+
+# ─── Payment Verification Report (date-wise, for management review) ─────────
+def _report_window(date: str, date_from: str, date_to: str) -> tuple[str, str, str]:
+    from datetime import date as _d
+    if date_from or date_to:
+        a = date_from or date_to
+        b = date_to or date_from
+        label = f"Payment date — {_fmt_dmy(a)}" if a == b else f"Payment dates — {_fmt_dmy(a)} to {_fmt_dmy(b)}"
+        return a, b, label
+    d = date or _d.today().isoformat()
+    return d, d, f"Payment date — {_fmt_dmy(d)}"
+
+
+def _fmt_dmy(iso: str) -> str:
+    try:
+        return f"{iso[8:10]}-{iso[5:7]}-{iso[0:4]}"
+    except Exception:
+        return iso
+
+
+async def _verification_report_rows(date: str, date_from: str, date_to: str, user: dict):
+    a, b, label = _report_window(date, date_from, date_to)
+    vers = await db.payment_verifications.find(
+        {"decision": "verified", "verified_at": {"$gte": a, "$lte": b + "T23:59:59.999999"}},
+        {"_id": 0}).sort("verified_at", 1).to_list(5000)
+    rids = [v["request_id"] for v in vers]
+    reqs = {r["id"]: r async for r in db.project_requests.find({"id": {"$in": rids}}, {"_id": 0})}
+    rows = []
+    for i, v in enumerate(vers, start=1):
+        r = reqs.get(v["request_id"]) or {}
+        bank = " · ".join(x for x in [v.get("vendor_account_no"), (v.get("ifsc") or "").upper()] if x)
+        if v.get("bank_name"):
+            bank = f"{bank}\n{v['bank_name']}" if bank else v["bank_name"]
+        purpose = " · ".join(x for x in [
+            (r.get("request_type_label") or (r.get("request_type") or "").replace("_", " ").title()),
+            r.get("cost_center_label")] if x)
+        rows.append({
+            "s_no": i,
+            "request_id": v["request_id"],
+            "request_no": v.get("request_no") or r.get("request_no") or "",
+            "beneficiary_name": v.get("vendor_name") or r.get("vendor") or r.get("employee_name") or "",
+            "bank_details": bank,
+            "purpose": purpose or "Payment",
+            "description": r.get("description") or "",
+            "project": " · ".join(x for x in [r.get("project_code"), r.get("project_name")] if x),
+            "invoice_no": v.get("invoice_no") or "",
+            "verified_amount": float(v.get("verified_amount") or 0),
+            "tds_amount": float(v.get("tds_amount") or 0),
+            "net_amount": float(v.get("net_payable") if v.get("net_payable") is not None
+                                else v.get("verified_amount") or 0),
+            "verified_on": _fmt_dmy(str(v.get("verified_at") or "")[:10]),
+            "verified_at": v.get("verified_at"),
+            "verified_by": v.get("verified_by") or "",
+            "stage": (v.get("stage") or "").replace("_", " "),
+            "utr_no": v.get("utr_no") or "",
+            "remarks": v.get("report_remarks") or v.get("remarks") or "",
+        })
+    return rows, label
+
+
+@router.get("/verification-report")
+async def verification_report(date: str = "", date_from: str = "", date_to: str = "",
+                              user: dict = Depends(require_permission("accounting", "read"))):
+    rows, label = await _verification_report_rows(date, date_from, date_to, user)
+    return {"label": label, "rows": rows,
+            "totals": {k: round(sum(r[k] for r in rows), 2)
+                       for k in ("verified_amount", "tds_amount", "net_amount")}}
+
+
+class ReportRemarkIn(BaseModel):
+    remarks: str = ""
+
+
+@router.patch("/{rid}/report-remarks")
+async def set_report_remarks(rid: str, p: ReportRemarkIn,
+                             user: dict = Depends(require_permission("accounting", "write"))):
+    res = await db.payment_verifications.update_one(
+        {"request_id": rid}, {"$set": {"report_remarks": (p.remarks or "").strip(),
+                                       "report_remarks_by": user.get("name") or user.get("email"),
+                                       "report_remarks_at": now_iso()}})
+    if not res.matched_count:
+        raise HTTPException(404, "Verification record not found")
+    return {"ok": True, "remarks": (p.remarks or "").strip()}
+
+
+@router.get("/verification-report/export/{fmt}")
+async def export_verification_report(fmt: str, date: str = "", date_from: str = "", date_to: str = "",
+                                     user: dict = Depends(require_permission("accounting", "read"))):
+    if fmt not in ("xlsx", "pdf"):
+        raise HTTPException(400, "fmt must be xlsx or pdf")
+    rows, label = await _verification_report_rows(date, date_from, date_to, user)
+    from payment_report import report_pdf, report_xlsx
+    title = "Payment Verification Report"
+    name = f"Payment-Verification-Report-{(date or date_from or '')[:10] or 'today'}"
+    if fmt == "xlsx":
+        return Response(content=report_xlsx(rows, title, label), media_type=XLSX_MIME,
+                        headers={"Content-Disposition": f'attachment; filename="{name}.xlsx"'})
+    return Response(content=report_pdf(rows, title, label), media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{name}.pdf"'})
 
 
 @router.get("/export/{fmt}")

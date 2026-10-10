@@ -28,19 +28,24 @@ const STAGE_BADGE = {
   paid: <Badge className="rounded-sm bg-emerald-100 text-emerald-900 border-emerald-300">Paid</Badge>,
 };
 
-const blankVerify = (row) => ({
-  decision: "verified",
-  vendor_name: row?.vendor || row?.employee_bank?.beneficiary_name || row?.employee_name || row?.upi_any_name || "",
-  vendor_account_no: row?.employee_bank?.account_no || "",
-  ifsc: (row?.employee_bank?.ifsc || "").toUpperCase(),
-  bank_name: row?.employee_bank?.bank_name || "",
-  vendor_email: "",
-  gst_applicable: false, gstin: "", gst_amount: 0,
-  invoice_type: "bill", invoice_no: row?.invoice_no || "", invoice_date: row?.invoice_date || "",
-  verified_amount: Number(row?.est_value || 0),
-  tds_applicable: false, tds_pct: 0, tds_amount: 0, advance_adjusted: 0,
-  expense_account_code: row?.pay_debit_account_code || "5150", remarks: "",
-});
+const blankVerify = (row) => {
+  const vb = row?.vendor_master?.bank;
+  const vm = row?.vendor_master;
+  return {
+    decision: "verified",
+    vendor_name: vb?.beneficiary_name || vm?.name || row?.vendor
+      || row?.employee_bank?.beneficiary_name || row?.employee_name || row?.upi_any_name || "",
+    vendor_account_no: vb?.account_no || row?.employee_bank?.account_no || "",
+    ifsc: (vb?.ifsc || row?.employee_bank?.ifsc || "").toUpperCase(),
+    bank_name: vb?.bank_name || row?.employee_bank?.bank_name || "",
+    vendor_email: vm?.email || "",
+    gst_applicable: !!vm?.gstin, gstin: vm?.gstin || "", gst_amount: 0,
+    invoice_type: "bill", invoice_no: row?.invoice_no || "", invoice_date: row?.invoice_date || "",
+    verified_amount: Number(row?.est_value || 0),
+    tds_applicable: false, tds_pct: 0, tds_amount: 0, advance_adjusted: 0,
+    expense_account_code: row?.pay_debit_account_code || "5150", remarks: "",
+  };
+};
 
 function Kpi({ label, value, sub, icon: Icon, testid }) {
   return (
@@ -79,7 +84,7 @@ function QueueTable({ rows, cols, renderActions, emptyText, testid }) {
       <Table>
         <TableHeader>
           <TableRow>
-            {cols.map((c) => <TableHead key={c} className="text-[11px] uppercase tracking-wider whitespace-nowrap">{c}</TableHead>)}
+            {cols.map((c, i) => <TableHead key={i} className="text-[11px] uppercase tracking-wider whitespace-nowrap">{c}</TableHead>)}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -103,6 +108,12 @@ export default function PaymentProcessingCenter() {
   const [verifyFor, setVerifyFor] = useState(null);
   const [vform, setVform] = useState(blankVerify(null));
   const [saveBank, setSaveBank] = useState(false);
+  const [saveVendorBank, setSaveVendorBank] = useState(false);
+  const [reportDate, setReportDate] = useState(new Date().toISOString().slice(0, 10));
+  const [reportTo, setReportTo] = useState("");
+  const [report, setReport] = useState({ label: "", rows: [], totals: {} });
+  const [reportLoading, setReportLoading] = useState(false);
+  const [tab, setTab] = useState("pending");
   const [attachFor, setAttachFor] = useState(null);
   const [selected, setSelected] = useState({});
   const [payFor, setPayFor] = useState(null);
@@ -155,8 +166,10 @@ export default function PaymentProcessingCenter() {
 
   const openVerify = (row) => {
     const v = row.verification;
-    setVform(v ? { ...blankVerify(row), ...v, decision: "verified" } : blankVerify(row));
+    const base = blankVerify(row);
+    setVform(v ? { ...base, ...Object.fromEntries(Object.entries(v).filter(([, val]) => val !== "" && val !== null && val !== undefined)), decision: "verified" } : base);
     setSaveBank(!!(row.employee_record_id || row.employee_id || row.employee_code) && !row.employee_bank);
+    setSaveVendorBank(!!row.vendor_master && !row.vendor_master.bank);
     setVerifyFor(row);
   };
 
@@ -185,6 +198,17 @@ export default function PaymentProcessingCenter() {
           account_no: vform.vendor_account_no, ifsc: vform.ifsc,
         });
         toast.success("Bank details saved to Employee Master");
+      }
+      if (decision === "verified" && saveVendorBank && verifyFor.vendor_master) {
+        try {
+          await api.post(`/accounts/payment-queue/${verifyFor.id}/save-vendor-bank-details`, {
+            beneficiary_name: vform.vendor_name, bank_name: vform.bank_name,
+            account_no: vform.vendor_account_no, ifsc: vform.ifsc,
+          });
+          toast.success(`Bank details saved to Vendor Master — ${verifyFor.vendor_master.name}`);
+        } catch (e) {
+          toast.error(e?.response?.data?.detail || "Could not save bank details to Vendor Master");
+        }
       }
       await api.post(`/accounts/payment-queue/${verifyFor.id}/verify`, {
         ...vform, decision,
@@ -250,6 +274,48 @@ export default function PaymentProcessingCenter() {
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Mark paid failed");
     } finally { setBusy(false); }
+  };
+
+  const selectedCount = Object.values(selected).filter(Boolean).length;
+  const allVerifiedSelected = byStage.verified.length > 0 && byStage.verified.every((r) => selected[r.id]);
+  const selectedTotal = byStage.verified.reduce((s, r) => selected[r.id]
+    ? s + Number(r.verification?.net_payable ?? r.verification?.verified_amount ?? 0) : s, 0);
+  const toggleSelectAll = (checked) => {
+    if (checked) {
+      const next = {};
+      byStage.verified.forEach((r) => { next[r.id] = true; });
+      setSelected(next);
+    } else setSelected({});
+  };
+
+  const loadReport = useCallback(async (d = reportDate, to = reportTo) => {
+    if (!d) return;
+    setReportLoading(true);
+    try {
+      const params = to && to !== d ? { date_from: d, date_to: to } : { date: d };
+      const r = await api.get("/accounts/payment-queue/verification-report", { params });
+      setReport(r.data || { label: "", rows: [], totals: {} });
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Failed to load payment report");
+    } finally { setReportLoading(false); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportDate, reportTo]);
+
+  const saveReportRemark = async (row, remarks) => {
+    setReport((p) => ({ ...p, rows: p.rows.map((x) => x.request_id === row.request_id ? { ...x, remarks } : x) }));
+    try {
+      await api.patch(`/accounts/payment-queue/${row.request_id}/report-remarks`, { remarks });
+    } catch (e) { toast.error("Could not save remark"); }
+  };
+
+  const downloadReport = async (fmt) => {
+    try {
+      const params = reportTo && reportTo !== reportDate
+        ? `date_from=${reportDate}&date_to=${reportTo}` : `date=${reportDate}`;
+      const res = await api.get(`/accounts/payment-queue/verification-report/export/${fmt}?${params}`,
+        { responseType: "blob" });
+      downloadBlob(res.data, `Payment-Verification-Report-${reportDate}.${fmt}`);
+    } catch { toast.error("Download failed"); }
   };
 
   const baseCells = (r) => (
@@ -350,12 +416,13 @@ export default function PaymentProcessingCenter() {
         </div>
       )}
 
-      <Tabs defaultValue="pending">
+      <Tabs value={tab} onValueChange={(v) => { setTab(v); if (v === "report" && report.rows.length === 0) loadReport(); }}>
         <TabsList className="rounded-sm">
           <TabsTrigger value="pending" className="rounded-sm text-xs" data-testid="ppc-tab-pending">Pending Verification ({byStage.pending.length})</TabsTrigger>
           <TabsTrigger value="verified" className="rounded-sm text-xs" data-testid="ppc-tab-verified">Verified / Bank File ({byStage.verified.length})</TabsTrigger>
           <TabsTrigger value="bank" className="rounded-sm text-xs" data-testid="ppc-tab-bank">Bank Files & Mark Paid ({byStage.bank.length})</TabsTrigger>
           <TabsTrigger value="paid" className="rounded-sm text-xs" data-testid="ppc-tab-paid">Paid History ({byStage.paid.length})</TabsTrigger>
+          <TabsTrigger value="report" className="rounded-sm text-xs" data-testid="ppc-tab-report">Today's Payment Report</TabsTrigger>
         </TabsList>
 
         <TabsContent value="pending" className="mt-3">
@@ -378,20 +445,34 @@ export default function PaymentProcessingCenter() {
         </TabsContent>
 
         <TabsContent value="verified" className="mt-3 space-y-3">
-          <div className="flex justify-end items-end gap-2 flex-wrap">
-            <div>
-              <Label className="text-[10px] uppercase tracking-wider">Debit A/c No (repeated on all rows)</Label>
-              <Input value={debitAcNo} onChange={(e) => setDebitAcNo(e.target.value)}
-                className="rounded-sm mt-1 h-9 w-52 font-mono" data-testid="ppc-debit-ac-no" />
+          <div className="flex justify-between items-end gap-2 flex-wrap">
+            <label className="flex items-center gap-2 text-xs cursor-pointer border rounded-sm bg-white px-3 h-9"
+              data-testid="ppc-select-all-label">
+              <Checkbox checked={allVerifiedSelected} onCheckedChange={toggleSelectAll} data-testid="ppc-select-all" />
+              Select All ({selectedCount}/{byStage.verified.length} selected)
+              {selectedCount > 0 && <span className="font-semibold ml-1" data-testid="ppc-selected-total">· {inr(selectedTotal)}</span>}
+            </label>
+            <div className="flex items-end gap-2 flex-wrap">
+              {selectedCount > 0 && (
+                <Button size="sm" variant="ghost" className="rounded-sm h-9 text-xs" onClick={() => setSelected({})}
+                  data-testid="ppc-clear-selection">Clear selection</Button>
+              )}
+              <div>
+                <Label className="text-[10px] uppercase tracking-wider">Debit A/c No (repeated on all rows)</Label>
+                <Input value={debitAcNo} onChange={(e) => setDebitAcNo(e.target.value)}
+                  className="rounded-sm mt-1 h-9 w-52 font-mono" data-testid="ppc-debit-ac-no" />
+              </div>
+              {canWrite && <Button size="sm" className="rounded-sm h-9" onClick={generateBankFile} disabled={busy}
+                data-testid="ppc-generate-bank-file">
+                <FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> Generate Bank File ({selectedCount})
+              </Button>}
             </div>
-            {canWrite && <Button size="sm" className="rounded-sm h-9" onClick={generateBankFile} disabled={busy}
-              data-testid="ppc-generate-bank-file">
-              <FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> Generate Bank File ({Object.values(selected).filter(Boolean).length})
-            </Button>}
           </div>
           <p className="text-[11px] text-slate-500 text-right">CMS bank-upload format · Pay Mod "N" (blank for ICICI beneficiaries) · Date auto-stamped</p>
           <QueueTable testid="ppc-verified-table" emptyText="No verified payments waiting for a bank file"
-            cols={["", "Request No", "Type", "Project", "Paid To", "Approved On", "Verified Amt", "TDS", "Advance Adj.", "Net Payable", "Verified At", "Docs"]}
+            cols={[<Checkbox key="sa" checked={allVerifiedSelected} onCheckedChange={toggleSelectAll}
+              data-testid="ppc-select-all-header" />,
+              "Request No", "Type", "Project", "Paid To", "Approved On", "Verified Amt", "TDS", "Advance Adj.", "Net Payable", "Verified At", "Docs"]}
             rows={byStage.verified}
             renderActions={(r) => {
               const v = r.verification || {};
@@ -491,6 +572,91 @@ export default function PaymentProcessingCenter() {
               );
             }} />
         </TabsContent>
+
+        <TabsContent value="report" className="mt-3 space-y-3">
+          <div className="border rounded-sm bg-white p-3 flex items-end gap-3 flex-wrap" data-testid="ppc-report-filters">
+            <div>
+              <Label className="text-[10px] uppercase tracking-wider">Payment / Verification Date</Label>
+              <Input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)}
+                className="rounded-sm mt-1 h-9 w-44" data-testid="ppc-report-date" />
+            </div>
+            <div>
+              <Label className="text-[10px] uppercase tracking-wider">To (optional — date range)</Label>
+              <Input type="date" value={reportTo} onChange={(e) => setReportTo(e.target.value)}
+                className="rounded-sm mt-1 h-9 w-44" data-testid="ppc-report-date-to" />
+            </div>
+            <Button size="sm" className="rounded-sm h-9" onClick={() => loadReport()} disabled={reportLoading}
+              data-testid="ppc-report-load">
+              <RefreshCw className={`h-3.5 w-3.5 mr-1 ${reportLoading ? "animate-spin" : ""}`} /> Show Report
+            </Button>
+            <Button size="sm" variant="outline" className="rounded-sm h-9" onClick={() => { setReportDate(new Date().toISOString().slice(0, 10)); setReportTo(""); loadReport(new Date().toISOString().slice(0, 10), ""); }}
+              data-testid="ppc-report-today">Today</Button>
+            <div className="ml-auto flex items-end gap-2">
+              <Button size="sm" variant="outline" className="rounded-sm h-9 text-xs" onClick={() => downloadReport("xlsx")}
+                data-testid="ppc-report-xlsx"><FileSpreadsheet className="h-3.5 w-3.5 mr-1" /> Excel</Button>
+              <Button size="sm" variant="outline" className="rounded-sm h-9 text-xs" onClick={() => downloadReport("pdf")}
+                data-testid="ppc-report-pdf"><Download className="h-3.5 w-3.5 mr-1" /> PDF</Button>
+            </div>
+          </div>
+
+          <div className="border rounded-sm bg-white">
+            <div className="px-3 py-2 border-b bg-slate-50 flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <div className="text-sm font-semibold" data-testid="ppc-report-title">Payment Verification Report</div>
+                <div className="text-[11px] text-slate-500" data-testid="ppc-report-label">
+                  {report.label || "Pick a date and press Show Report"} · {report.rows.length} payment(s)
+                </div>
+              </div>
+              <div className="text-xs text-right">
+                <div>Verified: <span className="font-semibold">{inr(report.totals?.verified_amount)}</span></div>
+                <div className="text-[11px] text-slate-500">TDS {inr(report.totals?.tds_amount)} · Net <span className="font-semibold" data-testid="ppc-report-net-total">{inr(report.totals?.net_amount)}</span></div>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {["S. No.", "Req No.", "Beneficiary Name", "Bank A/c · IFSC", "Payment Purpose", "Project",
+                      "Verified Amt", "TDS", "Net Amt", "Verification Date", "Verified By", "Remarks"].map((h, i) => (
+                        <TableHead key={i} className="text-[11px] uppercase tracking-wider whitespace-nowrap">{h}</TableHead>
+                      ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {report.rows.length === 0 && (
+                    <TableRow><TableCell colSpan={12} className="text-center text-sm text-slate-500 py-8">
+                      No payments verified for this date
+                    </TableCell></TableRow>
+                  )}
+                  {report.rows.map((r) => (
+                    <TableRow key={r.request_id} data-testid={`ppc-report-row-${r.request_no}`}>
+                      <TableCell className="text-xs">{r.s_no}</TableCell>
+                      <TableCell className="text-xs font-mono whitespace-nowrap">{r.request_no}</TableCell>
+                      <TableCell className="text-xs max-w-[200px]">{r.beneficiary_name || "—"}</TableCell>
+                      <TableCell className="text-[11px] whitespace-pre-line font-mono">{r.bank_details || "—"}</TableCell>
+                      <TableCell className="text-xs max-w-[220px]">
+                        <div>{r.purpose}</div>
+                        {r.description && <div className="text-[10px] text-slate-500 truncate" title={r.description}>{r.description}</div>}
+                      </TableCell>
+                      <TableCell className="text-[11px] max-w-[160px] truncate" title={r.project}>{r.project || "—"}</TableCell>
+                      <TableCell className="text-xs text-right whitespace-nowrap">{inr(r.verified_amount)}</TableCell>
+                      <TableCell className="text-xs text-right whitespace-nowrap">{r.tds_amount ? inr(r.tds_amount) : "—"}</TableCell>
+                      <TableCell className="text-xs text-right font-semibold whitespace-nowrap">{inr(r.net_amount)}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap">{r.verified_on}</TableCell>
+                      <TableCell className="text-xs">{r.verified_by}</TableCell>
+                      <TableCell>
+                        <Input defaultValue={r.remarks} placeholder="Add remark…" disabled={!canWrite}
+                          className="rounded-sm h-8 text-xs w-44"
+                          onBlur={(e) => e.target.value !== (r.remarks || "") && saveReportRemark(r, e.target.value)}
+                          data-testid={`ppc-report-remark-${r.request_no}`} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </TabsContent>
       </Tabs>
 
       {/* ── Verify dialog ── */}
@@ -526,6 +692,23 @@ export default function PaymentProcessingCenter() {
                 <Input value={vform.ifsc} onChange={(e) => setVform({ ...vform, ifsc: e.target.value.toUpperCase() })}
                   className="rounded-sm mt-1" data-testid="ppc-v-ifsc" />
               </div>
+              {verifyFor?.vendor_master && (
+                <div className="col-span-2 border rounded-sm p-2 bg-slate-50" data-testid="ppc-v-vendor-source">
+                  {verifyFor.vendor_master.bank
+                    ? <p className="text-[10px] text-emerald-700">
+                        Bank details auto-fetched from the Vendor Master — {verifyFor.vendor_master.name}
+                        {verifyFor.vendor_master.code ? ` (${verifyFor.vendor_master.code})` : ""}. Edit above if the bank has changed.
+                      </p>
+                    : <p className="text-[10px] text-amber-700">
+                        No bank account on the Vendor Master for {verifyFor.vendor_master.name} — enter it once below and it will auto-fill next time.
+                      </p>}
+                  <label className="flex items-center gap-2 text-xs mt-1 cursor-pointer">
+                    <input type="checkbox" checked={saveVendorBank} onChange={(e) => setSaveVendorBank(e.target.checked)}
+                      data-testid="ppc-v-save-vendor-bank" />
+                    Save/update these bank details on the Vendor Master (auto-fills future payments)
+                  </label>
+                </div>
+              )}
               {(verifyFor?.employee_record_id || verifyFor?.employee_id || verifyFor?.employee_code) && (
                 <div className="col-span-2 border rounded-sm p-2 bg-slate-50" data-testid="ppc-v-bank-source">
                   {verifyFor?.employee_bank
