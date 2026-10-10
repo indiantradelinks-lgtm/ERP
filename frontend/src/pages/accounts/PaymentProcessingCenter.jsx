@@ -169,7 +169,7 @@ export default function PaymentProcessingCenter() {
     const base = blankVerify(row);
     setVform(v ? { ...base, ...Object.fromEntries(Object.entries(v).filter(([, val]) => val !== "" && val !== null && val !== undefined)), decision: "verified" } : base);
     setSaveBank(!!(row.employee_record_id || row.employee_id || row.employee_code) && !row.employee_bank);
-    setSaveVendorBank(!!row.vendor_master && !row.vendor_master.bank);
+    setSaveVendorBank(!!row.vendor_master && !(row.vendor_master.bank?.account_no && row.vendor_master.bank?.ifsc));
     setVerifyFor(row);
   };
 
@@ -692,15 +692,19 @@ export default function PaymentProcessingCenter() {
                 <Input value={vform.ifsc} onChange={(e) => setVform({ ...vform, ifsc: e.target.value.toUpperCase() })}
                   className="rounded-sm mt-1" data-testid="ppc-v-ifsc" />
               </div>
-              {verifyFor?.vendor_master && (
+              {verifyFor?.vendor_master && (() => {
+                const vb = verifyFor.vendor_master.bank;
+                const complete = !!(vb?.account_no && vb?.ifsc);
+                return (
                 <div className="col-span-2 border rounded-sm p-2 bg-slate-50" data-testid="ppc-v-vendor-source">
-                  {verifyFor.vendor_master.bank
+                  {complete
                     ? <p className="text-[10px] text-emerald-700">
                         Bank details auto-fetched from the Vendor Master — {verifyFor.vendor_master.name}
                         {verifyFor.vendor_master.code ? ` (${verifyFor.vendor_master.code})` : ""}. Edit above if the bank has changed.
                       </p>
                     : <p className="text-[10px] text-amber-700">
-                        No bank account on the Vendor Master for {verifyFor.vendor_master.name} — enter it once below and it will auto-fill next time.
+                        {vb ? `Vendor Master has incomplete bank details for ${verifyFor.vendor_master.name}${vb.ifsc ? "" : " (IFSC missing)"} — complete them below and they will auto-fill next time.`
+                            : `No bank account on the Vendor Master for ${verifyFor.vendor_master.name} — enter it once below and it will auto-fill next time.`}
                       </p>}
                   <label className="flex items-center gap-2 text-xs mt-1 cursor-pointer">
                     <input type="checkbox" checked={saveVendorBank} onChange={(e) => setSaveVendorBank(e.target.checked)}
@@ -708,7 +712,8 @@ export default function PaymentProcessingCenter() {
                     Save/update these bank details on the Vendor Master (auto-fills future payments)
                   </label>
                 </div>
-              )}
+                );
+              })()}
               {(verifyFor?.employee_record_id || verifyFor?.employee_id || verifyFor?.employee_code) && (
                 <div className="col-span-2 border rounded-sm p-2 bg-slate-50" data-testid="ppc-v-bank-source">
                   {verifyFor?.employee_bank
