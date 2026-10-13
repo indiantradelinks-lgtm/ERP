@@ -518,6 +518,44 @@ async def verify_payment(rid: str, p: VerifyIn, request: Request,
     return doc
 
 
+class RejectPaymentIn(BaseModel):
+    reason: str = ""
+
+
+@router.post("/{rid}/reject-payment")
+async def reject_payment(rid: str, p: RejectPaymentIn, request: Request,
+                         user: dict = Depends(require_permission("accounting", "write"))):
+    """Reject a payment that is already verified / in a bank file (instead of marking it paid).
+
+    The rejection reason is mandatory. The payment moves to the Rejected stage and
+    can be re-verified later; generated bank files are left untouched as audit artefacts.
+    """
+    reason = (p.reason or "").strip()
+    if len(reason) < 3:
+        raise HTTPException(400, "Rejection reason is mandatory")
+    v = await db.payment_verifications.find_one({"request_id": rid}, {"_id": 0})
+    if not v:
+        raise HTTPException(404, "Verification record not found")
+    if v.get("stage") == "paid":
+        raise HTTPException(400, "Payment is already paid — it cannot be rejected")
+    if v.get("stage") not in ("verified", "in_bank_file"):
+        raise HTTPException(400, "Only a verified payment can be rejected here")
+    row = await db.project_requests.find_one({"id": rid}, {"_id": 0, "request_no": 1}) or {}
+    upd = {"stage": "rejected", "rejected_from_stage": v.get("stage"), "rejection_reason": reason,
+           "rejected_by": user.get("name") or user.get("email"), "rejected_by_id": user["id"],
+           "rejected_at": now_iso()}
+    await db.payment_verifications.update_one({"request_id": rid}, {"$set": upd})
+    await db.project_requests.update_one({"id": rid}, {"$set": {
+        "payment_status": "rejected", "payment_rejection_reason": reason,
+        "payment_rejected_at": upd["rejected_at"], "payment_rejected_by": upd["rejected_by"]}})
+    await audit(user=user, action="payment_rejected", resource="payment_queue", record_id=rid,
+                after={"request_no": v.get("request_no") or row.get("request_no"), "reason": reason,
+                       "from_stage": v.get("stage"),
+                       "amount": v.get("net_payable") if v.get("net_payable") is not None else v.get("verified_amount")},
+                ip=_ip(request))
+    return {**v, **upd}
+
+
 class BankFileIn(BaseModel):
     request_ids: List[str]
     bank_account_code: str = "1100"

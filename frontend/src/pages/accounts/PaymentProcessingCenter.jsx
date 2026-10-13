@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { RefreshCw, Wallet, CheckCircle2, Banknote, Paperclip, Download, FileSpreadsheet, IndianRupee } from "lucide-react";
+import { RefreshCw, Wallet, CheckCircle2, Banknote, Paperclip, Download, FileSpreadsheet, IndianRupee, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -120,6 +120,57 @@ export default function PaymentProcessingCenter() {
   const [payForm, setPayForm] = useState({ utr_no: "", paid_date: new Date().toISOString().slice(0, 10) });
   const [debitAcNo, setDebitAcNo] = useState(localStorage.getItem("ppc_debit_ac_no") || "169405500094");
   const [busy, setBusy] = useState(false);
+  const [filters, setFilters] = useState({ q: "", status: "all", basis: "raised", from: "", to: "" });
+  const [rejectFor, setRejectFor] = useState(null);
+  const [rejectReason, setRejectReason] = useState("");
+
+  const stageDate = (r, basis) => {
+    const v = r.verification || {};
+    if (basis === "verified") return (v.verified_at || "").slice(0, 10);
+    if (basis === "paid") return (v.paid_date || v.paid_at || "").slice(0, 10);
+    return (r.created_at || "").slice(0, 10);
+  };
+
+  const filteredRows = useMemo(() => {
+    const q = filters.q.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (filters.status !== "all" && r.pay_stage !== filters.status) return false;
+      if (filters.from || filters.to) {
+        const d = stageDate(r, filters.basis);
+        if (!d) return false;
+        if (filters.from && d < filters.from) return false;
+        if (filters.to && d > filters.to) return false;
+      }
+      if (!q) return true;
+      const v = r.verification || {};
+      return [r.request_no, r.project_code, r.project_name, r.vendor, r.employee_name, r.employee_code,
+        v.vendor_name, v.invoice_no, v.utr_no, r.request_type_label, r.cost_center_name, r.description,
+        r.raised_by, v.bank_file_no]
+        .some((f) => String(f || "").toLowerCase().includes(q));
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, filters]);
+
+  const filtersActive = filters.q || filters.status !== "all" || filters.from || filters.to;
+  const STATUS_TO_TAB = { pending_verification: "pending", verified: "verified", in_bank_file: "bank", paid: "paid", rejected: "rejected" };
+  const applyStatus = (s) => {
+    setFilters((p) => ({ ...p, status: s }));
+    if (STATUS_TO_TAB[s]) setTab(STATUS_TO_TAB[s]);
+  };
+
+  const submitReject = async () => {
+    const reason = rejectReason.trim();
+    if (reason.length < 3) { toast.error("Rejection reason is mandatory"); return; }
+    setBusy(true);
+    try {
+      await api.post(`/accounts/payment-queue/${rejectFor.id}/reject-payment`, { reason });
+      toast.success(`Payment ${rejectFor.request_no} rejected`);
+      setRejectFor(null); setRejectReason("");
+      load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Could not reject the payment");
+    } finally { setBusy(false); }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -151,13 +202,27 @@ export default function PaymentProcessingCenter() {
   }, []);
 
   const byStage = useMemo(() => {
-    const g = { pending: [], verified: [], bank: [], paid: [] };
-    rows.forEach((r) => {
+    const g = { pending: [], verified: [], bank: [], paid: [], rejected: [] };
+    filteredRows.forEach((r) => {
       const s = r.pay_stage;
       if (s === "verified") g.verified.push(r);
       else if (s === "in_bank_file") g.bank.push(r);
       else if (s === "paid") g.paid.push(r);
-      else g.pending.push(r); // pending_verification + rejected (re-verifiable)
+      else if (s === "rejected") g.rejected.push(r);
+      else g.pending.push(r);
+    });
+    return g;
+  }, [filteredRows]);
+
+  const allByStage = useMemo(() => {
+    const g = { pending: 0, verified: 0, bank: 0, paid: 0, rejected: 0, paidAmt: 0 };
+    rows.forEach((r) => {
+      const s = r.pay_stage;
+      if (s === "verified") g.verified += 1;
+      else if (s === "in_bank_file") g.bank += 1;
+      else if (s === "paid") { g.paid += 1; g.paidAmt += Number(r.verification?.verified_amount || 0); }
+      else if (s === "rejected") g.rejected += 1;
+      else g.pending += 1;
     });
     return g;
   }, [rows]);
@@ -357,7 +422,6 @@ export default function PaymentProcessingCenter() {
       data-testid={`ppc-attach-${r.request_no}`}><Paperclip className="h-3.5 w-3.5" /></Button>
   );
 
-  const paidThisMonth = byStage.paid.reduce((s, r) => s + Number(r.verification?.verified_amount || 0), 0);
   const upiRows = rows.filter((r) => r.payment_mode === "UPI" && String(r.priority || "").toLowerCase() === "high"
     && ["pending_verification", "verified", "rejected"].includes(r.pay_stage));
 
@@ -373,11 +437,60 @@ export default function PaymentProcessingCenter() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Kpi label="Pending Verification" value={byStage.pending.length} icon={Wallet} testid="ppc-kpi-pending" />
-        <Kpi label="Verified — Ready for Bank" value={byStage.verified.length} icon={CheckCircle2} testid="ppc-kpi-verified" />
-        <Kpi label="In Bank File" value={byStage.bank.length} icon={FileSpreadsheet} testid="ppc-kpi-bank" />
-        <Kpi label="Paid" value={byStage.paid.length} sub={inr(paidThisMonth)} icon={IndianRupee} testid="ppc-kpi-paid" />
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <Kpi label="Pending Verification" value={allByStage.pending} icon={Wallet} testid="ppc-kpi-pending" />
+        <Kpi label="Verified — Ready for Bank" value={allByStage.verified} icon={CheckCircle2} testid="ppc-kpi-verified" />
+        <Kpi label="In Bank File" value={allByStage.bank} icon={FileSpreadsheet} testid="ppc-kpi-bank" />
+        <Kpi label="Paid" value={allByStage.paid} sub={inr(allByStage.paidAmt)} icon={IndianRupee} testid="ppc-kpi-paid" />
+        <Kpi label="Rejected" value={allByStage.rejected} icon={XCircle} testid="ppc-kpi-rejected" />
+      </div>
+
+      <div className="border rounded-sm bg-white p-3 flex items-end gap-3 flex-wrap" data-testid="ppc-filters">
+        <div className="flex-1 min-w-[220px]">
+          <Label className="text-[10px] uppercase tracking-wider">Search</Label>
+          <Input value={filters.q} onChange={(e) => setFilters((p) => ({ ...p, q: e.target.value }))}
+            placeholder="Request no, vendor, project, UTR, invoice…"
+            className="rounded-sm mt-1 h-9" data-testid="ppc-filter-search" />
+        </div>
+        <div>
+          <Label className="text-[10px] uppercase tracking-wider">Payment Stage / Status</Label>
+          <select value={filters.status} onChange={(e) => applyStatus(e.target.value)}
+            className="mt-1 h-9 w-52 border rounded-sm text-sm px-2 bg-white" data-testid="ppc-filter-status">
+            <option value="all">All stages</option>
+            <option value="pending_verification">Pending Verification</option>
+            <option value="verified">Verified — Ready for Bank</option>
+            <option value="in_bank_file">In Bank File</option>
+            <option value="paid">Paid</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </div>
+        <div>
+          <Label className="text-[10px] uppercase tracking-wider">Date Basis</Label>
+          <select value={filters.basis} onChange={(e) => setFilters((p) => ({ ...p, basis: e.target.value }))}
+            className="mt-1 h-9 w-36 border rounded-sm text-sm px-2 bg-white" data-testid="ppc-filter-basis">
+            <option value="raised">Raised On</option>
+            <option value="verified">Verified On</option>
+            <option value="paid">Paid On</option>
+          </select>
+        </div>
+        <div>
+          <Label className="text-[10px] uppercase tracking-wider">From</Label>
+          <Input type="date" value={filters.from} onChange={(e) => setFilters((p) => ({ ...p, from: e.target.value }))}
+            className="rounded-sm mt-1 h-9 w-40" data-testid="ppc-filter-from" />
+        </div>
+        <div>
+          <Label className="text-[10px] uppercase tracking-wider">To</Label>
+          <Input type="date" value={filters.to} onChange={(e) => setFilters((p) => ({ ...p, to: e.target.value }))}
+            className="rounded-sm mt-1 h-9 w-40" data-testid="ppc-filter-to" />
+        </div>
+        {filtersActive && (
+          <Button size="sm" variant="ghost" className="rounded-sm h-9 text-xs"
+            onClick={() => setFilters({ q: "", status: "all", basis: "raised", from: "", to: "" })}
+            data-testid="ppc-filter-clear">Clear filters</Button>
+        )}
+        <div className="text-[11px] text-slate-500 ml-auto" data-testid="ppc-filter-count">
+          {filteredRows.length} of {rows.length} payment(s)
+        </div>
       </div>
 
       {upiRows.length > 0 && (
@@ -422,6 +535,7 @@ export default function PaymentProcessingCenter() {
           <TabsTrigger value="verified" className="rounded-sm text-xs" data-testid="ppc-tab-verified">Verified / Bank File ({byStage.verified.length})</TabsTrigger>
           <TabsTrigger value="bank" className="rounded-sm text-xs" data-testid="ppc-tab-bank">Bank Files & Mark Paid ({byStage.bank.length})</TabsTrigger>
           <TabsTrigger value="paid" className="rounded-sm text-xs" data-testid="ppc-tab-paid">Paid History ({byStage.paid.length})</TabsTrigger>
+          <TabsTrigger value="rejected" className="rounded-sm text-xs" data-testid="ppc-tab-rejected">Rejected ({byStage.rejected.length})</TabsTrigger>
           <TabsTrigger value="report" className="rounded-sm text-xs" data-testid="ppc-tab-report">Today's Payment Report</TabsTrigger>
         </TabsList>
 
@@ -515,9 +629,15 @@ export default function PaymentProcessingCenter() {
                   <TableCell className="text-xs font-mono">{v.bank_file_no || "—"}</TableCell>
                   <TableCell>{attachBtn(r)}</TableCell>
                   <TableCell>
-                    {canWrite && <Button size="sm" className="rounded-sm h-7 bg-emerald-600 hover:bg-emerald-700"
-                      onClick={() => setPayFor(r)} data-testid={`ppc-mark-paid-btn-${r.request_no}`}>
-                      <Banknote className="h-3.5 w-3.5 mr-1" /> Mark Paid</Button>}
+                    {canWrite && <div className="flex items-center gap-1.5">
+                      <Button size="sm" className="rounded-sm h-7 bg-emerald-600 hover:bg-emerald-700"
+                        onClick={() => setPayFor(r)} data-testid={`ppc-mark-paid-btn-${r.request_no}`}>
+                        <Banknote className="h-3.5 w-3.5 mr-1" /> Mark Paid</Button>
+                      <Button size="sm" variant="outline" className="rounded-sm h-7 border-red-300 text-red-700 hover:bg-red-50"
+                        onClick={() => { setRejectReason(""); setRejectFor(r); }}
+                        data-testid={`ppc-reject-payment-btn-${r.request_no}`}>
+                        <XCircle className="h-3.5 w-3.5 mr-1" /> Reject Payment</Button>
+                    </div>}
                   </TableCell>
                 </TableRow>
               );
@@ -572,6 +692,35 @@ export default function PaymentProcessingCenter() {
               );
             }} />
         </TabsContent>
+
+        <TabsContent value="rejected" className="mt-3">
+          <QueueTable testid="ppc-rejected-table" emptyText="No rejected payments"
+            cols={["Request No", "Type", "Project", "Paid To", "Approved On", "Amount", "Rejected At", "Rejection Reason", "Docs", "Action"]}
+            rows={byStage.rejected}
+            renderActions={(r) => {
+              const v = r.verification || {};
+              return (
+                <TableRow key={r.id} data-testid={`ppc-rejected-row-${r.request_no}`}>
+                  {baseCells(r)}
+                  <TableCell className="text-xs whitespace-nowrap">{inr(v.net_payable ?? v.verified_amount ?? r.est_value)}</TableCell>
+                  <TableCell className="text-xs whitespace-nowrap">
+                    <div>{fmtDT(v.rejected_at || v.verified_at)}</div>
+                    <div className="text-[10px] text-slate-500">{v.rejected_by || v.verified_by}</div>
+                    {v.rejected_from_stage && <div className="text-[10px] text-slate-400">from {String(v.rejected_from_stage).replace("_", " ")}</div>}
+                  </TableCell>
+                  <TableCell className="text-xs max-w-[280px]">
+                    <span className="text-red-700">{v.rejection_reason || v.remarks || "—"}</span>
+                  </TableCell>
+                  <TableCell>{attachBtn(r)}</TableCell>
+                  <TableCell>
+                    {canWrite && <Button size="sm" variant="outline" className="rounded-sm h-7"
+                      onClick={() => openVerify(r)} data-testid={`ppc-reverify-btn-${r.request_no}`}>Re-verify</Button>}
+                  </TableCell>
+                </TableRow>
+              );
+            }} />
+        </TabsContent>
+
 
         <TabsContent value="report" className="mt-3 space-y-3">
           <div className="border rounded-sm bg-white p-3 flex items-end gap-3 flex-wrap" data-testid="ppc-report-filters">
@@ -875,6 +1024,31 @@ export default function PaymentProcessingCenter() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Reject Payment dialog ── */}
+      <Dialog open={!!rejectFor} onOpenChange={(o) => !o && setRejectFor(null)}>
+        <DialogContent className="max-w-sm rounded-sm" data-testid="ppc-reject-dialog">
+          <DialogHeader>
+            <DialogTitle className="text-base">Reject Payment — {rejectFor?.request_no}</DialogTitle>
+            <DialogDescription className="text-xs">
+              {rejectFor?.verification?.vendor_name} · {inr(rejectFor?.verification?.net_payable ?? rejectFor?.verification?.verified_amount)}.
+              The payment moves to the Rejected stage (no Journal Entry is posted) and can be re-verified later.
+            </DialogDescription>
+          </DialogHeader>
+          <div>
+            <Label className="text-[10px] uppercase tracking-wider">Rejection Reason *</Label>
+            <Textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} rows={3}
+              placeholder="Why is this payment being rejected? (mandatory)"
+              className="rounded-sm mt-1" data-testid="ppc-reject-reason" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" className="rounded-sm" onClick={() => setRejectFor(null)}>Cancel</Button>
+            <Button className="rounded-sm bg-red-600 hover:bg-red-700" disabled={busy || rejectReason.trim().length < 3}
+              onClick={submitReject} data-testid="ppc-reject-submit">Confirm Rejection</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
 
       <RowAttachments open={!!attachFor} onOpenChange={() => setAttachFor(null)}
         parentType={attachFor?.source === "vendor_bill" ? "vendor_bills" : "project_requests"}
