@@ -535,6 +535,9 @@ async def reject_payment(rid: str, p: RejectPaymentIn, request: Request,
         raise HTTPException(400, "Rejection reason is mandatory")
     v = await db.payment_verifications.find_one({"request_id": rid}, {"_id": 0})
     if not v:
+        exists = await db.project_requests.find_one({"id": rid}, {"_id": 0, "id": 1})
+        if exists:
+            raise HTTPException(400, "Only a verified payment can be rejected here")
         raise HTTPException(404, "Verification record not found")
     if v.get("stage") == "paid":
         raise HTTPException(400, "Payment is already paid — it cannot be rejected")
