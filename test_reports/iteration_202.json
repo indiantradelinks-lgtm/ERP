@@ -1,0 +1,25 @@
+{
+  "summary": "Iter202 — Manager Log visibility + Self-advance visibility validated end-to-end. Backend: 16/16 pytest PASS in /app/backend/tests/test_iter202_visibility.py. Confirmed counts via live preview: super_admin=104 rows across 11 request_types, manager_log=22 rows (16 fuel + 6 service_invoice) with zero leaks, hr=104 (full access including the 5 advance shadow rows), store_incharge=0, test_pm=25 (project-scoped, no self-advance leaks). Manager Log /api/project-requests/summary total=22 matches list; filtering by material/ppe/accommodation/employee_advance/head_office_expense/self_expense/vehicle_manpower all return []; filtering by fuel returns only fuel; export.xlsx and export.pdf endpoints are reachable; /api/my-inbox for manager_log only exposes project_request items whose title/step_label is Fuel Payment or Service Invoice; super_admin inbox has NO project_request items with step_label 'Manager Log' (exclusive fuel step correctly hidden). Self-advance regression: store_incharge sees no advance rows, HR still sees all 5, super_admin sees all. /api/advances still accessible to HR + super_admin. Frontend smoke as test_log@erp.com on /app/ops/requests: counters show Total 22, every rendered row has Type/Dept = 'Fuel Payment' or 'Service Invoice (SR Workflow)', and the req-filter-type dropdown enumerates EXACTLY ['All types', 'Fuel Payment', 'Service Invoice (SR Workflow)'] — no leaks of material, accommodation, PPE, manpower, employee_advance, head_office_expense or self_expense options. No seed data left behind.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter202_visibility.py",
+    "/app/test_reports/pytest/iter202.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "request_visibility.py:_self_advance_clause() allows rows where source != 'advance' OR self_raised != true — this means legacy on-behalf advance rows that pre-date the self_raised flag (if any slipped past backfill_advance_visibility()) will fall back to the old behavior and remain visible to everyone. The startup backfill in approval_policy.py mitigates this, but a one-liner guard (treat missing self_raised flag on source='advance' rows as self_raised=True after backfill date) would be safer defense-in-depth.",
+    "project_requests_router.py list_requests()/summary() both duplicate the own_rows_clauses + apply_project_scope + apply_request_visibility composition (lines 331-336 and 400-403). Extract into a shared helper to keep the two visibility surfaces guaranteed-in-sync — otherwise a future tweak to one can silently diverge.",
+    "my_inbox_router._project_requests() applies apply_request_visibility but passes a {status: pending_approval} query; apply_request_visibility is correct here, but it also does NOT short-circuit for non-manager-log users meaning every inbox call runs an extra Mongo stage. Negligible, but consider caching request_visibility_clauses(user) per-request if the inbox endpoint becomes hot."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter202_visibility.py (new)"
+  ],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "100% on verified UI points (manager_log row list, type-filter options, counters)"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin), test_log@erp.com / Log@12345 (manager_log), test_pm@erp.com / PM@12345, hr.test@erp.com / HR@12345, store@erp.com / Store@1234",
+  "seed_data_creation": "None — tests are read-only against existing seeded data (104 project_requests already present).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iter202_visibility.py is cookie-session based (/api/auth/login). BASE_URL resolves from REACT_APP_BACKEND_URL env var, falling back to /app/frontend/.env. Current DB counts: 104 total project_requests, manager_log sees 22 (16 fuel + 6 service_invoice), 5 advance shadow rows (source='advance'), 9 vendor-bill rows (source='accounts_vendor_bill' — correctly excluded from the Project Request Center list but still counted by super_admin via list filter). The frontend type filter on /app/ops/requests uses select name='req-filter-type' and ONLY lists Fuel Payment + Service Invoice (SR Workflow) when logged in as manager_log — confirmed via DOM inspection.",
+  "rca of the issue": "N/A — all acceptance criteria met for both the Manager Log Type/Dept visibility rule and the Self-Advance privacy rule, with no regressions on HR, super_admin, PM or store_incharge scopes."
+}
