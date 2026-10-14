@@ -1,0 +1,26 @@
+{
+  "summary": "Iter201 — Approval policy overhaul validated end-to-end. Backend: 17/17 pytest PASS in /app/backend/tests/test_iter201_approval_policy.py covering (1) Fuel Payment one-step exclusive Manager Log chain for both low- and large-value requests (chain length 1, role=manager_log, exclusive=true, no dept_head/GM/Director); (2) RBAC — super_admin 403 'This step requires Manager Log (manager_log)' on both /approve and /reject on a fuel step; project_manager 403; manager_log can approve (status → with_dept, chain[0].status=approved) AND reject (status → rejected); (3) My Inbox — manager_log inbox lists fuel items with step_label 'Manager Log' and super_admin inbox has NO project_request items with 'Manager Log' step; (4) Non-fuel regression — accommodation request above threshold gets exactly [dept_head, general_manager, director] chain, no exclusive flag; (5) Service Workflow — create SR with submit=true returns status='approved' with empty approval_chain; RFQ can be created immediately; POST /rfqs/{id}/selection-action returns 400 'No vendor recommendation pending approval'; (6) In-flight cleanup — svc_requests submitted/under_review=0, svc_rfqs recommended=0, svc_pos pending_approval=0; (7) Payment queue rows carry a description field for the Justification UI line. Frontend smoke on live preview as super_admin: 19 ppc-description-* rows render with 'Justification: ...' prefix; the Verify dialog shows the ppc-v-description block highlighted amber with the request description; Service POs page shows 1 'Confirm PO' button on a draft row and ZERO 'Approve' / 'Reject' buttons, and the status filter does NOT offer 'pending_approval'. Test data cleaned (3 project_requests, 7 svc_requests, 3 svc_rfqs removed).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter201_approval_policy.py",
+    "/app/test_reports/pytest/iter201.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "approval_policy.py:ensure_fuel_approver_permissions() only grants rights if 'project_requests' key already exists in rbac_overrides['overrides']; if that key is missing it silently returns False without seeding — fine today because the key exists in the seeded overrides, but worth guarding (initialize an empty dict so first-run deployments on a new DB still grant manager_log).",
+    "project_requests_router.py:_can_act() reads step.get('exclusive') — but legacy pending fuel requests created BEFORE the migration (if reroute_pending_fuel_requests had not been called yet) would still have the old multi-step chain without 'exclusive'. Startup migration handles this, but if a chain is partially rebuilt (manual DB edits) the super_admin could still clear it. Low risk given migration is idempotent at startup.",
+    "service_workflow_router.py:submit_po() short-circuits to status='approved' with an auto po_approval stamp — but POST /pos/{id}/action still exists and remains callable; it now returns 400 on an approved PO. Dead endpoint; recommend removing or @deprecated-tagging in a follow-up to simplify API surface.",
+    "PaymentProcessingCenter.jsx is 1060 lines (prior Iter200 note still open) — not changed in this iter."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter201_approval_policy.py (new)"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% on verified UI points (ppc-description rows, ppc-v-description block, Service POs confirm/no-approve/no-pending_approval filter)"},
+  "test_credentials": "admin@erp.com / Admin@123 (super_admin), test_log@erp.com / Log@12345 (manager_log), test_pm@erp.com / PM@12345",
+  "seed_data_creation": "None left behind. Backend tests create fuel/accommodation/service test rows prefixed with 'TEST_iter201' and the fixtures delete them; a final cleanup script also removed 3 project_requests + 7 svc_requests + 3 svc_rfqs.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iter201_approval_policy.py is cookie-session based (login response has NO token in body — httpOnly cookie carries auth). The sample_project_and_cc fixture picks the first non-HO project PM has access to that also has at least one cost center registered under /api/procurement/master/cost-centers. Vendor list comes from /api/vendors (not /api/service-workflow/vendors — that endpoint doesn't exist). Cleanup is best-effort via DELETE /api/project-requests/{id} as super_admin, and the test-data scrubber at the end of the file.",
+  "rca of the issue": "N/A — all acceptance criteria met."
+}
