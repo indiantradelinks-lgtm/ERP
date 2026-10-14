@@ -27,7 +27,7 @@ export default function ServiceWorkflowDashboard() {
   const c = data?.cards || {};
   const tiles = [
     ["Total Service Requests", c.total_requests, "", "/app/services/requests"],
-    ["Pending Approvals", c.pending_approvals, "text-blue-700", "/app/services/requests?status=submitted"],
+    ["Draft Requests", c.draft_requests, "text-blue-700", "/app/services/requests?status=draft"],
     ["Approved Requests", c.approved_requests, "text-emerald-700", "/app/services/requests?status=approved"],
     ["Rejected", c.rejected_requests, "text-red-700", "/app/services/requests?status=rejected"],
     ["RFQs Pending", c.rfqs_pending, "text-indigo-700", "/app/services/rfqs"],

@@ -250,6 +250,13 @@ async def seed_quotation_conditions_on_startup():
     except Exception as e:
         logger.warning(f"[department-master] Seed skipped: {e}")
     try:
+        from approval_policy import clear_removed_service_approvals, reroute_pending_fuel_requests, ensure_fuel_approver_permissions
+        await clear_removed_service_approvals()
+        await reroute_pending_fuel_requests()
+        await ensure_fuel_approver_permissions()
+    except Exception as e:
+        logger.warning(f"[approval-policy] Cleanup skipped: {e}")
+    try:
         from head_office_project import ensure_head_office_project
         if await ensure_head_office_project():
             logger.info("[head-office] Seeded 'Head Office – Delhi' internal project (HEAD-OFFICE)")

@@ -25,9 +25,16 @@ def _my_chain_step(row: dict, role: str) -> Optional[dict]:
     chain = row.get("chain") or []
     idx = row.get("current_step") or 0
     step = chain[idx] if 0 <= idx < len(chain) else None
-    if step and (role == "super_admin" or step.get("role") == role):
-        return step
-    return None
+    if not step:
+        return None
+    aliases = {"manager_log": {"manager_log", "manager_l_o_g"},
+               "manager_op": {"manager_op", "manager_o_p"},
+               "manager_pnv": {"manager_pnv", "manager_p_n_v"}}
+    allowed = set(aliases.get(step.get("role"), {step.get("role")}))
+    # `exclusive` steps (e.g. Fuel Payment → Manager Log) exclude Super Admin
+    if not step.get("exclusive"):
+        allowed.add("super_admin")
+    return step if role in allowed else None
 
 
 def _item(source: str, source_label: str, row: dict, *, ref: str, title: str,

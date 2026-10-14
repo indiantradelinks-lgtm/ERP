@@ -60,9 +60,9 @@ export default function ServiceRequests() {
       if (editing.id) await api.put(`/service-workflow/requests/${editing.id}`, payload);
       else {
         const r = await api.post("/service-workflow/requests", payload);
-        toast.success(`Service Request ${r.data.sr_no} ${submit ? "submitted for approval" : "saved as draft"}`);
+        toast.success(`Service Request ${r.data.sr_no} ${submit ? "submitted — ready for RFQ / Procurement" : "saved as draft"}`);
       }
-      if (editing.id) toast.success(submit ? "Resubmitted for approval" : "Draft updated");
+      if (editing.id) toast.success(submit ? "Resubmitted — ready for RFQ / Procurement" : "Draft updated");
       setEditing(null);
       load();
     } catch (e) { toast.error(apiErrorMessage(e)); } finally { setBusy(false); }
@@ -71,7 +71,7 @@ export default function ServiceRequests() {
   const submitRow = async (r) => {
     try {
       await api.post(`/service-workflow/requests/${r.id}/submit`);
-      toast.success(`${r.sr_no} submitted for approval`);
+      toast.success(`${r.sr_no} submitted — ready for RFQ / Procurement`);
       load();
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
@@ -87,7 +87,7 @@ export default function ServiceRequests() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2"><ClipboardList className="h-5 w-5" /> Service Requests</h1>
-          <p className="text-xs text-muted-foreground">Raise any service requirement from one place — approvals happen in <b>My Pending Approvals</b> as per the Approval Matrix</p>
+          <p className="text-xs text-muted-foreground">Raise any service requirement from one place — <b>no internal approval needed</b>; submitted requests go straight to RFQ / Procurement, and the only approval left is the Accounts payment approval</p>
         </div>
         <Button onClick={() => setEditing(blank())} data-testid="svc-req-new-btn"><Plus className="h-4 w-4 mr-1" /> New Service Request</Button>
       </div>
@@ -144,7 +144,7 @@ export default function ServiceRequests() {
                 <TableCell className="text-right whitespace-nowrap">
                   <Button variant="ghost" size="icon" className="h-7 w-7" title="View full trail" onClick={() => nav(`/app/services/requests/${r.id}`)} data-testid={`svc-req-view-${r.sr_no}`}><Eye className="h-3.5 w-3.5" /></Button>
                   {canEdit(r) && <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={() => setEditing({ ...blank(), ...r })} data-testid={`svc-req-edit-${r.sr_no}`}><Pencil className="h-3.5 w-3.5" /></Button>}
-                  {canEdit(r) && <Button variant="ghost" size="icon" className="h-7 w-7" title="Submit for approval" onClick={() => submitRow(r)} data-testid={`svc-req-submit-${r.sr_no}`}><Send className="h-3.5 w-3.5" /></Button>}
+                  {canEdit(r) && <Button variant="ghost" size="icon" className="h-7 w-7" title="Submit — goes straight to RFQ / Procurement" onClick={() => submitRow(r)} data-testid={`svc-req-submit-${r.sr_no}`}><Send className="h-3.5 w-3.5" /></Button>}
                   {["submitted", "under_review"].includes(r.status) &&
                     <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-700 border-amber-300" title="Approve from My Pending Approvals" data-testid={`svc-req-awaiting-${r.sr_no}`}>Awaiting: {pendingStep(r)?.label || pendingStep(r)?.role || "Approver"}</Badge>}
                   <Button variant="ghost" size="icon" className="h-7 w-7" title="Attachments" onClick={() => setDocsFor(r)} data-testid={`svc-req-docs-${r.sr_no}`}><Paperclip className="h-3.5 w-3.5" /></Button>

@@ -388,6 +388,12 @@ export default function PaymentProcessingCenter() {
       <TableCell className="font-mono text-xs whitespace-nowrap">{r.request_no}</TableCell>
       <TableCell className="text-xs">
         <div>{r.request_type_label}</div>
+        {(r.description || r.remarks) && (
+          <div className="text-[10px] text-slate-700 mt-0.5 max-w-[240px] whitespace-pre-wrap break-words"
+            data-testid={`ppc-description-${r.request_no}`}>
+            <span className="text-slate-400">Justification: </span>{r.description || r.remarks}
+          </div>
+        )}
         {r.cost_center_name && (
           <div className="text-[10px] text-slate-500 max-w-[160px] truncate" title={r.cost_center_name}
             data-testid={`ppc-cc-${r.request_no}`}>CC: {r.cost_center_name}</div>
@@ -820,6 +826,13 @@ export default function PaymentProcessingCenter() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {(verifyFor?.description || verifyFor?.remarks) && (
+              <div className="border rounded-sm bg-amber-50/60 border-amber-200 p-2" data-testid="ppc-v-description">
+                <div className="text-[10px] uppercase tracking-wider text-amber-900">Description / Justification (from the request)</div>
+                <p className="text-xs text-slate-800 whitespace-pre-wrap mt-0.5">{verifyFor?.description || "—"}</p>
+                {verifyFor?.remarks && <p className="text-[11px] text-slate-600 mt-1 whitespace-pre-wrap">Remarks: {verifyFor.remarks}</p>}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-[10px] uppercase tracking-wider">Vendor / Beneficiary Name *</Label>
@@ -1006,6 +1019,12 @@ export default function PaymentProcessingCenter() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            {payFor?.description && (
+              <div className="border rounded-sm bg-slate-50 p-2" data-testid="ppc-pay-description">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500">Description / Justification</div>
+                <p className="text-xs text-slate-800 whitespace-pre-wrap mt-0.5">{payFor.description}</p>
+              </div>
+            )}
             <div>
               <Label className="text-[10px] uppercase tracking-wider">UTR / Transaction Ref *</Label>
               <Input value={payForm.utr_no} onChange={(e) => setPayForm({ ...payForm, utr_no: e.target.value })}

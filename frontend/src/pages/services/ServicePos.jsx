@@ -14,7 +14,7 @@ import TermsMasterDialog from "./TermsMasterDialog";
 import PoEditDialog from "./PoEditDialog";
 import { StatusChip, inr, dt, useSvcMeta } from "./shared";
 
-const PO_STATUSES = ["draft", "pending_approval", "approved", "issued", "in_progress", "completed", "closed"];
+const PO_STATUSES = ["draft", "approved", "issued", "in_progress", "completed", "closed"];
 const blankSrn = () => ({ receipt_date: "", service_details: "", completed_pct: "", accepted_pct: "", receipt_type: "partial", quality_status: "accepted", remarks: "", submit: true });
 
 export default function ServicePos() {
@@ -23,8 +23,6 @@ export default function ServicePos() {
   const caps = meta?.role_caps || {};
   const [rows, setRows] = useState([]);
   const [f, setF] = useState({ status: "", q: "" });
-  const [approving, setApproving] = useState(null);
-  const [remarks, setRemarks] = useState("");
   const [srnFor, setSrnFor] = useState(null);
   const [srn, setSrn] = useState(blankSrn());
   const [docsFor, setDocsFor] = useState(null);
@@ -45,15 +43,6 @@ export default function ServicePos() {
   const act = async (url, msg) => {
     try { await api.post(url); toast.success(msg); load(); }
     catch (e) { toast.error(apiErrorMessage(e)); }
-  };
-
-  const decide = async (action) => {
-    setBusy(true);
-    try {
-      await api.post(`/service-workflow/pos/${approving.id}/action`, { action, remarks });
-      toast.success(`PO ${approving.po_no} ${action}d`);
-      setApproving(null); setRemarks(""); load();
-    } catch (e) { toast.error(apiErrorMessage(e)); } finally { setBusy(false); }
   };
 
   const openMail = (r) => {
@@ -88,7 +77,7 @@ export default function ServicePos() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2"><FileSignature className="h-5 w-5" /> Service Purchase Orders</h1>
-          <p className="text-xs text-muted-foreground">Draft → Pending Approval → Approved → Issued → In Progress → Completed / Closed</p>
+          <p className="text-xs text-muted-foreground">Draft → Approved → Issued → In Progress → Completed / Closed · <span className="text-amber-700">PO approval removed — only the Accounts payment approval remains</span></p>
         </div>
         <div className="flex items-end gap-2">
           {caps.procurement &&
@@ -129,9 +118,7 @@ export default function ServicePos() {
                   {caps.procurement && !["draft", "pending_approval"].includes(r.status) &&
                     <Button variant="ghost" size="icon" className={`h-7 w-7 ${r.emailed_at ? "text-emerald-600" : ""}`} title={r.emailed_at ? `Emailed to ${r.emailed_to} on ${dt(r.emailed_at)} — send again` : "Email PO PDF to vendor"} onClick={() => openMail(r)} data-testid={`svc-po-email-${r.po_no}`}><Mail className="h-3.5 w-3.5" /></Button>}
                   {caps.procurement && r.status === "draft" &&
-                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => act(`/service-workflow/pos/${r.id}/submit`, `${r.po_no} submitted for approval`)} data-testid={`svc-po-submit-${r.po_no}`}>Submit</Button>}
-                  {caps.sr_approver && r.status === "pending_approval" &&
-                    <Button size="sm" className="h-7 text-xs ml-1" onClick={() => { setApproving(r); setRemarks(""); }} data-testid={`svc-po-approve-${r.po_no}`}>Approve / Reject</Button>}
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => act(`/service-workflow/pos/${r.id}/submit`, `${r.po_no} confirmed — ready to issue`)} data-testid={`svc-po-submit-${r.po_no}`}>Confirm PO</Button>}
                   {caps.procurement && r.status === "approved" &&
                     <Button variant="outline" size="sm" className="h-7 text-xs ml-1" onClick={() => act(`/service-workflow/pos/${r.id}/issue`, `${r.po_no} issued to ${r.vendor_name}`)} data-testid={`svc-po-issue-${r.po_no}`}><Send className="h-3 w-3 mr-1" /> Issue to Vendor</Button>}
                   {(caps.srn || caps.procurement) && ["issued", "in_progress"].includes(r.status) &&
@@ -144,26 +131,6 @@ export default function ServicePos() {
           </TableBody>
         </Table>
       </div>
-
-      {/* Approve / Reject */}
-      <Dialog open={!!approving} onOpenChange={(o) => !o && setApproving(null)}>
-        <DialogContent className="max-w-md rounded-sm" data-testid="svc-po-approve-dialog">
-          <DialogHeader><DialogTitle>Approve PO {approving?.po_no}</DialogTitle></DialogHeader>
-          {approving && (
-            <div className="text-sm space-y-1 border rounded-md p-3 bg-muted/30">
-              <div>Vendor: <b>{approving.vendor_name}</b></div>
-              <div>Value: <b>{inr(approving.total_value)}</b> ({approving.quantity} {approving.unit} × {inr(approving.rate)} + {approving.tax_pct}% tax)</div>
-              <div>Completion: {dt(approving.completion_date)}</div>
-              {approving.exception_note && <div className="text-red-600 text-xs">Exception: {approving.exception_note}</div>}
-            </div>
-          )}
-          <div><Label className="text-xs">Remarks</Label><Textarea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} data-testid="svc-po-approve-remarks" /></div>
-          <DialogFooter className="gap-2">
-            <Button variant="destructive" disabled={busy} onClick={() => decide("reject")} data-testid="svc-po-reject-confirm">Reject</Button>
-            <Button disabled={busy} onClick={() => decide("approve")} data-testid="svc-po-approve-confirm">Approve</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Create SRN */}
       <Dialog open={!!srnFor} onOpenChange={(o) => !o && setSrnFor(null)}>

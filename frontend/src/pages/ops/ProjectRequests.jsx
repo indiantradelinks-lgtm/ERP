@@ -299,6 +299,16 @@ export default function ProjectRequests() {
     } catch (e) { toast.error(e?.response?.data?.detail || "Failed"); }
   };
 
+  const ROLE_ALIASES = { manager_log: ["manager_log", "manager_l_o_g"], manager_op: ["manager_op", "manager_o_p"], manager_pnv: ["manager_pnv", "manager_p_n_v"] };
+  const canApproveStep = (r) => {
+    const step = (r.chain || [])[r.current_step];
+    if (!step) return false;
+    const allowed = new Set(ROLE_ALIASES[step.role] || [step.role]);
+    if (!step.exclusive) allowed.add("super_admin"); // Fuel Payment step excludes Super Admin
+    return allowed.has(user?.role);
+  };
+
+
   const act = async (r, action, needReason) => {
     let remarks = null;
     if (needReason) { remarks = window.prompt(action === "reject" ? "Rejection reason?" : "Note (optional)"); if (action === "reject" && remarks === null) return; }
@@ -1049,11 +1059,17 @@ export default function ProjectRequests() {
                 )}
               </div>
               <DialogFooter className="flex-wrap gap-2">
-                {detail.status === "pending_approval" && (user?.role === (detail.chain || [])[detail.current_step]?.role || user?.role === "super_admin") && (
+                {detail.status === "pending_approval" && canApproveStep(detail) && (
                   <>
                     <Button className="rounded-sm" onClick={() => act(detail, "approve", false)} data-testid="req-approve">Approve</Button>
                     <Button variant="outline" className="rounded-sm text-destructive" onClick={() => act(detail, "reject", true)} data-testid="req-reject">Reject</Button>
                   </>
+                )}
+                {detail.status === "pending_approval" && !canApproveStep(detail) && (
+                  <span className="text-[11px] text-amber-700" data-testid="req-approve-locked">
+                    Awaiting approval by {(detail.chain || [])[detail.current_step]?.label || "the approver"}
+                    {(detail.chain || [])[detail.current_step]?.exclusive ? " only" : ""}
+                  </span>
                 )}
                 {detail.status === "with_dept" && detail.is_stockable && (detail.stock_lines || []).some((l) => l.shortfall > 0) && (
                   <Button variant="outline" className="rounded-sm" onClick={() => raisePR(detail)} data-testid="req-raise-pr"><ShoppingCart className="h-4 w-4 mr-1.5" /> Raise Purchase Request</Button>

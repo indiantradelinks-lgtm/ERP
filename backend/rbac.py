@@ -494,7 +494,9 @@ PERMISSIONS_BASE = {
                   "project_manager", "project_coordinator", "site_supervisor",
                   "accounts_executive", "hr_executive", "admin_executive",
                   "store_manager", "storekeeper", "inventory_manager",
-                  "procurement_executive", "logistics_executive", "logistics_manager"},
+                  "procurement_executive", "logistics_executive", "logistics_manager",
+                  # Fuel Payment requests are approved exclusively by Manager Log
+                  "manager_log", "manager_l_o_g"},
         "delete": {"super_admin", "project_manager"},
     },
     # Project Profit & Loss statement

@@ -30,8 +30,6 @@ export default function ServiceRfqs() {
   const [comparing, setComparing] = useState(null); // {rfq, rows, lowest}
   const [recommendId, setRecommendId] = useState("");
   const [recommendRemarks, setRecommendRemarks] = useState("");
-  const [selecting, setSelecting] = useState(null); // rfq for selection approval
-  const [selRemarks, setSelRemarks] = useState("");
   const [poFor, setPoFor] = useState(null); // rfq
   const [po, setPo] = useState(blankPo());
   const [terms, setTerms] = useState([]);
@@ -99,17 +97,8 @@ export default function ServiceRfqs() {
     setBusy(true);
     try {
       await api.post(`/service-workflow/rfqs/${comparing.rfq_id}/recommend`, { vendor_id: recommendId, remarks: recommendRemarks });
-      toast.success("Vendor recommendation submitted for approval");
+      toast.success("Vendor selected — ready to create the PO");
       setComparing(null); load();
-    } catch (e) { toast.error(apiErrorMessage(e)); } finally { setBusy(false); }
-  };
-
-  const selectionAction = async (action) => {
-    setBusy(true);
-    try {
-      await api.post(`/service-workflow/rfqs/${selecting.id}/selection-action`, { action, remarks: selRemarks });
-      toast.success(`Vendor selection ${action}d`);
-      setSelecting(null); setSelRemarks(""); load();
     } catch (e) { toast.error(apiErrorMessage(e)); } finally { setBusy(false); }
   };
 
@@ -167,8 +156,6 @@ export default function ServiceRfqs() {
                       <Button variant="outline" size="sm" className="h-7 text-xs ml-1" onClick={() => { setQuoting(r); setQuote(blankQuote()); }} data-testid={`svc-rfq-quote-${r.rfq_no}`}>Record Quote</Button>}
                     {["issued", "quotations_received", "recommended", "selection_approved", "po_created"].includes(r.status) &&
                       <Button variant="outline" size="sm" className="h-7 text-xs ml-1" onClick={() => openCompare(r)} data-testid={`svc-rfq-compare-${r.rfq_no}`}><Scale className="h-3 w-3 mr-1" /> Compare</Button>}
-                    {caps.sr_approver && r.status === "recommended" &&
-                      <Button size="sm" className="h-7 text-xs ml-1" onClick={() => setSelecting(r)} data-testid={`svc-rfq-selection-${r.rfq_no}`}>Approve Selection</Button>}
                     {caps.procurement && r.status === "selection_approved" &&
                       <Button size="sm" className="h-7 text-xs ml-1" onClick={async () => { setPoFor(r); const q = selectedVendorQuote(r); setPo({ ...blankPo(), rate: q?.amount ?? "", tax_pct: q?.tax_pct ?? 18, other_charges: q?.other_charges ?? 0, payment_terms: q?.payment_terms || "" }); try { setTerms((await api.get("/service-workflow/terms?active=true")).data); } catch { /* noop */ } }} data-testid={`svc-rfq-create-po-${r.rfq_no}`}>Create PO</Button>}
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDocsFor(r)} data-testid={`svc-rfq-docs-${r.rfq_no}`}><Paperclip className="h-3.5 w-3.5" /></Button>
@@ -313,24 +300,6 @@ export default function ServiceRfqs() {
             <Button variant="outline" onClick={() => setComparing(null)}>Close</Button>
             {caps.procurement && comparing && !["selection_approved", "po_created"].includes(comparing.rfq.status) &&
               <Button disabled={busy || !recommendId} onClick={recommend} data-testid="svc-compare-recommend-submit">Submit Recommendation for Approval</Button>}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Selection approval */}
-      <Dialog open={!!selecting} onOpenChange={(o) => !o && setSelecting(null)}>
-        <DialogContent className="max-w-md rounded-sm" data-testid="svc-rfq-selection-dialog">
-          <DialogHeader><DialogTitle>Approve Vendor Selection — {selecting?.rfq_no}</DialogTitle></DialogHeader>
-          {selecting && (
-            <div className="space-y-3 text-sm">
-              <p>Recommended vendor: <b>{(selecting.vendors.find((v) => v.vendor_id === selecting.recommended_vendor_id) || {}).vendor_name || "—"}</b></p>
-              {selecting.recommendation_remarks && <p className="text-xs text-muted-foreground">“{selecting.recommendation_remarks}”</p>}
-              <div><Label className="text-xs">Remarks</Label><Textarea rows={2} value={selRemarks} onChange={(e) => setSelRemarks(e.target.value)} data-testid="svc-selection-remarks" /></div>
-            </div>
-          )}
-          <DialogFooter className="gap-2">
-            <Button variant="destructive" disabled={busy} onClick={() => selectionAction("reject")} data-testid="svc-selection-reject">Reject</Button>
-            <Button disabled={busy} onClick={() => selectionAction("approve")} data-testid="svc-selection-approve">Approve</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -519,10 +519,16 @@ async def create_request(p: RequestIn, request: Request,
                 raise HTTPException(400, "Self expense must be booked against a Head Office cost center (not a project cost center)")
     if not cc:
         raise HTTPException(400, "Cost Center is mandatory — select a valid Cost Center before submitting this request")
-    steps = [("dept_head", "Project Head")]
-    if est > threshold:
-        steps += [("general_manager", "GM"), ("director", "Director")]
-    chain = [{"role": r, "label": l, "status": "pending", "by": None, "at": None, "remarks": None} for r, l in steps]
+    # Fuel Payment is approved exclusively by Manager Log — no Project Head / GM / Director step
+    if p.request_type == "fuel":
+        chain = [{"role": "manager_log", "label": "Manager Log", "status": "pending",
+                  "by": None, "at": None, "remarks": None, "exclusive": True}]
+    else:
+        steps = [("dept_head", "Project Head")]
+        if est > threshold:
+            steps += [("general_manager", "GM"), ("director", "Director")]
+        chain = [{"role": r, "label": l, "status": "pending", "by": None, "at": None, "remarks": None}
+                 for r, l in steps]
 
     emp = None
     if p.employee_id:
@@ -582,8 +588,24 @@ async def create_request(p: RequestIn, request: Request,
     return doc
 
 
-def _can_act(user: dict, role: str) -> bool:
-    return user.get("role") in (role, "super_admin")
+ROLE_ALIASES = {"manager_log": {"manager_log", "manager_l_o_g"},
+                "manager_op": {"manager_op", "manager_o_p"},
+                "manager_pnv": {"manager_pnv", "manager_p_n_v"}}
+
+
+def _can_act(user: dict, step: Any) -> bool:
+    """Who may clear an approval step.
+
+    Normal steps may also be cleared by Super Admin. Steps marked `exclusive`
+    (e.g. Fuel Payment → Manager Log) accept ONLY that role — Super Admin is
+    deliberately excluded.
+    """
+    role = step if isinstance(step, str) else step.get("role")
+    exclusive = isinstance(step, dict) and step.get("exclusive")
+    allowed = set(ROLE_ALIASES.get(role, {role}))
+    if not exclusive:
+        allowed.add("super_admin")
+    return user.get("role") in allowed
 
 
 async def _split_beneficiaries(row: dict, patch: Dict[str, Any]) -> None:
@@ -625,7 +647,7 @@ async def approve_request(rid: str, p: ActionIn, request: Request,
         raise HTTPException(400, f"Cannot approve in status {row['status']}")
     idx = row["current_step"]
     step = row["chain"][idx]
-    if not _can_act(user, step["role"]):
+    if not _can_act(user, step):
         raise HTTPException(403, f"This step requires {step['label']} ({step['role']})")
     row["chain"][idx] = {**step, "status": "approved", "by": user.get("name") or user.get("email"),
                          "at": now_iso(), "remarks": p.remarks}
@@ -683,7 +705,7 @@ async def reject_request(rid: str, p: ActionIn, request: Request,
         raise HTTPException(400, f"Cannot reject in status {row['status']}")
     idx = row["current_step"]
     step = row["chain"][idx]
-    if not _can_act(user, step["role"]):
+    if not _can_act(user, step):
         raise HTTPException(403, f"This step requires {step['label']} ({step['role']})")
     row["chain"][idx] = {**step, "status": "rejected", "by": user.get("name") or user.get("email"),
                          "at": now_iso(), "remarks": p.remarks}

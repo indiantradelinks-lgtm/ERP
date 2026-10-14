@@ -18,7 +18,6 @@ from pydantic import BaseModel, Field
 from core import db, get_current_user, require_permission, now_iso, new_id
 from audit import audit
 from sequences import next_sequence
-from approval_engine import build_chain
 
 router = APIRouter(prefix="/service-workflow", tags=["service-workflow"])
 
@@ -68,8 +67,9 @@ async def get_service_categories(active_only: bool = False) -> dict:
 
 
 async def _fresh_sr_chain() -> list:
-    """Approval chain for Service Requests, resolved from the Super Admin Approval Matrix."""
-    return await build_chain("service_request")
+    """Service Procurement has NO internal approval gates any more — the only
+    approval left is the Accounts payment approval on the invoice."""
+    return []
 
 
 def _validate_submit(d: dict):
@@ -162,14 +162,16 @@ async def create_request(p: SRIn, request: Request,
                          user: dict = Depends(require_permission("service_workflow", "write"))):
     if p.submit:
         _validate_submit(p.dict())
-    status = "submitted" if p.submit else "draft"
-    chain = await _fresh_sr_chain() if p.submit else []
+    status = "approved" if p.submit else "draft"
     doc = {**p.dict(exclude={"submit"}), "id": new_id(),
            "sr_no": await next_sequence("SVC"),
            "request_date": now_iso()[:10], "status": status,
-           "approval_chain": chain, "approval_step": 0,
+           "approval_chain": [], "approval_step": 0,
            "requester_id": user.get("id"), "requester_name": _uname(user), "requester_role": user.get("role"),
-           "current_owner": (chain[0]["label"] if chain else "Approver") if p.submit else _uname(user),
+           "current_owner": "Logistics / Procurement" if p.submit else _uname(user),
+           "approval": ({"action": "auto", "by": "System (no approval required)", "role": "system",
+                         "at": now_iso(), "remarks": "Service Request approval stage removed"}
+                        if p.submit else None),
            "rfq_id": None, "po_ids": [],
            "history": [_hist(user, "created" if not p.submit else "created_and_submitted", "", "", status)],
            "created_by": _uname(user), "created_by_id": user.get("id"),
@@ -247,14 +249,16 @@ async def update_request(sr_id: str, p: SRIn, request: Request,
         raise HTTPException(400, f"Cannot edit a request in status '{sr['status']}'")
     if sr.get("requester_id") != user.get("id") and user.get("role") != "super_admin":
         raise HTTPException(403, "Only the requester can edit this request")
-    status = "submitted" if p.submit else sr["status"]
+    status = "approved" if p.submit else sr["status"]
     if p.submit:
         _validate_submit(p.dict())
     upd = {**p.dict(exclude={"submit"}), "status": status, "updated_at": now_iso()}
     if p.submit:
-        chain = await _fresh_sr_chain()
-        upd.update({"approval_chain": chain, "approval_step": 0,
-                    "current_owner": chain[0]["label"] if chain else "Approver"})
+        upd.update({"approval_chain": [], "approval_step": 0,
+                    "current_owner": "Logistics / Procurement",
+                    "approval": {"action": "auto", "by": "System (no approval required)",
+                                 "role": "system", "at": now_iso(),
+                                 "remarks": "Service Request approval stage removed"}})
     await db.svc_requests.update_one({"id": sr_id}, {
         "$set": upd,
         "$push": {"history": _hist(user, "resubmitted" if p.submit else "updated", "", sr["status"], status)}})
@@ -270,10 +274,13 @@ async def submit_request(sr_id: str, request: Request,
     if sr["status"] not in ("draft", "sent_back", "rejected"):
         raise HTTPException(400, f"Cannot submit from status '{sr['status']}'")
     _validate_submit(sr)
-    chain = await _fresh_sr_chain()
-    await _set_sr_status(sr_id, "submitted", user, "submitted",
-                         extra={"approval_chain": chain, "approval_step": 0,
-                                "current_owner": chain[0]["label"] if chain else "Approver"})
+    await _set_sr_status(sr_id, "approved", user, "submitted",
+                         "Approval stage removed — cleared straight to RFQ / Procurement",
+                         extra={"approval_chain": [], "approval_step": 0,
+                                "current_owner": "Logistics / Procurement",
+                                "approval": {"action": "auto", "by": "System (no approval required)",
+                                             "role": "system", "at": now_iso(),
+                                             "remarks": "Service Request approval stage removed"}})
     await audit(user=user, action="svc_request_submit", resource="service_workflow",
                 record_id=sr_id, after={"sr_no": sr["sr_no"]}, ip=_ip(request))
     return await _sr(sr_id)
@@ -523,9 +530,12 @@ async def recommend_vendor(rfq_id: str, p: RecommendIn, request: Request, user: 
     if rfq["status"] in ("selection_approved", "po_created"):
         raise HTTPException(400, "Vendor selection already finalised")
     await db.svc_rfqs.update_one({"id": rfq_id}, {
-        "$set": {"status": "recommended", "recommended_vendor_id": p.vendor_id,
-                 "recommendation_remarks": p.remarks, "updated_at": now_iso()},
-        "$push": {"history": _hist(user, "vendor_recommended", f"{v['vendor_name']} · {p.remarks}")}})
+        "$set": {"status": "selection_approved", "recommended_vendor_id": p.vendor_id,
+                 "recommendation_remarks": p.remarks, "updated_at": now_iso(),
+                 "selection_approval": {"action": "auto", "by": "System (no approval required)",
+                                        "role": "system", "at": now_iso(),
+                                        "remarks": "Vendor selection approval stage removed"}},
+        "$push": {"history": _hist(user, "vendor_selected", f"{v['vendor_name']} · {p.remarks}")}})
     await audit(user=user, action="svc_rfq_recommend", resource="service_workflow",
                 record_id=rfq_id, after={"vendor": v["vendor_name"]}, ip=_ip(request))
     return await _rfq(rfq_id)
@@ -759,8 +769,13 @@ async def submit_po(po_id: str, request: Request, user: dict = Depends(get_curre
     if po["status"] != "draft":
         raise HTTPException(400, f"Only draft POs can be submitted (status '{po['status']}')")
     await db.svc_pos.update_one({"id": po_id}, {
-        "$set": {"status": "pending_approval", "updated_at": now_iso()},
-        "$push": {"history": _hist(user, "po_submitted", "", "draft", "pending_approval")}})
+        "$set": {"status": "approved", "updated_at": now_iso(),
+                 "po_approval": {"action": "auto", "by": "System (no approval required)",
+                                 "role": "system", "at": now_iso(),
+                                 "remarks": "PO approval stage removed"}},
+        "$push": {"history": _hist(user, "po_submitted",
+                                   "Approval stage removed — PO cleared for issue",
+                                   "draft", "approved")}})
     return await _po(po_id)
 
 
@@ -1296,12 +1311,14 @@ async def dashboard(date_from: str = "", date_to: str = "", department: str = ""
 
     cards = {
         "total_requests": await c("svc_requests", base),
-        "pending_approvals": await c("svc_requests", {**base, "status": {"$in": ["submitted", "under_review"]}}),
+        "draft_requests": await c("svc_requests", {**base, "status": "draft"}),
+        # Internal approval gates removed — kept at 0 for API compatibility
+        "pending_approvals": 0,
         "approved_requests": await c("svc_requests", {**base, "status": "approved"}),
         "rejected_requests": await c("svc_requests", {**base, "status": "rejected"}),
         "rfqs_pending": await c("svc_rfqs", {**link, "status": {"$in": ["draft", "issued"]}}),
-        "quotations_pending": await c("svc_rfqs", {**link, "status": {"$in": ["issued", "quotations_received", "recommended"]}}),
-        "pos_pending": await c("svc_pos", {**vlink, "status": {"$in": ["draft", "pending_approval", "approved"]}}),
+        "quotations_pending": await c("svc_rfqs", {**link, "status": {"$in": ["issued", "quotations_received"]}}),
+        "pos_pending": await c("svc_pos", {**vlink, "status": {"$in": ["draft", "approved"]}}),
         "services_in_progress": await c("svc_pos", {**vlink, "status": {"$in": ["issued", "in_progress"]}}),
         "srn_pending": await c("svc_srns", {**vlink, "status": {"$in": ["draft", "submitted"]}}),
         "invoices_pending": await c("svc_invoices", {**vlink, "status": {"$in": ["received", "matching", "exception_review", "pending_approval"]}}),
