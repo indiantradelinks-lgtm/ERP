@@ -115,6 +115,12 @@ export default function ProjectRequests() {
   const [parsing, setParsing] = useState(false);
 
   const meta = useMemo(() => types.find((t) => t.key === form.request_type), [types, form.request_type]);
+  // Manager Log only tracks Fuel Payment and Service Invoice (SR Workflow) payments
+  const isManagerLog = ["manager_log", "manager_l_o_g"].includes(user?.role);
+  const filterTypes = useMemo(() => (isManagerLog
+    ? [...types.filter((t) => t.key === "fuel"),
+       { key: "service_invoice", label: "Service Invoice (SR Workflow)" }]
+    : types), [types, isManagerLog]);
   const isStockable = form.request_type && STOCKABLE.has(form.request_type);
   const isManpower = form.request_type === "manpower";
   const isVehicle = form.request_type?.startsWith("vehicle") || form.request_type === "one_time_vehicle";
@@ -417,7 +423,7 @@ export default function ProjectRequests() {
           <select value={filters.request_type} onChange={(e) => setFilters({ ...filters, request_type: e.target.value })}
             className="h-8 rounded-sm border border-input bg-background px-2 text-xs" data-testid="req-filter-type">
             <option value="">All types</option>
-            {types.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+            {filterTypes.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
           </select>
           <select value={filters.dept} onChange={(e) => setFilters({ ...filters, dept: e.target.value })}
             className="h-8 rounded-sm border border-input bg-background px-2 text-xs" data-testid="req-filter-dept">

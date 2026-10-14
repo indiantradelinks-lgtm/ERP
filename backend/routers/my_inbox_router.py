@@ -68,9 +68,10 @@ async def _central_approvals(role: str) -> List[dict]:
     return out
 
 
-async def _project_requests(role: str) -> List[dict]:
-    rows = await db.project_requests.find(
-        {"status": "pending_approval"}, {"_id": 0}).sort("created_at", -1).limit(200).to_list(200)
+async def _project_requests(role: str, user: dict) -> List[dict]:
+    from request_visibility import apply_request_visibility
+    q = await apply_request_visibility(user, {"status": "pending_approval"})
+    rows = await db.project_requests.find(q, {"_id": 0}).sort("created_at", -1).limit(200).to_list(200)
     out = []
     for r in rows:
         step = _my_chain_step(r, role)
@@ -196,7 +197,7 @@ async def _service_requests(role: str, user_id: str) -> List[dict]:
 async def my_inbox(user: dict = Depends(get_current_user)):
     role = user.get("role")
     results = await asyncio.gather(
-        _central_approvals(role), _project_requests(role), _daily_expenses(role),
+        _central_approvals(role), _project_requests(role, user), _daily_expenses(role),
         _expense_payments(role), _scaffolding(role), _dprs(role), _ra_bills(role),
         _service_requests(role, user.get("id")))
     items: List[dict] = [it for group in results for it in group]

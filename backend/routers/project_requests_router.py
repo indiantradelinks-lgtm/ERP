@@ -40,6 +40,7 @@ from routers.project_expenses_router import EXPENSE_TYPES as PEX_TYPES
 from routers.project_expenses_router import get_expense_types as _pex_types
 from sequences import next_sequence
 from exports import to_excel, to_pdf
+from request_visibility import apply_request_visibility, own_rows_clauses
 
 router = APIRouter(tags=["project-requests"])
 logger = logging.getLogger("erp")
@@ -330,8 +331,9 @@ async def list_requests(request: Request, project_code: Optional[str] = None, re
     scoped = await apply_project_scope(user, q, "project_id")
     # Users must always see requests THEY raised (e.g. self/expense payments routed
     # to Head Office with no project scope) with live status.
-    q = scoped if scoped is q else {"$or": [scoped, {**base, "created_by_id": user.get("id")}]}
+    q = scoped if scoped is q else {"$or": [scoped, *[{**base, **o} for o in await own_rows_clauses(user)]]}
     q["source"] = {"$ne": "vendor_bill"}  # vendor-bill shadow rows live only in the Accounts queue
+    q = await apply_request_visibility(user, q)
     paged = await maybe_paged(request, "project_requests", q, "created_at",
                               ["request_no", "project_code", "project_name", "client_name", "request_type_label", "request_type",
                                "owning_dept", "status", "description", "vendor", "created_by"])
@@ -397,7 +399,8 @@ async def summary(project_code: Optional[str] = None,
         q["created_at"] = rng
     base = dict(q)
     scoped = await apply_project_scope(user, q, "project_id")
-    q = scoped if scoped is q else {"$or": [scoped, {**base, "created_by_id": user.get("id")}]}
+    q = scoped if scoped is q else {"$or": [scoped, *[{**base, **o} for o in await own_rows_clauses(user)]]}
+    q = await apply_request_visibility(user, q)
     rows = await db.project_requests.find(q, {"_id": 0, "status": 1, "est_value": 1}).to_list(5000)
     return {
         "total": len(rows),
@@ -1499,6 +1502,7 @@ async def export_requests(fmt: str, project_code: Optional[str] = None, status: 
     q = await apply_project_scope(user, q, "project_id")
     if request_type:
         q["request_type"] = request_type
+    q = await apply_request_visibility(user, q)
     rows = await db.project_requests.find(q, {"_id": 0}).sort("created_at", -1).to_list(5000)
     data = to_excel("project_requests", rows) if fmt == "xlsx" else to_pdf("project_requests", rows)
     media = ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

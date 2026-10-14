@@ -69,6 +69,28 @@ async def ensure_fuel_approver_permissions() -> bool:
     return True
 
 
+async def backfill_advance_visibility() -> int:
+    """Stamp `self_raised` / `advance_created_by_id` on existing advance shadow rows
+    so the Project Request Center can keep self-advances private."""
+    rows = await db.project_requests.find(
+        {"source": "advance", "self_raised": {"$exists": False}},
+        {"_id": 0, "id": 1, "source_id": 1}).to_list(5000)
+    if not rows:
+        return 0
+    advs = {a["id"]: a async for a in db.employee_advances.find(
+        {"id": {"$in": [r.get("source_id") for r in rows if r.get("source_id")]}},
+        {"_id": 0, "id": 1, "on_behalf_of": 1, "created_by_id": 1})}
+    n = 0
+    for r in rows:
+        adv = advs.get(r.get("source_id")) or {}
+        await db.project_requests.update_one({"id": r["id"]}, {"$set": {
+            "self_raised": not bool(adv.get("on_behalf_of")),
+            "advance_created_by_id": adv.get("created_by_id")}})
+        n += 1
+    logger.info("[approval-policy] Backfilled advance visibility flags on %s row(s)", n)
+    return n
+
+
 async def reroute_pending_fuel_requests() -> int:
     res = await db.project_requests.update_many(
         {"request_type": "fuel", "status": "pending_approval"},

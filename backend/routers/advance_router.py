@@ -942,6 +942,9 @@ async def _push_advance_to_accounts(advance_id: str) -> None:
         "description": f"Approved employee advance {adv.get('advance_no')} — {adv.get('employee_name')} "
                        f"({adv.get('installments') or 0} EMIs)",
         "items": [], "chain": [], "current_step": None,
+        # Visibility: a SELF-raised advance is private to the raiser / employee / PM / processors
+        "self_raised": not bool(adv.get("on_behalf_of")),
+        "advance_created_by_id": adv.get("created_by_id"),
         "created_by": adv.get("created_by") or adv.get("requested_by") or "approval_engine", "created_at": now_iso(),
     })
 

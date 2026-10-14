@@ -250,10 +250,11 @@ async def seed_quotation_conditions_on_startup():
     except Exception as e:
         logger.warning(f"[department-master] Seed skipped: {e}")
     try:
-        from approval_policy import clear_removed_service_approvals, reroute_pending_fuel_requests, ensure_fuel_approver_permissions
+        from approval_policy import clear_removed_service_approvals, reroute_pending_fuel_requests, ensure_fuel_approver_permissions, backfill_advance_visibility
         await clear_removed_service_approvals()
         await reroute_pending_fuel_requests()
         await ensure_fuel_approver_permissions()
+        await backfill_advance_visibility()
     except Exception as e:
         logger.warning(f"[approval-policy] Cleanup skipped: {e}")
     try:
