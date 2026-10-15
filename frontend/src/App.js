@@ -156,6 +156,7 @@ import ServiceRequests from "@/pages/services/ServiceRequests";
 import ServiceRequestDetail from "@/pages/services/ServiceRequestDetail";
 import ServiceRfqs from "@/pages/services/ServiceRfqs";
 import ServicePos from "@/pages/services/ServicePos";
+import ServiceRecurring from "@/pages/services/ServiceRecurring";
 import ServiceSrns from "@/pages/services/ServiceSrns";
 import ServiceInvoices from "@/pages/services/ServiceInvoices";
 import HrPhase5 from "@/pages/hr/HrPhase5";
@@ -489,6 +490,7 @@ export default function App() {
             <Route path="/app/services/requests/:id" element={<ProtectedShell><ServiceRequestDetail /></ProtectedShell>} />
             <Route path="/app/services/rfqs" element={<ProtectedShell><ServiceRfqs /></ProtectedShell>} />
             <Route path="/app/services/pos" element={<ProtectedShell><ServicePos /></ProtectedShell>} />
+            <Route path="/app/services/recurring" element={<ProtectedShell><ServiceRecurring /></ProtectedShell>} />
             <Route path="/app/services/srns" element={<ProtectedShell><ServiceSrns /></ProtectedShell>} />
             <Route path="/app/services/invoices" element={<ProtectedShell><ServiceInvoices /></ProtectedShell>} />
             <Route path="*" element={<Navigate to="/" replace />} />

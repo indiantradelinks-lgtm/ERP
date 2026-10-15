@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Paperclip, Send, FileSignature, PackageCheck, Printer, BookText, Mail, Pencil } from "lucide-react";
+import { Paperclip, Send, FileSignature, PackageCheck, Printer, BookText, Mail, Pencil, CalendarClock } from "lucide-react";
 import { toast } from "sonner";
 import { api, apiErrorMessage, API } from "@/lib/api";
 import RowAttachments from "@/components/RowAttachments";
@@ -28,6 +28,26 @@ export default function ServicePos() {
   const [docsFor, setDocsFor] = useState(null);
   const [tncOpen, setTncOpen] = useState(false);
   const [editFor, setEditFor] = useState(null);
+  const [recFor, setRecFor] = useState(null);
+  const [recForm, setRecForm] = useState({ monthly_amount: "", validity_from: "", validity_to: "", service_label: "", remarks: "" });
+
+  const openRecurring = (r) => {
+    setRecForm({ monthly_amount: String(r.rate || r.total_value || ""), validity_from: r.service_period_from || "",
+                 validity_to: r.service_period_to || "", service_label: r.scope_of_work || "", remarks: "" });
+    setRecFor(r);
+  };
+
+  const submitRecurring = async () => {
+    setBusy(true);
+    try {
+      await api.post(`/service-recurring/pos/${recFor.id}/enable`, {
+        monthly_amount: Number(recForm.monthly_amount || 0), validity_from: recForm.validity_from,
+        validity_to: recForm.validity_to, service_label: recForm.service_label, remarks: recForm.remarks,
+      });
+      toast.success(`${recFor.po_no} set up as a monthly recurring service`);
+      setRecFor(null); load(); nav("/app/services/recurring");
+    } catch (e) { toast.error(apiErrorMessage(e)); } finally { setBusy(false); }
+  };
   const [mailFor, setMailFor] = useState(null);
   const [mail, setMail] = useState({ to: "", message: "" });
   const [busy, setBusy] = useState(false);
@@ -123,6 +143,10 @@ export default function ServicePos() {
                     <Button variant="outline" size="sm" className="h-7 text-xs ml-1" onClick={() => act(`/service-workflow/pos/${r.id}/issue`, `${r.po_no} issued to ${r.vendor_name}`)} data-testid={`svc-po-issue-${r.po_no}`}><Send className="h-3 w-3 mr-1" /> Issue to Vendor</Button>}
                   {(caps.srn || caps.procurement) && ["issued", "in_progress"].includes(r.status) &&
                     <Button variant="outline" size="sm" className="h-7 text-xs ml-1" onClick={() => { setSrnFor(r); setSrn(blankSrn()); }} data-testid={`svc-po-srn-${r.po_no}`}><PackageCheck className="h-3 w-3 mr-1" /> Create SRN</Button>}
+                  {caps.procurement && ["approved", "issued", "in_progress"].includes(r.status) && !r.recurring &&
+                    <Button variant="outline" size="sm" className="h-7 text-xs ml-1" onClick={() => openRecurring(r)} data-testid={`svc-po-recurring-${r.po_no}`}><CalendarClock className="h-3 w-3 mr-1" /> Monthly Recurring</Button>}
+                  {r.recurring &&
+                    <Button variant="ghost" size="sm" className="h-7 text-xs ml-1 text-emerald-700" onClick={() => nav("/app/services/recurring")} data-testid={`svc-po-recurring-open-${r.po_no}`}><CalendarClock className="h-3 w-3 mr-1" /> Monthly service</Button>}
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDocsFor(r)} data-testid={`svc-po-docs-${r.po_no}`}><Paperclip className="h-3.5 w-3.5" /></Button>
                 </TableCell>
               </TableRow>
@@ -187,6 +211,48 @@ export default function ServicePos() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setMailFor(null)}>Cancel</Button>
             <Button disabled={busy || !mail.to.includes("@")} onClick={sendMail} data-testid="svc-po-mail-send"><Mail className="h-3.5 w-3.5 mr-1" /> Send PO</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Enable monthly recurring service */}
+      <Dialog open={!!recFor} onOpenChange={(o) => !o && setRecFor(null)}>
+        <DialogContent className="max-w-sm rounded-sm" data-testid="svc-po-recurring-dialog">
+          <DialogHeader>
+            <DialogTitle className="text-base">Monthly recurring service — {recFor?.po_no}</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Fixed monthly services such as project vehicles. The Service Request, RFQ and PO stay as they are —
+            Logistics will only raise the monthly payment from <b>Monthly Service Payments</b>. Validity defaults to
+            the Project Start / Target Completion dates in Project Master.
+          </p>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-[10px] uppercase tracking-wider">Monthly amount (excl. tax) *</Label>
+              <Input type="number" value={recForm.monthly_amount} onChange={(e) => setRecForm({ ...recForm, monthly_amount: e.target.value })}
+                className="rounded-sm mt-1 h-9" data-testid="svc-po-recurring-amount" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-[10px] uppercase tracking-wider">Valid from</Label>
+                <Input type="date" value={recForm.validity_from} onChange={(e) => setRecForm({ ...recForm, validity_from: e.target.value })}
+                  className="rounded-sm mt-1 h-9" data-testid="svc-po-recurring-from" />
+              </div>
+              <div>
+                <Label className="text-[10px] uppercase tracking-wider">Valid to</Label>
+                <Input type="date" value={recForm.validity_to} onChange={(e) => setRecForm({ ...recForm, validity_to: e.target.value })}
+                  className="rounded-sm mt-1 h-9" data-testid="svc-po-recurring-to" />
+              </div>
+            </div>
+            <div>
+              <Label className="text-[10px] uppercase tracking-wider">Service label</Label>
+              <Input value={recForm.service_label} onChange={(e) => setRecForm({ ...recForm, service_label: e.target.value })}
+                placeholder="e.g. 2 fixed vehicles — site transport" className="rounded-sm mt-1 h-9" data-testid="svc-po-recurring-label" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" className="rounded-sm" onClick={() => setRecFor(null)}>Cancel</Button>
+            <Button className="rounded-sm" disabled={busy || !Number(recForm.monthly_amount)} onClick={submitRecurring}
+              data-testid="svc-po-recurring-submit">Enable Monthly Payments</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

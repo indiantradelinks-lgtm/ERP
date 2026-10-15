@@ -15,14 +15,14 @@ from typing import Any, Dict, List, Optional
 from core import db
 
 MANAGER_LOG_ROLES = {"manager_log", "manager_l_o_g"}
-MANAGER_LOG_TYPES = ["fuel", "service_invoice"]
+MANAGER_LOG_TYPES = ["fuel", "service_invoice", "service_recurring"]
 ADVANCE_PRIVILEGED_ROLES = {"super_admin", "director", "general_manager",
                             "hr_executive", "accounts_executive"}
 
 
 def manager_log_clause() -> Dict[str, Any]:
     return {"$or": [{"request_type": {"$in": MANAGER_LOG_TYPES}},
-                    {"source": "service_invoice"}]}
+                    {"source": {"$in": ["service_invoice", "service_recurring"]}}]}
 
 
 async def _my_employee_keys(user: dict) -> List[str]:
@@ -91,6 +91,7 @@ def can_view_request(user: dict, row: Optional[dict]) -> bool:
         return False
     role = user.get("role")
     if role in MANAGER_LOG_ROLES:
-        if row.get("request_type") not in MANAGER_LOG_TYPES and row.get("source") != "service_invoice":
+        if row.get("request_type") not in MANAGER_LOG_TYPES and \
+                row.get("source") not in ("service_invoice", "service_recurring"):
             return False
     return True
