@@ -12,6 +12,8 @@ on_service_invoice_paid() to cascade Paid → PO → SR closure.
 from datetime import datetime, timezone
 from typing import Optional, List
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
@@ -19,6 +21,7 @@ from core import db, get_current_user, require_permission, now_iso, new_id
 from audit import audit
 from sequences import next_sequence
 
+logger = logging.getLogger("erp")
 router = APIRouter(prefix="/service-workflow", tags=["service-workflow"])
 
 SR_APPROVERS = {"super_admin", "director", "general_manager", "dept_head", "project_manager"}
@@ -1176,8 +1179,9 @@ async def _push_invoice_to_payment_queue(inv: dict, user: dict):
     if await db.project_requests.find_one({"source": "service_invoice", "source_id": inv["id"]},
                                           {"_id": 0, "id": 1}):
         return
+    pr_id = new_id()
     await db.project_requests.insert_one({
-        "id": new_id(), "request_no": inv["inv_no"],
+        "id": pr_id, "request_no": inv["inv_no"],
         "request_type": "service_invoice", "request_type_label": "Service Invoice (SR Workflow)",
         "is_payment": True, "is_stockable": False, "owning_dept": "procurement",
         "status": "with_dept", "payment_status": "payment_pending",
@@ -1192,6 +1196,12 @@ async def _push_invoice_to_payment_queue(inv: dict, user: dict):
                         f"(PO {inv.get('po_no')} / SRN {inv.get('srn_no')} / SR {inv.get('sr_no')})"),
         "items": [], "chain": [], "current_step": None,
         "created_by": _uname(user), "created_by_id": user.get("id"), "created_at": now_iso()})
+    # Hand the invoice documents to Accounts automatically — no manual re-upload
+    try:
+        from file_links import mirror_files
+        await mirror_files("service_invoices", inv["id"], "project_requests", pr_id)
+    except Exception as e:
+        logger.warning(f"Auto-link of invoice documents skipped: {e}")
 
 
 @router.post("/invoices/{inv_id}/action")

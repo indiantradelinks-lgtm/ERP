@@ -104,6 +104,13 @@ async def upload_file(
     }
     await db.files.insert_one(record)
     record.pop("_id", None)
+    # Service Invoice docs must reach Accounts automatically with the payment
+    if parent_type == "service_invoices":
+        try:
+            from file_links import mirror_service_invoice_docs
+            await mirror_service_invoice_docs(parent_id, only_file_id=record["id"])
+        except Exception as e:
+            logger.warning(f"Auto-link of invoice doc skipped: {e}")
     # Queue for OneDrive push (no-op if integration disabled)
     try:
         from routers.onedrive_router import enqueue_file

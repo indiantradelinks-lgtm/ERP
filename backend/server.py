@@ -258,6 +258,11 @@ async def seed_quotation_conditions_on_startup():
     except Exception as e:
         logger.warning(f"[approval-policy] Cleanup skipped: {e}")
     try:
+        from file_links import backfill_service_invoice_docs
+        await backfill_service_invoice_docs()
+    except Exception as e:
+        logger.warning(f"[files] Service-invoice doc backfill skipped: {e}")
+    try:
         from head_office_project import ensure_head_office_project
         if await ensure_head_office_project():
             logger.info("[head-office] Seeded 'Head Office – Delhi' internal project (HEAD-OFFICE)")

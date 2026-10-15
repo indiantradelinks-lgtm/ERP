@@ -93,7 +93,8 @@ async def backfill_advance_visibility() -> int:
 
 async def reroute_pending_fuel_requests() -> int:
     res = await db.project_requests.update_many(
-        {"request_type": "fuel", "status": "pending_approval"},
+        {"request_type": "fuel", "status": "pending_approval",
+         "chain.role": {"$ne": "manager_log"}},
         {"$set": {"chain": [dict(FUEL_STEP)], "current_step": 0, "updated_at": now_iso()}})
     if res.modified_count:
         logger.info("[approval-policy] Re-routed %s pending fuel request(s) to Manager Log", res.modified_count)
