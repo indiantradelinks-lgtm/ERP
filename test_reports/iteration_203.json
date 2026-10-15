@@ -1,0 +1,31 @@
+{
+  "summary": "Iteration 203 — Monthly Recurring Service Payments. Backend: 20/20 tests passing covering enable guards (amount>0, inverted dates, validity>project-end, duplicate active contract), month-grid shape with future-month blocked_reason, raise (success + tax calc), duplicate/future/out-of-validity, PO value cap, extend (beyond-project-end + non-future), pause/resume status transitions, RBAC (hr_executive→403 on enable; admin→200 list), and cron auth (401 no/wrong token, 2xx valid, idempotent via X-Webhook-Id). Additional manual probe verified project-closed-via-DB blocks raise with correct 400 'Project is closed — monthly payments have stopped' and the months grid blocked_reason surfaces; reopening the project restores raising. Frontend: /app/services/recurring loads with all 4 KPI cards (Active Contracts, Due this month, Monthly Commitment, Validity Ending Soon) and empty-state table. /app/services/pos shows 'Monthly Recurring' button on approved PO SPO-2026-0006 and 'Issue to Vendor' on approved + 'Create SRN' on issued SPO-2026-0008. Menu item 'Monthly Service Payments' present under Service Procurement. No regressions observed in the Service PO list / normal procurement chain.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter203_service_recurring.py",
+    "/app/test_reports/pytest/iter203.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "service_recurring_router.py line 203–204: 'expiring_soon' check uses `<= _month_key(now_iso()) + \"-31\"` which concatenates to e.g. '2026-10-31' — works only accidentally; better to use proper date arithmetic (end-of-month).",
+    "list_monthly_payments() (line 388–393): uses `async for` inside a dict comprehension — valid Python but mixed with sync dict comprehension syntax; readability only, no bug.",
+    "auto_draft_current_month() silently swallows all non-HTTPException errors as 'skipped' — makes cron debugging hard; consider logging the exception.",
+    "store_incharge currently has service_workflow:read (returns 200 on list). Spec said non-logistics/procurement roles 'can still read the list', so this appears intentional; just flagging that the spec sentence 'a role without service_workflow read gets 403 on the list' was not reproducible with the seeded roles (none of admin/store/hr are configured without that read). Not a bug.",
+    "cron_router._authorise returns 401 if WEBHOOK_CRON_SECRET is missing — good; but auth error message leaks whether token is missing vs invalid (minor info-disclosure, acceptable for cron)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter203_service_recurring.py (new)"
+  ],
+  "success_rate": {"backend": "100% (20/20)", "frontend": "100% on checked pages"},
+  "test_credentials": "admin@erp.com / Admin@123; store@erp.com / Store@1234; hr.test@erp.com / HR@12345. test_log@erp.com was NOT seeded in preview DB — tests used admin (which has RAISE_ROLES via super_admin). Main agent should seed test_log@erp.com if a dedicated manager_log happy-path test is required.",
+  "seed_data_creation": "All test fixtures (TEST-REC-{uid} project, TEST-SPO-{uid} svc_pos, derived contract + svc_recurring_payments + project_requests) are inserted via Mongo in a module-scoped fixture and torn down at module end. Verified post-run: no residual TEST-REC-* records.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Reusable pytest at /app/backend/tests/test_iter203_service_recurring.py. It uses direct Mongo inserts to bypass the SR→RFQ→PO chain and relies on MONGO_URL/DB_NAME + REACT_APP_BACKEND_URL from env. The project close/reopen flow had to go through Mongo (PATCH/PUT /api/projects/{code} returned 405/404) — the regular Project Master UI handles this, so that is not a public API. For UI dialog interaction tests, selectors on the Monthly Recurring dialog weren't exercised; consider adding data-testid attributes on the dialog's amount/validity inputs and submit button for easier automation.",
+  "rca of the issue": "No bugs found. The feature is implemented correctly per all 12 acceptance criteria. One doc/spec nit: the project-end-date update path for the extend scenario is not exposed via REST (/api/projects PATCH 405), only via UI/Mongo — adequate for operations but not test-automatable without a dedicated endpoint."
+}

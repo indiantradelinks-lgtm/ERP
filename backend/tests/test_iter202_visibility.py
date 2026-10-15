@@ -25,7 +25,7 @@ CREDS = {
     "store": ("store@erp.com", "Store@1234"),
 }
 
-MANAGER_LOG_ALLOWED = {"fuel", "service_invoice"}
+MANAGER_LOG_ALLOWED = {"fuel", "service_invoice", "service_recurring"}
 
 
 def _login(role_key):
@@ -86,7 +86,7 @@ class TestManagerLogList:
         for r in rows:
             rt = r.get("request_type")
             src = r.get("source")
-            assert rt in MANAGER_LOG_ALLOWED or src == "service_invoice", (
+            assert rt in MANAGER_LOG_ALLOWED or src in ("service_invoice", "service_recurring"), (
                 f"Leak: req_no={r.get('request_no')} type={rt} source={src}"
             )
 
@@ -107,7 +107,7 @@ class TestManagerLogList:
         assert len(sa_rows) >= len(ml_rows)
         # super_admin should see types besides fuel/service_invoice
         other = [r for r in sa_rows if r.get("request_type") not in MANAGER_LOG_ALLOWED
-                 and r.get("source") != "service_invoice"]
+                 and r.get("source") not in ("service_invoice", "service_recurring")]
         assert len(other) > 0, "super_admin should see non-manager_log rows too"
 
 
