@@ -66,6 +66,7 @@ export default function Enquiries() {
   const [pulse, setPulse] = useState(null);
   useSearchLanding(setQuery, [rows]);
   const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(initialForm());
   const [convertOpen, setConvertOpen] = useState(false);
   const [convertForm, setConvertForm] = useState({ customer_po: "", contract_value: 0, payment_terms: "Net 30", create_project: true });
@@ -147,13 +148,21 @@ export default function Enquiries() {
   const create = async () => {
     if (!form.client_id) { toast.error("Client is required — pick from the master"); return; }
     if (!form.site_id)   { toast.error("Client Site is required — pick from the master"); return; }
+    if (saving) return;
+    setSaving(true);
     try {
-      const { data } = await api.post("/enquiries", { ...form, expected_value: Number(form.expected_value) || 0, service_type: form.rfq_type.includes("supply_service") ? "sales_services" : (form.rfq_type.includes("service") ? "services" : "sales") });
-      toast.success(`Enquiry ${data.enquiry_no} created${data.quotation_no ? ` · auto-quote ${data.quotation_no}` : ""}`);
+      const res = await api.post("/enquiries", { ...form, expected_value: Number(form.expected_value) || 0, service_type: form.rfq_type.includes("supply_service") ? "sales_services" : (form.rfq_type.includes("service") ? "services" : "sales") });
+      const data = res.data;
+      if (res.headers?.["x-duplicate-submission"] !== "replayed") {
+        toast.success(`Enquiry ${data.enquiry_no} created${data.quotation_no ? ` · auto-quote ${data.quotation_no}` : ""}`);
+      }
       setOpen(false);
       setForm(initialForm());
       load();
-    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+    } catch (e) {
+      // A duplicate block already raises the global "Duplicate detected" warning.
+      if (!e.response?.data?.duplicate) toast.error(e.response?.data?.detail || "Failed");
+    } finally { setSaving(false); }
   };
 
   const setStatus = async (enq, status) => {
@@ -241,6 +250,7 @@ export default function Enquiries() {
                 pickSite={pickSite}
                 onClose={() => setOpen(false)}
                 onSave={create}
+                saving={saving}
               />
             </Dialog>
           </div>
@@ -366,7 +376,7 @@ function PulseKpi({ label, value, icon: Icon = Briefcase, tone = "neutral" }) {
   );
 }
 
-function EnquiryDialog({ form, setForm, clients, sites, pickClient, pickSite, onClose, onSave }) {
+function EnquiryDialog({ form, setForm, clients, sites, pickClient, pickSite, onClose, onSave, saving }) {
   // Show only sites for the selected client. If none picked, show empty (forces user to pick client first).
   const filteredSites = (sites || []).filter((s) => s.client_id === form.client_id);
   const clientOptions = (clients || []).map((c) => ({
@@ -487,7 +497,7 @@ function EnquiryDialog({ form, setForm, clients, sites, pickClient, pickSite, on
 
       <DialogFooter>
         <Button variant="outline" className="rounded-sm" onClick={onClose}>Cancel</Button>
-        <Button className="rounded-sm" onClick={onSave} data-testid="enquiries-save">Save & Auto-Quote</Button>
+        <Button className="rounded-sm" onClick={onSave} disabled={saving} data-testid="enquiries-save">{saving ? "Saving…" : "Save & Auto-Quote"}</Button>
       </DialogFooter>
     </DialogContent>
   );

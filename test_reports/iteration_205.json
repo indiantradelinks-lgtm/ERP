@@ -1,0 +1,39 @@
+{
+  "summary": "Frontend test of ERP-wide duplicate prevention as Super Admin. PASS: sidebar 'Blocked Duplicates' item (inside Management & Admin, has to be expanded) opens /app/admin/duplicate-blocks, page loads with 4 KPI tiles, filters and table, and the 'attempts blocked' count matches the rows. PASS: a new enquiry saved (ENQ-2026-0134 + auto-quote QTN-2026-0117). Double-clicking Save sent only 1 POST and created only 1 record (checked in the DB). PASS: a second enquiry for the same client/site with the same scope got HTTP 409, the warning toast 'Duplicate detected — not saved … already registered as ENQ-2026-0134' appeared, the dialog stayed open and no second row was created. PASS: after the attempts, the admin page showed both of them (business_key with Super Admin / enquiries / ENQ-2026-0134 / timestamp, and rapid_resubmit) and the KPIs went from 0 to 2/2/1/1. FOUND 3 issues: (1) the type/module filters on the admin page are ignored by the backend; (2) when an identical enquiry is resubmitted within 60s, the user sees a misleading 'Enquiry created' success toast; (3) rapid_resubmit rows show the email instead of the user name. Backend pytest was not re-run (frontend only was requested).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/admin/duplicates/blocks", "issue": "The kind and module query params are ignored. list_blocks always passes base query {} to maybe_paged. Choosing 'Duplicate record' (kind=business_key) still returned both rows, including the rapid_resubmit one. The dup-filter-kind and dup-filter-module filters on the UI have no effect (only free-text search works)."},
+      {"endpoint": "DuplicateSubmissionMiddleware._token_user (dedupe.py ~L177)", "issue": "Sets name = payload email, so rapid_resubmit rows show 'admin@erp.com' in the User column while business_key rows show 'Super Admin'. They should show the same display name. Also, existing_no is always null for replays; it could store the original record no from the cached response body (e.g. enquiry_no)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Identical enquiry resubmitted within the 60s window", "issue": "The middleware replays the original 200 (header X-Duplicate-Submission: replayed). The Enquiries page then shows a green 'Enquiry ENQ-xxxx created' toast and closes the dialog, so the user thinks a second record was created. No duplicate is created, but the requirement asks for a clear warning. Fix: in the api.js response interceptor (success path), if headers['x-duplicate-submission']==='replayed', show toast.warning('Duplicate detected — not saved', 'Already submitted as <no>'). The page can also skip its success toast.", "affected_selectors": ["[data-testid='enquiries-save']"]},
+      {"flow": "Enquiry double-click Save", "issue": "Only 1 network call and 1 record (correct), but the success toast appears twice because create() runs twice and shares the in-flight promise. Cosmetic; disable the Save button while saving.", "affected_selectors": ["[data-testid='enquiries-save']"]}
+    ],
+    "design_issues": [
+      {"screen": "Enquiries – duplicate 409", "issues": ["Two toasts stack for one 409: a red toast.error from Enquiries.jsx create() catch, plus the global amber 'Duplicate detected — not saved' warning. Skip the page-level error when err.response.data.duplicate is true."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "duplicate_audit_router.list_blocks: build the base query from the request params kind and module (e.g. module as a case-insensitive regex) and pass it to maybe_paged and the fallback find",
+    "api.js: on a successful response with header X-Duplicate-Submission=replayed, show the 'Duplicate detected — not saved' warning instead of letting pages show a 'created' success toast",
+    "dedupe._token_user: resolve the display name (or store full_name in the JWT), so rapid_resubmit rows show 'Super Admin', not the email",
+    "Enquiries.jsx (and other create forms): add a saving/disabled state on Save, and skip the page toast.error when the 409 has duplicate:true (the global toast already covers it)"
+  ],
+  "critical_code_review_comments": [
+    "list_blocks ignores the filter params that the UI sends (kind, module)",
+    "Replayed responses look like normal successes to the UI, so there is no user-facing warning for the most common double-submit case after the first response returns",
+    "The adapter-level in-flight dedupe key uses url+body only. Two different forms posting an identical body to the same url at the same time would share one response; acceptable but worth knowing"
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (frontend only)", "frontend": "85% (4/4 requested flows pass; 3 minor issues found: filters, replay UX, user name)"},
+  "seed_data_creation": "Created ENQ-2026-0134 (scope 'TEST_DUP scope iter206 …') + auto-quote QTN-2026-0117 + 2 duplicate_blocks rows. ALL deleted after the test.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Login uses data-testid login-email/login-password/login-submit. The nav item nav-admin-duplicate-blocks is only in the DOM after you expand 'Management & Admin' in the sidebar. The enquiry form needs enq-client-id, enq-site-id (select options), enq-rfq-opt-service and the enq-scope textarea. An identical body within 60s is replayed, so change any field (e.g. enq-priority) to hit the business-rule 409. The enquiries list shows 50 rows per page, so count records in the DB, not by rows on screen.",
+  "rca of the issue": "Filter bug: duplicate_audit_router.list_blocks calls maybe_paged(request, 'duplicate_blocks', {}, ...) with an empty base query and never reads the kind/module query params. Replay UX: DuplicateSubmissionMiddleware._replay returns the cached 200 body, and the frontend has no handler for the X-Duplicate-Submission: replayed header, so the page's normal success path runs."
+}

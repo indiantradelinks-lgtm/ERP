@@ -105,6 +105,10 @@ async def log_block(*, kind: str, module: str, message: str, user: Optional[dict
                     match_key: Optional[dict] = None) -> None:
     """Journal a blocked duplicate attempt (never raises)."""
     try:
+        name = user_display_name(user) if user else None
+        if user and user.get("id") and (not name or "@" in str(name)):
+            row = await db.users.find_one({"id": user["id"]}, {"_id": 0, "name": 1, "email": 1})
+            name = user_display_name(row) if row else name
         await db.duplicate_blocks.insert_one({
             "id": new_id(),
             "at": now_iso(),
@@ -113,7 +117,7 @@ async def log_block(*, kind: str, module: str, message: str, user: Optional[dict
             "message": message,
             "path": path or (request.url.path if request else None),
             "user_id": (user or {}).get("id"),
-            "user_name": user_display_name(user) if user else None,
+            "user_name": name,
             "user_role": (user or {}).get("role"),
             "existing_id": existing_id,
             "existing_no": existing_no,
@@ -183,6 +187,17 @@ def _module_of(path: str) -> str:
     return (path.split("/api/", 1)[-1].split("/", 1)[0] or path).strip()
 
 
+def _record_no(payload: Any) -> Optional[str]:
+    """Pull the business number out of a cached create response (ENQ-…, REQ-…)."""
+    if not isinstance(payload, dict):
+        return None
+    for key in ("request_no", "enquiry_no", "quote_number", "advance_no", "inv_no",
+                "po_no", "pr_number", "order_no", "code", "number"):
+        if payload.get(key):
+            return str(payload[key])
+    return None
+
+
 def _resource_prefix(path: str) -> str:
     """Record this POST belongs to, e.g. /api/accounts/payment-queue/<id>/verify
     → /api/accounts/payment-queue/<id>. Any later action on the SAME record
@@ -236,12 +251,18 @@ class DuplicateSubmissionMiddleware(BaseHTTPMiddleware):
             row = await db.request_fingerprints.find_one({"_id": fp})
         cached = (row or {}).get("response") or {}
         if cached.get("body"):
+            payload = json.loads(cached["body"])
+            existing_no = _record_no(payload)
             await log_block(kind="rapid_resubmit", module=_module_of(path),
-                            message="Repeat submission — the original response was returned instead of "
-                                    "creating a second record.",
-                            user=_token_user(request), request=request, path=path)
-            return JSONResponse(status_code=cached.get("status", 200), content=json.loads(cached["body"]),
-                                headers={"X-Duplicate-Submission": "replayed"})
+                            message=f"Repeat submission — the original response"
+                                    f"{f' ({existing_no})' if existing_no else ''} was returned instead of "
+                                    f"creating a second record.",
+                            user=_token_user(request), request=request, path=path,
+                            existing_id=payload.get("id") if isinstance(payload, dict) else None,
+                            existing_no=existing_no)
+            return JSONResponse(status_code=cached.get("status", 200), content=payload,
+                                headers={"X-Duplicate-Submission": "replayed",
+                                         "X-Duplicate-Record": str(existing_no or "")})
         if row is None:
             # The original attempt failed and released the fingerprint — run this one.
             return await call_next(request)

@@ -73,6 +73,7 @@ def test_repeat_post_replays_instead_of_duplicating(session, created):
     second = session.post(f"{API}/advance-types", json=body, timeout=30)
     assert second.status_code == 200, second.text[:200]
     assert second.headers.get("X-Duplicate-Submission") == "replayed"
+    assert second.headers.get("X-Duplicate-Record") == code  # drives the UI warning
     assert second.json().get("id") == first.json().get("id")
 
     rows = session.get(f"{API}/advance-types", timeout=20).json()
@@ -176,3 +177,13 @@ def test_blocked_attempts_are_journalled_for_admin(session):
     s = session.get(f"{API}/admin/duplicates/blocks/summary", timeout=30)
     assert s.status_code == 200, s.text[:200]
     assert s.json()["total"] >= len(rows)
+
+
+def test_admin_filters_narrow_the_list(session):
+    only_business = session.get(f"{API}/admin/duplicates/blocks?page=1&page_size=50&kind=business_key", timeout=30)
+    assert only_business.status_code == 200, only_business.text[:200]
+    assert {r["kind"] for r in only_business.json()["rows"]} <= {"business_key"}
+
+    by_module = session.get(f"{API}/admin/duplicates/blocks?page=1&page_size=50&module=enquir", timeout=30)
+    assert by_module.status_code == 200, by_module.text[:200]
+    assert all("enquir" in (r.get("module") or "").lower() for r in by_module.json()["rows"])

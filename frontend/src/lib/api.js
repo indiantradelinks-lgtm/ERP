@@ -41,7 +41,18 @@ api.defaults.adapter = (config) => {
 let _redirected = false;
 const _foreverPending = new Promise(() => {});  // never resolves, never rejects
 api.interceptors.response.use(
-  (r) => r,
+  (r) => {
+    // A repeat submission the backend answered from its cache — tell the user
+    // nothing new was saved, otherwise the page shows a misleading "created".
+    if (r?.headers?.["x-duplicate-submission"] === "replayed") {
+      const ref = r.headers["x-duplicate-record"];
+      toast.warning("Already submitted — not saved again", {
+        description: ref ? `This entry was already saved as ${ref}.` : "The original entry was returned instead of creating a second record.",
+        id: `dup-replay-${ref || r.config?.url}`, duration: 8000,
+      });
+    }
+    return r;
+  },
   (error) => {
     const status = error?.response?.status;
     const url = error?.config?.url || "";

@@ -6,6 +6,7 @@ Admin reviews the report before deciding on cleanup (no destructive ops here).
 Mount: /api/admin/duplicates
 """
 from __future__ import annotations
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any
 
@@ -105,13 +106,18 @@ async def scan_one(collection: str,
 
 # ───────────── Blocked duplicate attempts (Iter 205 prevention layer) ─────────────
 @router.get("/blocks")
-async def list_blocks(request: Request,
+async def list_blocks(request: Request, kind: str = "", module: str = "",
                       user: dict = Depends(require_permission("role_register", "read"))):
     """Every duplicate attempt the ERP refused to save — who, when, which module."""
-    paged = await maybe_paged(request, "duplicate_blocks", {}, "at",
+    q: Dict[str, Any] = {}
+    if kind:
+        q["kind"] = kind
+    if module.strip():
+        q["module"] = {"$regex": re.escape(module.strip()), "$options": "i"}
+    paged = await maybe_paged(request, "duplicate_blocks", q, "at",
                               ["module", "user_name", "message", "existing_no", "path", "kind"])
     rows = paged["rows"] if paged else await db.duplicate_blocks.find(
-        {}, {"_id": 0}).sort("at", -1).to_list(200)
+        q, {"_id": 0}).sort("at", -1).to_list(200)
     return paged_or_rows(paged, rows)
 
 
