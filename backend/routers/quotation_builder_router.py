@@ -18,6 +18,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from core import db, require_permission, now_iso, new_id, attach_user_names, user_display_name
+from dedupe import ensure_no_duplicate
 from audit import audit
 from sequences import next_sequence
 from quotation_calc import recalc_quotation, compute_tax_mode
@@ -213,10 +214,20 @@ async def create_quotation_full(payload: dict, request: Request,
     path continues to use `POST /api/enquiries` which auto-creates a draft.
     """
     quote_no = await next_sequence("QTN")
+    enquiry_id = payload.get("enquiry_id")
+    if enquiry_id:
+        # One fresh quotation per enquiry — further versions go through /revise.
+        await ensure_no_duplicate(
+            module="quotations", collection="quotations", no_field="quote_number",
+            query={"enquiry_id": enquiry_id, "status": {"$nin": ["cancelled", "lost"]}},
+            message="A quotation ({no}) already exists for this enquiry. Open it and use "
+                    "Revise to issue a new version instead of creating a second quotation.",
+            user=user, request=request)
     doc = {
         "id": new_id(),
         "quote_number": quote_no,
         "revision_no": 0,
+        "enquiry_id": enquiry_id,
         "client": payload.get("client") or "—",
         "client_id": payload.get("client_id"),
         "site_id": payload.get("site_id"),

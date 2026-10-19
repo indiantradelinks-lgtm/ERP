@@ -223,6 +223,7 @@ import ApprovalMatrix from "@/pages/admin/ApprovalMatrix";
 import ApprovalWorkflowSettings from "@/pages/admin/ApprovalWorkflowSettings";
 import SequenceAdmin from "@/pages/admin/SequenceAdmin";
 import AuditLogs from "@/pages/admin/AuditLogs";
+import DuplicateBlocks from "@/pages/admin/DuplicateBlocks";
 import Sessions from "@/pages/admin/Sessions";
 import SecurityCenter from "@/pages/admin/SecurityCenter";
 import GoLiveCenter from "@/pages/admin/GoLiveCenter";
@@ -484,6 +485,7 @@ export default function App() {
             <Route path="/app/admin/approval-workflow" element={<ProtectedShell><ApprovalWorkflowSettings /></ProtectedShell>} />
             <Route path="/app/admin/sequences" element={<ProtectedShell><SequenceAdmin /></ProtectedShell>} />
             <Route path="/app/admin/audit-logs" element={<ProtectedShell><AuditLogs /></ProtectedShell>} />
+            <Route path="/app/admin/duplicate-blocks" element={<ProtectedShell><DuplicateBlocks /></ProtectedShell>} />
             <Route path="/app/admin/sessions" element={<ProtectedShell><Sessions /></ProtectedShell>} />
             <Route path="/app/services/dashboard" element={<ProtectedShell><ServiceWorkflowDashboard /></ProtectedShell>} />
             <Route path="/app/services/requests" element={<ProtectedShell><ServiceRequests /></ProtectedShell>} />

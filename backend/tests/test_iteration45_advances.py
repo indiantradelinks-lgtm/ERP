@@ -12,6 +12,7 @@ Covers:
 """
 import os
 import time
+import random
 import uuid
 import requests
 import pytest
@@ -154,7 +155,8 @@ class TestAdvanceCreate:
         payload = {
             "employee_id": emp_id,
             "advance_type": "Salary Advance",
-            "requested_amount": 24000,
+            # Iter 205 blocks an identical live advance — keep each run unique.
+            "requested_amount": 24000 + random.randint(1, 899) / 100,
             "reason": "TEST iter45 salary advance",
             "installments": 4,
             "repayment_start_month": "2026-02",
@@ -369,7 +371,7 @@ class TestAmendAndReject:
         emp_id = _ensure_employee()
         r = _sess("hr_executive").post(f"{API}/advances", headers={"Content-Type":"application/json"}, json={
             "employee_id": emp_id, "advance_type": "Emergency Advance",
-            "requested_amount": 15000, "reason": "TEST amend flow",
+            "requested_amount": 15000 + random.randint(1, 899) / 100, "reason": "TEST amend flow",
             "installments": 5, "submit": True,
         }, timeout=20)
         assert r.status_code == 200, r.text

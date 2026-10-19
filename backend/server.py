@@ -67,6 +67,14 @@ async def _approval_docs_required_handler(request: _FRequest, exc: _ADR):
     return _JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
+# Iter 205 — ERP-wide duplicate prevention: business-key blocks surface as 409.
+from dedupe import DuplicateRecordError as _DRE, DuplicateSubmissionMiddleware as _DupMW  # noqa: E402
+
+@app.exception_handler(_DRE)
+async def _duplicate_record_handler(request: _FRequest, exc: _DRE):
+    return _JSONResponse(status_code=409, content=exc.payload())
+
+
 @api.get("/")
 async def root():
     return {"service": "Corporate ERP API", "version": "1.1.0"}
@@ -263,6 +271,11 @@ async def seed_quotation_conditions_on_startup():
     except Exception as e:
         logger.warning(f"[files] Service-invoice doc backfill skipped: {e}")
     try:
+        from dedupe import ensure_dedupe_indexes
+        await ensure_dedupe_indexes()
+    except Exception as e:
+        logger.warning(f"[dedupe] Index ensure skipped: {e}")
+    try:
         from head_office_project import ensure_head_office_project
         if await ensure_head_office_project():
             logger.info("[head-office] Seeded 'Head Office – Delhi' internal project (HEAD-OFFICE)")
@@ -298,6 +311,7 @@ async def on_shutdown():
 app.include_router(api)
 
 _cors_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
+app.add_middleware(_DupMW)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,

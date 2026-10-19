@@ -6,11 +6,13 @@ Admin reviews the report before deciding on cleanup (no destructive ops here).
 Mount: /api/admin/duplicates
 """
 from __future__ import annotations
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from core import db, require_permission
+from pagination import maybe_paged, paged_or_rows
 
 router = APIRouter(prefix="/admin/duplicates", tags=["duplicate-audit"])
 
@@ -99,3 +101,32 @@ async def scan_one(collection: str,
     if collection not in DUPLICATE_RULES:
         return {"collection": collection, "error": "Not a known collection for duplicate audit"}
     return await _detect(collection, DUPLICATE_RULES[collection])
+
+
+# ───────────── Blocked duplicate attempts (Iter 205 prevention layer) ─────────────
+@router.get("/blocks")
+async def list_blocks(request: Request,
+                      user: dict = Depends(require_permission("role_register", "read"))):
+    """Every duplicate attempt the ERP refused to save — who, when, which module."""
+    paged = await maybe_paged(request, "duplicate_blocks", {}, "at",
+                              ["module", "user_name", "message", "existing_no", "path", "kind"])
+    rows = paged["rows"] if paged else await db.duplicate_blocks.find(
+        {}, {"_id": 0}).sort("at", -1).to_list(200)
+    return paged_or_rows(paged, rows)
+
+
+@router.get("/blocks/summary")
+async def blocks_summary(user: dict = Depends(require_permission("role_register", "read"))):
+    since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    total = await db.duplicate_blocks.count_documents({})
+    week = await db.duplicate_blocks.count_documents({"at": {"$gte": since}})
+    business = await db.duplicate_blocks.count_documents({"kind": "business_key"})
+    repeats = await db.duplicate_blocks.count_documents({"kind": "rapid_resubmit"})
+    by_module: List[Dict[str, Any]] = []
+    async for row in db.duplicate_blocks.aggregate([
+        {"$group": {"_id": "$module", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}}, {"$limit": 10},
+    ]):
+        by_module.append({"module": row["_id"] or "—", "count": row["count"]})
+    return {"total": total, "last_7_days": week, "business_key": business,
+            "rapid_resubmit": repeats, "by_module": by_module}

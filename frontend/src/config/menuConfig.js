@@ -36,7 +36,7 @@ import {
   Warehouse, DollarSign, FileSignature, History, Settings as SettingsIcon, Network,
   CalendarRange, Ruler, AlertTriangle, PlusSquare, Layers, Lock, Landmark, LineChart,
   Bell, TrendingUp, Calculator, FileBarChart, Stethoscope, HeartPulse, Fuel, Route, FilePlus2,
-  Database, Siren, FileSpreadsheet, Hotel, LogOut, KeyRound,
+  Database, Siren, FileSpreadsheet, Hotel, LogOut, KeyRound, CopyX,
 } from "lucide-react";
 
 // ─── Department registry ─────────────────────────────────────────────────
@@ -404,6 +404,7 @@ export const MENU_ITEMS = [
   { department: "admin", label: "Company Settings",           to: "/app/admin/company-profile",      icon: Building2,     testid: "nav-admin-company", superAdminOnly: true },
   { department: "admin", label: "Branch / Site Settings",     to: "/app/ops/site-master",            icon: MapPin,        testid: "nav-admin-branch", perm: "projects" },
   { department: "admin", label: "Audit Logs",                 to: "/app/admin/audit-logs",           icon: FileSearch,    testid: "nav-admin-audit", superAdminOnly: true },
+  { department: "admin", label: "Blocked Duplicates",         to: "/app/admin/duplicate-blocks",     icon: CopyX,         testid: "nav-admin-duplicate-blocks", superAdminOnly: true },
   { department: "admin", label: "Session Monitor",            to: "/app/admin/sessions",             icon: Activity,      testid: "nav-admin-sessions", superAdminOnly: true },
   { department: "admin", label: "Email Settings (M365)",      to: "/app/admin/email-settings",       icon: Mail,          testid: "nav-admin-email-settings", superAdminOnly: true },
   { department: "admin", label: "Email Outbox",               to: "/app/admin/email-outbox",         icon: Inbox,         testid: "nav-admin-email-outbox", superAdminOnly: true },

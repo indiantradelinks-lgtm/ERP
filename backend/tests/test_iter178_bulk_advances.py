@@ -9,6 +9,7 @@ Covers:
 """
 import io
 import os
+import random
 
 import pytest
 import requests
@@ -240,7 +241,8 @@ class TestSingleAdvanceRegression:
         payload = {
             "employee_id": EMP_OUT_OF_SCOPE,
             "advance_type": "Travel Advance",
-            "requested_amount": 1800,
+            # Iter 205 blocks an identical live advance — keep each run unique.
+            "requested_amount": 1800 + random.randint(1, 899) / 100,
             "reason": "TEST_iter178 single advance regression",
             "installments": 1,
             "documents_not_required": True,
@@ -269,7 +271,7 @@ class TestSingleAdvanceRegression:
         g = admin.get(f"{BASE}/api/advances/{adv['id']}", timeout=30)
         assert g.status_code == 200
         assert g.json()["status"] == "approved"
-        assert g.json()["approved_amount"] == 1800
+        assert g.json()["approved_amount"] == payload["requested_amount"]
 
     def test_bulk_docs_gate_failure_must_not_persist_orphan_advances(self, admin):
         """BUG: bulk inserts advances BEFORE insert_approval(); when the documents

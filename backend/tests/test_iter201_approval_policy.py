@@ -8,6 +8,7 @@ Covers:
   (4) Description/Justification on Payment Processing rows (list rows).
 """
 import os
+import random
 import uuid
 import pytest
 import requests
@@ -76,6 +77,9 @@ def sample_cc(sample_project_and_cc):
 
 
 def _mk_fuel_payload(project, cc, amount=5000):
+    # Iter 205 blocks a second open fuel request with the SAME project + vendor +
+    # amount, so each test run uses its own amount offset.
+    amount = amount + random.randint(1, 899) / 100
     return {
         "project_id": project["id"],
         "project_code": project["code"],

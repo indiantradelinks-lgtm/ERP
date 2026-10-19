@@ -15,6 +15,7 @@ from fastapi import Request, APIRouter, Depends, File, HTTPException, Response, 
 from pydantic import BaseModel, Field
 
 from core import db, get_current_user, now_iso, new_id
+from dedupe import ensure_no_duplicate
 from pagination import maybe_paged, paged_or_rows
 from rbac import can
 from approval_engine import build_chain, apply_action, current_step, insert_approval, copy_approval_doc_fields
@@ -273,6 +274,17 @@ async def create_advance(payload: AdvanceCreateIn, user: dict = Depends(get_curr
         raise HTTPException(status_code=400, detail=f"requested amount exceeds cap (₹{atype['max_amount']:,.0f}) for {atype['name']}")
     if atype.get("max_installments") and payload.installments > atype["max_installments"]:
         raise HTTPException(status_code=400, detail=f"installments exceed cap ({atype['max_installments']}) for {atype['name']}")
+
+    # Duplicate prevention (Iter 205) — the same employee cannot have two live
+    # advance requests of the same type for the same amount.
+    await ensure_no_duplicate(
+        module="employee_advances", collection="employee_advances", no_field="advance_no",
+        query={"employee_id": emp["id"], "advance_type_code": atype["code"],
+               "requested_amount": payload.requested_amount,
+               "status": {"$nin": ["rejected", "cancelled", "closed", "recovered"]}},
+        message=f"{emp.get('name')} already has a live {atype['name']} request of "
+                f"₹{payload.requested_amount:,.0f} ({{no}}). Open {{no}} instead of raising it again.",
+        user=user)
 
     adv_no = await next_sequence("AD")  # → AD-YYYY-####
     dept_no = await next_dept_doc("advance")

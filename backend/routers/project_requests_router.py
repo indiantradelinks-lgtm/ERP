@@ -32,6 +32,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from core import db, require_permission, get_current_user, now_iso, new_id
+from dedupe import ensure_no_duplicate
 from pagination import maybe_paged, paged_or_rows
 from scope import apply_project_scope, ensure_project_access
 from datetime import datetime, timezone, timedelta
@@ -543,6 +544,25 @@ async def create_request(p: RequestIn, request: Request,
         # Self expense — payee is the requester (auto-link HR record by email)
         emp = await db.employees.find_one({"email": user.get("email")},
                                           {"_id": 0, "id": 1, "name": 1, "employee_id": 1, "emp_code": 1})
+    # Duplicate prevention (Iter 205) — same project + payee + amount + type, still
+    # open/unpaid, is a repeat of a request that is already in the pipeline.
+    if meta["payment"]:
+        dup_q: Dict[str, Any] = {
+            "request_type": p.request_type,
+            "status": {"$nin": ["rejected", "cancelled", "closed", "fulfilled", "paid"]},
+            "est_value": round(est, 2),
+            "project_code": project.get("code"),
+        }
+        if emp:
+            dup_q["employee_id"] = emp["id"]
+        elif (p.vendor or "").strip():
+            dup_q["vendor"] = p.vendor
+        await ensure_no_duplicate(
+            module="project_requests", collection="project_requests", no_field="request_no",
+            query=dup_q, user=user, request=request,
+            message=f"A {meta['label']} request for the same project, payee and amount is already in the "
+                    f"pipeline as {{no}} and has not been paid or rejected yet. Open {{no}} instead of "
+                    f"raising it again.")
     doc = {
         "id": new_id(),
         "request_no": await next_sequence("REQ"),

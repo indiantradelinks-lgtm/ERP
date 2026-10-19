@@ -6,12 +6,14 @@ Status transitions are enforced; "Won" enquiry can be converted to an Order
 (and optionally a Project) in a single transactional call.
 """
 import asyncio
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 
 from core import db, require_permission, get_current_user, now_iso, new_id, logger, attach_user_names, user_display_name
+from dedupe import DuplicateRecordError, ensure_no_duplicate, log_block, norm_key
 from pagination import maybe_paged, paged_or_rows
 from routers.quotation_builder_router import default_selected_conditions
 from audit import audit
@@ -154,17 +156,34 @@ async def create_enquiry(payload: EnquiryIn, request: Request, user: dict = Depe
         raise HTTPException(status_code=400, detail="Client is required. Please pick a client from the master.")
     if not doc.get("customer"):
         raise HTTPException(status_code=400, detail="Customer name could not be resolved from the selected client")
-    # Duplicate detection — same site_id + customer_enquiry_no can't happen twice
+    # ── Duplicate prevention (Iter 205) ──
+    # 1. The customer's own enquiry reference can only be registered once per site.
     if doc.get("site_id") and doc.get("customer_enquiry_no"):
-        dup = await db.enquiries.find_one(
-            {"site_id": doc["site_id"], "customer_enquiry_no": doc["customer_enquiry_no"]},
-            {"_id": 0, "enquiry_no": 1},
-        )
-        if dup:
-            raise HTTPException(
-                status_code=400,
-                detail=f"This customer enquiry no '{doc['customer_enquiry_no']}' is already registered as {dup['enquiry_no']}",
-            )
+        await ensure_no_duplicate(
+            module="enquiries", collection="enquiries", no_field="enquiry_no",
+            query={"site_id": doc["site_id"], "customer_enquiry_no": doc["customer_enquiry_no"]},
+            message=f"Customer enquiry no '{doc['customer_enquiry_no']}' is already registered as "
+                    f"{{no}} for this site. Open {{no}} instead of creating a new enquiry.",
+            user=user, request=request)
+    # 2. Same client + same scope within 30 days is a re-entry of the same enquiry.
+    subject = norm_key(doc.get("scope_of_work") or doc.get("scope"))
+    if subject and doc.get("client_id"):
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        recent = await db.enquiries.find(
+            {"client_id": doc["client_id"], "created_at": {"$gte": cutoff},
+             "status": {"$nin": ["lost", "cancelled"]}},
+            {"_id": 0, "id": 1, "enquiry_no": 1, "scope_of_work": 1, "scope": 1},
+        ).to_list(200)
+        match = next((r for r in recent
+                      if norm_key(r.get("scope_of_work") or r.get("scope")) == subject), None)
+        if match:
+            msg = (f"This enquiry is already registered as {match['enquiry_no']} — same client and same scope "
+                   f"within the last 30 days. Open {match['enquiry_no']} instead of creating a duplicate.")
+            await log_block(kind="business_key", module="enquiries", message=msg, user=user, request=request,
+                            existing_id=match.get("id"), existing_no=match.get("enquiry_no"),
+                            match_key={"client_id": doc["client_id"], "scope": subject[:120]})
+            raise DuplicateRecordError(msg, module="enquiries", existing_id=match.get("id"),
+                                       existing_no=match.get("enquiry_no"))
     doc["id"] = new_id()
     doc["enquiry_no"] = await next_sequence("ENQ")
     await stamp_dept_doc(doc, "enquiry")
@@ -980,7 +999,7 @@ async def backfill_handovers_from_won(
 # ---------- Sales enquiry pulse dashboard ----------
 @router.get("/sales/enquiry-pulse")
 async def enquiry_pulse(user: dict = Depends(require_permission("quotations", "read"))):
-    from datetime import date, timedelta
+    from datetime import date
     today = date.today()
     in_7 = (today + timedelta(days=7)).isoformat()
     total = await db.enquiries.count_documents({})
@@ -1144,7 +1163,7 @@ async def report_won_lost(user: dict = Depends(require_permission("sales_reports
 @router.get("/sales/reports/deadline-tracker")
 async def report_deadline_tracker(user: dict = Depends(require_permission("sales_reports", "read"))):
     """Open enquiries sorted by submission_deadline; flags overdue & due-soon."""
-    from datetime import date, timedelta
+    from datetime import date
     today = date.today().isoformat()
     in_7 = (date.today() + timedelta(days=7)).isoformat()
     rows = await db.enquiries.find(

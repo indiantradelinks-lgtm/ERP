@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from core import db, get_current_user, require_permission, now_iso, new_id
+from dedupe import ensure_no_duplicate
 from audit import audit
 from sequences import next_sequence
 
@@ -1102,6 +1103,16 @@ async def create_invoice(p: InvoiceIn, request: Request, user: dict = Depends(ge
                                           "status": {"$ne": "rejected"}}, {"_id": 0, "id": 1})
     if dup:
         raise HTTPException(400, "This vendor invoice number already exists against the PO")
+    # Duplicate prevention (Iter 205) — the same vendor cannot bill the same
+    # invoice number twice, even across different POs.
+    if po.get("vendor_id"):
+        await ensure_no_duplicate(
+            module="svc_invoices", collection="svc_invoices", no_field="inv_no",
+            query={"vendor_id": po["vendor_id"], "vendor_invoice_no": p.vendor_invoice_no.strip(),
+                   "status": {"$ne": "rejected"}},
+            message=f"Vendor invoice '{p.vendor_invoice_no.strip()}' from {po['vendor_name']} is already "
+                    f"recorded as {{no}}. Open {{no}} instead of booking it again.",
+            user=user, request=request)
     match = _three_way_match(po, srn, p)
     net = round(p.invoice_amount + p.tax_amount + p.other_charges - p.tds_amount, 2)
     if net <= 0:

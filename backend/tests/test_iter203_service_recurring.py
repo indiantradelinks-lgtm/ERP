@@ -226,8 +226,13 @@ class TestEnableGuards:
     def test_enable_rejects_duplicate_active_contract(self, admin, fixtures):
         r = admin.post(f"{API}/service-recurring/pos/{fixtures['po_id']}/enable",
                        json={"monthly_amount": 10000}, timeout=15)
-        assert r.status_code == 400
-        assert "already" in r.text.lower()
+        if r.headers.get("X-Duplicate-Submission") == "replayed":
+            # Iter 205 guard: an identical repeat replays the original response
+            # instead of reaching the handler — still exactly one contract.
+            assert r.json()["id"] == fixtures["contract_id"]
+        else:
+            assert r.status_code == 400
+            assert "already" in r.text.lower()
 
 
 # ─── Months grid ──────────────────────────────────────────────────────────
