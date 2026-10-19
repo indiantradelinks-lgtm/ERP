@@ -6184,3 +6184,10 @@ Raise the Service Request / RFQ / PO **once** for the project duration; after th
 - Accounts now sees the invoice documents in the existing Payment Processing Center paperclip dialog (`ppc-attach-<request_no>`) and can preview/download them — no manual re-upload. No reverse leakage (payment-row uploads stay off the invoice) and no cross-invoice leakage.
 - Also fixed: `reroute_pending_fuel_requests()` now skips rows already on the Manager Log chain (was rewriting 7 rows on every restart).
 - Tested iter204: 5/5 backend tests (`tests/test_iter204_service_invoice_doc_mirror.py`) + UI verified on a Service Invoice payment row; iter202/203 suites green; test files cleaned up.
+
+## Service PO PDF — Terms & Conditions layout fix (Jun 23, 2026, iter205)
+- Problem: T&C sat in a narrow 2/3 flex column that WeasyPrint cannot fragment, so the whole block jumped to page 2, leaving ~40% of page 1 blank and the terms squeezed/clipped.
+- `/app/backend/pdf_generator.py`:
+  - `render_service_po_pdf()` — dropped the flex wrapper; **Payment Terms** box now sits full-width right after the totals, **Terms & Conditions** follows as a full-width section that flows naturally across pages.
+  - CSS: `.tnc-item` converted from flex to a block with a 24px hanging indent (justified, 9.25pt, 1.55 line-height, `orphans/widows: 2`) so long clauses wrap and break cleanly; `.tnc-num` fixed-width inline-block; `.section-title` got `break-after: avoid` (no orphan headings); `.signs` got `break-inside: avoid`.
+- Verified by rendering a 12-clause PO: 2 pages, no blank gap on page 1, every clause fully visible, signature block intact. `render_po_pdf()` (material PO, shares the CSS) re-checked and renders fine.

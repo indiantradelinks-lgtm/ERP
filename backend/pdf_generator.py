@@ -57,7 +57,8 @@ h1 { font-size: 18pt; margin: 0 0 4px 0; color: #0f172a; }
 .meta { font-size: 9.5pt; color: #334155; }
 .meta b { color: #0f172a; }
 .section-title { font-size: 11pt; font-weight: 700; color: #1e293b;
-                 border-bottom: 1px solid #cbd5e1; padding: 8px 0 4px; margin: 14px 0 6px; }
+                 border-bottom: 1px solid #cbd5e1; padding: 8px 0 4px; margin: 14px 0 6px;
+                 page-break-after: avoid; break-after: avoid; }
 table { width: 100%; border-collapse: collapse; font-size: 9.5pt; margin-top: 4px; }
 th { background: #f1f5f9; color: #0f172a; text-align: left; padding: 6px 8px;
      border: 1px solid #cbd5e1; font-weight: 700; }
@@ -81,13 +82,13 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .footer .faddr { text-align: center; font-size: 7.5pt; margin-top: 2px; }
 .wm { position: fixed; top: 38%; left: 0; right: 0; text-align: center; z-index: -1; }
 .wm img { width: 130mm; }
-.signs { margin-top: 28px; display: flex; gap: 24px; }
+.signs { margin-top: 28px; display: flex; gap: 24px; page-break-inside: avoid; break-inside: avoid; }
 .signs .box { flex: 1; border-top: 1px solid #0f172a; padding-top: 4px; font-size: 9pt; color: #475569; }
 .note { font-size: 9pt; color: #64748b; margin-top: 6px; }
-.tnc-item { display: flex; gap: 7px; font-size: 9pt; color: #334155;
-            margin: 0 0 5px; line-height: 1.45; page-break-inside: avoid; }
-.tnc-num { min-width: 16px; font-weight: 700; color: #0f172a; text-align: right; }
-.tnc-body { flex: 1; text-align: justify; }
+.tnc-item { font-size: 9.25pt; color: #334155; line-height: 1.55; text-align: justify;
+            margin: 0 0 6px; padding-left: 24px; text-indent: -24px; orphans: 2; widows: 2; }
+.tnc-num { display: inline-block; width: 24px; text-indent: 0; font-weight: 700; color: #0f172a; }
+.tnc-body { }
 .justify { background: #fef3c7; border-left: 3px solid #f59e0b; padding: 6px 8px; font-size: 9pt; }
 .logo-img { height: 17mm; margin-right: 10px; }
 .title-left { display: flex; align-items: center; }
@@ -993,16 +994,10 @@ def render_service_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] =
 {f"<tr><td>Other Charges</td><td class='num'>₹ {_money(other)}</td></tr>" if other else ""}
 <tr class="grand"><td>Grand Total</td><td class="num">₹ {_money(total)}</td></tr>
 </table>
-<div style="display:flex; gap:14px; clear:both; margin-top:14px;">
-  <div style="flex:2;">
-    <div class="section-title" style="margin-top:0;">Terms &amp; Conditions{tnc_title}</div>
-    {tnc_html}
-  </div>
-  <div style="flex:1;">
-    <div class="section-title" style="margin-top:0;">Payment Terms</div>
-    <div class="pt-box" style="margin-top:4px;">{_esc(po.get('payment_terms') or 'As mutually agreed')}</div>
-  </div>
-</div>
+<div class="section-title" style="clear:both;">Payment Terms</div>
+<div class="pt-box" style="margin-top:4px;">{_esc(po.get('payment_terms') or 'As mutually agreed')}</div>
+<div class="section-title">Terms &amp; Conditions{tnc_title}</div>
+<div class="tnc-list">{tnc_html}</div>
 <div class="signs">
   <div class="box">For {_esc(BRAND)}</div>
   <div class="box">Vendor Acknowledgement</div>
