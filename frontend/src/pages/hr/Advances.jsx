@@ -396,7 +396,7 @@ function CreateAdvanceDialog({ open, onOpenChange, types, employees, canCreateOn
         toast.success(`Bulk advance ${data.batch_no} submitted — ${data.count} employees, total ${inr(data.total)}`);
         onCreated();
       } catch (e) {
-        toast.error(apiErrorMessage(e, "Failed to submit bulk advance"));
+        if (!e?.response?.data?.duplicate) toast.error(apiErrorMessage(e, "Failed to submit bulk advance"));
       } finally { setSaving(false); }
       return;
     }
@@ -410,7 +410,8 @@ function CreateAdvanceDialog({ open, onOpenChange, types, employees, canCreateOn
       toast.success(asDraft ? "Saved as draft" : "Advance request submitted for approval");
       onCreated();
     } catch (e) {
-      toast.error(apiErrorMessage(e, "Failed to submit"));
+      // A duplicate block already raises the global "Duplicate detected" warning.
+      if (!e?.response?.data?.duplicate) toast.error(apiErrorMessage(e, "Failed to submit"));
     } finally { setSaving(false); }
   };
 

@@ -279,8 +279,9 @@ export default function ProjectRequests() {
     if (estValue <= 0 && !isStockable && !isManpower) { toast.error("Enter amount / rate"); return; }
     if (!form.cost_center_id) { toast.error((isSelf || isHO) ? (form.self_for_project ? "Select the project's Cost Center" : "Select a Head Office Cost Center before submitting") : "Cost Center is mandatory — select a valid Cost Center before submitting"); return; }
     if (isPayment && mode === "service" && !isSelf && benef.length === 0) {
-      if (form.paid_to_type === "vendor" && !form.vendor) { toast.error("Select the approved vendor to be paid"); return; }
       const upiHasAnyName = form.payment_mode === "UPI" && (form.upi_any_name || "").trim();
+      // A manually typed UPI payee is a valid payee even when Paid To is still Vendor.
+      if (form.paid_to_type === "vendor" && !form.vendor && !upiHasAnyName) { toast.error("Select the approved vendor to be paid, or enter the UPI payee name"); return; }
       if (form.paid_to_type === "person" && !form.employee_id && !upiHasAnyName) { toast.error("Select the employee (Emp ID) to be paid"); return; }
       if (!form.expense_date) { toast.error("Select expense date"); return; }
     }
@@ -901,7 +902,7 @@ export default function ProjectRequests() {
               <BeneficiariesSection rows={benef} setRows={setBenef} />
             )}
 
-            <div className="col-span-2"><Label className="text-[10px] uppercase tracking-wider">Description / Justification *</Label>
+            <div className="col-span-2"><Label className="text-[10px] uppercase tracking-wider">Description / Justification <span className="normal-case text-muted-foreground">(recommended — helps Accounts verify)</span></Label>
               <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="rounded-sm mt-1 min-h-[56px]" data-testid="req-form-desc" /></div>
 
             <div className="col-span-2 flex items-center justify-between bg-muted/30 border border-border rounded-sm p-2.5">

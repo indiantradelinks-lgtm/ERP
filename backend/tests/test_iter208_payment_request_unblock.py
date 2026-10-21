@@ -122,6 +122,43 @@ def test_blank_description_never_blocks(session, ctx):
     assert len(set(nos)) == 3, "a genuine second request was swallowed"
 
 
+def test_advance_retry_after_a_validation_error(session):
+    """A first submit that fails validation must not leave a draft that then blocks
+    the corrected retry (reported by the testing agent on the Advance Request tab)."""
+    emps = session.get(f"{API}/advances/eligible-employees", timeout=30)
+    emp_id = None
+    if emps.status_code == 200:
+        data = emps.json()
+        rows = data.get("employees") if isinstance(data, dict) else data
+        emp_id = (rows or [{}])[0].get("id")
+    if not emp_id:
+        pytest.skip("no eligible employee for advances")
+    reason = f"Emergency hospital {uuid.uuid4().hex[:6]}"
+    body = {"employee_id": emp_id, "advance_type": "MED", "requested_amount": 1500,
+            "reason": reason, "installments": 1}
+
+    first = session.post(f"{API}/advances", json=body, timeout=40)
+    assert first.status_code == 400, f"expected the documents gate, got {first.status_code}"
+
+    retry = session.post(f"{API}/advances", json={
+        **body, "documents_not_required": True,
+        "documents_not_required_reason": "Cash emergency, bills to follow"}, timeout=40)
+    assert retry.status_code == 200, f"corrected retry was blocked: {retry.status_code} {retry.text[:200]}"
+    adv = retry.json()
+    try:
+        from pymongo import MongoClient
+        from dotenv import dotenv_values
+        env = dotenv_values("/app/backend/.env")
+        db = MongoClient(env["MONGO_URL"])[env["DB_NAME"]]
+        assert db.employee_advances.count_documents({"reason": reason, "status": "draft"}) == 0, \
+            "the failed submit left an orphan draft behind"
+        db.employee_advances.delete_many({"reason": reason})
+        db.approvals.delete_many({"id": adv.get("approval_id")})
+        db.project_requests.delete_many({"request_no": adv.get("advance_no")})
+    except ImportError:
+        pass
+
+
 def test_identical_description_and_payee_is_still_caught(session, ctx):
     payee = f"Vendor {uuid.uuid4().hex[:5]}"
     desc = f"Hotel stay for crew {uuid.uuid4().hex[:5]}"

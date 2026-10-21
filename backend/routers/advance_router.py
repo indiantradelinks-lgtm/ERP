@@ -284,7 +284,7 @@ async def create_advance(payload: AdvanceCreateIn, user: dict = Depends(get_curr
     if reason_key:
         dup_q = {"employee_id": emp["id"], "advance_type_code": atype["code"],
                  "requested_amount": payload.requested_amount,
-                 "status": {"$nin": ["rejected", "cancelled", "closed", "recovered"]}}
+                 "status": {"$nin": ["draft", "rejected", "cancelled", "closed", "recovered"]}}
         today = now_iso()[:10]
         for cand in await db.employee_advances.find(
                 dup_q, {"_id": 0, "id": 1, "advance_no": 1, "reason": 1, "created_at": 1}).to_list(50):
@@ -347,7 +347,13 @@ async def create_advance(payload: AdvanceCreateIn, user: dict = Depends(get_curr
     await db.employee_advances.insert_one(doc)
 
     if payload.submit:
-        return await _submit_advance(doc["id"], user, payload.model_dump(exclude_none=True))
+        try:
+            return await _submit_advance(doc["id"], user, payload.model_dump(exclude_none=True))
+        except Exception:
+            # Submit failed validation (missing documents, chain error …) — drop the
+            # draft so the corrected retry is not mistaken for a duplicate.
+            await db.employee_advances.delete_one({"id": doc["id"]})
+            raise
 
     doc.pop("_id", None)
     return doc

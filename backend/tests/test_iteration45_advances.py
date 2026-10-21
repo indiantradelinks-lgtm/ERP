@@ -14,6 +14,10 @@ import os
 import time
 import random
 import uuid
+
+# Iter 205 blocks an identical live advance, so the salary-advance amount is unique
+# per run and every assertion below refers to this constant.
+SAL_AMOUNT = 24000 + 4 * random.randint(1, 200)
 import requests
 import pytest
 
@@ -156,12 +160,15 @@ class TestAdvanceCreate:
             "employee_id": emp_id,
             "advance_type": "Salary Advance",
             # Iter 205 blocks an identical live advance — keep each run unique.
-            "requested_amount": 24000 + random.randint(1, 899) / 100,
+            "requested_amount": SAL_AMOUNT,
             "reason": "TEST iter45 salary advance",
             "installments": 4,
             "repayment_start_month": "2026-02",
             "remarks": "iter45 e2e",
             "submit": True,
+            # Iter 63 gate: an approval needs a document or an explicit N/A reason.
+            "documents_not_required": True,
+            "documents_not_required_reason": "Automated test run — no bills",
         }
         r = _sess("hr_executive").post(f"{API}/advances", headers={"Content-Type":"application/json"}, json=payload, timeout=30)
         assert r.status_code == 200, r.text
@@ -172,7 +179,7 @@ class TestAdvanceCreate:
         assert doc["advance_type"] == "Salary Advance"
         assert doc["advance_type_code"] == "SAL"
         # EMI math: 24000/4 = 6000
-        assert abs(doc["emi"] - 6000.0) < 0.01
+        assert abs(doc["emi"] - payload["requested_amount"] / 4) < 0.01
         assert doc["status"] == "submitted"
         assert doc["approval_id"]
         # Auto employee fields populated
@@ -258,10 +265,9 @@ class TestApprovalChain:
         assert r.status_code == 200
         adv = r.json()
         assert adv["status"] == "approved", adv
-        assert adv["approved_amount"] == 24000
-        assert adv["outstanding"] == 24000
-        # emi = 24000/4 = 6000
-        assert abs(adv["emi"] - 6000.0) < 0.01
+        assert adv["approved_amount"] == SAL_AMOUNT
+        assert adv["outstanding"] == SAL_AMOUNT
+        assert abs(adv["emi"] - SAL_AMOUNT / 4) < 0.01
         # status_history: should now have approved
         sh = adv.get("status_history") or []
         assert any(h.get("to") == "approved" for h in sh)
@@ -294,20 +300,21 @@ class TestPayment:
             pytest.skip("no advance")
         unique_voucher = f"TST-ITER45-{uuid.uuid4().hex[:6].upper()}"
         r = _sess("super_admin").post(f"{API}/advances/{adv_id}/payment", headers={"Content-Type":"application/json"},
-                          json={"mode": "bank_transfer", "paid_amount": 24000,
+                          json={"mode": "bank_transfer", "paid_amount": SAL_AMOUNT,
                                 "payment_date": "2026-01-15", "bank_name": "HDFC",
                                 "voucher_no": unique_voucher, "txn_no": "TXN-TEST45",
                                 "remarks": "iter45 e2e payment"}, timeout=15)
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["status"] == "paid"
-        assert body["outstanding"] == 0
+        # After payment the employee owes the amount back → outstanding = paid amount.
+        assert body["outstanding"] == SAL_AMOUNT
         assert body["voucher_no"] == unique_voucher
         # Verify advance state
         r = _sess("super_admin").get(f"{API}/advances/{adv_id}", headers={"Content-Type":"application/json"}, timeout=15)
         adv = r.json()
         assert adv["status"] == "paid"
-        assert adv["paid_amount"] == 24000
+        assert adv["paid_amount"] == SAL_AMOUNT
         assert adv["payment"]["mode"] == "bank_transfer"
         # Journal entry exists with our voucher_no
         r = _sess("super_admin").get(f"{API}/journal-entries", headers={"Content-Type":"application/json"}, timeout=15)
@@ -372,6 +379,7 @@ class TestAmendAndReject:
         r = _sess("hr_executive").post(f"{API}/advances", headers={"Content-Type":"application/json"}, json={
             "employee_id": emp_id, "advance_type": "Emergency Advance",
             "requested_amount": 15000 + random.randint(1, 899) / 100, "reason": "TEST amend flow",
+            "documents_not_required": True, "documents_not_required_reason": "Automated test run — no bills",
             "installments": 5, "submit": True,
         }, timeout=20)
         assert r.status_code == 200, r.text
