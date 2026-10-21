@@ -275,26 +275,29 @@ async def create_advance(payload: AdvanceCreateIn, user: dict = Depends(get_curr
     if atype.get("max_installments") and payload.installments > atype["max_installments"]:
         raise HTTPException(status_code=400, detail=f"installments exceed cap ({atype['max_installments']}) for {atype['name']}")
 
-    # Duplicate prevention (Iter 205, tightened in Iter 208) — only an identical
-    # request raised the same day (same employee, type, amount and reason) is a
-    # duplicate; a genuinely separate advance later on is allowed.
-    dup_q = {"employee_id": emp["id"], "advance_type_code": atype["code"],
-             "requested_amount": payload.requested_amount,
-             "status": {"$nin": ["rejected", "cancelled", "closed", "recovered"]}}
+    # Duplicate prevention (Iter 205, hardened in Iter 208/209) — only an identical
+    # request raised the same day (same employee, type, amount AND the same reason)
+    # is a duplicate. With no reason typed there is nothing to tell two genuine
+    # requests apart, so the check steps aside (repeated clicks are still caught by
+    # the submission fingerprint guard).
     reason_key = norm_key(payload.reason)
-    today = now_iso()[:10]
-    for cand in await db.employee_advances.find(
-            dup_q, {"_id": 0, "id": 1, "advance_no": 1, "reason": 1, "created_at": 1}).to_list(50):
-        if norm_key(cand.get("reason")) == reason_key and (cand.get("created_at") or "")[:10] == today:
-            msg = (f"{emp.get('name')} already has an identical {atype['name']} request of "
-                   f"₹{payload.requested_amount:,.0f} raised today ({cand['advance_no']}). "
-                   f"Open {cand['advance_no']} instead of raising it again.")
-            await log_block(kind="business_key", module="employee_advances", message=msg, user=user,
-                            existing_id=cand.get("id"), existing_no=cand.get("advance_no"),
-                            match_key={"employee_id": emp["id"], "type": atype["code"],
-                                       "amount": payload.requested_amount})
-            raise DuplicateRecordError(msg, module="employee_advances", existing_id=cand.get("id"),
-                                       existing_no=cand.get("advance_no"))
+    if reason_key:
+        dup_q = {"employee_id": emp["id"], "advance_type_code": atype["code"],
+                 "requested_amount": payload.requested_amount,
+                 "status": {"$nin": ["rejected", "cancelled", "closed", "recovered"]}}
+        today = now_iso()[:10]
+        for cand in await db.employee_advances.find(
+                dup_q, {"_id": 0, "id": 1, "advance_no": 1, "reason": 1, "created_at": 1}).to_list(50):
+            if norm_key(cand.get("reason")) == reason_key and (cand.get("created_at") or "")[:10] == today:
+                msg = (f"{emp.get('name')} already has an identical {atype['name']} request of "
+                       f"₹{payload.requested_amount:,.0f} raised today ({cand['advance_no']}). "
+                       f"Open {cand['advance_no']} instead of raising it again.")
+                await log_block(kind="business_key", module="employee_advances", message=msg, user=user,
+                                existing_id=cand.get("id"), existing_no=cand.get("advance_no"),
+                                match_key={"employee_id": emp["id"], "type": atype["code"],
+                                           "amount": payload.requested_amount})
+                raise DuplicateRecordError(msg, module="employee_advances", existing_id=cand.get("id"),
+                                           existing_no=cand.get("advance_no"))
 
     adv_no = await next_sequence("AD")  # → AD-YYYY-####
     dept_no = await next_dept_doc("advance")

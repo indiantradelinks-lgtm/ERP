@@ -544,40 +544,46 @@ async def create_request(p: RequestIn, request: Request,
         # Self expense — payee is the requester (auto-link HR record by email)
         emp = await db.employees.find_one({"email": user.get("email")},
                                           {"_id": 0, "id": 1, "name": 1, "employee_id": 1, "emp_code": 1})
-    # Duplicate prevention (Iter 205, tightened in Iter 208) — a genuine duplicate is the
-    # SAME request raised twice: same project + payee + amount + type + the same
-    # description, still open/unpaid. A new request for the same vendor/amount with a
-    # different purpose (another vehicle, another invoice) is normal business and passes.
+    # Duplicate prevention (Iter 205, hardened in Iter 208/209) — only a genuine
+    # re-submission is refused: the SAME payee, amount, type, project AND the same
+    # non-empty description, raised the same day and still unpaid. Repeated clicks on
+    # any request (including ones with no description or payee typed) are already
+    # covered by the submission fingerprint guard, so when either discriminator is
+    # missing this check steps aside rather than blocking real work.
     if meta["payment"]:
-        dup_q: Dict[str, Any] = {
-            "request_type": p.request_type,
-            "status": {"$nin": ["rejected", "cancelled", "closed", "fulfilled", "paid"]},
-            "est_value": round(est, 2),
-            "project_code": project.get("code"),
-        }
+        payee_key: Dict[str, Any] = {}
         if emp:
-            dup_q["employee_id"] = emp["id"]
+            payee_key["employee_id"] = emp["id"]
         elif (p.vendor or "").strip():
-            dup_q["vendor"] = p.vendor
-        else:
-            dup_q["created_by_id"] = user.get("id")
+            payee_key["vendor"] = p.vendor
+        elif (p.upi_any_name or "").strip():
+            payee_key["upi_any_name"] = p.upi_any_name.strip()
         desc_key = norm_key(p.description)
-        today = now_iso()[:10]
-        candidates = await db.project_requests.find(
-            dup_q, {"_id": 0, "id": 1, "request_no": 1, "description": 1, "created_at": 1}).to_list(50)
-        twin = next((c for c in candidates
-                     if norm_key(c.get("description")) == desc_key
-                     and (c.get("created_at") or "")[:10] == today), None)
-        if twin:
-            msg = (f"This {meta['label']} request was already raised today as {twin['request_no']} — same project, "
-                   f"payee, amount and description, and it has not been paid or rejected yet. "
-                   f"Open {twin['request_no']} instead of raising it again.")
-            await log_block(kind="business_key", module="project_requests", message=msg, user=user,
-                            request=request, existing_id=twin.get("id"), existing_no=twin.get("request_no"),
-                            match_key={"request_type": p.request_type, "project_code": project.get("code"),
-                                       "amount": round(est, 2), "description": desc_key[:120]})
-            raise DuplicateRecordError(msg, module="project_requests", existing_id=twin.get("id"),
-                                       existing_no=twin.get("request_no"))
+        if desc_key and payee_key:
+            dup_q: Dict[str, Any] = {
+                "request_type": p.request_type,
+                "status": {"$nin": ["rejected", "cancelled", "closed", "fulfilled", "paid"]},
+                "est_value": round(est, 2),
+                "project_code": project.get("code"),
+                **payee_key,
+            }
+            today = now_iso()[:10]
+            candidates = await db.project_requests.find(
+                dup_q, {"_id": 0, "id": 1, "request_no": 1, "description": 1, "created_at": 1}).to_list(50)
+            twin = next((c for c in candidates
+                         if norm_key(c.get("description")) == desc_key
+                         and (c.get("created_at") or "")[:10] == today), None)
+            if twin:
+                msg = (f"This {meta['label']} request was already raised today as {twin['request_no']} — same "
+                       f"project, payee, amount and description, and it has not been paid or rejected yet. "
+                       f"Open {twin['request_no']} instead of raising it again.")
+                await log_block(kind="business_key", module="project_requests", message=msg, user=user,
+                                request=request, existing_id=twin.get("id"),
+                                existing_no=twin.get("request_no"),
+                                match_key={"request_type": p.request_type, "project_code": project.get("code"),
+                                           "amount": round(est, 2), "description": desc_key[:120], **payee_key})
+                raise DuplicateRecordError(msg, module="project_requests", existing_id=twin.get("id"),
+                                           existing_no=twin.get("request_no"))
     doc = {
         "id": new_id(),
         "request_no": await next_sequence("REQ"),

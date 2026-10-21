@@ -32,7 +32,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from core import db, logger, new_id, now_iso, user_display_name
 
 # How long an identical submission is treated as a repeat of the first one.
-WINDOW_SECONDS = 60
+# Short on purpose: a double click / network retry lands within a few seconds,
+# while a deliberate second identical entry (two identical site payments, say)
+# must never be swallowed.
+WINDOW_SECONDS = 25
 MAX_BODY_BYTES = 200_000
 MAX_CACHED_RESPONSE = 256_000
 # How long a repeat waits for the original request to finish (0.25s × 48 = 12s).

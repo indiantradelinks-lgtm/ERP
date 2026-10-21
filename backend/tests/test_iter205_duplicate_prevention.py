@@ -162,7 +162,8 @@ def test_duplicate_payment_request_is_blocked(session, created):
         pytest.skip("no fuel payment request to model the payload on")
 
     base = {"request_type": "fuel", "project_id": live["project_id"],
-            "cost_center_id": live["cost_center_id"], "amount": 5000, "priority": "medium"}
+            "cost_center_id": live["cost_center_id"], "amount": 5000, "priority": "medium",
+            "vendor": f"Dedupe Fuel Vendor {uuid.uuid4().hex[:4]}"}
     desc = f"Diesel for vehicle {uuid.uuid4().hex[:6].upper()}"
 
     first = session.post(f"{API}/project-requests", json={**base, "description": desc}, timeout=40)

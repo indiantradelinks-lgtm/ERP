@@ -105,3 +105,28 @@ def test_different_amount_same_purpose_is_allowed(session, ctx):
     a = _raise(session, ctx, "other", desc, amount=4100)
     b = _raise(session, ctx, "other", desc, amount=4200)
     assert a.status_code == 200 and b.status_code == 200, (a.text[:150], b.text[:150])
+
+
+def test_blank_description_never_blocks(session, ctx):
+    """Reported case: Head Office fuel payment, UPI payee typed manually, description
+    left blank — three such requests in a row must all be accepted."""
+    if not ctx["ho_project_id"]:
+        pytest.skip("no Head Office cost center available")
+    nos = []
+    for payee in ("rahul", "rahul", "suresh"):
+        r = _raise(session, ctx, "fuel", "", ho=True, priority="high",
+                   payment_mode="UPI", upi_any_name=payee, expense_date="2026-10-21",
+                   remarks=f"attempt {uuid.uuid4().hex[:4]}")
+        assert r.status_code == 200, f"blank-description payment was blocked: {r.status_code} {r.text[:200]}"
+        nos.append(r.json()["request_no"])
+    assert len(set(nos)) == 3, "a genuine second request was swallowed"
+
+
+def test_identical_description_and_payee_is_still_caught(session, ctx):
+    payee = f"Vendor {uuid.uuid4().hex[:5]}"
+    desc = f"Hotel stay for crew {uuid.uuid4().hex[:5]}"
+    first = _raise(session, ctx, "accommodation", desc, vendor=payee)
+    assert first.status_code == 200, first.text[:200]
+    again = _raise(session, ctx, "accommodation", desc, vendor=payee, remarks="resent")
+    assert again.status_code == 409, "a true re-submission must still be refused"
+    assert again.json()["existing_no"] == first.json()["request_no"]
