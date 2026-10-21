@@ -12,6 +12,7 @@ import { Plus, Paperclip, Send, Scale, FileSearch } from "lucide-react";
 import { toast } from "sonner";
 import { api, apiErrorMessage } from "@/lib/api";
 import RowAttachments from "@/components/RowAttachments";
+import TermsEditor from "@/components/TermsEditor";
 import { StatusChip, inr, dt, useSvcMeta } from "./shared";
 
 const blankQuote = () => ({ vendor_id: "", amount: "", tax_pct: 18, other_charges: 0, timeline_days: "", validity_date: "", payment_terms: "", commercial_terms: "", technical_compliance: "compliant", remarks: "" });
@@ -329,7 +330,7 @@ export default function ServiceRfqs() {
                 {terms.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
               </select>
             </div>
-            <div className="md:col-span-3"><Label className="text-xs">Terms &amp; Conditions (printed on PO PDF — one clause per line)</Label><Textarea rows={4} value={po.terms_conditions} onChange={(e) => setPo({ ...po, terms_conditions: e.target.value })} data-testid="svc-po-terms" /></div>
+            <div className="md:col-span-3"><TermsEditor rows={8} label="Terms & Conditions (printed on the PO PDF)" value={po.terms_conditions} onChange={(v) => setPo({ ...po, terms_conditions: v })} testid="svc-po-terms" /></div>
             <p className="md:col-span-3 text-xs text-muted-foreground">
               PO value: <b>{inr((Number(po.rate) || 0) * (Number(po.quantity) || 1) * (1 + (Number(po.tax_pct) || 0) / 100) + (Number(po.other_charges) || 0))}</b> · PO is created as Draft → Submit → Approve → Issue to vendor.
             </p>

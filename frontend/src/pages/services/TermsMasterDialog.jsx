@@ -2,12 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Pencil, Trash2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { api, apiErrorMessage } from "@/lib/api";
+import TermsEditor from "@/components/TermsEditor";
 
 export default function TermsMasterDialog({ open, onOpenChange }) {
   const [rows, setRows] = useState([]);
@@ -43,7 +43,7 @@ export default function TermsMasterDialog({ open, onOpenChange }) {
         {!editing ? (
           <>
             <div className="flex justify-between items-center">
-              <p className="text-xs text-muted-foreground">Templates appear in the T&amp;C dropdown while creating a Service PO and print on the PO PDF (one clause per line).</p>
+              <p className="text-xs text-muted-foreground">Templates appear in the T&amp;C dropdown while creating a Service PO and print on the PO PDF — plain lines are auto-numbered, your own headings, numbers and bullets are kept as typed.</p>
               <Button size="sm" onClick={() => setEditing({ title: "", body: "", active: true })} data-testid="svc-terms-add"><Plus className="h-3.5 w-3.5 mr-1" /> Add</Button>
             </div>
             <div className="space-y-2">
@@ -67,7 +67,8 @@ export default function TermsMasterDialog({ open, onOpenChange }) {
         ) : (
           <div className="space-y-3">
             <div><Label className="text-xs">Title *</Label><Input value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} placeholder="e.g. Standard Service Terms" data-testid="svc-terms-title" /></div>
-            <div><Label className="text-xs">Terms (one clause per line) *</Label><Textarea rows={8} value={editing.body} onChange={(e) => setEditing({ ...editing, body: e.target.value })} data-testid="svc-terms-body" /></div>
+            <TermsEditor label="Terms & Conditions *" rows={12} value={editing.body}
+              onChange={(v) => setEditing({ ...editing, body: v })} testid="svc-terms-body" />
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editing.active !== false} onChange={(e) => setEditing({ ...editing, active: e.target.checked })} data-testid="svc-terms-active" /> Active (visible in PO dropdown)</label>
             <DialogFooter>
               <Button variant="outline" onClick={() => setEditing(null)}>Back</Button>

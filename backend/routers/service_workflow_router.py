@@ -833,6 +833,23 @@ async def list_terms(active: bool = False,
     return await db.svc_terms_master.find(fl, {"_id": 0}).sort("title", 1).to_list(200)
 
 
+class TermsPreviewIn(BaseModel):
+    body: str = ""
+
+
+@router.post("/terms/preview")
+async def preview_terms(p: TermsPreviewIn, user: dict = Depends(get_current_user)):
+    """Exactly how the Terms & Conditions will print on the PO PDF.
+
+    Auto numbering stays on for plain clause lines; headings, bullets and clauses
+    that already carry their own numbers are preserved as typed.
+    """
+    from terms_format import has_manual_numbering, terms_to_html
+    return {"html": terms_to_html(p.body or ""),
+            "manual_numbering": has_manual_numbering(p.body or ""),
+            "lines": len([l for l in (p.body or "").splitlines() if l.strip()])}
+
+
 @router.post("/terms")
 async def create_term(p: TermIn, request: Request, user: dict = Depends(get_current_user)):
     _require_role(user, PROC_ROLES, "manage the Terms & Conditions master")

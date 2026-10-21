@@ -17,6 +17,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from terms_format import terms_to_html
+
 try:
     from weasyprint import HTML  # type: ignore
     _WP_OK = True
@@ -87,6 +89,16 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .note { font-size: 9pt; color: #64748b; margin-top: 6px; }
 .tnc-item { font-size: 9.25pt; color: #334155; line-height: 1.55; text-align: justify;
             margin: 0 0 6px; padding-left: 24px; text-indent: -24px; orphans: 2; widows: 2; }
+.tnc-sub { padding-left: 50px; text-indent: -26px; margin-bottom: 4px; }
+.tnc-sub .tnc-num { width: 26px; }
+.tnc-bullet { padding-left: 38px; text-indent: -14px; margin-bottom: 4px; }
+.tnc-bullet .tnc-num { width: 14px; }
+.tnc-para { font-size: 9.25pt; color: #334155; line-height: 1.55; text-align: justify;
+            margin: 0 0 6px; orphans: 2; widows: 2; }
+.tnc-heading { font-size: 9.75pt; font-weight: 700; color: #0f172a; margin: 10px 0 5px;
+               page-break-after: avoid; break-after: avoid; }
+.tnc-heading:first-child { margin-top: 0; }
+.tnc-gap { height: 5px; }
 .tnc-num { display: inline-block; width: 24px; text-indent: 0; font-weight: 700; color: #0f172a; }
 .tnc-body { }
 .justify { background: #fef3c7; border-left: 3px solid #f59e0b; padding: 6px 8px; font-size: 9pt; }
@@ -927,10 +939,7 @@ def render_service_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] =
         exc = (f"<div style='border:1.5px solid #b45309;background:#fef3c7;padding:6px 10px;margin:8px 0;'>"
                f"<b>EXCEPTION PO</b> — {_esc(po['exception_note'])}</div>")
     terms_body = (po.get("terms_conditions") or "").strip()
-    tnc_items = [t.strip() for t in terms_body.replace("\r", "").split("\n") if t.strip()]
-    tnc_html = "".join(
-        f"<div class='tnc-item'><span class='tnc-num'>{i + 1}.</span><span class='tnc-body'>{_esc(t)}</span></div>"
-        for i, t in enumerate(tnc_items)) or "<div class='note'>As mutually agreed.</div>"
+    tnc_html = terms_to_html(terms_body)
     tnc_title = f" — {_esc(po.get('terms_title'))}" if po.get("terms_title") else ""
     approval = po.get("po_approval") or {}
     lines = po.get("line_items") or []

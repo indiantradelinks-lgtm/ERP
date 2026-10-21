@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import TermsEditor from "@/components/TermsEditor";
 import { Plus, Printer, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, apiErrorMessage, API } from "@/lib/api";
@@ -165,13 +166,12 @@ export default function PoEditDialog({ po, open, onOpenChange, onSaved }) {
                 {terms.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
               </select>
               <p className="text-[11px] text-muted-foreground mt-1">
-                Picking a template loads its clauses below — one clause per line. Edit freely before saving.
+                Picking a template loads its clauses below. Edit freely — use Preview to see exactly how they will print.
               </p>
             </div>
             <div className="md:col-span-2">
-              <Label className="text-xs">Terms &amp; Conditions (printed on the PO)</Label>
-              <Textarea rows={5} value={h.terms_conditions} onChange={(e) => setH({ ...h, terms_conditions: e.target.value })}
-                placeholder="One clause per line" data-testid="svc-po-edit-terms-body" />
+              <TermsEditor rows={10} value={h.terms_conditions}
+                onChange={(v) => setH({ ...h, terms_conditions: v })} testid="svc-po-edit-terms-body" />
             </div>
           </div>
         </div>
