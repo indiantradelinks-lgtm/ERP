@@ -302,7 +302,10 @@ export default function ProjectRequests() {
       const r = await api.post("/project-requests", payload);
       toast.success(`${r.data.request_no} raised → routes to ${r.data.owning_dept} after Project Head approval`);
       setCreating(false); setForm(blank()); setAttFiles([]); setStock(null); setBenef([]); load();
-    } catch (e) { toast.error(e?.response?.data?.detail || "Failed"); }
+    } catch (e) {
+      // A duplicate block already raises the global "Duplicate detected" warning.
+      if (!e?.response?.data?.duplicate) toast.error(e?.response?.data?.detail || "Failed");
+    }
   };
 
   const ROLE_ALIASES = { manager_log: ["manager_log", "manager_l_o_g"], manager_op: ["manager_op", "manager_o_p"], manager_pnv: ["manager_pnv", "manager_p_n_v"] };

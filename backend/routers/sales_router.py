@@ -165,10 +165,10 @@ async def create_enquiry(payload: EnquiryIn, request: Request, user: dict = Depe
             message=f"Customer enquiry no '{doc['customer_enquiry_no']}' is already registered as "
                     f"{{no}} for this site. Open {{no}} instead of creating a new enquiry.",
             user=user, request=request)
-    # 2. Same client + same scope within 30 days is a re-entry of the same enquiry.
+    # 2. The same client + same scope entered again the same day is a re-submission.
     subject = norm_key(doc.get("scope_of_work") or doc.get("scope"))
     if subject and doc.get("client_id"):
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
         recent = await db.enquiries.find(
             {"client_id": doc["client_id"], "created_at": {"$gte": cutoff},
              "status": {"$nin": ["lost", "cancelled"]}},
@@ -177,8 +177,8 @@ async def create_enquiry(payload: EnquiryIn, request: Request, user: dict = Depe
         match = next((r for r in recent
                       if norm_key(r.get("scope_of_work") or r.get("scope")) == subject), None)
         if match:
-            msg = (f"This enquiry is already registered as {match['enquiry_no']} — same client and same scope "
-                   f"within the last 30 days. Open {match['enquiry_no']} instead of creating a duplicate.")
+            msg = (f"This enquiry was already registered as {match['enquiry_no']} — same client and same scope, "
+                   f"entered within the last 24 hours. Open {match['enquiry_no']} instead of creating a duplicate.")
             await log_block(kind="business_key", module="enquiries", message=msg, user=user, request=request,
                             existing_id=match.get("id"), existing_no=match.get("enquiry_no"),
                             match_key={"client_id": doc["client_id"], "scope": subject[:120]})

@@ -39,7 +39,7 @@ def session():
 @pytest.fixture(scope="module")
 def created(session):
     """Records created by the tests — removed at the end."""
-    bucket = {"advance_types": [], "enquiries": []}
+    bucket = {"advance_types": [], "enquiries": [], "requests": []}
     yield bucket
     for code in bucket["advance_types"]:
         rows = session.get(f"{API}/advance-types", timeout=20).json()
@@ -48,6 +48,18 @@ def created(session):
             session.delete(f"{API}/advance-types/{row['id']}", timeout=20)
     for enq_id in bucket["enquiries"]:
         session.delete(f"{API}/enquiries/{enq_id}", timeout=20)
+    if bucket["requests"]:
+        try:
+            from pymongo import MongoClient
+            from dotenv import dotenv_values
+            env = dotenv_values("/app/backend/.env")
+            db = MongoClient(env["MONGO_URL"])[env["DB_NAME"]]
+            rows = list(db.project_requests.find({"id": {"$in": bucket["requests"]}},
+                                                 {"_id": 0, "approval_id": 1}))
+            db.project_requests.delete_many({"id": {"$in": bucket["requests"]}})
+            db.approvals.delete_many({"id": {"$in": [r.get("approval_id") for r in rows if r.get("approval_id")]}})
+        except Exception as e:  # noqa: BLE001 — cleanup must not fail the run
+            print(f"request cleanup skipped: {e}")
 
 
 @pytest.fixture(scope="module")
@@ -137,28 +149,39 @@ def test_second_quotation_on_same_enquiry_is_blocked(session, site, created):
     assert blocked.json()["existing_no"] == enq["quotation_no"]
 
 
-def test_duplicate_payment_request_is_blocked(session):
-    """Re-raising a payment request that is already open/unpaid is refused."""
+def test_duplicate_payment_request_is_blocked(session, created):
+    """The SAME payment request raised twice the same day is refused; a request for the
+    same vendor and amount with a different purpose goes through."""
     r = session.get(f"{API}/project-requests?page=1&page_size=50", timeout=30)
     assert r.status_code == 200, r.text[:200]
     rows = r.json().get("rows", [])
     live = next((x for x in rows
                  if x.get("is_payment") and x.get("project_id") and x.get("cost_center_id")
-                 and x.get("vendor") and x.get("request_type") == "fuel"
-                 and x.get("status") not in ("rejected", "cancelled", "closed", "fulfilled", "paid")), None)
+                 and x.get("request_type") == "fuel"), None)
     if not live:
-        pytest.skip("no live fuel payment request to duplicate")
+        pytest.skip("no fuel payment request to model the payload on")
 
-    attempt = session.post(f"{API}/project-requests", json={
-        "request_type": live["request_type"], "project_id": live["project_id"],
-        "cost_center_id": live["cost_center_id"], "vendor": live["vendor"],
-        "amount": live.get("est_value") or live.get("amount"),
-        "description": f"duplicate guard check {uuid.uuid4().hex[:6]}", "priority": "medium",
-    }, timeout=40)
-    assert attempt.status_code == 409, f"expected 409, got {attempt.status_code}: {attempt.text[:200]}"
-    data = attempt.json()
+    base = {"request_type": "fuel", "project_id": live["project_id"],
+            "cost_center_id": live["cost_center_id"], "amount": 5000, "priority": "medium"}
+    desc = f"Diesel for vehicle {uuid.uuid4().hex[:6].upper()}"
+
+    first = session.post(f"{API}/project-requests", json={**base, "description": desc}, timeout=40)
+    assert first.status_code == 200, first.text[:300]
+    created["requests"].append(first.json()["id"])
+
+    repeat = session.post(f"{API}/project-requests",
+                          json={**base, "description": desc, "remarks": "resent"}, timeout=40)
+    assert repeat.status_code == 409, f"expected 409, got {repeat.status_code}: {repeat.text[:200]}"
+    data = repeat.json()
     assert data.get("duplicate") is True
-    assert data.get("existing_no")
+    assert data["existing_no"] == first.json()["request_no"]
+
+    # Control — another vehicle for the same project and amount is normal business.
+    other = session.post(f"{API}/project-requests",
+                         json={**base, "description": f"Diesel for vehicle {uuid.uuid4().hex[:6].upper()}"},
+                         timeout=40)
+    assert other.status_code == 200, f"a genuinely different request was blocked: {other.text[:200]}"
+    created["requests"].append(other.json()["id"])
 
 
 # ───────────────────────── layer 3: admin audit ─────────────────────────

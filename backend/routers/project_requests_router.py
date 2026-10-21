@@ -32,7 +32,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from core import db, require_permission, get_current_user, now_iso, new_id
-from dedupe import ensure_no_duplicate
+from dedupe import DuplicateRecordError, ensure_no_duplicate, log_block, norm_key
 from pagination import maybe_paged, paged_or_rows
 from scope import apply_project_scope, ensure_project_access
 from datetime import datetime, timezone, timedelta
@@ -544,8 +544,10 @@ async def create_request(p: RequestIn, request: Request,
         # Self expense — payee is the requester (auto-link HR record by email)
         emp = await db.employees.find_one({"email": user.get("email")},
                                           {"_id": 0, "id": 1, "name": 1, "employee_id": 1, "emp_code": 1})
-    # Duplicate prevention (Iter 205) — same project + payee + amount + type, still
-    # open/unpaid, is a repeat of a request that is already in the pipeline.
+    # Duplicate prevention (Iter 205, tightened in Iter 208) — a genuine duplicate is the
+    # SAME request raised twice: same project + payee + amount + type + the same
+    # description, still open/unpaid. A new request for the same vendor/amount with a
+    # different purpose (another vehicle, another invoice) is normal business and passes.
     if meta["payment"]:
         dup_q: Dict[str, Any] = {
             "request_type": p.request_type,
@@ -557,12 +559,25 @@ async def create_request(p: RequestIn, request: Request,
             dup_q["employee_id"] = emp["id"]
         elif (p.vendor or "").strip():
             dup_q["vendor"] = p.vendor
-        await ensure_no_duplicate(
-            module="project_requests", collection="project_requests", no_field="request_no",
-            query=dup_q, user=user, request=request,
-            message=f"A {meta['label']} request for the same project, payee and amount is already in the "
-                    f"pipeline as {{no}} and has not been paid or rejected yet. Open {{no}} instead of "
-                    f"raising it again.")
+        else:
+            dup_q["created_by_id"] = user.get("id")
+        desc_key = norm_key(p.description)
+        today = now_iso()[:10]
+        candidates = await db.project_requests.find(
+            dup_q, {"_id": 0, "id": 1, "request_no": 1, "description": 1, "created_at": 1}).to_list(50)
+        twin = next((c for c in candidates
+                     if norm_key(c.get("description")) == desc_key
+                     and (c.get("created_at") or "")[:10] == today), None)
+        if twin:
+            msg = (f"This {meta['label']} request was already raised today as {twin['request_no']} — same project, "
+                   f"payee, amount and description, and it has not been paid or rejected yet. "
+                   f"Open {twin['request_no']} instead of raising it again.")
+            await log_block(kind="business_key", module="project_requests", message=msg, user=user,
+                            request=request, existing_id=twin.get("id"), existing_no=twin.get("request_no"),
+                            match_key={"request_type": p.request_type, "project_code": project.get("code"),
+                                       "amount": round(est, 2), "description": desc_key[:120]})
+            raise DuplicateRecordError(msg, module="project_requests", existing_id=twin.get("id"),
+                                       existing_no=twin.get("request_no"))
     doc = {
         "id": new_id(),
         "request_no": await next_sequence("REQ"),
