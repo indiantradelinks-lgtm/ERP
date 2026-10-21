@@ -46,10 +46,20 @@ def projects(session):
                       monthly_billing_amount=MONTHLY_AMOUNT, contract_value=MONTHLY_AMOUNT * 4)
     short = _mk_project(session, "SHORT", category="short_term", contract_value=500000)
     yield {"amc": amc, "short": short}
+    # No delete API for bill requests — clear the test rows straight from Mongo.
+    try:
+        from pymongo import MongoClient
+        from dotenv import dotenv_values
+        env = dotenv_values("/app/backend/.env")
+        db = MongoClient(env["MONGO_URL"])[env["DB_NAME"]]
+        codes = [amc["code"], short["code"]]
+        brs = list(db.bill_requests.find({"project_code": {"$in": codes}}, {"_id": 0, "id": 1, "approval_id": 1}))
+        db.bill_requests.delete_many({"project_code": {"$in": codes}})
+        db.approvals.delete_many({"id": {"$in": [b.get("approval_id") for b in brs if b.get("approval_id")]}})
+        db.billing_reminders.delete_many({"project_code": {"$in": codes}})
+    except Exception as e:  # noqa: BLE001 — cleanup must not fail the run
+        print(f"cleanup skipped: {e}")
     for p in (amc, short):
-        for br in session.get(f"{API}/bill-requests", timeout=30).json():
-            if br.get("project_code") == p["code"]:
-                session.delete(f"{API}/bill-requests/{br['id']}", timeout=20)
         session.delete(f"{API}/projects/{p['id']}", timeout=20)
 
 

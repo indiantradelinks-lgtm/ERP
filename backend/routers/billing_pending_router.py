@@ -72,7 +72,9 @@ def _range_overlap(req: dict, dfrom: str, dto: str) -> bool:
 async def build_pending_report(month: str, user: Optional[dict] = None,
                                period_from: Optional[str] = None,
                                period_to: Optional[str] = None) -> Dict[str, Any]:
-    q: Dict[str, Any] = {"status": {"$nin": ["completed", "closed", "cancelled", "archived"]}}
+    q: Dict[str, Any] = {"status": {"$nin": ["completed", "closed", "cancelled", "archived"]},
+                         "billing_type": {"$ne": "non_billable"},
+                         "internal": {"$ne": True}}
     if user:
         q = await apply_project_scope(user, q, id_field="id", code_field="code")
     projects = await db.projects.find(

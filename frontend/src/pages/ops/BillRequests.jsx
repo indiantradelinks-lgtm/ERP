@@ -97,12 +97,15 @@ export default function BillRequests() {
         offer_qty: i.offer_qty, billed_qty: i.billed_qty,
       }));
       // Project Category is fetched from Project Master — AMC/ARC bills month-wise.
-      const month = data.billing_mode === "monthly" ? (data.next_billing_month || "") : "";
+      const monthly = data.billing_mode === "monthly";
+      const month = monthly ? (data.next_billing_month || "") : "";
       const [pf, pt] = monthBounds(month);
       setForm((f) => ({
-        ...f, project_code: code, items, billing_month: month,
-        period_from: month ? pf : f.period_from, period_to: month ? pt : f.period_to,
-        bill_nature: data.billing_mode === "monthly" ? "monthly_last" : f.bill_nature,
+        ...f, project_code: code, items,
+        billing_month: month,
+        period_from: monthly ? pf : (data.project_start || ""),
+        period_to: monthly ? pt : (data.project_end || ""),
+        bill_nature: monthly ? "monthly_last" : "",
       }));
       if (items.length) toast.success(`${items.length} line item(s) loaded from offer ${data.quotation_no || ""} — adjust quantities as per the customer work order`);
     } catch { /* context is a convenience only */ }
@@ -289,7 +292,7 @@ export default function BillRequests() {
             <DialogDescription>Goes for approval: Project Manager → Dept Head → GM → Director (Super Admin can change this in Approval Matrix).</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <div>
                 <Label className="text-[10px] uppercase tracking-wider">Bill Type</Label>
                 <select value={form.bill_type} onChange={(e) => setForm({ ...form, bill_type: e.target.value })}
@@ -319,6 +322,11 @@ export default function BillRequests() {
                     max={(ctx.project_end || "").slice(0, 7) || undefined}
                     onChange={(e) => pickMonth(e.target.value)} className="h-9 rounded-sm mt-1" data-testid="br-form-billing-month" />
                   <div className="text-[10px] text-muted-foreground mt-0.5">Period {form.period_from || "—"} → {form.period_to || "—"}</div>
+                  {(ctx.month_ledger || []).some((m) => m.month === form.billing_month && m.taken) && (
+                    <div className="text-[10px] text-rose-700 font-semibold mt-0.5" data-testid="br-form-month-taken">
+                      This month is already requested — pick another month
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>

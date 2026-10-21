@@ -209,10 +209,12 @@ export default function BillingPendingReport() {
             {(data?.month_wise || []).length === 0 && <div className="text-sm text-muted-foreground">Nothing pending — all months are billed.</div>}
             {(data?.month_wise || []).map((m) => (
               <button key={m.month} onClick={() => setMonth(m.month)}
-                className={`text-left border rounded-sm px-3 py-2 min-w-[140px] transition-colors hover:border-primary ${month === m.month ? "border-primary bg-primary/5" : "border-border"}`}
+                className={`text-left border rounded-sm px-3 py-2 min-w-[140px] transition-colors hover:border-primary ${month === m.month ? "border-primary bg-primary/5" : "border-border"} ${m.pending_amount ? "" : "opacity-60"}`}
                 data-testid={`billing-month-${m.month}`}>
                 <div className="text-[11px] font-bold">{m.month}</div>
-                <div className="text-sm font-black tabular text-red-800">{inr(m.pending_amount)}</div>
+                <div className={`text-sm font-black tabular ${m.pending_amount ? "text-red-800" : "text-muted-foreground"}`}>
+                  {m.pending_amount ? inr(m.pending_amount) : "Amount not set"}
+                </div>
                 <div className="text-[10px] text-muted-foreground">{m.projects} project(s)</div>
               </button>
             ))}
@@ -272,6 +274,12 @@ export default function BillingPendingReport() {
                   <TableCell className="text-right font-mono-data tabular text-sm font-bold text-red-800" data-testid={`billing-pending-amt-${r.project_code}`}>
                     {r.pending_amount ? inr(r.pending_amount) : "—"}
                     {r.pending_months_count > 1 && <div className="text-[10px] text-muted-foreground font-normal">{r.pending_months_count} months</div>}
+                    {!r.pending_amount && r.billing_mode === "monthly" && r.pending_months_count > 0 && (
+                      <div className="text-[10px] text-amber-700 font-normal">Monthly amount not set in Project Master</div>
+                    )}
+                    {!r.pending_amount && r.billing_mode === "scope" && r.billing_status === "pending" && !r.scope_value && (
+                      <div className="text-[10px] text-amber-700 font-normal">Contract value not set</div>
+                    )}
                   </TableCell>
                   <TableCell className="text-xs">
                     {r.last_bill_no ? <><div className="font-semibold">{r.last_bill_no}</div><div className="text-[10px] text-muted-foreground">{fmtD(r.last_bill_at)}</div></> : "—"}

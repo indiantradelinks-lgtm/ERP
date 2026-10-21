@@ -1,0 +1,39 @@
+{
+  "summary": "Frontend-only E2E (Playwright, admin@erp.com) of Project Category -> Bill Request -> Pending Billing Report. All 6 requested UI features WORK. Project Master: created TEST-AMC-UI1 (category=amc_arc, monthly 25000, 2026-07-01 -> 2027-03-31) through the UI and the values were saved; editing the monthly amount to 30000 was saved and shows up in project-context. Bill Request: picking the AMC project shows the read-only category panel (badge 'AMC / ARC', 'Month-wise billing · ₹ 25,000 per month · validity 2026-07-01 → 2027-03-31'). The Billing Month input replaces Period From/To and auto-fills next_billing_month 2026-07. Choosing 2026-08 or clicking the 2026-09 chip fills the period automatically (2026-09-01 → 2026-09-30). The month chips are red/clickable while pending, and after BR-2026-0018 was submitted, 2026-09 became green and disabled with the tooltip 'BR-2026-0018 · pending_approval'. Submitting with no month was blocked with the toast 'Select the Billing Month — AMC/ARC projects are billed month-wise'. A duplicate for the same month showed 'Duplicate detected — not saved … BR-2026-0018', and only 1 BR exists for the project. A non-AMC project (PRJ-2026-0038) shows 'Not Set' plus 'Billed against project scope / timeline …', with br-form-from/br-form-to visible and no billing month. Pending Billing Report: the tile shows ₹56,50,000 (33 pending months, 3 AMC/ARC, 21 scope). The month-wise strip shows the cards, and clicking billing-month-2026-08 switches the month picker and highlights the card. The row for TEST-AMC-UI1 shows Category AMC / ARC, Period 2026-10 'Pending: 2026-07, 2026-08, 2026-10', and Pending ₹75,000 (3 months). Status per month is correct (2026-09 = In Flow, 2026-08/10 = Pending). Project filter gives 1 row with tile ₹75,000. Category filter amc_arc gives 3 rows (all AMC/ARC), 'unset' gives 20 rows (all Not Set). The status KPI tiles narrow the rows (pending 19, in-flow 2, billed 0, outside validity 2). Excel, CSV and PDF buttons each downloaded a file with HTTP 200 and the correct content type (xlsx 7185 B, csv 1149 B with the new Category/Pending Months/Pending Amount columns, pdf 151 KB), and the current filters were passed to the export. reminder-log returns 200 with per-project rows (PM to, Accounts/GM/Director cc). All test data was deleted.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "DELETE /api/bill-requests/{id}", "issue": "The endpoint does not exist, so the teardown in tests/test_iter206_project_category_billing.py (line 52) silently fails and leaves orphan BRs. BR-2026-0016 (TEST-ITER206-AMC-3170) and BR-2026-0017 (TEST-ITER206-SHORT-201D) were left behind; the tester deleted them directly in Mongo. Either add a delete endpoint for admin/test use or clean up via the DB in the test."},
+      {"endpoint": "GET /api/billing/pending-report", "issue": "HEAD-OFFICE (internal, billing_type=non_billable) appears as a 'Pending' row in the Pending Billing Report and would get reminders. Internal or non-billable projects should be excluded."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "BillRequests.jsx onProjectPicked", "issue": "Stale state is carried over when you switch from an AMC/ARC project to a scope project in the same dialog. Period From/To keep the AMC month bounds (2026-09-01 → 2026-09-30) and Bill Nature stays 'Last Bill of the Month' (monthly_last). For non-monthly projects, period_from/period_to/bill_nature should be reset (or prefilled from project start/end).", "selector": "[data-testid=br-form-from],[data-testid=br-form-to],[data-testid=br-form-nature]", "priority": "MEDIUM"},
+      {"component": "Projects.jsx Project Category select", "issue": "Options show raw snake_case values (short_term, long_term, amc_arc, one_time) instead of labels (Short Term, Long Term, AMC / ARC, One Time). Use {value,label} options.", "selector": "[data-testid=projects-field-category]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "New Bill Request dialog (scope project)", "issues": ["With Period From + Period To there are 5 controls in a grid-cols-4 row, so Period To wraps alone onto a second row. Consider grid-cols-5 or putting the From/To pair in one cell."]},
+      {"screen": "Pending Billing Report", "issues": ["The month-wise strip shows many ₹0 cards (projects with no amount), which adds noise. Consider hiding months with ₹0 or showing a 'value not set' hint.", "AMC rows with status 'Outside Validity' (PRJ-2025-01/02) still list 6 or 3 pending months but the Pending column shows '—' because the monthly amount is ₹0. A 'Monthly amount not set' hint would help."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Reset period_from/period_to/bill_nature in BillRequests.onProjectPicked when the picked project is not monthly",
+    "Use labelled options for the Project Category select in Projects.jsx",
+    "Exclude HEAD-OFFICE / non_billable projects from the Pending Billing Report and reminders",
+    "Fix the iter206 test teardown (no DELETE /api/bill-requests/{id} endpoint) so it does not leave orphan BRs"
+  ],
+  "critical_code_review_comments": [
+    "BillRequests.jsx: the Billing Month <input type=month> lets the user pick an already-taken month (the backend 409 catches it). Optionally warn inline when form.billing_month matches a taken ledger month.",
+    "BillRequests.jsx is 474 lines with a large inline dialog. Consider extracting BillRequestForm."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (frontend only as requested)", "frontend": "100% of requested flows pass (2 minor UI bugs found)"},
+  "test_credentials": "admin@erp.com / Admin@123",
+  "seed_data_creation": "Created TEST-AMC-UI1 project + BR-2026-0018 via UI; both deleted afterwards. Also deleted orphan BR-2026-0016/0017 left by the iter206 backend tests.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Server date is Oct 2026. Bill Request project select is a native <select data-testid=br-form-project>. Projects form fields use projects-field-<key>. Login with data-testid login-email/login-password/login-submit. Use page.request (it shares cookies) for API checks. There is no DELETE endpoint for bill requests, so clean up via Mongo."
+}
