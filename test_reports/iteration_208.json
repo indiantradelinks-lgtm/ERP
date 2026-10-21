@@ -1,0 +1,18 @@
+{
+  "summary": "Verified fix for repeat advance requests being blocked (Iter 210 change). Backend: 9/9 new tests pass (test_iter210_repeat_advance.py) + 19/19 regression in iter205/iter208 duplicate tests. UI: on-behalf Emergency Advance for Abhilash Kumar (EMPITL017), Rs1000, NA documents with reason -> success toast and new row AD-2026-0288 in register even though an identical same-day advance (AD-2026-0287, backdated 5 min) existed; an immediate identical re-submit from UI was refused with toast naming AD-2026-0288 and dialog stayed open with data intact. All created data cleaned up.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_iter210_repeat_advance.py", "/app/test_reports/pytest/iter210.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Duplicate window relies on lexicographic comparison of ISO created_at strings vs cutoff isoformat(); works as long as all created_at use now_iso() (+00:00). Records with 'Z' suffix or naive timestamps would compare inconsistently - minor.",
+    "Advance guard excludes 'draft' status (fine) but a draft followed by immediate submit of identical data will create two records (draft + submitted) - acceptable/by design.",
+    "Payment Requests verified via API only (first OK, immediate identical repeat -> 409 naming REQ no, after 3-min backdate -> 200 new REQ no); ProjectRequests.jsx UI not exercised in this iteration."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter210_repeat_advance.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Temporary advances (TEST_iter210/TEST_ui210 reasons) and payment requests (TEST_iter210 descriptions) created and deleted along with their approvals.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Test file backdates created_at directly in Mongo to simulate 'later the same day'. 25s fingerprint middleware replays identical bodies - vary remarks/notes for deliberate repeats. Do NOT vary priority to 'high' on payment requests (requires payment mode). Login testids: login-email/login-password. Employee picker testid emp-select, option emp-select-option-<id> (needs mousedown). Docs NA: advance-docs-na-toggle / advance-docs-na-reason."
+}
