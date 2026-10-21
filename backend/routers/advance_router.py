@@ -9,6 +9,7 @@ Endpoints under /api/advances and /api/advance-types.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import Request, APIRouter, Depends, File, HTTPException, Response, UploadFile
@@ -23,6 +24,9 @@ from sequences import next_sequence, next_dept_doc
 
 logger = logging.getLogger("erp.advances")
 router = APIRouter(tags=["advances"])
+
+# Only an identical advance re-submitted inside this window counts as a duplicate.
+RESUBMIT_WINDOW_MINUTES = 2
 
 # ────────────────────────────────────────────────────────────────────────
 # Defaults: 7 advance types seeded on startup if collection is empty
@@ -275,23 +279,23 @@ async def create_advance(payload: AdvanceCreateIn, user: dict = Depends(get_curr
     if atype.get("max_installments") and payload.installments > atype["max_installments"]:
         raise HTTPException(status_code=400, detail=f"installments exceed cap ({atype['max_installments']}) for {atype['name']}")
 
-    # Duplicate prevention (Iter 205, hardened in Iter 208/209) — only an identical
-    # request raised the same day (same employee, type, amount AND the same reason)
-    # is a duplicate. With no reason typed there is nothing to tell two genuine
-    # requests apart, so the check steps aside (repeated clicks are still caught by
-    # the submission fingerprint guard).
+    # Duplicate prevention (Iter 205, relaxed in Iter 210).
+    # An employee may legitimately raise several advances — including the same type
+    # and amount on the same day — so a same-day match is NOT a duplicate. Only an
+    # accidental re-submit is blocked: an identical still-pending request (same
+    # employee, type, amount and reason) created within the last few minutes.
     reason_key = norm_key(payload.reason)
     if reason_key:
         dup_q = {"employee_id": emp["id"], "advance_type_code": atype["code"],
                  "requested_amount": payload.requested_amount,
-                 "status": {"$nin": ["draft", "rejected", "cancelled", "closed", "recovered"]}}
-        today = now_iso()[:10]
+                 "status": {"$in": ["submitted", "pending", "in_progress"]}}
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=RESUBMIT_WINDOW_MINUTES)).isoformat()
         for cand in await db.employee_advances.find(
                 dup_q, {"_id": 0, "id": 1, "advance_no": 1, "reason": 1, "created_at": 1}).to_list(50):
-            if norm_key(cand.get("reason")) == reason_key and (cand.get("created_at") or "")[:10] == today:
+            if norm_key(cand.get("reason")) == reason_key and (cand.get("created_at") or "") >= cutoff:
                 msg = (f"{emp.get('name')} already has an identical {atype['name']} request of "
-                       f"₹{payload.requested_amount:,.0f} raised today ({cand['advance_no']}). "
-                       f"Open {cand['advance_no']} instead of raising it again.")
+                       f"₹{payload.requested_amount:,.0f} submitted moments ago ({cand['advance_no']}). "
+                       f"Open {cand['advance_no']} — or change the amount/reason if this is a new advance.")
                 await log_block(kind="business_key", module="employee_advances", message=msg, user=user,
                                 existing_id=cand.get("id"), existing_no=cand.get("advance_no"),
                                 match_key={"employee_id": emp["id"], "type": atype["code"],

@@ -46,6 +46,10 @@ from request_visibility import apply_request_visibility, own_rows_clauses
 router = APIRouter(tags=["project-requests"])
 logger = logging.getLogger("erp")
 
+# Only an identical request re-submitted inside this window counts as a duplicate.
+RESUBMIT_WINDOW_MINUTES = 2
+
+
 # type -> (label, owning department, is_stockable, is_payment, expense_type)
 REQUEST_TYPES: Dict[str, Dict[str, Any]] = {
     "material":         {"label": "Material (Scaffolding etc.)", "dept": "stores", "stockable": True, "payment": False, "expense_type": "scaffolding_material"},
@@ -567,16 +571,16 @@ async def create_request(p: RequestIn, request: Request,
                 "project_code": project.get("code"),
                 **payee_key,
             }
-            today = now_iso()[:10]
+            cutoff = (datetime.now(timezone.utc) - timedelta(minutes=RESUBMIT_WINDOW_MINUTES)).isoformat()
             candidates = await db.project_requests.find(
                 dup_q, {"_id": 0, "id": 1, "request_no": 1, "description": 1, "created_at": 1}).to_list(50)
             twin = next((c for c in candidates
                          if norm_key(c.get("description")) == desc_key
-                         and (c.get("created_at") or "")[:10] == today), None)
+                         and (c.get("created_at") or "") >= cutoff), None)
             if twin:
-                msg = (f"This {meta['label']} request was already raised today as {twin['request_no']} — same "
-                       f"project, payee, amount and description, and it has not been paid or rejected yet. "
-                       f"Open {twin['request_no']} instead of raising it again.")
+                msg = (f"This {meta['label']} request was just raised as {twin['request_no']} — same project, "
+                       f"payee, amount and description, moments ago. Open {twin['request_no']} — or change the "
+                       f"amount/description if this is a genuinely new request.")
                 await log_block(kind="business_key", module="project_requests", message=msg, user=user,
                                 request=request, existing_id=twin.get("id"),
                                 existing_no=twin.get("request_no"),
