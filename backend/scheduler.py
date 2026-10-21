@@ -240,12 +240,17 @@ async def _billing_reminder_job():
             return
         month = today.isoformat()[:7]
         marker = f"billing-reminder-{month}"
-        if await _db.notification_markers.find_one({"id": marker}):
-            return
+        res: dict = {"sent": False, "reason": "digest already sent this month"}
         from routers.billing_pending_router import send_billing_reminder, build_pending_report
-        res = await send_billing_reminder(month, queued_by="scheduler")
-        if res.get("sent") or res.get("reason") == "no pending projects":
-            await _db.notification_markers.insert_one({"id": marker, "at": now_iso(), "result": res})
+        if not await _db.notification_markers.find_one({"id": marker}):
+            res = await send_billing_reminder(month, queued_by="scheduler")
+            if res.get("sent") or res.get("reason") == "no pending projects":
+                await _db.notification_markers.insert_one({"id": marker, "at": now_iso(), "result": res})
+        # Per-project reminder to each responsible PM (Accounts + GM/Director in CC);
+        # repeats every 7 days until that project's billing is completed.
+        from routers.billing_pending_router import send_project_billing_reminders
+        per_project = await send_project_billing_reminders(month, queued_by="scheduler")
+        logger.info(f"[billing_reminder] per-project {per_project}")
         # In-app alerts for PMs of pending projects (independent of email outcome)
         report = await build_pending_report(month, user=None)
         pending = [r for r in report["rows"] if r["billing_status"] == "pending"]

@@ -14,6 +14,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from core import db, get_current_user, now_iso, require_permission
+from billing_category import (CATEGORY_LABELS, category_label, category_of, contract_months,
+                             is_recurring, month_bounds, monthly_amount, scope_value)
 from scope import apply_project_scope
 
 router = APIRouter(tags=["billing-pending"])
@@ -75,7 +77,9 @@ async def build_pending_report(month: str, user: Optional[dict] = None,
         q = await apply_project_scope(user, q, id_field="id", code_field="code")
     projects = await db.projects.find(
         q, {"_id": 0, "id": 1, "code": 1, "name": 1, "client": 1, "status": 1,
-            "billing_type": 1, "order_type": 1, "type": 1,
+            "billing_type": 1, "order_type": 1, "type": 1, "category": 1,
+            "monthly_billing_amount": 1, "contract_value": 1, "work_order_value": 1,
+            "end_date": 1, "extended_end_date": 1,
             "project_manager_name": 1, "manager": 1,
             "project_manager_id": 1, "start_date": 1, "created_at": 1}).sort("code", 1).to_list(2000)
     codes = [p["code"] for p in projects if p.get("code")]
@@ -99,10 +103,12 @@ async def build_pending_report(month: str, user: Optional[dict] = None,
         gen = [r for r in reqs if r.get("status") == "bill_generated"]
         open_reqs = [r for r in reqs if r.get("status") not in ("bill_generated", "rejected")]
         btype = p.get("billing_type") or None
-        effective = btype or "annual_rate_contract"
+        category = category_of(p)
+        recurring = is_recurring(p)
+        effective = "annual_rate_contract" if recurring else "one_time_supply"
         last_gen = max(gen, key=lambda r: r.get("generated_at") or r.get("created_at") or "", default=None)
 
-        if effective == "one_time_supply":
+        if not recurring:
             final_done = any((r.get("bill_type") == "final" or r.get("bill_nature") == "one_time") for r in gen)
             if final_done:
                 status = "billed"
@@ -112,7 +118,8 @@ async def build_pending_report(month: str, user: Optional[dict] = None,
                 status = "requested"
             else:
                 status = "pending"
-        else:  # monthly cycle (ARC)
+        else:  # monthly cycle (AMC / ARC)
+            valid_months = contract_months(p)
             if period_from and period_to:
                 month_gen = [r for r in gen if _range_overlap(r, period_from, period_to)]
                 month_open = [r for r in open_reqs if _range_overlap(r, period_from, period_to)]
@@ -123,6 +130,8 @@ async def build_pending_report(month: str, user: Optional[dict] = None,
                 status = "billed"
             elif month_open:
                 status = "requested"
+            elif valid_months and month not in valid_months:
+                status = "out_of_period"
             else:
                 status = "pending"
 
@@ -151,10 +160,56 @@ async def build_pending_report(month: str, user: Optional[dict] = None,
             pending_days = (_date.today() - _date.fromisoformat(str(anchor)[:10])).days
         except Exception:
             pending_days = None
+
+        # ── Month-wise billing ledger (Iter 206) ──
+        # AMC/ARC: one expected bill per month for the whole project validity.
+        # Scope projects: a single period (project start → end) with the balance
+        # of the contract value still to be billed.
+        expected_monthly = monthly_amount(p) if recurring else 0.0
+        total_scope = scope_value(p)
+        billed_value = round(sum(r.get("expected_amount") or 0 for r in gen), 2)
+        month_rows: List[Dict[str, Any]] = []
+        if recurring:
+            from datetime import date as _date2
+            this_month = _date2.today().isoformat()[:7]
+            for mth in contract_months(p):
+                m_gen = [r for r in gen if _month_overlap(r, mth)]
+                m_open = [r for r in open_reqs if _month_overlap(r, mth)]
+                if m_gen:
+                    m_status = "billed"
+                elif m_open:
+                    m_status = "requested"
+                elif mth > this_month:
+                    m_status = "upcoming"
+                else:
+                    m_status = "pending"
+                month_rows.append({
+                    "month": mth, "status": m_status,
+                    "amount": round(sum(r.get("expected_amount") or 0 for r in m_gen), 2) if m_gen else expected_monthly,
+                    "bill_no": (m_gen[0].get("bill_number") or m_gen[0].get("request_no")) if m_gen else
+                               ((m_open[0].get("request_no")) if m_open else None),
+                })
+            pending_months = [m["month"] for m in month_rows if m["status"] == "pending"]
+            pending_amount = round(sum(m["amount"] for m in month_rows if m["status"] == "pending"), 2)
+            billing_period = month
+        else:
+            pending_months = [] if status == "billed" else [month]
+            pending_amount = 0.0 if status == "billed" else round(max(total_scope - billed_value, 0), 2)
+            billing_period = " → ".join([x for x in [(p.get("start_date") or "")[:10],
+                                                     (p.get("extended_end_date") or p.get("end_date") or "")[:10]] if x]) or month
         rows.append({
             "project_id": p.get("id"), "project_code": p.get("code"), "project_name": p.get("name"),
             "client": p.get("client"), "project_status": p.get("status"),
             "billing_type": btype, "effective_billing_type": effective,
+            "project_category": category, "category_label": category_label(category),
+            "billing_mode": "monthly" if recurring else "scope",
+            "billing_period": billing_period,
+            "expected_monthly": expected_monthly,
+            "scope_value": total_scope,
+            "months": month_rows,
+            "pending_months": pending_months,
+            "pending_months_count": len(pending_months),
+            "pending_amount": pending_amount,
             "order_type": p.get("order_type"), "service_type": p.get("type"),
             "project_manager": p.get("project_manager_name") or p.get("manager"),
             "project_manager_id": p.get("project_manager_id"),
@@ -183,9 +238,17 @@ def apply_report_filters(rows: List[dict], *, status: Optional[str] = None, q: O
                          project_manager: Optional[str] = None, client: Optional[str] = None,
                          billing_type: Optional[str] = None, payment_status: Optional[str] = None,
                          min_pending_days: Optional[int] = None,
-                         order_type: Optional[str] = None, service_type: Optional[str] = None) -> List[dict]:
+                         order_type: Optional[str] = None, service_type: Optional[str] = None,
+                         category: Optional[str] = None, project_code: Optional[str] = None) -> List[dict]:
     def ok(r):
         if status and r["billing_status"] != status:
+            return False
+        if category:
+            if category == "unset" and r.get("project_category"):
+                return False
+            if category != "unset" and r.get("project_category") != category:
+                return False
+        if project_code and r.get("project_code") != project_code:
             return False
         if q and q.lower() not in f"{r['project_code']} {r['project_name']}".lower():
             return False
@@ -214,7 +277,33 @@ def _summarise(rows: List[dict]) -> Dict[str, Any]:
     counts: Dict[str, int] = {}
     for r in rows:
         counts[r["billing_status"]] = counts.get(r["billing_status"], 0) + 1
-    return {"total": len(rows), **counts, "pending": counts.get("pending", 0)}
+    return {"total": len(rows), **counts, "pending": counts.get("pending", 0),
+            "pending_amount": round(sum(r.get("pending_amount") or 0 for r in rows), 2),
+            "pending_months_total": sum(r.get("pending_months_count") or 0 for r in rows),
+            "amc_arc": sum(1 for r in rows if r.get("project_category") == "amc_arc"),
+            "scope": sum(1 for r in rows if r.get("billing_mode") == "scope")}
+
+
+def month_wise_summary(rows: List[dict]) -> List[Dict[str, Any]]:
+    """Overall month-wise pending billing — every pending month across all projects."""
+    buckets: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        if r.get("billing_mode") == "monthly":
+            for m in r.get("months") or []:
+                if m["status"] != "pending":
+                    continue
+                b = buckets.setdefault(m["month"], {"month": m["month"], "projects": 0, "pending_amount": 0.0})
+                b["projects"] += 1
+                b["pending_amount"] = round(b["pending_amount"] + (m.get("amount") or 0), 2)
+        elif (r.get("pending_amount") or 0) > 0 or r.get("billing_status") == "pending":
+            # Scope projects sit in the month their timeline ends.
+            m = ((r.get("billing_period") or "").split("→")[-1].strip()[:7]) or ""
+            if len(m) != 7:
+                m = (r.get("last_bill_at") or now_iso())[:7]
+            b = buckets.setdefault(m, {"month": m, "projects": 0, "pending_amount": 0.0})
+            b["projects"] += 1
+            b["pending_amount"] = round(b["pending_amount"] + (r.get("pending_amount") or 0), 2)
+    return sorted(buckets.values(), key=lambda x: x["month"])
 
 
 @router.get("/billing/pending-report")
@@ -224,14 +313,19 @@ async def pending_report(month: Optional[str] = None, status: Optional[str] = No
                          payment_status: Optional[str] = None, min_pending_days: Optional[int] = None,
                          period_from: Optional[str] = None, period_to: Optional[str] = None,
                          order_type: Optional[str] = None, service_type: Optional[str] = None,
+                         category: Optional[str] = None, project_code: Optional[str] = None,
                          user: dict = Depends(require_permission("bill_requests", "read"))):
     month = month or now_iso()[:7]
     report = await build_pending_report(month, user=user, period_from=period_from, period_to=period_to)
     rows = apply_report_filters(report["rows"], status=status, q=q, project_manager=project_manager,
                                 client=client, billing_type=billing_type,
                                 payment_status=payment_status, min_pending_days=min_pending_days,
-                                order_type=order_type, service_type=service_type)
+                                order_type=order_type, service_type=service_type,
+                                category=category, project_code=project_code)
     return {"month": month, "rows": rows, "summary": _summarise(rows),
+            "month_wise": month_wise_summary(rows),
+            "categories": [{"value": k, "label": v} for k, v in CATEGORY_LABELS.items()],
+            "projects": [{"code": r["project_code"], "name": r["project_name"]} for r in report["rows"]],
             "managers": sorted({r["project_manager"] for r in report["rows"] if r["project_manager"]}),
             "clients": sorted({r["client"] for r in report["rows"] if r["client"]}),
             "service_types": sorted({r["service_type"] for r in report["rows"] if r.get("service_type")}
@@ -271,6 +365,7 @@ async def pending_report_export(fmt: str = "xlsx", month: Optional[str] = None,
                                 min_pending_days: Optional[int] = None,
                                 period_from: Optional[str] = None, period_to: Optional[str] = None,
                                 order_type: Optional[str] = None, service_type: Optional[str] = None,
+                                category: Optional[str] = None, project_code: Optional[str] = None,
                                 user: dict = Depends(require_permission("bill_requests", "read"))):
     from fastapi import Response
     month = month or now_iso()[:7]
@@ -278,41 +373,74 @@ async def pending_report_export(fmt: str = "xlsx", month: Optional[str] = None,
     rows = apply_report_filters(report["rows"], status=status, q=q, project_manager=project_manager,
                                 client=client, billing_type=billing_type,
                                 payment_status=payment_status, min_pending_days=min_pending_days,
-                                order_type=order_type, service_type=service_type)
+                                order_type=order_type, service_type=service_type,
+                                category=category, project_code=project_code)
     summary = _summarise(rows)
+    months = month_wise_summary(rows)
     if fmt == "pdf":
         from pdf_generator import render_billing_pending_pdf
-        data = render_billing_pending_pdf(rows, summary, month)
+        data = render_billing_pending_pdf(rows, summary, month, months)
         return Response(content=data, media_type="application/pdf",
                         headers={"Content-Disposition": f'inline; filename="pending-billing-{month}.pdf"'})
+    headers = ["Project Code", "Project Name", "Project Category", "Billing Month / Period",
+               "Client", "Project Manager", "Pending Billing Status", "Pending Months",
+               "Pending Amount (₹)", "Expected Monthly (₹)", "WO/PO Type", "Service Type",
+               "Pending Days", "Last Bill No", "Last Bill Date", "Open Request",
+               "Bills Generated", "Billed Basic (₹)", "GST (₹)", "Gross (₹)",
+               "Paid (₹)", "Balance Due (₹)", "Payment Status"]
+
+    def line(r):
+        return [r["project_code"], r["project_name"], r.get("category_label"),
+                r.get("billing_period") or month, r["client"], r["project_manager"],
+                r["billing_status"].replace("_", " ").title(),
+                ", ".join(r.get("pending_months") or []) if r.get("billing_mode") == "monthly" else "",
+                r.get("pending_amount") or 0, r.get("expected_monthly") or 0,
+                (r.get("order_type") or "").replace("_", " ").title(),
+                (r.get("service_type") or "").replace("_", " ").title(),
+                r.get("pending_days"), r["last_bill_no"], (r["last_bill_at"] or "")[:10],
+                r["open_request_no"], r["bills_generated"],
+                r["billed_basic"], r["billed_gst"], r["billed_gross"],
+                r["paid_amount"], r["balance_due"],
+                (r["payment_status"] or "").replace("_", " ").title()]
+
+    if fmt == "csv":
+        import csv
+        from io import StringIO
+        buf = StringIO()
+        w = csv.writer(buf)
+        w.writerow(headers)
+        for r in rows:
+            w.writerow(["" if v is None else v for v in line(r)])
+        w.writerow([])
+        w.writerow(["Month-wise pending billing"])
+        w.writerow(["Billing Month", "Projects Pending", "Pending Amount (₹)"])
+        for m in months:
+            w.writerow([m["month"], m["projects"], m["pending_amount"]])
+        return Response(content=buf.getvalue(), media_type="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="pending-billing-{month}.csv"'})
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
     from io import BytesIO
     wb = Workbook()
     ws = wb.active
     ws.title = f"Pending Billing {month}"
-    ws.append(["Project Code", "Project Name", "Client", "Project Manager", "Billing Type",
-               "WO/PO Type", "Service Type",
-               f"Billing Status ({month})", "Pending Days", "Last Bill No", "Last Bill Date", "Open Request",
-               "Bills Generated", "Billed Basic (₹)", "GST (₹)", "Gross (₹)",
-               "Paid (₹)", "Balance Due (₹)", "Payment Status"])
+    ws.append(headers)
     for c in ws[1]:
         c.font = Font(bold=True, color="FFFFFF")
         c.fill = PatternFill("solid", fgColor="0F172A")
     for r in rows:
-        ws.append([r["project_code"], r["project_name"], r["client"], r["project_manager"],
-                   (r["effective_billing_type"] or "").replace("_", " ").title(),
-                   (r.get("order_type") or "").replace("_", " ").title(),
-                   (r.get("service_type") or "").replace("_", " ").title(),
-                   r["billing_status"].replace("_", " ").title(),
-                   r.get("pending_days"),
-                   r["last_bill_no"], (r["last_bill_at"] or "")[:10],
-                   r["open_request_no"], r["bills_generated"],
-                   r["billed_basic"], r["billed_gst"], r["billed_gross"],
-                   r["paid_amount"], r["balance_due"],
-                   (r["payment_status"] or "").replace("_", " ").title()])
-    for i, w in enumerate([15, 28, 20, 18, 24, 14, 14, 16, 12, 16, 12, 14, 8, 14, 12, 14, 14, 14, 14], start=1):
+        ws.append(line(r))
+    for i, w in enumerate([15, 28, 16, 22, 20, 18, 18, 26, 16, 16, 14, 14, 12, 16, 12, 14, 8, 14, 12, 14, 14, 14, 14], start=1):
         ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
+    ms = wb.create_sheet("Month-wise Pending")
+    ms.append(["Billing Month", "Projects Pending", "Pending Amount (₹)"])
+    for c in ms[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="0F172A")
+    for m in months:
+        ms.append([m["month"], m["projects"], m["pending_amount"]])
+    for col, width in zip("ABC", (18, 18, 20)):
+        ms.column_dimensions[col].width = width
     s = wb.create_sheet("Summary")
     for k, v in summary.items():
         s.append([k.replace("_", " ").title(), v])
@@ -402,4 +530,130 @@ async def manual_reminder(month: Optional[str] = None, user: dict = Depends(get_
         raise HTTPException(403, "not allowed")
     month = month or now_iso()[:7]
     res = await send_billing_reminder(month, queued_by=user.get("name") or user.get("email"), background=True)
-    return res
+    per_project = await send_project_billing_reminders(
+        month, queued_by=user.get("name") or user.get("email"), force=True)
+    return {**res, "per_project": per_project}
+
+
+# ─── Per-project reminder to the responsible Project Manager (Iter 206) ──────
+ACCOUNTS_CC_ROLES = ["accounts_executive", "general_manager", "director"]
+REMINDER_INTERVAL_DAYS = 7
+
+
+async def _pm_email(row: Dict[str, Any]) -> Optional[str]:
+    """Email of the project's responsible manager — by id, else by name."""
+    if row.get("project_manager_id"):
+        u = await db.users.find_one({"id": row["project_manager_id"]}, {"_id": 0, "email": 1})
+        if (u or {}).get("email"):
+            return u["email"]
+    name = (row.get("project_manager") or "").strip()
+    if name:
+        u = await db.users.find_one({"name": name, "active": {"$ne": False}}, {"_id": 0, "email": 1})
+        if (u or {}).get("email"):
+            return u["email"]
+    return None
+
+
+def _project_reminder_html(row: Dict[str, Any], month: str) -> str:
+    months = row.get("pending_months") or []
+    monthly = row.get("billing_mode") == "monthly"
+    period = ", ".join(months) if monthly and months else (row.get("billing_period") or month)
+    rows_html = "".join(
+        f"<tr><td style='padding:7px 10px;border-top:1px solid #e2e8f0;'>{m}</td>"
+        f"<td style='padding:7px 10px;border-top:1px solid #e2e8f0;text-align:right;font-weight:700;'>"
+        f"₹ {float(row.get('expected_monthly') or 0):,.0f}</td>"
+        f"<td style='padding:7px 10px;border-top:1px solid #e2e8f0;color:#b91c1c;font-weight:700;'>PENDING</td></tr>"
+        for m in months) if monthly else (
+        f"<tr><td style='padding:7px 10px;border-top:1px solid #e2e8f0;'>{period}</td>"
+        f"<td style='padding:7px 10px;border-top:1px solid #e2e8f0;text-align:right;font-weight:700;'>"
+        f"₹ {float(row.get('pending_amount') or 0):,.0f}</td>"
+        f"<td style='padding:7px 10px;border-top:1px solid #e2e8f0;color:#b91c1c;font-weight:700;'>"
+        f"{(row.get('billing_status') or '').replace('_', ' ').upper()}</td></tr>")
+    return f"""
+<div style="font-family:Segoe UI,Arial,sans-serif;max-width:760px;margin:0 auto;color:#0f172a;">
+  <div style="background:#0f172a;color:#fff;padding:16px 20px;">
+    <div style="font-size:11px;letter-spacing:0.15em;text-transform:uppercase;opacity:0.8;">Indian Trade Links · ERP</div>
+    <div style="font-size:20px;font-weight:800;margin-top:4px;">Billing Pending — {row.get('project_name') or row.get('project_code')}</div>
+  </div>
+  <div style="padding:18px 20px;border:1px solid #e2e8f0;border-top:none;">
+    <table style="font-size:13px;line-height:1.7;margin-bottom:12px;">
+      <tr><td style="color:#64748b;padding-right:14px;">Project</td><td><b>{row.get('project_code')} — {row.get('project_name') or ''}</b></td></tr>
+      <tr><td style="color:#64748b;padding-right:14px;">Project Category</td><td><b>{row.get('category_label') or '—'}</b>
+        ({'recurring monthly billing' if monthly else 'scope / timeline billing'})</td></tr>
+      <tr><td style="color:#64748b;padding-right:14px;">Client</td><td>{row.get('client') or '—'}</td></tr>
+      <tr><td style="color:#64748b;padding-right:14px;">Pending Billing</td>
+          <td style="color:#b91c1c;font-weight:800;">₹ {float(row.get('pending_amount') or 0):,.0f}</td></tr>
+    </table>
+    <table cellspacing="0" cellpadding="0" style="width:100%;border:1px solid #e2e8f0;font-size:12px;">
+      <tr style="background:#f1f5f9;text-transform:uppercase;font-size:10px;letter-spacing:0.08em;color:#475569;">
+        <th style="padding:8px 10px;text-align:left;">Billing Month / Period</th>
+        <th style="padding:8px 10px;text-align:right;">Pending Amount</th>
+        <th style="padding:8px 10px;text-align:left;">Status</th>
+      </tr>{rows_html}
+    </table>
+    <p style="font-size:12px;line-height:1.6;margin-top:14px;">Dear {row.get('project_manager') or 'Project Manager'},<br/>
+    please raise the Bill Generation Request for the period(s) above so Accounts can complete the billing.
+    This reminder repeats every {REMINDER_INTERVAL_DAYS} days until the billing is completed.</p>
+  </div>
+</div>"""
+
+
+async def send_project_billing_reminders(month: str, *, queued_by: str = "scheduler",
+                                         force: bool = False) -> Dict[str, Any]:
+    """One reminder per pending project to its PM, with Accounts + GM/Director in CC.
+    Repeats every REMINDER_INTERVAL_DAYS until that project's billing is done."""
+    from datetime import datetime, timedelta, timezone
+    report = await build_pending_report(month, user=None)
+    pending_rows = [r for r in report["rows"]
+                    if (r.get("pending_amount") or 0) > 0 or r.get("billing_status") == "pending"]
+    out = {"month": month, "projects": len(pending_rows), "sent": 0, "skipped": 0, "no_pm": 0}
+    if not pending_rows:
+        return out
+    cc = sorted({u["email"] async for u in db.users.find(
+        {"role": {"$in": ACCOUNTS_CC_ROLES}, "active": {"$ne": False}, "email": {"$ne": None}},
+        {"_id": 0, "email": 1}) if u.get("email")})
+    from routers.email_router import _queue_outbox, _send_and_log
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=REMINDER_INTERVAL_DAYS)).isoformat()
+    for row in pending_rows:
+        marker = {"project_code": row["project_code"], "month": month}
+        last = await db.billing_reminders.find_one(marker, {"_id": 0, "last_sent_at": 1, "sent_count": 1})
+        if last and not force and (last.get("last_sent_at") or "") > cutoff:
+            out["skipped"] += 1
+            continue
+        pm = await _pm_email(row)
+        to = [pm] if pm else cc
+        if not pm:
+            out["no_pm"] += 1
+        if not to:
+            out["skipped"] += 1
+            continue
+        periods = ", ".join(row.get("pending_months") or []) or (row.get("billing_period") or month)
+        subject = (f"⏰ Billing pending — {row['project_code']} · {row.get('category_label')} · "
+                   f"{periods} · ₹{float(row.get('pending_amount') or 0):,.0f}")
+        outbox_id = await _queue_outbox(
+            sender_type="system", sender_purpose="noreply",
+            sender_user_id="", sender_email="", sender_display_name="ERP Billing Bot",
+            to=to, cc=[e for e in cc if e not in to], bcc=[], subject=subject,
+            body_text=f"{row['project_code']} ({row.get('category_label')}) — pending billing for {periods}: "
+                      f"₹{float(row.get('pending_amount') or 0):,.0f}. Status: {row.get('billing_status')}.",
+            body_html=_project_reminder_html(row, month),
+            reply_to=None, attachments_inline=[], file_ids=[],
+            related={"type": "billing_reminder_project", "project_code": row["project_code"], "month": month},
+            queued_by=queued_by)
+        import asyncio
+        asyncio.create_task(_send_and_log(outbox_id))
+        await db.billing_reminders.update_one(marker, {"$set": {
+            **marker, "last_sent_at": now_iso(), "pending_months": row.get("pending_months") or [],
+            "pending_amount": row.get("pending_amount"), "project_name": row.get("project_name"),
+            "category": row.get("project_category"), "to": to, "cc": cc, "outbox_id": outbox_id,
+        }, "$inc": {"sent_count": 1}}, upsert=True)
+        out["sent"] += 1
+    return out
+
+
+@router.get("/billing/pending-report/reminder-log")
+async def reminder_log(month: Optional[str] = None,
+                       user: dict = Depends(require_permission("bill_requests", "read"))):
+    q = {"month": month} if month else {}
+    rows = await db.billing_reminders.find(q, {"_id": 0}).sort("last_sent_at", -1).to_list(500)
+    return {"rows": rows, "total": len(rows)}

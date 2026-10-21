@@ -28,6 +28,9 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 
 from core import db, require_permission, now_iso, new_id
+from billing_category import (category_label, category_of, contract_months, is_recurring,
+                              month_bounds, monthly_amount, scope_value)
+from dedupe import ensure_no_duplicate
 from pagination import maybe_paged, paged_or_rows
 from audit import audit
 from sequences import next_sequence, stamp_dept_doc
@@ -216,6 +219,7 @@ class BillRequestIn(BaseModel):
     project_code: str
     bill_type: str = "running"
     bill_nature: Optional[str] = None  # partial | one_time | monthly_last
+    billing_month: Optional[str] = None  # YYYY-MM — mandatory for AMC/ARC projects
     period_from: Optional[str] = None
     period_to: Optional[str] = None
     expected_amount: float = 0
@@ -248,6 +252,29 @@ async def create_bill_request(payload: BillRequestIn, request: Request,
         raise HTTPException(404, "Project not found or outside your project scope")
     handover = await db.project_handovers.find_one(
         {"project_code": payload.project_code}, {"_id": 0}, sort=[("created_at", -1)])
+    # ── Project Category drives the billing workflow (Iter 206) ──
+    category = category_of(project)
+    recurring = is_recurring(project)
+    billing_month = (payload.billing_month or "")[:7] or None
+    period_from, period_to = payload.period_from, payload.period_to
+    if recurring:
+        if not billing_month or len(billing_month) != 7:
+            raise HTTPException(400, f"{category_label(category)} project — select the Billing Month "
+                                     f"(one bill is expected per month)")
+        valid_months = contract_months(project)
+        if valid_months and billing_month not in valid_months:
+            raise HTTPException(400, f"Billing month {billing_month} is outside the project validity "
+                                     f"({valid_months[0]} to {valid_months[-1]})")
+        period_from, period_to = month_bounds(billing_month)
+        await ensure_no_duplicate(
+            module="bill_requests", collection="bill_requests", no_field="request_no",
+            query={"project_code": payload.project_code, "billing_month": billing_month,
+                   "status": {"$ne": "rejected"}},
+            message=f"A bill request ({{no}}) already exists for {payload.project_code} · {billing_month}. "
+                    f"Open {{no}} instead of raising another request for the same billing month.",
+            user=user, request=request)
+    else:
+        billing_month = None
     req_no = await next_sequence("BR")
     rid = payload.id or new_id()
     if await db.bill_requests.find_one({"id": rid}, {"_id": 0, "id": 1}):
@@ -270,8 +297,12 @@ async def create_bill_request(payload: BillRequestIn, request: Request,
         "quotation_no": payload.quotation_no or (handover or {}).get("quotation_no") or project.get("quotation_no") or "",
         "po_number": payload.po_number or (handover or {}).get("work_order_number") or "",
         "bill_type": payload.bill_type,
-        "bill_nature": payload.bill_nature or None,
-        "period_from": payload.period_from, "period_to": payload.period_to,
+        "bill_nature": payload.bill_nature or ("monthly_last" if recurring else None),
+        "project_category": category,
+        "project_category_label": category_label(category),
+        "billing_mode": "monthly" if recurring else "scope",
+        "billing_month": billing_month,
+        "period_from": period_from, "period_to": period_to,
         "expected_amount": expected,
         "items": items,
         "attachment_count": attachments,
@@ -512,6 +543,27 @@ async def ra_bill_project_context(project_code: str,
                   "unit": i.get("unit") or "", "rate": i.get("rate") or 0}
                  for i in order["items"]]
 
+    # ── Project Category block (Iter 206): auto-fetched into the Bill Request ──
+    p = project or {}
+    category = category_of(p)
+    recurring = is_recurring(p)
+    month_ledger: List[Dict[str, Any]] = []
+    if recurring:
+        taken: Dict[str, Dict[str, Any]] = {}
+        async for br in db.bill_requests.find(
+                {"project_code": project_code, "status": {"$ne": "rejected"}},
+                {"_id": 0, "billing_month": 1, "request_no": 1, "status": 1, "period_from": 1}):
+            key = br.get("billing_month") or (br.get("period_from") or "")[:7]
+            if key:
+                taken[key] = {"request_no": br.get("request_no"), "status": br.get("status")}
+        for mth in contract_months(p):
+            hit = taken.get(mth)
+            month_ledger.append({"month": mth, "taken": bool(hit),
+                                 "request_no": (hit or {}).get("request_no"),
+                                 "status": (hit or {}).get("status") or "pending"})
+    next_month = next((m["month"] for m in month_ledger if not m["taken"]
+                       and m["month"] <= now_iso()[:7]), None)
+
     return {
         "project_code": project_code,
         "project_name": (project or {}).get("name") or "",
@@ -522,6 +574,15 @@ async def ra_bill_project_context(project_code: str,
         "gst_pct": gst_pct,
         "retention_pct": (order or {}).get("retention_pct"),
         "items": items,
+        "project_category": category,
+        "category_label": category_label(category),
+        "billing_mode": "monthly" if recurring else "scope",
+        "monthly_amount": monthly_amount(p) if recurring else 0,
+        "scope_value": scope_value(p),
+        "project_start": (p.get("start_date") or "")[:10],
+        "project_end": (p.get("extended_end_date") or p.get("end_date") or "")[:10],
+        "month_ledger": month_ledger,
+        "next_billing_month": next_month,
     }
 
 

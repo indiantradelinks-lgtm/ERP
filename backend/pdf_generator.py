@@ -847,36 +847,54 @@ def render_approval_report_pdf(rows: List[Dict[str, Any]], summary: Dict[str, An
 
 
 # ──────────────────────── Pending Billing Report ────────────────────────
-def render_billing_pending_pdf(rows: List[Dict[str, Any]], summary: Dict[str, Any], month: str) -> bytes:
+def render_billing_pending_pdf(rows: List[Dict[str, Any]], summary: Dict[str, Any], month: str,
+                               months: Optional[List[Dict[str, Any]]] = None) -> bytes:
     STATUS_COLORS = {"pending": "#b91c1c", "requested": "#b45309", "partially_billed": "#1d4ed8", "billed": "#166534"}
     PAY_LABEL = {"paid": "Paid", "partially_paid": "Partially Paid", "unpaid": "Unpaid", "not_billed": "Not Billed"}
     trs = ""
     for r in rows:
         col = STATUS_COLORS.get(r.get("billing_status"), "#0f172a")
+        pend_months = ", ".join((r.get("pending_months") or [])[:6]) if r.get("billing_mode") == "monthly" else ""
         trs += f"""<tr>
 <td>{_esc(r.get('project_code'))}<br/><span style="color:#64748b;font-size:7pt;">{_esc(r.get('project_name') or '')}</span></td>
+<td>{_esc(r.get('category_label') or '—')}<br/><span style="color:#64748b;font-size:7pt;">{'Monthly cycle' if r.get('billing_mode') == 'monthly' else 'Scope / timeline'}</span></td>
+<td>{_esc(r.get('billing_period') or month)}<br/><span style="color:#64748b;font-size:7pt;">{_esc(pend_months)}</span></td>
 <td>{_esc(r.get('client') or '—')}<br/><span style="color:#64748b;font-size:7pt;">PM: {_esc(r.get('project_manager') or '—')}</span></td>
-<td>{_esc((r.get('effective_billing_type') or '').replace('_', ' ').title())}<br/><span style="color:#64748b;font-size:7pt;">{_esc((r.get('order_type') or '').replace('_', ' ').title())}{' · ' if r.get('order_type') and r.get('service_type') else ''}{_esc((r.get('service_type') or '').replace('_', ' ').title())}</span></td>
 <td style="color:{col};font-weight:700;">{_esc((r.get('billing_status') or '').replace('_', ' ').title())}<br/><span style="color:#64748b;font-size:7pt;font-weight:400;">{str(r.get('pending_days')) + ' days' if r.get('pending_days') is not None else ''}</span></td>
+<td class="num" style="color:{col};font-weight:700;">{_money(r.get('pending_amount')) if r.get('pending_amount') else '—'}</td>
 <td>{_esc(r.get('last_bill_no') or '—')}<br/><span style="color:#64748b;font-size:7pt;">{_esc((r.get('last_bill_at') or '')[:10])}</span></td>
 <td class="num">{_money(r.get('billed_basic')) if r.get('billed_basic') else '—'}</td>
-<td class="num">{_money(r.get('billed_gst')) if r.get('billed_gst') else '—'}</td>
 <td class="num">{_money(r.get('balance_due')) if r.get('balance_due') else '—'}</td>
 <td>{_esc(PAY_LABEL.get(r.get('payment_status'), '—'))}</td>
 </tr>"""
+    month_block = ""
+    if months:
+        mtrs = "".join(
+            f"<tr><td>{_esc(m['month'])}</td><td class='num'>{m['projects']}</td>"
+            f"<td class='num' style='font-weight:700;'>{_money(m['pending_amount'])}</td></tr>"
+            for m in months)
+        month_block = f"""
+<div class="section-title">Month-wise Pending Billing</div>
+<table style="font-size:8pt;width:60%;"><thead><tr>
+<th>Billing Month</th><th class="num">Projects Pending</th><th class="num">Pending Amount (₹)</th>
+</tr></thead><tbody>{mtrs}</tbody></table>"""
     body = f"""
-<div class="kv" style="grid-template-columns: 1fr 1fr 1fr 1fr 1fr;">
+<div class="kv" style="grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr;">
   <div><b>Projects</b><br/>{summary.get('total')}</div>
   <div><b>Pending</b><br/><span style="color:#b91c1c;font-weight:700;">{summary.get('pending', 0)}</span></div>
+  <div><b>Pending Amount</b><br/><span style="color:#b91c1c;font-weight:700;">{_money(summary.get('pending_amount'))}</span></div>
+  <div><b>Pending Months</b><br/>{summary.get('pending_months_total', 0)}</div>
   <div><b>In Flow</b><br/>{summary.get('requested', 0)}</div>
-  <div><b>Partially Billed</b><br/>{summary.get('partially_billed', 0)}</div>
   <div><b>Billed</b><br/>{summary.get('billed', 0)}</div>
 </div>
+{month_block}
+<div class="section-title">Project-wise Pending Billing</div>
 <table style="font-size:7.5pt;"><thead><tr>
-<th>Project</th><th>Client / PM</th><th>Billing Type</th><th>Status</th><th>Last Bill</th>
-<th class="num">Basic (₹)</th><th class="num">GST (₹)</th><th class="num">Balance Due (₹)</th><th>Payment</th>
-</tr></thead><tbody>{trs or '<tr><td colspan="9">No projects.</td></tr>'}</tbody></table>
-<div class="note">ARC projects require one bill per month; one-time supply projects require final/partial billing.</div>
+<th>Project</th><th>Category</th><th>Billing Month / Period</th><th>Client / PM</th><th>Status</th>
+<th class="num">Pending (₹)</th><th>Last Bill</th><th class="num">Basic (₹)</th><th class="num">Balance Due (₹)</th><th>Payment</th>
+</tr></thead><tbody>{trs or '<tr><td colspan="10">No projects.</td></tr>'}</tbody></table>
+<div class="note">AMC / ARC projects require one bill every month of the project validity. Short-Term, Long-Term,
+Shutdown and One-Time projects are billed against the project scope / timeline.</div>
 """
     return _render(_wrap(f"Pending Billing Report — {month}", body))
 

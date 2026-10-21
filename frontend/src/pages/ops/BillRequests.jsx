@@ -30,8 +30,15 @@ const inr = (v) => `₹ ${Number(v || 0).toLocaleString("en-IN")}`;
 const blank = () => ({
   id: (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`),
   project_code: "", bill_type: "running", bill_nature: "", period_from: "", period_to: "",
-  expected_amount: 0, items: [], remarks: "",
+  billing_month: "", expected_amount: 0, items: [], remarks: "",
 });
+
+const monthBounds = (m) => {
+  if (!m || m.length !== 7) return ["", ""];
+  const [y, mo] = m.split("-").map(Number);
+  const last = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  return [`${m}-01`, `${m}-${String(last).padStart(2, "0")}`];
+};
 
 export default function BillRequests() {
   const { user, can } = useAuth();
@@ -61,6 +68,7 @@ export default function BillRequests() {
     }
   };
   const [creating, setCreating] = useState(false);
+  const [creatingBusy, setCreatingBusy] = useState(false);
   const [form, setForm] = useState(blank());
   const [ctx, setCtx] = useState(null);
   const [attFiles, setAttFiles] = useState([]);
@@ -88,17 +96,33 @@ export default function BillRequests() {
         description: i.description, quantity: i.quantity, unit: i.unit, rate: i.rate,
         offer_qty: i.offer_qty, billed_qty: i.billed_qty,
       }));
-      setForm((f) => ({ ...f, project_code: code, items }));
+      // Project Category is fetched from Project Master — AMC/ARC bills month-wise.
+      const month = data.billing_mode === "monthly" ? (data.next_billing_month || "") : "";
+      const [pf, pt] = monthBounds(month);
+      setForm((f) => ({
+        ...f, project_code: code, items, billing_month: month,
+        period_from: month ? pf : f.period_from, period_to: month ? pt : f.period_to,
+        bill_nature: data.billing_mode === "monthly" ? "monthly_last" : f.bill_nature,
+      }));
       if (items.length) toast.success(`${items.length} line item(s) loaded from offer ${data.quotation_no || ""} — adjust quantities as per the customer work order`);
     } catch { /* context is a convenience only */ }
   };
 
+  const pickMonth = (m) => {
+    const [pf, pt] = monthBounds(m);
+    setForm((f) => ({ ...f, billing_month: m, period_from: pf, period_to: pt }));
+  };
+
   const create = async () => {
     if (!form.project_code) { toast.error("Select a project"); return; }
+    if (ctx?.billing_mode === "monthly" && !form.billing_month) { toast.error("Select the Billing Month — AMC/ARC projects are billed month-wise"); return; }
     if (!form.items.length) { toast.error("Add at least one line item (as per the customer work order)"); return; }
+    if (creatingBusy) return;
+    setCreatingBusy(true);
     try {
       const r = await api.post("/bill-requests", {
         ...form,
+        billing_month: form.billing_month || undefined,
         client_name: ctx?.client_name || undefined,
         quotation_no: ctx?.quotation_no || undefined,
         po_number: ctx?.po_number || undefined,
@@ -107,7 +131,9 @@ export default function BillRequests() {
       });
       toast.success(`Bill request ${r.data.request_no} submitted for approval with ${form.items.length} line item(s) & ${attFiles.length} document(s)`);
       setCreating(false); setForm(blank()); setCtx(null); setAttFiles([]); load();
-    } catch (e) { toast.error(e?.response?.data?.detail || "Create failed"); }
+    } catch (e) {
+      if (!e.response?.data?.duplicate) toast.error(e?.response?.data?.detail || "Create failed");
+    } finally { setCreatingBusy(false); }
   };
 
   const kpi = useMemo(() => ({
@@ -158,8 +184,8 @@ export default function BillRequests() {
             <TableRow>
               <TableHead>Request #</TableHead>
               <TableHead>Project / Client</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Period</TableHead>
+              <TableHead>Type / Category</TableHead>
+              <TableHead>Billing Month / Period</TableHead>
               <TableHead className="text-right">Expected ₹</TableHead>
               <TableHead>Approval Progress</TableHead>
               <TableHead>Status</TableHead>
@@ -186,8 +212,14 @@ export default function BillRequests() {
                     </div>
                   )}
                 </TableCell>
-                <TableCell><Badge variant="outline" className="rounded-sm uppercase text-[10px]">{r.bill_type}</Badge></TableCell>
-                <TableCell className="text-xs">{r.period_from || "—"} → {r.period_to || "—"}</TableCell>
+                <TableCell><Badge variant="outline" className="rounded-sm uppercase text-[10px]">{r.bill_type}</Badge>
+                  {r.project_category_label && (
+                    <div className="text-[10px] text-muted-foreground mt-0.5" data-testid={`br-category-${r.id}`}>{r.project_category_label}</div>
+                  )}
+                </TableCell>
+                <TableCell className="text-xs">
+                  {r.billing_month ? <span className="font-semibold" data-testid={`br-month-cell-${r.id}`}>{r.billing_month}</span> : <>{r.period_from || "—"} → {r.period_to || "—"}</>}
+                </TableCell>
                 <TableCell className="text-right font-mono-data tabular text-xs">{inr(r.expected_amount)}
                   <div className="text-[10px] text-muted-foreground font-sans">
                     {(r.items || []).length > 0 && `${r.items.length} item(s)`}
@@ -278,17 +310,60 @@ export default function BillRequests() {
               </div>
               <div>
                 <ProjectSelect label="Project Code" value={form.project_code} onChange={onProjectPicked} testid="br-form-project"
-                  hint="Selecting a project auto-fills client, offer & line items" />
+                  hint="Selecting a project auto-fills category, client, offer & line items" />
               </div>
-              <div>
-                <Label className="text-[10px] uppercase tracking-wider">Period From</Label>
-                <Input type="date" value={form.period_from} onChange={(e) => setForm({ ...form, period_from: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="br-form-from" />
-              </div>
-              <div>
-                <Label className="text-[10px] uppercase tracking-wider">Period To</Label>
-                <Input type="date" value={form.period_to} onChange={(e) => setForm({ ...form, period_to: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="br-form-to" />
-              </div>
+              {ctx?.billing_mode === "monthly" ? (
+                <div>
+                  <Label className="text-[10px] uppercase tracking-wider">Billing Month *</Label>
+                  <Input type="month" value={form.billing_month} min={(ctx.project_start || "").slice(0, 7) || undefined}
+                    max={(ctx.project_end || "").slice(0, 7) || undefined}
+                    onChange={(e) => pickMonth(e.target.value)} className="h-9 rounded-sm mt-1" data-testid="br-form-billing-month" />
+                  <div className="text-[10px] text-muted-foreground mt-0.5">Period {form.period_from || "—"} → {form.period_to || "—"}</div>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <Label className="text-[10px] uppercase tracking-wider">Period From</Label>
+                    <Input type="date" value={form.period_from} onChange={(e) => setForm({ ...form, period_from: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="br-form-from" />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] uppercase tracking-wider">Period To</Label>
+                    <Input type="date" value={form.period_to} onChange={(e) => setForm({ ...form, period_to: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="br-form-to" />
+                  </div>
+                </>
+              )}
             </div>
+            {ctx?.project_category !== undefined && form.project_code && (
+              <div className="border border-border rounded-sm bg-muted/30 p-3 space-y-2" data-testid="br-form-category">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Project Category (from Project Master)</span>
+                  <Badge variant="outline" className={`rounded-sm text-[11px] font-bold ${ctx.billing_mode === "monthly" ? "border-indigo-300 text-indigo-900 bg-indigo-50" : "border-slate-300 text-slate-800 bg-slate-50"}`}
+                    data-testid="br-form-category-badge">
+                    {ctx.category_label || "Not Set"}
+                  </Badge>
+                  <span className="text-[11px] text-muted-foreground">
+                    {ctx.billing_mode === "monthly"
+                      ? `Month-wise billing · ${inr(ctx.monthly_amount)} per month · validity ${ctx.project_start || "—"} → ${ctx.project_end || "—"}`
+                      : `Billed against project scope / timeline ${ctx.project_start || "—"} → ${ctx.project_end || "—"}${ctx.scope_value ? ` · value ${inr(ctx.scope_value)}` : ""}`}
+                  </span>
+                </div>
+                {ctx.billing_mode === "monthly" && (ctx.month_ledger || []).length > 0 && (
+                  <div className="flex flex-wrap gap-1" data-testid="br-form-month-ledger">
+                    {ctx.month_ledger.map((m) => (
+                      <button key={m.month} type="button" disabled={m.taken} onClick={() => pickMonth(m.month)}
+                        title={m.taken ? `${m.request_no} · ${m.status}` : "Raise bill request for this month"}
+                        className={`text-[10px] px-1.5 py-0.5 rounded-sm border transition-colors
+                          ${m.taken ? "bg-emerald-50 border-emerald-300 text-emerald-800 cursor-not-allowed"
+                            : form.billing_month === m.month ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-rose-50 border-rose-200 text-rose-800 hover:border-primary"}`}
+                        data-testid={`br-month-${m.month}`}>
+                        {m.month}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             {ctx && (ctx.client_name || ctx.quotation_no) && (
               <div className="text-[11px] text-muted-foreground -mt-1" data-testid="br-form-ctx">
                 Client: <b>{ctx.client_name || "—"}</b>{ctx.quotation_no ? <> · Offer: <b>{ctx.quotation_no}</b></> : null}{ctx.po_number ? <> · Customer PO: <b>{ctx.po_number}</b></> : null}
@@ -371,7 +446,7 @@ export default function BillRequests() {
           </div>
           <DialogFooter>
             <Button variant="outline" className="rounded-sm" onClick={() => setCreating(false)}>Cancel</Button>
-            <Button className="rounded-sm" onClick={create} data-testid="br-form-submit">Submit for Approval</Button>
+            <Button className="rounded-sm" onClick={create} disabled={creatingBusy} data-testid="br-form-submit">{creatingBusy ? "Submitting…" : "Submit for Approval"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

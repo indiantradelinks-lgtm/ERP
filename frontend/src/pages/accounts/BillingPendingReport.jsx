@@ -15,6 +15,7 @@ const STATUS_META = {
   requested: { label: "In Flow", cls: "border-amber-300 text-amber-800 bg-amber-50" },
   partially_billed: { label: "Partially Billed", cls: "border-blue-300 text-blue-800 bg-blue-50" },
   billed: { label: "Billed", cls: "border-emerald-300 text-emerald-800 bg-emerald-50" },
+  out_of_period: { label: "Outside Validity", cls: "border-slate-300 text-slate-600 bg-slate-50" },
 };
 const TYPE_LABEL = { annual_rate_contract: "Annual Rate Contract (Monthly)", one_time_supply: "One-Time Supply" };
 const PAY_META = {
@@ -29,7 +30,7 @@ export default function BillingPendingReport() {
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [data, setData] = useState(null);
   const [statusFilter, setStatusFilter] = useState("");
-  const [ff, setFf] = useState({ q: "", project_manager: "", client: "", billing_type: "", payment_status: "", min_pending_days: "", period_from: "", period_to: "", order_type: "", service_type: "" });
+  const [ff, setFf] = useState({ q: "", project_code: "", category: "", project_manager: "", client: "", billing_type: "", payment_status: "", min_pending_days: "", period_from: "", period_to: "", order_type: "", service_type: "" });
   const [sending, setSending] = useState(false);
   const isMgmt = ["super_admin", "director", "general_manager"].includes(user?.role);
   const setF = (k) => (e) => setFf((p) => ({ ...p, [k]: e.target?.value ?? e }));
@@ -46,14 +47,6 @@ export default function BillingPendingReport() {
     catch (e) { toast.error(apiErrorMessage(e)); }
   }, [qs]);
   useEffect(() => { load(); }, [load]);
-
-  const setType = async (code, patch) => {
-    try {
-      await api.put(`/billing/projects/${code}/billing-type`, patch);
-      toast.success(`${code} updated`);
-      load();
-    } catch (e) { toast.error(apiErrorMessage(e)); }
-  };
 
   const download = async (fmt) => {
     try {
@@ -76,7 +69,7 @@ export default function BillingPendingReport() {
     finally { setSending(false); }
   };
 
-  const FILTER_LABELS = { q: "Search", project_manager: "PM", client: "Client", billing_type: "Billing Type", payment_status: "Payment", min_pending_days: "Pending ≥ days", period_from: "Period From", period_to: "Period To", order_type: "WO/PO Type", service_type: "Service Type" };
+  const FILTER_LABELS = { q: "Search", project_code: "Project", category: "Category", project_manager: "PM", client: "Client", billing_type: "Billing Type", payment_status: "Payment", min_pending_days: "Pending ≥ days", period_from: "Period From", period_to: "Period To", order_type: "WO/PO Type", service_type: "Service Type" };
   const activeFilters = Object.entries(ff).filter(([, v]) => v).map(([k, v]) => [k, `${FILTER_LABELS[k]}: ${String(v).replaceAll("_", " ")}`]);
 
   const s = data?.summary;
@@ -90,13 +83,15 @@ export default function BillingPendingReport() {
           </div>
           <h1 className="font-display font-black text-3xl tracking-tight">Pending Billing Report</h1>
           <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
-            Live billing status per project — ARC projects need one bill every month; one-time supply projects need final/partial billing.
+            Billing follows the Project Category from Project Master — AMC/ARC projects need one bill every month of the project validity;
+            Short-Term, Long-Term, Shutdown and One-Time projects are billed against the project scope / timeline.
             Updates automatically when Accounts generates the bill.
           </p>
         </div>
         <div className="flex gap-2 items-center">
           <Input type="month" className="h-9 w-40" value={month} onChange={(e) => setMonth(e.target.value)} data-testid="billing-month" />
           <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("xlsx")} data-testid="billing-export-xlsx"><Download className="h-4 w-4 mr-1" /> Excel</Button>
+          <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("csv")} data-testid="billing-export-csv"><Download className="h-4 w-4 mr-1" /> CSV</Button>
           <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("pdf")} data-testid="billing-export-pdf"><FileText className="h-4 w-4 mr-1" /> PDF</Button>
           {isMgmt && (
             <Button className="h-9 rounded-sm" disabled={sending} onClick={sendReminder} data-testid="billing-send-reminder">
@@ -109,6 +104,15 @@ export default function BillingPendingReport() {
 
       <div className="bg-card border border-border rounded-sm p-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
         <Input placeholder="Search project…" className="h-9" value={ff.q} onChange={setF("q")} data-testid="billing-filter-q" />
+        <select className="h-9 border border-input rounded-sm px-2 text-sm bg-background" value={ff.project_code} onChange={setF("project_code")} data-testid="billing-filter-project">
+          <option value="">All Projects</option>
+          {(data?.projects || []).map((p) => <option key={p.code} value={p.code}>{p.code} — {p.name}</option>)}
+        </select>
+        <select className="h-9 border border-input rounded-sm px-2 text-sm bg-background" value={ff.category} onChange={setF("category")} data-testid="billing-filter-category">
+          <option value="">All Project Categories</option>
+          {(data?.categories || []).map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+          <option value="unset">Category Not Set</option>
+        </select>
         <select className="h-9 border border-input rounded-sm px-2 text-sm bg-background" value={ff.project_manager} onChange={setF("project_manager")} data-testid="billing-filter-pm">
           <option value="">All Project Managers</option>
           {(data?.managers || []).map((m) => <option key={m} value={m}>{m}</option>)}
@@ -168,14 +172,14 @@ export default function BillingPendingReport() {
               </Badge>
             )}
             <Button size="sm" variant="ghost" className="h-6 text-[11px] text-destructive" data-testid="billing-clear-filters"
-              onClick={() => { setFf({ q: "", project_manager: "", client: "", billing_type: "", payment_status: "", min_pending_days: "", period_from: "", period_to: "", order_type: "", service_type: "" }); setStatusFilter(""); }}>
+              onClick={() => { setFf({ q: "", project_code: "", category: "", project_manager: "", client: "", billing_type: "", payment_status: "", min_pending_days: "", period_from: "", period_to: "", order_type: "", service_type: "" }); setStatusFilter(""); }}>
               Clear all
             </Button>
           </div>
         )}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <button onClick={() => setStatusFilter("")} className={`text-left bg-card border rounded-sm p-3 ${statusFilter === "" ? "border-primary ring-1 ring-primary/30" : "border-border"}`} data-testid="billing-kpi-total">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Projects</div>
           <div className="text-xl font-black tabular">{s?.total ?? "—"}</div>
@@ -189,22 +193,50 @@ export default function BillingPendingReport() {
         ))}
       </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <div className="bg-card border-2 border-red-200 rounded-sm p-4" data-testid="billing-kpi-pending-amount">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Total Pending Billing</div>
+          <div className="text-2xl font-black tabular text-red-800 mt-0.5">{inr(s?.pending_amount)}</div>
+          <div className="text-[11px] text-muted-foreground mt-1">
+            {s?.pending_months_total || 0} pending month(s) · {s?.amc_arc || 0} AMC/ARC · {s?.scope || 0} scope-based
+          </div>
+        </div>
+        <div className="bg-card border border-border rounded-sm lg:col-span-2 overflow-x-auto" data-testid="billing-month-wise">
+          <div className="px-3 py-2 border-b border-border text-[10px] font-bold uppercase tracking-[0.18em] text-primary">
+            Month-wise Pending Billing
+          </div>
+          <div className="flex gap-2 p-3 min-w-max">
+            {(data?.month_wise || []).length === 0 && <div className="text-sm text-muted-foreground">Nothing pending — all months are billed.</div>}
+            {(data?.month_wise || []).map((m) => (
+              <button key={m.month} onClick={() => setMonth(m.month)}
+                className={`text-left border rounded-sm px-3 py-2 min-w-[140px] transition-colors hover:border-primary ${month === m.month ? "border-primary bg-primary/5" : "border-border"}`}
+                data-testid={`billing-month-${m.month}`}>
+                <div className="text-[11px] font-bold">{m.month}</div>
+                <div className="text-sm font-black tabular text-red-800">{inr(m.pending_amount)}</div>
+                <div className="text-[10px] text-muted-foreground">{m.projects} project(s)</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
       <div className="bg-card border border-border rounded-sm overflow-x-auto">
         <Table>
           <TableHeader><TableRow className="bg-muted/30 hover:bg-muted/30">
             <TableHead className="text-[10px] uppercase tracking-wider">Project</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-wider">Category</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-wider">Billing Month / Period</TableHead>
             <TableHead className="text-[10px] uppercase tracking-wider">Client / PM</TableHead>
-            <TableHead className="text-[10px] uppercase tracking-wider">Billing Type</TableHead>
             <TableHead className="text-[10px] uppercase tracking-wider">Status ({month})</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-wider text-right">Pending (₹)</TableHead>
             <TableHead className="text-[10px] uppercase tracking-wider">Last Bill</TableHead>
             <TableHead className="text-[10px] uppercase tracking-wider">Open Request</TableHead>
             <TableHead className="text-[10px] uppercase tracking-wider text-right">Basic (₹)</TableHead>
-            <TableHead className="text-[10px] uppercase tracking-wider text-right">GST (₹)</TableHead>
             <TableHead className="text-[10px] uppercase tracking-wider">Payment</TableHead>
           </TableRow></TableHeader>
           <TableBody>
-            {!data && <TableRow><TableCell colSpan={9} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>}
-            {data && rows.length === 0 && <TableRow><TableCell colSpan={9} className="text-center py-10 text-muted-foreground">No projects match.</TableCell></TableRow>}
+            {!data && <TableRow><TableCell colSpan={10} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>}
+            {data && rows.length === 0 && <TableRow><TableCell colSpan={10} className="text-center py-10 text-muted-foreground">No projects match.</TableCell></TableRow>}
             {rows.map((r) => {
               const m = STATUS_META[r.billing_status] || {};
               return (
@@ -214,32 +246,32 @@ export default function BillingPendingReport() {
                     <div className="text-[11px] text-muted-foreground truncate max-w-[200px]">{r.project_name}</div>
                   </TableCell>
                   <TableCell>
+                    <Badge variant="outline" className={`rounded-sm text-[10px] ${r.billing_mode === "monthly" ? "border-indigo-300 text-indigo-900 bg-indigo-50" : "border-slate-300 text-slate-700 bg-slate-50"}`}
+                      data-testid={`billing-category-${r.project_code}`}>
+                      {r.category_label || "Not Set"}
+                    </Badge>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">{r.billing_mode === "monthly" ? "Month-wise" : "Scope / timeline"}</div>
+                  </TableCell>
+                  <TableCell className="text-xs" data-testid={`billing-period-${r.project_code}`}>
+                    <div className="font-semibold">{r.billing_mode === "monthly" ? month : (r.billing_period || "—")}</div>
+                    {r.billing_mode === "monthly" && (r.pending_months || []).length > 0 && (
+                      <div className="text-[10px] text-red-700 mt-0.5 max-w-[190px]">
+                        Pending: {(r.pending_months || []).slice(0, 4).join(", ")}{(r.pending_months || []).length > 4 ? ` +${r.pending_months.length - 4}` : ""}
+                      </div>
+                    )}
+                    {r.billing_mode === "monthly" && <div className="text-[10px] text-muted-foreground">{inr(r.expected_monthly)}/month</div>}
+                  </TableCell>
+                  <TableCell>
                     <div className="text-xs">{r.client || "—"}</div>
                     <div className="text-[10px] text-muted-foreground">PM: {r.project_manager || "—"}</div>
                   </TableCell>
                   <TableCell>
-                    <select value={r.billing_type || ""} onChange={(e) => e.target.value && setType(r.project_code, { billing_type: e.target.value })}
-                      className="h-8 rounded-sm border border-input bg-background px-2 text-xs w-full" data-testid={`billing-type-${r.project_code}`}>
-                      <option value="">— Set type —</option>
-                      <option value="annual_rate_contract">Annual Rate Contract (Monthly)</option>
-                      <option value="one_time_supply">One-Time Supply</option>
-                    </select>
-                    <div className="flex gap-1 mt-1">
-                      <select value={r.order_type || ""} onChange={(e) => e.target.value && setType(r.project_code, { order_type: e.target.value })}
-                        className="h-7 rounded-sm border border-input bg-background px-1 text-[10px] flex-1" data-testid={`order-type-${r.project_code}`}>
-                        <option value="">WO/PO type…</option>
-                        {(data?.order_types || []).map((t) => <option key={t} value={t}>{t.replaceAll("_", " ")}</option>)}
-                      </select>
-                      <select value={r.service_type || ""} onChange={(e) => e.target.value && setType(r.project_code, { service_type: e.target.value })}
-                        className="h-7 rounded-sm border border-input bg-background px-1 text-[10px] flex-1" data-testid={`service-type-${r.project_code}`}>
-                        <option value="">Service…</option>
-                        {(data?.service_types || []).map((t) => <option key={t} value={t}>{t.replaceAll("_", " ")}</option>)}
-                      </select>
-                    </div>
-                  </TableCell>
-                  <TableCell>
                     <Badge variant="outline" className={`rounded-sm text-[10px] ${m.cls || ""}`}>{m.label || r.billing_status}</Badge>
                     {r.billing_status === "pending" && r.pending_days != null && <div className="text-[10px] text-muted-foreground mt-0.5">{r.pending_days} days</div>}
+                  </TableCell>
+                  <TableCell className="text-right font-mono-data tabular text-sm font-bold text-red-800" data-testid={`billing-pending-amt-${r.project_code}`}>
+                    {r.pending_amount ? inr(r.pending_amount) : "—"}
+                    {r.pending_months_count > 1 && <div className="text-[10px] text-muted-foreground font-normal">{r.pending_months_count} months</div>}
                   </TableCell>
                   <TableCell className="text-xs">
                     {r.last_bill_no ? <><div className="font-semibold">{r.last_bill_no}</div><div className="text-[10px] text-muted-foreground">{fmtD(r.last_bill_at)}</div></> : "—"}
@@ -248,7 +280,6 @@ export default function BillingPendingReport() {
                     {r.open_request_no ? <><div className="font-semibold">{r.open_request_no}</div><div className="text-[10px] text-muted-foreground">{(r.open_request_nature || "").replaceAll("_", " ")}</div></> : "—"}
                   </TableCell>
                   <TableCell className="text-right font-mono-data tabular text-sm">{r.billed_basic ? inr(r.billed_basic) : "—"}</TableCell>
-                  <TableCell className="text-right font-mono-data tabular text-xs">{r.billed_gst ? inr(r.billed_gst) : "—"}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className={`rounded-sm text-[10px] ${PAY_META[r.payment_status]?.cls || ""}`}>
                       {PAY_META[r.payment_status]?.label || "—"}
@@ -262,7 +293,8 @@ export default function BillingPendingReport() {
         </Table>
       </div>
       <p className="text-[11px] text-muted-foreground">
-        Automated reminder: after the 5th of every month, all Project Managers, P&amp;O Heads &amp; Seniors, GM and Director receive an email listing projects with pending billing.
+        Automated reminder: from the 5th of every month each project with pending billing is emailed to its own Project Manager
+        (Accounts, GM and Director in copy) with the project name, category, pending month, pending amount and status — repeating every 7 days until the billing is completed.
       </p>
     </div>
   );
