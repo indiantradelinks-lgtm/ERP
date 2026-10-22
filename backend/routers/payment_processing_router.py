@@ -581,6 +581,20 @@ def _cms_date(iso: str) -> str:
         return iso[:10]
 
 
+def _cms_beneficiary(name: str) -> str:
+    """Bank CMS rejects punctuation in the beneficiary name — keep letters, digits
+    and single spaces only (hyphens, commas, brackets, &, / … all dropped)."""
+    cleaned = re.sub(r"[^A-Za-z0-9 ]+", " ", str(name or ""))
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _cms_remarks(text: str) -> str:
+    """Hyphens inside document numbers (REQ-2026-0213 → REQ 2026 0213) break the
+    bank's remarks field, so they are replaced with spaces."""
+    out = re.sub(r"(?<=[A-Za-z0-9])-(?=[A-Za-z0-9])", " ", str(text or ""))
+    return re.sub(r"[ \t]+", " ", out).strip()
+
+
 def _bank_xlsx(f: dict) -> bytes:
     """CMS bank-upload format (matches customer-provided template)."""
     from openpyxl import Workbook
@@ -595,10 +609,13 @@ def _bank_xlsx(f: dict) -> bytes:
     file_date = _cms_date(f.get("created_at") or now_iso())
     for r in f["rows"]:
         ifsc = (r.get("ifsc") or "").upper()
-        pay_mod = "" if ifsc.startswith("ICIC") else pay_mode
-        ws.append([debit_ac, r["vendor_account_no"], r["vendor_name"], r["amount"], pay_mod,
-                   file_date, ifsc, "", "", "", "", "", "", "", "", "", "", "", "", "",
-                   r["narration"]])
+        # ICICI (own-bank) transfers: Pay Mod 'I' and the IFSC column stays blank.
+        is_icici = ifsc.startswith("ICIC")
+        pay_mod = "I" if is_icici else pay_mode
+        ws.append([debit_ac, r["vendor_account_no"], _cms_beneficiary(r["vendor_name"]),
+                   r["amount"], pay_mod, file_date, "" if is_icici else ifsc,
+                   "", "", "", "", "", "", "", "", "", "", "", "", "",
+                   _cms_remarks(r["narration"])])
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()

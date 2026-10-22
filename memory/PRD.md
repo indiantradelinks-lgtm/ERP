@@ -6252,3 +6252,11 @@ Reported: raising **another** advance for the same employee was refused — "Abh
 - **Fix** (`routers/advance_router.py`): new `RESUBMIT_WINDOW_MINUTES = 2`; the guard now matches only an identical advance that is **still pending** (`submitted`/`pending`/`in_progress`) and was created **inside the last 2 minutes** — i.e. an accidental re-submit, not a genuine repeat. Message now reads "submitted moments ago … or change the amount/reason if this is a new advance". Accidental double-clicks are still caught by `dedupe.WINDOW_SECONDS = 25` fingerprint replay.
 - Same relaxation applied to `routers/project_requests_router.py` (payment/project requests): same-day → same 2-minute window.
 - Tested iter210: 9/9 new tests (`tests/test_iter210_repeat_advance.py`) + 19/19 iter205/iter208 regression + UI run of the exact screenshot case (on-behalf Emergency Advance, Abhilash Kumar, ₹1,000, reason "no needed", documents NA → AD raised successfully although an identical same-day advance existed; an immediate identical re-submit still refused naming the existing AD). The 12 failures in `tests/test_iteration46_advance_recovery.py` are pre-existing (confirmed by stashing the change). All test data cleaned up.
+
+## CMS bank file formatting (Jun 24, 2026, iter211)
+`routers/payment_processing_router.py` → `_bank_xlsx()` (shared by **generate** `POST /api/accounts/payment-queue/bank-file` and **re-download** `GET /api/accounts/payment-queue/bank-files/{id}/download`):
+- **ICICI rows only** (IFSC starts `ICIC`): `Pay Mod` = **"I"** (was blank) and the **IFSC column is left blank**. Every other bank keeps the file's payment mode and its IFSC.
+- **Beneficiary Name** — new `_cms_beneficiary()` strips every non-alphanumeric character (hyphen, comma, brackets, `&`, `/`, `.`) and collapses spaces: `M/s. Sharma & Co. (India) Pvt-Ltd, Delhi` → `M s Sharma Co India Pvt Ltd Delhi`.
+- **Remarks** — new `_cms_remarks()` replaces hyphens between alphanumerics with spaces: `REQ-2026-0213` → `REQ 2026 0213`.
+- Debit A/c, Beneficiary A/c, Amount, Date and all other columns untouched; no change to verification/approval/payment flows.
+- Tested iter211: 5/5 (`tests/test_iter211_cms_bank_file.py`) + real re-download of BPF-2026-0011 (HDFC row keeps mode N + IFSC, remarks de-hyphenated).
