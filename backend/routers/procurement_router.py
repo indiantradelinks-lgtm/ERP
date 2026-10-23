@@ -1575,6 +1575,14 @@ async def po_pdf(po_id: str, user: dict = Depends(require_permission("purchase_o
     vendor = None
     if po.get("vendor_id"):
         vendor = await db.vendors.find_one({"id": po["vendor_id"]}, {"_id": 0})
+    if not po.get("project_name"):
+        code = po.get("project_code") or po.get("project")
+        q = {"id": po["project_id"]} if po.get("project_id") else ({"code": code} if code else None)
+        if q:
+            proj = await db.projects.find_one(q, {"_id": 0, "name": 1, "code": 1})
+            if proj:
+                po["project_name"] = proj.get("name")
+                po["project_code"] = po.get("project_code") or proj.get("code") or code
     pdf = render_po_pdf(po, vendor)
     return _pdf_response(pdf, f"{po.get('po_number') or po_id}.pdf")
 

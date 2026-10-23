@@ -409,21 +409,37 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
     addr_html = "<br/>".join([_esc(x) for x in addr_lines if x]) or _esc(v.get("address") or "—")
     contact_bits = [x for x in [v.get("contact_person") or v.get("contact"), v.get("phone"), v.get("email")] if x]
     contact_html = " · ".join(_esc(x) for x in contact_bits) or "—"
-    # T&C — only selected clauses, serial numbered, body text only (no category/title headers)
-    tnc = [t for t in (po.get("terms_structured") or [])
-           if t.get("selected") is not False and ((t.get("body") or "").strip() or (t.get("title") or "").strip())]
-    tnc_html = "".join(
-        f"<div class='tnc-item'><span class='tnc-num'>{i + 1}.</span>"
-        f"<span class='tnc-body'>{_esc((t.get('body') or t.get('title') or '').strip())}</span></div>"
-        for i, t in enumerate(tnc))
+    # Printed terms — only what the buyer typed on the PO: Payment, Delivery and
+    # Special T&C, each auto serial-numbered. The default T&C clause library is not printed.
+    other = (po.get("other_terms") or "").strip()
+    special = (po.get("special_terms") or "").strip()
+    if other:  # keep any "Other Terms" content as a continuation of the special clauses
+        special = f"{special}\n{other}".strip()
+    terms_block = (
+        '<div class="po-terms">'
+        '<div class="section-title" style="clear:both;">Payment Terms</div>'
+        + terms_to_html(po.get("payment_terms"), placeholder="As mutually agreed.")
+        + '<div class="section-title">Delivery Terms</div>'
+        + terms_to_html(po.get("delivery_terms"), placeholder="As per the agreed delivery schedule.")
+        + ('<div class="section-title">Special Terms &amp; Conditions</div>' + terms_to_html(special)
+           if special else "")
+        + '</div>'
+    )
     body = f"""
+<style>
+  .po-terms {{ page-break-inside: avoid; page-break-after: avoid; }}
+  .po-terms .section-title {{ margin: 7px 0 2px; }}
+  .po-terms .tnc-item {{ margin: 1px 0; }}
+  .po-terms .tnc-para {{ margin: 1px 0; }}
+  .signs {{ page-break-inside: avoid; margin-top: 10px; }}
+</style>
 {rev_banner}
 <div class="kv" style="grid-template-columns: 110px 1fr 110px 1fr;">
   <div><b>PO Number</b></div><div>{_esc(po.get('po_number') or po.get('po_no'))}{f" — <b>Rev {revision}</b>" if revision else ""}</div>
   <div><b>PO Date</b></div><div>{_esc(po.get('po_date') or po.get('created_at','')[:10])}</div>
   <div><b>PR Reference</b></div><div>{_esc(po.get('pr_number') or '—')}</div>
   <div><b>RFQ Reference</b></div><div>{_esc(po.get('rfq_number') or '—')}</div>
-  <div><b>Project</b></div><div>{_esc(po.get('project_code') or '—')}</div>
+  <div><b>Project</b></div><div>{_esc(po.get('project_name') or po.get('project_code') or po.get('project') or '—')}{f" <span class='note'>({_esc(po.get('project_code') or po.get('project'))})</span>" if (po.get('project_name') and (po.get('project_code') or po.get('project'))) else ''}</div>
   <div><b>Delivery Date</b></div><div>{_esc(po.get('delivery_date') or '—')}</div>
 </div>
 <div class="fromto">
@@ -454,20 +470,8 @@ def render_po_pdf(po: Dict[str, Any], vendor: Optional[Dict[str, Any]] = None) -
 <tr class="grand"><td>Grand Total</td><td class="num">₹ {_money(grand)}</td></tr>
 {extra_rows}
 </table>
-{f'<div class="section-title" style="clear:both;">Delivery Terms</div><div class="note">{_esc(po.get("delivery_terms"))}</div>' if po.get('delivery_terms') else ''}
-{f'<div class="section-title" style="clear:both;">Special Terms</div><div class="note">{_esc(po.get("special_terms"))}</div>' if po.get('special_terms') else ''}
-{f'<div class="section-title" style="clear:both;">Other Terms</div><div class="note">{_esc(po.get("other_terms"))}</div>' if po.get('other_terms') else ''}
-<div style="display:flex; gap:14px; clear:both; margin-top:14px;">
-  <div style="flex:2;">
-    <div class="section-title" style="margin-top:0;">Terms &amp; Conditions</div>
-    {tnc_html or f"<div class='note'>{_esc(po.get('terms') or '1. Goods to be delivered as per delivery schedule.  2. Payment 30 days after GRN acceptance.  3. Quality as per agreed spec — defects to be replaced free of cost.')}</div>"}
-  </div>
-  <div style="flex:1;">
-    <div class="section-title" style="margin-top:0;">Payment Terms</div>
-    <div class="pt-box" style="margin-top:4px;">{_esc(po.get('payment_terms') or 'As mutually agreed')}</div>
-  </div>
-</div>
-<div class="signs">
+{terms_block}
+<div class="signs" style="page-break-before: avoid;">
   <div class="box">For {_esc(BRAND)}</div>
   <div class="box">Vendor Acknowledgement</div>
 </div>
