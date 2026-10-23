@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Truck, CheckCircle2, XCircle, FileText, PackageCheck, Trash2 } from "lucide-react";
+import { Plus, Truck, CheckCircle2, XCircle, FileText, PackageCheck, Trash2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -35,6 +35,43 @@ export function TransfersTab({ bump, locations, items, canWrite, canApprove, onC
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ from_location_id: "", to_location_id: "", need_by: "", remarks: "", lines: [blankLine()] });
   const [challanFor, setChallanFor] = useState(null);
+  const [bulkFile, setBulkFile] = useState(null);
+  const [bulkResult, setBulkResult] = useState(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  const downloadTransferTemplate = async () => {
+    try {
+      const { data } = await api.get("/scaffolding/transfer-template.xlsx",
+        { params: form.from_location_id ? { from_location_id: form.from_location_id } : {}, responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([data]));
+      const a = document.createElement("a"); a.href = url; a.download = "bulk_transfer_template.xlsx";
+      document.body.appendChild(a); a.click(); a.remove(); window.URL.revokeObjectURL(url);
+      toast.success(form.from_location_id ? "Template downloaded with the available stock of the From location"
+        : "Template downloaded — pick a From location first for live availability");
+    } catch { toast.error("Could not download the template"); }
+  };
+
+  const validateBulk = async () => {
+    if (!form.from_location_id) { toast.error("Pick the From location before validating"); return; }
+    if (!bulkFile) { toast.error("Choose the filled Excel file first"); return; }
+    const fd = new FormData(); fd.append("file", bulkFile);
+    setBulkBusy(true);
+    try {
+      const { data } = await api.post(`/scaffolding/transfers/bulk-validate?from_location_id=${form.from_location_id}`, fd,
+        { headers: { "Content-Type": "multipart/form-data" } });
+      setBulkResult(data);
+      toast[data.errors ? "warning" : "success"](`${data.valid} line(s) ready · ${data.skipped} skipped · ${data.errors} error(s)`);
+    } catch (e) { toast.error(e?.response?.data?.detail || "Validation failed"); }
+    finally { setBulkBusy(false); }
+  };
+
+  const applyBulk = () => {
+    const lines = (bulkResult?.lines || []).map((l) => ({ item_id: l.item_id, quantity: String(l.quantity) }));
+    if (!lines.length) { toast.error("No valid lines to load"); return; }
+    setForm((f) => ({ ...f, lines }));
+    setBulkResult(null); setBulkFile(null);
+    toast.success(`${lines.length} line(s) loaded — review and raise the transfer`);
+  };
 
   useEffect(() => {
     if (!prefill?.lines?.length) return;
@@ -171,6 +208,59 @@ export function TransfersTab({ bump, locations, items, canWrite, canApprove, onC
             <div>
               <Label className="text-[10px] uppercase tracking-wider">Remarks</Label>
               <Input value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} className="h-9 rounded-sm mt-1" />
+            </div>
+            <div className="col-span-2 border border-sky-200 bg-sky-50/60 rounded-sm p-2" data-testid="scaf-bulk-transfer-pane">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-900">Bulk Excel Transfer</div>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={downloadTransferTemplate} data-testid="scaf-bulk-transfer-template">
+                    <Download className="h-3 w-3 mr-1" /> Template
+                  </Button>
+                  <input type="file" accept=".xlsx,.xls,.csv" className="text-[11px]" data-testid="scaf-bulk-transfer-file"
+                    onChange={(e) => { setBulkFile(e.target.files?.[0] || null); setBulkResult(null); }} />
+                  <Button size="sm" variant="outline" className="h-7 rounded-sm" disabled={!bulkFile || bulkBusy} onClick={validateBulk} data-testid="scaf-bulk-transfer-validate">
+                    {bulkBusy ? "Checking…" : "Validate"}
+                  </Button>
+                </div>
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-1">
+                Pick the From location first — the template is pre-filled with its available stock. Fill the <b>quantity</b> column, validate, then confirm to load the lines below.
+              </div>
+              {bulkResult && (
+                <div className="mt-2 border border-border rounded-sm bg-background">
+                  <div className="flex items-center gap-3 p-1.5 border-b border-border text-[11px]">
+                    <span className="text-emerald-700 font-semibold" data-testid="scaf-bulk-transfer-valid">{bulkResult.valid} ready</span>
+                    <span className="text-muted-foreground">{bulkResult.skipped} skipped</span>
+                    <span className="text-rose-700 font-semibold" data-testid="scaf-bulk-transfer-errors">{bulkResult.errors} error(s)</span>
+                    <span className="text-muted-foreground">from {bulkResult.from_location}</span>
+                  </div>
+                  <div className="max-h-44 overflow-y-auto">
+                    <table className="w-full text-[11px]">
+                      <thead className="bg-muted/30 sticky top-0"><tr>
+                        <th className="text-left px-2 py-1">Row</th><th className="text-left px-2 py-1">Item</th>
+                        <th className="text-right px-2 py-1">Available</th><th className="text-right px-2 py-1">Transfer</th>
+                        <th className="text-left px-2 py-1">Status</th>
+                      </tr></thead>
+                      <tbody>
+                        {(bulkResult.rows || []).map((r) => (
+                          <tr key={r.row} className="border-t border-border" data-testid={`scaf-bulk-transfer-row-${r.row}`}>
+                            <td className="px-2 py-1 font-mono-data">{r.row}</td>
+                            <td className="px-2 py-1">{r.item_name || r.item_code || "—"}</td>
+                            <td className="px-2 py-1 text-right tabular">{r.available ?? "—"}</td>
+                            <td className="px-2 py-1 text-right tabular">{r.quantity || "—"}</td>
+                            <td className={`px-2 py-1 ${r.status === "error" ? "text-rose-700 font-semibold" : r.status === "ok" ? "text-emerald-700" : "text-muted-foreground"}`}>{r.error || r.status}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="p-1.5 border-t border-border flex justify-end">
+                    <Button size="sm" className="h-7 rounded-sm" disabled={!bulkResult.valid} onClick={applyBulk} data-testid="scaf-bulk-transfer-confirm">
+                      Confirm {bulkResult.valid} line(s)
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="col-span-2 border border-border rounded-sm">
               <div className="flex items-center justify-between p-2 border-b border-border">

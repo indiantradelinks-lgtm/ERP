@@ -848,6 +848,272 @@ async def import_csv(request: Request, file: UploadFile = File(...),
     return {"created": created, "updated": updated, "opening_stock_set": stocked, "errors": errors}
 
 
+# ─── Bulk stock adjustment & bulk transfer (Excel) ───────────────────────
+ADJUST_HEADERS = ["item_code", "item_name", "location", "current_quantity", "new_quantity", "remarks"]
+TRANSFER_HEADERS = ["item_code", "item_name", "available_qty", "quantity"]
+
+
+def _sheet_bytes(headers: List[str], rows: List[List[Any]], title: str, notes: List[str]) -> bytes:
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    wb = Workbook()
+    ws = wb.active
+    ws.title = title[:31]
+    ws.append(headers)
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="0F172A")
+    for r in rows:
+        ws.append(r)
+    for i, h in enumerate(headers, start=1):
+        ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = max(14, min(42, len(h) + 12))
+    ws.freeze_panes = "A2"
+    info = wb.create_sheet("How to use")
+    for n in notes:
+        info.append([n])
+    info.column_dimensions["A"].width = 110
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _parse_upload(raw: bytes, filename: str) -> List[Dict[str, str]]:
+    """Read an uploaded .xlsx / .xls / .csv sheet into lower-cased dict rows."""
+    name = (filename or "").lower()
+    if name.endswith(".csv") or name.endswith(".txt"):
+        reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig", errors="replace")))
+        return [{(k or "").strip().lower(): str(v or "").strip() for k, v in r.items()} for r in reader]
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(io.BytesIO(raw), data_only=True)
+    except Exception as e:
+        raise HTTPException(400, f"Could not read the file — upload the .xlsx template or a CSV ({e})")
+    ws = wb.worksheets[0]
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return []
+    headers = [str(h or "").strip().lower() for h in rows[0]]
+    out = []
+    for r in rows[1:]:
+        if all(v is None or str(v).strip() == "" for v in r):
+            continue
+        out.append({h: ("" if v is None else str(v).strip()) for h, v in zip(headers, r) if h})
+    return out
+
+
+def _num(v: str) -> float:
+    return float(str(v).replace(",", "").strip())
+
+
+async def _item_index() -> Dict[str, Dict[str, Any]]:
+    idx: Dict[str, Dict[str, Any]] = {}
+    async for it in db.inventory.find({}, {"_id": 0}):
+        if it.get("code"):
+            idx[f"code::{str(it['code']).strip().lower()}"] = it
+        if it.get("name"):
+            idx[f"name::{str(it['name']).strip().lower()}"] = it
+    return idx
+
+
+async def _validate_adjust_rows(raw: bytes, filename: str) -> List[Dict[str, Any]]:
+    rows = _parse_upload(raw, filename)
+    if not rows:
+        raise HTTPException(400, "The sheet has no data rows — download the template and fill the quantities")
+    if not any(h in (rows[0] or {}) for h in ("item_code", "item_name")):
+        raise HTTPException(400, f"Sheet must have the template columns: {', '.join(ADJUST_HEADERS)}")
+    items, locs = await _item_index(), await _locations()
+    loc_idx = {}
+    for l in locs:
+        loc_idx[str(l["name"]).strip().lower()] = l
+        if l.get("code"):
+            loc_idx[str(l["code"]).strip().lower()] = l
+    seen: Dict[str, int] = {}
+    out: List[Dict[str, Any]] = []
+    for i, r in enumerate(rows, start=2):
+        rec: Dict[str, Any] = {"row": i, "item_code": r.get("item_code") or "", "item_name": r.get("item_name") or "",
+                               "location": r.get("location") or "", "new_quantity": r.get("new_quantity") or "",
+                               "remarks": r.get("remarks") or "", "status": "ok", "error": None}
+        item = items.get(f"code::{rec['item_code'].lower()}") or items.get(f"name::{rec['item_name'].lower()}")
+        loc = loc_idx.get(rec["location"].lower())
+        if not loc:  # tolerate "PRJ-2024-09 · Name" style values
+            loc = next((l for l in locs if rec["location"] and rec["location"].lower() in str(l["name"]).lower()), None)
+        try:
+            if not item:
+                raise ValueError(f"unknown item '{rec['item_code'] or rec['item_name']}' — not in the scaffolding catalog")
+            if not loc:
+                raise ValueError(f"unknown location '{rec['location']}'")
+            if str(rec["new_quantity"]).strip() == "":
+                raise ValueError("new_quantity is blank")
+            qty = _num(rec["new_quantity"])
+            if qty < 0:
+                raise ValueError("new_quantity cannot be negative")
+            key = f"{item['id']}::{loc['id']}"
+            if key in seen:
+                raise ValueError(f"duplicate of row {seen[key]} — same item at the same location")
+            seen[key] = i
+            srow = await db.scaf_stock.find_one({"item_id": item["id"], "location_id": loc["id"]}, {"_id": 0, "quantity": 1})
+            current = round(float((srow or {}).get("quantity") or 0), 3)
+            rec.update({"item_id": item["id"], "item_code": item.get("code"), "item_name": item["name"],
+                        "location_id": loc["id"], "location": loc["name"],
+                        "current_quantity": current, "new_quantity": qty,
+                        "delta": round(qty - current, 3)})
+            if rec["delta"] == 0:
+                rec["status"] = "unchanged"
+        except Exception as e:
+            rec.update({"status": "error", "error": str(e)})
+        out.append(rec)
+    return out
+
+
+@router.get("/scaffolding/stock-adjust-template.xlsx")
+async def stock_adjust_template(location_id: Optional[str] = None,
+                                user: dict = Depends(require_permission("scaffolding", "read"))):
+    """Excel template pre-filled with the current location-wise stock — edit new_quantity and upload."""
+    locs = await _locations()
+    if location_id:
+        locs = [l for l in locs if l["id"] == location_id]
+    loc_ids = {l["id"]: l for l in locs}
+    rows: List[List[Any]] = []
+    async for s in db.scaf_stock.find({}, {"_id": 0}).sort("item_name", 1):
+        l = loc_ids.get(s.get("location_id"))
+        if not l:
+            continue
+        rows.append([s.get("item_code"), s.get("item_name"), l["name"],
+                     round(float(s.get("quantity") or 0), 3), round(float(s.get("quantity") or 0), 3), ""])
+    if not rows:  # nothing stocked yet — give a couple of starter lines
+        items = await db.inventory.find({}, {"_id": 0, "code": 1, "name": 1}).limit(5).to_list(5)
+        first = locs[0]["name"] if locs else "Main Store"
+        rows = [[i.get("code"), i.get("name"), first, 0, 0, ""] for i in items]
+    data = _sheet_bytes(ADJUST_HEADERS, rows, "Stock Adjustment", [
+        "Bulk Stock Adjustment — Scaffolding Stock Matrix",
+        "1. Each row sets the ABSOLUTE closing quantity of one item at one location.",
+        "2. Edit the 'new_quantity' column only. 'current_quantity' is shown for reference.",
+        "3. 'location' must match a store or project location name/code exactly as exported.",
+        "4. An item may appear only once per location — duplicate rows are rejected.",
+        "5. Rows where new_quantity equals current_quantity are skipped as unchanged.",
+        "6. Upload in Stock Matrix → Opening / Adjust → Bulk Excel Upload → Validate, then Apply.",
+        "Valid locations:", *[f"   · {l['name']}" for l in locs],
+    ])
+    return Response(content=data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": 'attachment; filename="stock_adjustment_template.xlsx"'})
+
+
+@router.post("/scaffolding/stock-adjust/validate")
+async def stock_adjust_validate(file: UploadFile = File(...),
+                                user: dict = Depends(require_permission("scaffolding", "write"))):
+    rows = await _validate_adjust_rows(await file.read(), file.filename)
+    return {"rows": rows, "total": len(rows),
+            "valid": len([r for r in rows if r["status"] == "ok"]),
+            "unchanged": len([r for r in rows if r["status"] == "unchanged"]),
+            "errors": len([r for r in rows if r["status"] == "error"])}
+
+
+@router.post("/scaffolding/stock-adjust/import")
+async def stock_adjust_import(request: Request, file: UploadFile = File(...),
+                              user: dict = Depends(require_permission("scaffolding", "write"))):
+    """Apply every valid row of the bulk adjustment sheet. Rows with errors are reported, never applied."""
+    rows = await _validate_adjust_rows(await file.read(), file.filename)
+    applied: List[Dict[str, Any]] = []
+    for r in rows:
+        if r["status"] != "ok":
+            continue
+        item = await db.inventory.find_one({"id": r["item_id"]}, {"_id": 0})
+        loc = await _loc(r["location_id"])
+        if not item or not loc:
+            r.update({"status": "error", "error": "item or location vanished mid-import"})
+            continue
+        await _adjust(item, loc, r["delta"])
+        applied.append({"item": item["name"], "location": loc["name"],
+                        "from": r["current_quantity"], "to": r["new_quantity"]})
+    errors = [{"row": r["row"], "error": r["error"]} for r in rows if r["status"] == "error"]
+    await audit(user=user, action="bulk_stock_adjust", resource="scaf_stock", record_id="excel",
+                after={"applied": len(applied), "unchanged": len([r for r in rows if r["status"] == "unchanged"]),
+                       "errors": len(errors)}, ip=_ip(request))
+    return {"applied": len(applied), "unchanged": len([r for r in rows if r["status"] == "unchanged"]),
+            "errors": errors, "rows": rows}
+
+
+@router.get("/scaffolding/transfer-template.xlsx")
+async def transfer_template(from_location_id: Optional[str] = None,
+                            user: dict = Depends(require_permission("scaffolding", "read"))):
+    """Excel template for a bulk transfer request — available_qty is pre-filled for the source location."""
+    src = await _loc(from_location_id) if from_location_id else None
+    rows: List[List[Any]] = []
+    if src:
+        async for s in db.scaf_stock.find({"location_id": src["id"]}, {"_id": 0}).sort("item_name", 1):
+            if float(s.get("quantity") or 0) <= 0:
+                continue
+            rows.append([s.get("item_code"), s.get("item_name"), round(float(s.get("quantity") or 0), 3), ""])
+    if not rows:
+        items = await db.inventory.find({}, {"_id": 0, "code": 1, "name": 1}).limit(10).to_list(10)
+        rows = [[i.get("code"), i.get("name"), 0, ""] for i in items]
+    data = _sheet_bytes(TRANSFER_HEADERS, rows, "Bulk Transfer", [
+        "Bulk Stock Transfer — Scaffolding Transfer Request",
+        f"Source location: {src['name'] if src else 'select the From location before downloading for live availability'}",
+        "1. Fill the 'quantity' column for every item you want to transfer; leave blank or 0 to skip.",
+        "2. 'available_qty' is the stock on hand at the source location at the time of download.",
+        "3. A quantity above the available stock is rejected during validation.",
+        "4. An item may appear only once — duplicate rows are rejected.",
+        "5. Upload in Transfers → New Transfer Request → Bulk Excel, review the confirmation list, then raise.",
+    ])
+    return Response(content=data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": 'attachment; filename="bulk_transfer_template.xlsx"'})
+
+
+@router.post("/scaffolding/transfers/bulk-validate")
+async def transfer_bulk_validate(from_location_id: str, file: UploadFile = File(...),
+                                 user: dict = Depends(require_permission("scaffolding", "write"))):
+    """Validate an uploaded transfer sheet against live source stock. Nothing is written — the
+    caller shows the result for confirmation and then posts the usual transfer request."""
+    src = await _loc(from_location_id)
+    if not src:
+        raise HTTPException(400, "Pick a valid From location before uploading")
+    rows = _parse_upload(await file.read(), file.filename)
+    if not rows:
+        raise HTTPException(400, "The sheet has no data rows — download the template and fill the quantities")
+    if not any(h in (rows[0] or {}) for h in ("item_code", "item_name")):
+        raise HTTPException(400, f"Sheet must have the template columns: {', '.join(TRANSFER_HEADERS)}")
+    items = await _item_index()
+    seen: Dict[str, int] = {}
+    out: List[Dict[str, Any]] = []
+    for i, r in enumerate(rows, start=2):
+        code, name = r.get("item_code") or "", r.get("item_name") or ""
+        qty_raw = str(r.get("quantity") or "").strip()
+        rec: Dict[str, Any] = {"row": i, "item_code": code, "item_name": name,
+                               "quantity": qty_raw, "status": "ok", "error": None}
+        item = items.get(f"code::{code.lower()}") or items.get(f"name::{name.lower()}")
+        try:
+            if not item:
+                raise ValueError(f"unknown item '{code or name}' — not in the scaffolding catalog")
+            if qty_raw == "" or _num(qty_raw) == 0:
+                rec.update({"status": "skipped", "item_id": item["id"], "item_code": item.get("code"),
+                            "item_name": item["name"], "quantity": 0, "available": None})
+                out.append(rec)
+                continue
+            qty = _num(qty_raw)
+            if qty < 0:
+                raise ValueError("quantity cannot be negative")
+            if item["id"] in seen:
+                raise ValueError(f"duplicate of row {seen[item['id']]} — same item listed twice")
+            seen[item["id"]] = i
+            srow = await db.scaf_stock.find_one({"item_id": item["id"], "location_id": src["id"]},
+                                                {"_id": 0, "quantity": 1})
+            avl = round(float((srow or {}).get("quantity") or 0), 3)
+            rec.update({"item_id": item["id"], "item_code": item.get("code"), "item_name": item["name"],
+                        "unit": item.get("unit") or item.get("uom") or "Nos",
+                        "quantity": qty, "available": avl})
+            if qty > avl:
+                raise ValueError(f"only {avl} available at {src['name']}, {qty} requested")
+        except Exception as e:
+            rec.update({"status": "error", "error": str(e)})
+        out.append(rec)
+    valid = [r for r in out if r["status"] == "ok"]
+    return {"from_location": src["name"], "rows": out, "total": len(out),
+            "valid": len(valid), "skipped": len([r for r in out if r["status"] == "skipped"]),
+            "errors": len([r for r in out if r["status"] == "error"]),
+            "lines": [{"item_id": r["item_id"], "quantity": r["quantity"]} for r in valid]}
+
+
 @router.get("/scaffolding/export.{fmt}")
 async def export_stock(fmt: str, kind: str = "stock", location_id: Optional[str] = None,
                        q: Optional[str] = None, item_ids: Optional[str] = None,

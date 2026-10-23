@@ -140,6 +140,109 @@ export default function Scaffolding() {
   );
 }
 
+/* ─── Bulk stock adjustment (Excel) ─────────────────────────────────── */
+const STATUS_STYLE = {
+  ok: "text-emerald-700", unchanged: "text-muted-foreground", skipped: "text-muted-foreground", error: "text-rose-700 font-semibold",
+};
+
+function BulkAdjustPane({ locFilter, onClose, onChanged }) {
+  const [file, setFile] = useState(null);
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const template = async () => {
+    try {
+      const { data } = await api.get("/scaffolding/stock-adjust-template.xlsx",
+        { params: locFilter ? { location_id: locFilter } : {}, responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([data]));
+      const a = document.createElement("a"); a.href = url; a.download = "stock_adjustment_template.xlsx";
+      document.body.appendChild(a); a.click(); a.remove(); window.URL.revokeObjectURL(url);
+      toast.success("Template downloaded — edit the new_quantity column and upload it back");
+    } catch { toast.error("Could not download the template"); }
+  };
+
+  const send = async (path) => {
+    if (!file) { toast.error("Choose the filled Excel file first"); return; }
+    const fd = new FormData(); fd.append("file", file);
+    setBusy(true);
+    try {
+      const { data } = await api.post(`/scaffolding/stock-adjust/${path}`, fd,
+        { headers: { "Content-Type": "multipart/form-data" } });
+      setResult(data);
+      if (path === "import") {
+        toast.success(`${data.applied} stock row(s) adjusted · ${data.unchanged} unchanged · ${data.errors.length} error(s)`);
+        onChanged();
+        if (!data.errors.length) onClose();
+      } else {
+        toast[data.errors ? "warning" : "success"](`${data.valid} row(s) ready · ${data.unchanged} unchanged · ${data.errors} error(s)`);
+      }
+    } catch (e) { toast.error(e?.response?.data?.detail || "Upload failed"); }
+    finally { setBusy(false); }
+  };
+
+  const rows = result?.rows || [];
+  const validCount = rows.filter((r) => r.status === "ok").length;
+  const errorCount = rows.filter((r) => r.status === "error").length;
+
+  return (
+    <div className="space-y-3" data-testid="scaf-bulk-adjust-pane">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button size="sm" variant="outline" className="h-8 rounded-sm" onClick={template} data-testid="scaf-bulk-adjust-template">
+          <Download className="h-3.5 w-3.5 mr-1" /> Download Excel Template
+        </Button>
+        <input type="file" accept=".xlsx,.xls,.csv" className="text-xs" data-testid="scaf-bulk-adjust-file"
+          onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); }} />
+      </div>
+      <div className="text-[11px] text-muted-foreground">
+        The template carries the current location-wise stock. Edit <b>new_quantity</b> (the absolute closing quantity) and upload — validation runs first, nothing is written until you apply.
+      </div>
+
+      {result && (
+        <div className="border border-border rounded-sm">
+          <div className="flex items-center gap-3 p-2 border-b border-border text-xs">
+            <span className="text-emerald-700 font-semibold" data-testid="scaf-bulk-adjust-valid">{validCount} ready</span>
+            <span className="text-muted-foreground">{rows.filter((r) => r.status === "unchanged").length} unchanged</span>
+            <span className="text-rose-700 font-semibold" data-testid="scaf-bulk-adjust-errors">{errorCount} error(s)</span>
+          </div>
+          <div className="max-h-64 overflow-y-auto">
+            <table className="w-full text-[11px]">
+              <thead className="bg-muted/30 sticky top-0"><tr>
+                <th className="text-left px-2 py-1">Row</th><th className="text-left px-2 py-1">Item</th>
+                <th className="text-left px-2 py-1">Location</th><th className="text-right px-2 py-1">Current</th>
+                <th className="text-right px-2 py-1">New</th><th className="text-right px-2 py-1">Change</th>
+                <th className="text-left px-2 py-1">Status</th>
+              </tr></thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.row} className="border-t border-border" data-testid={`scaf-bulk-adjust-row-${r.row}`}>
+                    <td className="px-2 py-1 font-mono-data">{r.row}</td>
+                    <td className="px-2 py-1">{r.item_name || r.item_code || "—"}</td>
+                    <td className="px-2 py-1">{r.location || "—"}</td>
+                    <td className="px-2 py-1 text-right tabular">{r.current_quantity ?? "—"}</td>
+                    <td className="px-2 py-1 text-right tabular">{r.new_quantity === "" ? "—" : r.new_quantity}</td>
+                    <td className="px-2 py-1 text-right tabular">{r.delta > 0 ? `+${r.delta}` : (r.delta ?? "—")}</td>
+                    <td className={`px-2 py-1 ${STATUS_STYLE[r.status]}`}>{r.error || r.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <DialogFooter>
+        <Button variant="outline" className="rounded-sm" onClick={onClose}>Cancel</Button>
+        <Button variant="outline" className="rounded-sm" disabled={!file || busy} onClick={() => send("validate")} data-testid="scaf-bulk-adjust-validate">
+          {busy ? "Checking…" : "Validate"}
+        </Button>
+        <Button className="rounded-sm" disabled={!file || busy} onClick={() => send("import")} data-testid="scaf-bulk-adjust-apply">
+          {busy ? "Applying…" : result ? `Apply ${validCount} Adjustment(s)` : "Validate & Apply"}
+        </Button>
+      </DialogFooter>
+    </div>
+  );
+}
+
 /* ─── Stock Matrix ──────────────────────────────────────────────────── */
 function StockMatrixTab({ matrix, locations, items, canWrite, onChanged, onExport, onTransferSelected }) {
   const [opening, setOpening] = useState(false);
@@ -147,6 +250,7 @@ function StockMatrixTab({ matrix, locations, items, canWrite, onChanged, onExpor
   const [locFilter, setLocFilter] = useState("");
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState({});
+  const [mode, setMode] = useState("single");
 
   const cols = useMemo(() => {
     const all = matrix?.locations || [];
@@ -281,11 +385,17 @@ function StockMatrixTab({ matrix, locations, items, canWrite, onChanged, onExpor
       </div>
 
       <Dialog open={opening} onOpenChange={setOpening}>
-        <DialogContent className="max-w-md rounded-sm">
+        <DialogContent className="max-w-3xl rounded-sm max-h-[88vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display">Opening / Adjust Stock</DialogTitle>
-            <DialogDescription>Sets the absolute quantity of an item at a location.</DialogDescription>
+            <DialogDescription>Sets the absolute quantity of an item at a location — one item, or many at once from Excel.</DialogDescription>
           </DialogHeader>
+          <Tabs value={mode} onValueChange={setMode}>
+            <TabsList className="rounded-sm">
+              <TabsTrigger value="single" className="rounded-sm" data-testid="scaf-opening-mode-single">Single Item</TabsTrigger>
+              <TabsTrigger value="bulk" className="rounded-sm" data-testid="scaf-opening-mode-bulk">Bulk Excel Upload</TabsTrigger>
+            </TabsList>
+            <TabsContent value="single" className="mt-3">
           <div className="space-y-3">
             <div>
               <Label className="text-[10px] uppercase tracking-wider">Item *</Label>
@@ -313,6 +423,11 @@ function StockMatrixTab({ matrix, locations, items, canWrite, onChanged, onExpor
             <Button variant="outline" className="rounded-sm" onClick={() => setOpening(false)}>Cancel</Button>
             <Button className="rounded-sm" onClick={saveOpening} data-testid="scaf-opening-submit">Save</Button>
           </DialogFooter>
+            </TabsContent>
+            <TabsContent value="bulk" className="mt-3">
+              <BulkAdjustPane locFilter={locFilter} onClose={() => setOpening(false)} onChanged={onChanged} />
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
     </div>
