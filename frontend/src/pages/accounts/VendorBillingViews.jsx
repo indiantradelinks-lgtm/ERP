@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, RefreshCcw, CheckCircle2, X, AlertCircle, Shield, ShieldOff, Pencil, FileDown, History, Truck } from "lucide-react";
+import { Plus, RefreshCcw, CheckCircle2, X, AlertCircle, Shield, ShieldOff, Pencil, FileDown, History, Truck, Wallet } from "lucide-react";
 import DirectBookingDialog from "@/components/DirectBookingDialog";
 import { fmt } from "./AccountsViews";
 import { ProjectSelect } from "@/components/MasterSelect";
@@ -38,6 +38,16 @@ const STATUS_COLORS = {
 };
 
 const TDS_RATES = { "194C": 2, "194J": 10, "194I": 10, "194H": 2, "194Q": 0.1, "194A": 10, "195": 20 };
+
+const PAY_STATUS_LABELS = {
+  unpaid: "Unpaid", advance_paid: "Advance Paid", partially_paid: "Partially Paid", fully_paid: "Fully Paid",
+};
+const PAY_STATUS_COLORS = {
+  unpaid: "bg-slate-100 text-slate-600",
+  advance_paid: "bg-sky-100 text-sky-800",
+  partially_paid: "bg-amber-100 text-amber-800",
+  fully_paid: "bg-green-100 text-green-800",
+};
 
 const gstinToPan = (g) => {
   const s = (g || "").trim().toUpperCase();
@@ -89,6 +99,7 @@ export function VendorBillsView() {
   const [poTerms, setPoTerms] = useState(null);
   const [editId, setEditId] = useState(null);
   const [directOpen, setDirectOpen] = useState(false);
+  const [payBill, setPayBill] = useState(null);
 
   function newFormState() {
     return {
@@ -103,6 +114,8 @@ export function VendorBillsView() {
       tds_section: "", tds_rate: 0, advance_adjusted: 0, retention_amount: 0,
       due_days: 30, payment_priority: "normal",
       attachments: [], force_no_po: false, force_no_grn: false, notes: "",
+      advance_pay: false,
+      advance_payment: { amount: 0, payment_date: new Date().toISOString().slice(0, 10), mode: "Bank", utr: "", remarks: "" },
     };
   }
 
@@ -163,6 +176,15 @@ export function VendorBillsView() {
     return { taxable, gst, gross, tds, net };
   }, [form.lines, form.gst_rate, form.tds_rate, form.advance_adjusted, form.retention_amount]);
 
+  const setAdvance = (patch) => setForm(f => ({ ...f, advance_payment: { ...f.advance_payment, ...patch } }));
+  const advanceAmt = Number(form.advance_payment?.amount || 0);
+  const advancePct = useMemo(() => {
+    const m = String(poTerms?.payment_terms || "").match(/(\d{1,3}(?:\.\d+)?)\s*%\s*advance/i);
+    return m ? Number(m[1]) : 0;
+  }, [poTerms]);
+  const advancePreview = advanceAmt <= 0 ? "unpaid"
+    : totals.net - advanceAmt < 0.01 ? "fully_paid" : "advance_paid";
+
   const submit = async () => {
     if (!form.vendor_name) { toast.error("Vendor name required"); return; }
     if (!form.invoice_no) { toast.error("Vendor invoice # required"); return; }
@@ -173,13 +195,24 @@ export function VendorBillsView() {
       toast.error("GRN required (or tick 'No GRN – override' / supply Service Confirmation #)"); return;
     }
     try {
-      const body = { ...form, po_terms: poTerms?.po_terms?.length ? poTerms.po_terms : null, payment_terms: poTerms?.payment_terms || null, attachments: form.attachments?.length ? form.attachments : [{ name: "manual-entry" }] };
+      const adv = Number(form.advance_payment?.amount || 0);
+      if (form.advance_pay && adv > totals.net + 0.01) {
+        toast.error(`Advance ₹${adv.toLocaleString("en-IN")} cannot exceed the invoice net payable`); return;
+      }
+      const body = {
+        ...form, po_terms: poTerms?.po_terms?.length ? poTerms.po_terms : null,
+        payment_terms: poTerms?.payment_terms || null,
+        attachments: form.attachments?.length ? form.attachments : [{ name: "manual-entry" }],
+        advance_payment: !editId && form.advance_pay && adv > 0 ? { ...form.advance_payment, amount: adv } : null,
+      };
       if (editId) {
         await api.put(`/payables/vendor-bills/${editId}`, body);
         toast.success("Vendor bill updated — back to Draft for re-verification");
       } else {
-        await api.post("/payables/vendor-bills", body);
-        toast.success("Vendor bill created");
+        const { data } = await api.post("/payables/vendor-bills", body);
+        toast.success(data.advance_payment_no
+          ? `Bill created · advance ₹${Number(data.paid_amount).toLocaleString("en-IN")} paid (${data.advance_payment_no}) · outstanding ₹${Number(data.outstanding).toLocaleString("en-IN")}`
+          : "Vendor bill created");
       }
       setOpen(false); setEditId(null); setForm(newFormState()); load();
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
@@ -327,6 +360,7 @@ export function VendorBillsView() {
                 <th className="text-left px-3 py-2">PO/GRN</th>
                 <th className="text-right px-3 py-2">Gross</th>
                 <th className="text-right px-3 py-2">Outstanding</th>
+                <th className="text-center px-3 py-2">Payment</th>
                 <th className="text-left px-3 py-2">Due</th>
                 <th className="text-center px-3 py-2">Priority</th>
                 <th className="text-center px-3 py-2">Status</th>
@@ -354,6 +388,12 @@ export function VendorBillsView() {
                   </td>
                   <td className="px-3 py-1.5 text-right tabular-nums">{fmt(r.totals?.gross)}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums font-semibold">{fmt(r.outstanding)}</td>
+                  <td className="px-3 py-1.5 text-center">
+                    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${PAY_STATUS_COLORS[r.payment_status || "unpaid"]}`} data-testid={`pay-vb-paystatus-${r.bill_no}`}>
+                      {PAY_STATUS_LABELS[r.payment_status || "unpaid"]}
+                    </span>
+                    {Number(r.paid_amount) > 0 && <div className="text-[10px] text-slate-500 tabular-nums">paid {fmt(r.paid_amount)}</div>}
+                  </td>
                   <td className="px-3 py-1.5">{dueBadge(r)}</td>
                   <td className="px-3 py-1.5 text-center"><span className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${PRIORITY_COLORS[r.payment_priority] || ""}`}>{r.payment_priority}</span></td>
                   <td className="px-3 py-1.5 text-center"><span className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${STATUS_COLORS[r.status] || ""}`}>{r.status}</span></td>
@@ -387,6 +427,7 @@ export function VendorBillsView() {
                             : <Button size="sm" variant="outline" className="ml-1 border-rose-300 text-rose-700" onClick={() => paymentControl(r, "hold")} data-testid={`pay-vb-hold-${r.bill_no}`}>Hold</Button>)}
                           {controllable && <Button size="sm" variant="ghost" className="ml-1" onClick={() => paymentControl(r, "set_due_days")} data-testid={`pay-vb-duedays-${r.bill_no}`} title="Change due days (from approval date)">Due±</Button>}
                           <Button size="sm" variant="ghost" className="ml-1" onClick={() => downloadBillPdf(r)} data-testid={`pay-vb-pdf-${r.bill_no}`} title="Bill PDF"><FileDown className="h-3 w-3" /></Button>
+                          <Button size="sm" variant="outline" className="ml-1 border-sky-300 text-sky-700" onClick={() => setPayBill(r)} data-testid={`pay-vb-payments-${r.bill_no}`} title="Advance / part payments against this invoice"><Wallet className="h-3 w-3 mr-1" />Payments</Button>
                           {r.payment_hold && <span className="inline-block px-1.5 py-0.5 rounded text-[10px] bg-rose-100 text-rose-700 font-semibold ml-1">HELD</span>}
                           {(wf2 || wf3) && r.status === "approved" && r.payment_release_date && !r.payment_hold && (
                             <span className="text-[10px] text-slate-500 ml-1" title="Eligible for Payment Processing from this date">Pay from {r.payment_release_date}</span>
@@ -397,13 +438,14 @@ export function VendorBillsView() {
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={11} className="text-center py-6 text-xs text-slate-400">No bills.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={12} className="text-center py-6 text-xs text-slate-400">No bills.</td></tr>}
             </tbody>
           </table>
         </div>
         <div className="pt-2"><TablePager pagination={pagination} testidPrefix="pay-vb" /></div>
       </CardContent>
       {directOpen && <DirectBookingDialog onClose={(saved) => { setDirectOpen(false); if (saved) load(); }} />}
+      {payBill && <BillPaymentsDialog bill={payBill} onClose={(saved) => { setPayBill(null); if (saved) load(); }} />}
 
       <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setPoTerms(null); setEditId(null); setForm(newFormState()); } }}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
@@ -535,6 +577,60 @@ export function VendorBillsView() {
               <div><div className="text-[10px] uppercase text-slate-500">Net Payable</div><div className="font-bold tabular-nums text-emerald-700">{fmt(totals.net)}</div></div>
             </div>
           </div>
+          {!editId && form.grn_number && (
+            <div className="border rounded-md p-3 mt-3 bg-sky-50/60 border-sky-200" data-testid="pay-vb-advance-block">
+              <label className="flex items-center gap-2 text-xs font-semibold text-sky-900">
+                <input type="checkbox" checked={form.advance_pay}
+                  onChange={e => setForm({ ...form, advance_pay: e.target.checked })}
+                  data-testid="pay-vb-advance-toggle" />
+                Record advance / part payment against this invoice now
+                <span className="font-normal text-sky-700">— the balance stays on this same bill, no second bill is raised</span>
+              </label>
+              {form.advance_pay && (
+                <>
+                  {advancePct > 0 && (
+                    <Button size="sm" variant="outline" className="mt-2 h-7 text-[11px]" data-testid="pay-vb-advance-apply-terms"
+                      onClick={() => setAdvance({ amount: Math.round(totals.net * advancePct) / 100 })}>
+                      Apply PO term — {advancePct}% advance = {fmt(Math.round(totals.net * advancePct) / 100)}
+                    </Button>
+                  )}
+                  <div className="grid grid-cols-5 gap-2 mt-2">
+                    <Field label="Advance / Part Amount *">
+                      <Input type="number" value={form.advance_payment.amount}
+                        onChange={e => setAdvance({ amount: Number(e.target.value) })} data-testid="pay-vb-advance-amount" />
+                    </Field>
+                    <Field label="Payment Date">
+                      <Input type="date" value={form.advance_payment.payment_date}
+                        onChange={e => setAdvance({ payment_date: e.target.value })} data-testid="pay-vb-advance-date" />
+                    </Field>
+                    <Field label="Mode">
+                      <select className="h-9 w-full rounded-sm border bg-background px-2" value={form.advance_payment.mode}
+                        onChange={e => setAdvance({ mode: e.target.value })} data-testid="pay-vb-advance-mode">
+                        {["Bank", "NEFT", "RTGS", "IMPS", "UPI", "Cheque", "Cash"].map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="UTR / Cheque #">
+                      <Input value={form.advance_payment.utr} onChange={e => setAdvance({ utr: e.target.value })} data-testid="pay-vb-advance-utr" />
+                    </Field>
+                    <Field label="Remarks">
+                      <Input value={form.advance_payment.remarks} onChange={e => setAdvance({ remarks: e.target.value })} data-testid="pay-vb-advance-remarks" />
+                    </Field>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2 mt-2 text-sm border-t pt-2">
+                    <div><div className="text-[10px] uppercase text-slate-500">Invoice Total (Net)</div><div className="font-semibold tabular-nums">{fmt(totals.net)}</div></div>
+                    <div><div className="text-[10px] uppercase text-slate-500">Paying Now</div><div className="font-semibold tabular-nums text-blue-700" data-testid="pay-vb-advance-paying">{fmt(advanceAmt)}</div></div>
+                    <div><div className="text-[10px] uppercase text-slate-500">Outstanding Balance</div><div className="font-bold tabular-nums text-rose-700" data-testid="pay-vb-advance-outstanding">{fmt(Math.max(totals.net - advanceAmt, 0))}</div></div>
+                    <div><div className="text-[10px] uppercase text-slate-500">Payment Status</div>
+                      <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${PAY_STATUS_COLORS[advancePreview]}`} data-testid="pay-vb-advance-status">{PAY_STATUS_LABELS[advancePreview]}</span>
+                    </div>
+                  </div>
+                  {advanceAmt > totals.net + 0.01 && (
+                    <div className="text-xs text-rose-700 flex items-center gap-1 mt-2"><AlertCircle className="h-3 w-3" />Advance cannot exceed the invoice net payable of {fmt(totals.net)}.</div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
           {!form.bank_verified && (
             <div className="text-xs text-rose-700 flex items-center gap-1 mt-2"><AlertCircle className="h-3 w-3" />Bank details NOT verified — payment will be blocked until verified.</div>
           )}
@@ -546,6 +642,104 @@ export function VendorBillsView() {
         </DialogContent>
       </Dialog>
     </Card>
+  );
+}
+
+/* ═══════════════════ Bill Payments (advance / part) ═══════════════════ */
+function BillPaymentsDialog({ bill, onClose }) {
+  const [data, setData] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    amount: 0, payment_date: new Date().toISOString().slice(0, 10),
+    mode: "Bank", utr: "", remarks: "",
+  });
+
+  const load = () => api.get(`/payables/vendor-bills/${bill.id}/payments`)
+    .then(r => { setData(r.data); setForm(f => ({ ...f, amount: r.data.outstanding })); })
+    .catch(e => toast.error(e.response?.data?.detail || "Failed to load payment history"));
+
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [bill.id]);
+
+  const pay = async () => {
+    if (Number(form.amount) <= 0) { toast.error("Enter the amount being paid"); return; }
+    setSaving(true);
+    try {
+      const { data: res } = await api.post(`/payables/vendor-bills/${bill.id}/payments`, { ...form, amount: Number(form.amount) });
+      toast.success(`${res.payment.payment_no} recorded — ${PAY_STATUS_LABELS[res.bill.payment_status]}, outstanding ${fmt(res.bill.outstanding)}`);
+      load();
+      onClose(true);
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+    finally { setSaving(false); }
+  };
+
+  const outstanding = data?.outstanding ?? 0;
+  return (
+    <Dialog open onOpenChange={() => onClose(false)}>
+      <DialogContent className="max-w-3xl" data-testid="pay-vb-payments-dialog">
+        <DialogHeader><DialogTitle>Payments — {bill.bill_no} · {bill.invoice_no}</DialogTitle></DialogHeader>
+        <div className="grid grid-cols-4 gap-2 text-sm border rounded-md p-3 bg-slate-50">
+          <div><div className="text-[10px] uppercase text-slate-500">Invoice Total (Net)</div><div className="font-semibold tabular-nums">{fmt(data?.invoice_total)}</div></div>
+          <div><div className="text-[10px] uppercase text-slate-500">Paid So Far</div><div className="font-semibold tabular-nums text-blue-700" data-testid="pay-vb-hist-paid">{fmt(data?.paid_amount)}</div></div>
+          <div><div className="text-[10px] uppercase text-slate-500">Outstanding</div><div className="font-bold tabular-nums text-rose-700" data-testid="pay-vb-hist-outstanding">{fmt(outstanding)}</div></div>
+          <div><div className="text-[10px] uppercase text-slate-500">Payment Status</div>
+            <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${PAY_STATUS_COLORS[data?.payment_status] || ""}`} data-testid="pay-vb-hist-status">{PAY_STATUS_LABELS[data?.payment_status] || "—"}</span>
+          </div>
+        </div>
+
+        <div className="border rounded-md overflow-hidden mt-3">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-xs uppercase text-slate-600"><tr>
+              <th className="text-left px-2 py-1">Payment #</th><th className="text-left px-2 py-1">Date</th>
+              <th className="text-left px-2 py-1">Type</th><th className="text-left px-2 py-1">Mode / UTR</th>
+              <th className="text-right px-2 py-1">Amount</th><th className="text-right px-2 py-1">Balance After</th>
+              <th className="text-left px-2 py-1">Remarks</th>
+            </tr></thead>
+            <tbody>
+              {(data?.payments || []).map(p => (
+                <tr key={p.id} className="border-t" data-testid={`pay-vb-hist-row-${p.payment_no}`}>
+                  <td className="px-2 py-1 font-mono text-xs">{p.payment_no}</td>
+                  <td className="px-2 py-1 font-mono text-xs">{p.payment_date}</td>
+                  <td className="px-2 py-1 text-xs capitalize">{p.payment_kind === "advance" ? "Advance" : p.payment_kind === "part" ? "Part" : "Payment"}</td>
+                  <td className="px-2 py-1 text-xs">{p.mode}{p.reference ? ` · ${p.reference}` : ""}</td>
+                  <td className="px-2 py-1 text-right tabular-nums">{fmt(p.amount)}</td>
+                  <td className="px-2 py-1 text-right tabular-nums text-slate-500">{p.outstanding_after !== undefined && p.outstanding_after !== null ? fmt(p.outstanding_after) : "—"}</td>
+                  <td className="px-2 py-1 text-xs text-slate-500">{p.remarks || "—"}</td>
+                </tr>
+              ))}
+              {data && (data.payments || []).length === 0 && <tr><td colSpan={7} className="text-center py-4 text-xs text-slate-400">No payments yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        {outstanding > 0.01 ? (
+          <div className="border rounded-md p-3 mt-3 bg-sky-50/60 border-sky-200">
+            <div className="text-[10px] uppercase tracking-wider font-semibold text-sky-900 mb-2">Record another payment against this invoice (no new bill)</div>
+            <div className="grid grid-cols-5 gap-2">
+              <Field label="Amount *"><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: Number(e.target.value) })} data-testid="pay-vb-hist-amount" /></Field>
+              <Field label="Date"><Input type="date" value={form.payment_date} onChange={e => setForm({ ...form, payment_date: e.target.value })} /></Field>
+              <Field label="Mode">
+                <select className="h-9 w-full rounded-sm border bg-background px-2" value={form.mode} onChange={e => setForm({ ...form, mode: e.target.value })}>
+                  {["Bank", "NEFT", "RTGS", "IMPS", "UPI", "Cheque", "Cash"].map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </Field>
+              <Field label="UTR / Cheque #"><Input value={form.utr} onChange={e => setForm({ ...form, utr: e.target.value })} /></Field>
+              <Field label="Remarks"><Input value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} /></Field>
+            </div>
+            <div className="text-[11px] text-slate-600 mt-2">
+              Balance after this payment: <b className="tabular-nums">{fmt(Math.max(outstanding - Number(form.amount || 0), 0))}</b>
+              {" · "}status becomes <b>{PAY_STATUS_LABELS[outstanding - Number(form.amount || 0) < 0.01 ? "fully_paid" : "partially_paid"]}</b>
+            </div>
+          </div>
+        ) : data && (
+          <div className="text-xs text-green-700 mt-3 flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" />This invoice is fully paid.</div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onClose(false)}>Close</Button>
+          {outstanding > 0.01 && <Button onClick={pay} disabled={saving} data-testid="pay-vb-hist-save">{saving ? "Saving…" : "Record Payment"}</Button>}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -59,6 +59,18 @@ class VendorBillLineIn(BaseModel):
     gst_pct: Optional[float] = None  # item-wise GST inherited from PO
 
 
+class BillPaymentIn(BaseModel):
+    """Advance / part payment recorded against ONE vendor bill (no new bill is created)."""
+    amount: float
+    payment_date: Optional[str] = None
+    mode: str = "Bank"
+    bank_account: Optional[str] = None
+    utr: Optional[str] = None
+    cheque_no: Optional[str] = None
+    remarks: Optional[str] = None
+    attachments: Optional[List[Dict[str, Any]]] = None
+
+
 class VendorBillIn(BaseModel):
     vendor_id: Optional[str] = None
     vendor_name: str
@@ -94,6 +106,7 @@ class VendorBillIn(BaseModel):
     force_no_po: bool = False                  # if true, allow bills without PO (needs admin)
     force_no_grn: bool = False                 # if true, allow bills without GRN (services)
     po_terms: Optional[List[Dict[str, Any]]] = None  # snapshot of PO T&C at bill entry
+    advance_payment: Optional[BillPaymentIn] = None  # advance paid at bill entry (against GRN/invoice)
 
 
 class VendorPaymentIn(BaseModel):
@@ -137,6 +150,112 @@ def _compute_bill_totals(payload: VendorBillIn) -> Dict[str, float]:
     net_payable = round(gross - tds - payload.advance_adjusted - payload.retention_amount, 2)
     return {"taxable": taxable, "gst": gst, "cgst": cgst, "sgst": sgst, "igst": igst,
             "gross": gross, "tds": tds, "net_payable": net_payable}
+
+
+APPROVED_LIKE = ("approved", "partially_paid", "paid")
+
+
+def _payment_status(paid: float, net: float, bill_status: str, n_payments: int = 1) -> str:
+    """Advance Paid → the first payment made before the bill cleared its approval chain.
+    Partially Paid → part settled (approved bill, or a further instalment).
+    Fully Paid → nothing outstanding."""
+    if paid <= 0.01:
+        return "unpaid"
+    if round(net - paid, 2) <= 0.01:
+        return "fully_paid"
+    if bill_status in APPROVED_LIKE or n_payments > 1:
+        return "partially_paid"
+    return "advance_paid"
+
+
+async def _record_bill_payment(bill: Dict[str, Any], p: BillPaymentIn, user: dict,
+                               request: Optional[Request] = None) -> Dict[str, Any]:
+    """Record one advance / part payment against a single bill and re-derive its
+    paid, outstanding and payment status. Never creates another bill."""
+    amount = round(float(p.amount or 0), 2)
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Payment amount must be greater than zero")
+    if bill.get("status") in ("cancelled", "rejected"):
+        raise HTTPException(status_code=400,
+                            detail=f"Bill {bill['bill_no']} is {bill['status']} — payment cannot be recorded")
+    if not bill.get("bank_verified"):
+        raise HTTPException(status_code=400,
+                            detail=f"Vendor bank details NOT verified for bill {bill['bill_no']} — cannot pay")
+    net = round(float((bill.get("totals") or {}).get("net_payable") or bill.get("amount") or 0), 2)
+    paid_before = round(float(bill.get("paid_amount") or 0), 2)
+    outstanding_before = round(net - paid_before, 2)
+    if amount > outstanding_before + 0.01:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Payment ₹{amount:,.2f} exceeds the outstanding balance ₹{outstanding_before:,.2f} "
+                   f"on {bill['bill_no']} — enter ₹{outstanding_before:,.2f} or less")
+
+    paid_after = round(paid_before + amount, 2)
+    outstanding_after = round(net - paid_after, 2)
+    status_before = bill.get("status") or "draft"
+    prior_payments = await db.vendor_payments.count_documents({"bill_ids": bill["id"]})
+    pay_status = _payment_status(paid_after, net, status_before, prior_payments + 1)
+
+    pay = {
+        "id": new_id(),
+        "payment_no": await next_sequence("VPAY"),
+        "payment_date": p.payment_date or now_iso()[:10],
+        "vendor_id": bill.get("vendor_id"), "vendor_name": bill.get("vendor_name"),
+        "bill_ids": [bill["id"]], "bill_no": bill.get("bill_no"),
+        "invoice_no": bill.get("invoice_no"), "grn_number": bill.get("grn_number"),
+        "po_number": bill.get("po_number"),
+        "mode": p.mode, "bank_account": p.bank_account,
+        "utr": p.utr, "cheque_no": p.cheque_no, "reference": p.utr or p.cheque_no,
+        "amount": amount, "retention_held": 0.0, "other_deduction": 0.0,
+        "total_settled": amount,
+        "payment_kind": "advance" if (status_before not in APPROVED_LIKE and prior_payments == 0) else "part",
+        "bill_status_at_payment": status_before,
+        "invoice_total": net,
+        "outstanding_after": outstanding_after,
+        "project_id": bill.get("project_id"), "project_code": bill.get("project_code"),
+        "attachments": p.attachments or [],
+        "remarks": p.remarks, "excess_reason": None,
+        "status": "released",
+        "created_at": now_iso(),
+        "created_by": user.get("name") or user.get("email"),
+    }
+    await db.vendor_payments.insert_one(pay)
+    pay.pop("_id", None)
+
+    bill_set: Dict[str, Any] = {
+        "paid_amount": paid_after,
+        "outstanding": max(outstanding_after, 0.0),
+        "payment_status": pay_status,
+        "last_payment_at": pay["payment_date"],
+    }
+    # Only an approved bill moves its workflow status on payment — an advance paid
+    # on a draft/under-approval bill must not short-circuit the approval chain.
+    if status_before in APPROVED_LIKE:
+        bill_set["status"] = "paid" if outstanding_after < 0.01 else "partially_paid"
+    await db.vendor_bills.update_one({"id": bill["id"]}, {"$set": bill_set})
+
+    try:
+        je = await post_vendor_payment({
+            "id": pay["id"], "payment_date": pay["payment_date"],
+            "vendor_id": pay["vendor_id"], "vendor_name": pay["vendor_name"],
+            "amount": amount, "retention_held": 0.0, "other_deduction": 0.0,
+            "mode": p.mode, "reference": pay["reference"], "project_id": pay["project_id"],
+        }, None, user)
+        if je:
+            await db.vendor_payments.update_one({"id": pay["id"]}, {"$set": {
+                "je_id": je["id"], "je_voucher_number": je.get("voucher_number")}})
+            pay["je_voucher_number"] = je.get("voucher_number")
+    except Exception as e:  # pragma: no cover
+        import logging
+        logging.getLogger("erp").warning(f"[payables] bill payment JE skipped: {e}")
+
+    await audit(user=user, action="vendor_bill_payment", resource="vendor_bills",
+                record_id=bill["id"],
+                after={"payment_no": pay["payment_no"], "amount": amount, "kind": pay["payment_kind"],
+                       "paid_amount": paid_after, "outstanding": outstanding_after,
+                       "payment_status": pay_status},
+                ip=request.client.host if request and request.client else "")
+    return {**pay, "paid_amount": paid_after, "payment_status": pay_status}
 
 
 async def _validate_bill_dependencies(payload: VendorBillIn) -> Dict[str, Any]:
@@ -331,6 +450,7 @@ async def create_vendor_bill(payload: VendorBillIn, request: Request,
         "tds_amount": totals["tds"],
         "paid_amount": 0.0,
         "outstanding": totals["net_payable"],
+        "payment_status": "unpaid",
         "attachments": payload.attachments or [],
         "notes": payload.notes,
         "match_flags": deps,
@@ -353,7 +473,45 @@ async def create_vendor_bill(payload: VendorBillIn, request: Request,
                 record_id=doc["id"], after={"bill_no": bill_no, "vendor": payload.vendor_name,
                                             "invoice_no": payload.invoice_no, "gross": totals["gross"]},
                 ip=request.client.host if request.client else "")
+    if payload.advance_payment and float(payload.advance_payment.amount or 0) > 0:
+        pay = await _record_bill_payment(doc, payload.advance_payment, user, request)
+        doc.update({"paid_amount": pay["paid_amount"], "payment_status": pay["payment_status"],
+                    "outstanding": max(pay["outstanding_after"], 0.0),
+                    "advance_payment_no": pay["payment_no"]})
     return doc
+
+
+@router.post("/vendor-bills/{bill_id}/payments")
+async def record_bill_payment(bill_id: str, payload: BillPaymentIn, request: Request,
+                              user: dict = Depends(require_permission("accounting", "write"))):
+    """Record an advance / part payment against an existing bill — the same invoice is
+    settled over multiple payments instead of raising another bill."""
+    b = await db.vendor_bills.find_one({"id": bill_id}, {"_id": 0})
+    if not b:
+        raise HTTPException(status_code=404, detail="Bill not found")
+    pay = await _record_bill_payment(b, payload, user, request)
+    bill = await db.vendor_bills.find_one({"id": bill_id}, {"_id": 0})
+    return {"payment": pay, "bill": bill}
+
+
+@router.get("/vendor-bills/{bill_id}/payments")
+async def bill_payment_history(bill_id: str,
+                               user: dict = Depends(require_permission("accounting", "read"))):
+    b = await db.vendor_bills.find_one({"id": bill_id}, {"_id": 0})
+    if not b:
+        raise HTTPException(status_code=404, detail="Bill not found")
+    rows = await db.vendor_payments.find({"bill_ids": bill_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
+    net = round(float((b.get("totals") or {}).get("net_payable") or b.get("amount") or 0), 2)
+    paid = round(sum(float(r.get("amount") or 0) + float(r.get("retention_held") or 0)
+                     + float(r.get("other_deduction") or 0) for r in rows), 2)
+    return {
+        "bill_no": b.get("bill_no"), "invoice_no": b.get("invoice_no"),
+        "vendor_name": b.get("vendor_name"), "grn_number": b.get("grn_number"),
+        "invoice_total": net, "paid_amount": paid, "outstanding": round(net - paid, 2),
+        "payment_status": b.get("payment_status") or _payment_status(paid, net, b.get("status") or "draft", len(rows)),
+        "bill_status": b.get("status"),
+        "payments": rows,
+    }
 
 
 @router.get("/vendor-bills")
@@ -436,6 +594,12 @@ async def update_vendor_bill(bill_id: str, payload: VendorBillIn, request: Reque
         raise HTTPException(status_code=400,
                             detail=f"Duplicate: invoice {payload.invoice_no} for {payload.vendor_name} already exists ({dup['bill_no']})")
     totals = _compute_bill_totals(payload)
+    paid_so_far = round(float(b.get("paid_amount") or 0), 2)
+    if paid_so_far > totals["net_payable"] + 0.01:
+        raise HTTPException(
+            status_code=400,
+            detail=f"₹{paid_so_far:,.2f} has already been paid against {b['bill_no']} — the revised "
+                   f"net payable ₹{totals['net_payable']:,.2f} cannot be lower than that")
     due_date = (datetime.fromisoformat(payload.invoice_date) + timedelta(days=payload.due_days)).date().isoformat()
     upd = {
         "vendor_id": payload.vendor_id, "vendor_name": payload.vendor_name,
@@ -456,7 +620,9 @@ async def update_vendor_bill(bill_id: str, payload: VendorBillIn, request: Reque
         "retention_amount": payload.retention_amount,
         "payment_priority": payload.payment_priority,
         "totals": totals, "amount": totals["gross"], "tax_amount": totals["gst"],
-        "tds_amount": totals["tds"], "outstanding": totals["net_payable"],
+        "tds_amount": totals["tds"],
+        "outstanding": max(round(totals["net_payable"] - float(b.get("paid_amount") or 0), 2), 0.0),
+        "payment_status": _payment_status(float(b.get("paid_amount") or 0), totals["net_payable"], "draft"),
         "notes": payload.notes,
         "status": "draft", "verify_level": 0, "approve_level": 0,
         "verified_l1_by": None, "verified_l1_at": None,
@@ -809,11 +975,15 @@ async def create_vendor_payment(payload: VendorPaymentIn, request: Request,
         if apply_amt <= 0:
             continue
         new_outs = round(outs - apply_amt, 2)
+        net_b = round(float((b.get("totals") or {}).get("net_payable") or b.get("amount") or 0), 2)
         await db.vendor_bills.update_one({"id": b["id"]}, {"$inc": {
             "paid_amount": apply_amt,
         }, "$set": {
             "outstanding": new_outs,
             "status": "paid" if new_outs < 0.01 else "partially_paid",
+            "payment_status": _payment_status(round(float(b.get("paid_amount") or 0) + apply_amt, 2),
+                                              net_b, b.get("status") or "approved"),
+            "last_payment_at": payload.payment_date,
         }})
         remaining = round(remaining - apply_amt, 2)
         if remaining < 0.01:
