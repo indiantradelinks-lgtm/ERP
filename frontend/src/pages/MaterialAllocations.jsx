@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Search, Boxes, Trash2, Undo2, ArrowUpRight, Layers } from "lucide-react";
+import { Plus, Search, Boxes, Trash2, Undo2, ArrowUpRight, Layers, FileSpreadsheet, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -91,8 +91,22 @@ export default function MaterialAllocations() {
     catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); }
   };
 
-  const filtered = useMemo(() => {
-    if (!query.trim()) return rows;
+  const download = async (fmt) => {
+    try {
+      const params = {};
+      if (statusFilter) params.status = statusFilter;
+      if (query.trim()) params.q = query.trim();
+      const { data } = await api.get(`/allocations/export?fmt=${fmt}`, { params, responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([data]));
+      const a = document.createElement("a");
+      a.href = url; a.download = `material-allocations-projectwise.${fmt}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success(`${fmt.toUpperCase()} downloaded — ${filtered.length} allocation(s)${statusFilter || query.trim() ? " (filtered)" : ""}`);
+    } catch (e) { toast.error(e.response?.data?.detail || "Export failed"); }
+  };
+
+  const filtered = useMemo(() => {    if (!query.trim()) return rows;
     const q = query.toLowerCase();
     return rows.filter((r) =>
       [r.allocation_no, r.item_name, r.kind, r.project_code, r.site_code, r.employee_name, r.department, r.status]
@@ -139,6 +153,12 @@ export default function MaterialAllocations() {
             <option value="written_off">Written off</option>
           </select>
           <div className="ml-auto flex gap-2">
+            <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("xlsx")} data-testid="alloc-export-xlsx">
+              <FileSpreadsheet className="h-4 w-4 mr-1" /> Excel
+            </Button>
+            <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("pdf")} data-testid="alloc-export-pdf">
+              <FileDown className="h-4 w-4 mr-1" /> PDF
+            </Button>
             <Button variant="outline" className="h-9 rounded-sm" onClick={() => setBulkOpen(true)} data-testid="alloc-bulk-issue">
               <Layers className="h-4 w-4 mr-1" /> Bulk Issue
             </Button>

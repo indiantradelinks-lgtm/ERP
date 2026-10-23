@@ -92,6 +92,178 @@ async def list_allocations(status: Optional[str] = None,
     return rows
 
 
+@router.get("/allocations/export")
+async def export_allocations(fmt: str = "xlsx", status: Optional[str] = None,
+                             project_id: Optional[str] = None, employee_id: Optional[str] = None,
+                             q: Optional[str] = None, kind: Optional[str] = None,
+                             user: dict = Depends(require_permission("material_allocations", "read"))):
+    """Project-wise material / asset allocation report (xlsx | csv | pdf).
+    Honours exactly the filters the list screen is showing."""
+    if fmt not in ("xlsx", "csv", "pdf"):
+        raise HTTPException(status_code=400, detail="fmt must be xlsx, csv or pdf")
+    rows = await list_allocations(status=status, project_id=project_id, employee_id=employee_id, user=user)
+    if kind:
+        rows = [r for r in rows if (r.get("kind") or "") == kind]
+    if q:
+        needle = q.strip().lower()
+        rows = [r for r in rows if any(needle in str(r.get(f) or "").lower() for f in
+                                       ("allocation_no", "item_name", "kind", "project_code", "site_code",
+                                        "employee_name", "department", "status"))]
+
+    names: Dict[str, str] = {}
+    async for p in db.projects.find({}, {"_id": 0, "id": 1, "code": 1, "name": 1}):
+        if p.get("id"):
+            names[p["id"]] = p.get("name") or p.get("code") or ""
+        if p.get("code"):
+            names.setdefault(f"code::{p['code']}", p.get("name") or p["code"])
+
+    groups: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        if (r.get("allocated_to_type") or "project") == "project":
+            code = r.get("project_code") or ""
+            name = names.get(r.get("project_id") or "") or names.get(f"code::{code}") or code or "Unassigned Project"
+        else:
+            tgt = r.get("employee_name") or r.get("department") or r.get("site_code") or "—"
+            name = f"Non-project — {(r.get('allocated_to_type') or '').title()}: {tgt}"
+            code = ""
+        g = groups.setdefault(name, {"project_name": name, "project_code": code, "items": {},
+                                     "issued": 0.0, "returned": 0.0, "net": 0.0, "allocations": 0})
+        if code and not g["project_code"]:
+            g["project_code"] = code
+        issued = float(r.get("quantity") or 0)
+        returned = float(r.get("returned_qty") or 0)
+        key = f"{r.get('item_name')}|{r.get('kind')}|{r.get('unit')}"
+        it = g["items"].setdefault(key, {"item_name": r.get("item_name") or "—", "kind": r.get("kind") or "material",
+                                         "unit": r.get("unit") or "Nos", "issued": 0.0, "returned": 0.0,
+                                         "net": 0.0, "allocations": 0})
+        for tgt_ in (it, g):
+            tgt_["issued"] = round(tgt_["issued"] + issued, 3)
+            tgt_["returned"] = round(tgt_["returned"] + returned, 3)
+            tgt_["net"] = round(tgt_["net"] + issued - returned, 3)
+            tgt_["allocations"] += 1
+
+    ordered = sorted(groups.values(), key=lambda g: (-g["net"], g["project_name"]))
+    for g in ordered:
+        g["items"] = sorted(g["items"].values(), key=lambda i: (-i["net"], i["item_name"]))
+    summary = {
+        "projects": len(ordered), "allocations": len(rows),
+        "issued": round(sum(g["issued"] for g in ordered), 3),
+        "returned": round(sum(g["returned"] for g in ordered), 3),
+        "net": round(sum(g["net"] for g in ordered), 3),
+    }
+    applied = [(k, v) for k, v in [("Status", status), ("Kind", kind), ("Search", q),
+                                   ("Project", project_id), ("Employee", employee_id)] if v]
+
+    if fmt == "pdf":
+        from pdf_generator import render_allocation_report_pdf
+        from fastapi.responses import Response
+        return Response(content=render_allocation_report_pdf(ordered, summary, applied),
+                        media_type="application/pdf",
+                        headers={"Content-Disposition": 'inline; filename="material-allocations-projectwise.pdf"'})
+
+    headers = ["Project Name", "Project Code", "Material / Asset Name", "Kind", "Unit",
+               "Quantity Issued", "Quantity Returned", "Net Issued", "Allocations"]
+
+    if fmt == "csv":
+        import csv as _csv
+        from io import StringIO
+        from fastapi.responses import StreamingResponse
+        buf = StringIO()
+        w = _csv.writer(buf)
+        w.writerow(["Material / Asset Allocations — Project-wise Report"])
+        w.writerow(["Filters applied"] + [f"{k}: {v}" for k, v in applied])
+        w.writerow([])
+        w.writerow(headers)
+        for g in ordered:
+            for it in g["items"]:
+                w.writerow([g["project_name"], g["project_code"], it["item_name"], (it["kind"] or "").title(),
+                            it["unit"], it["issued"], it["returned"], it["net"], it["allocations"]])
+            w.writerow([f"Total — {g['project_name']}", "", "", "", "", g["issued"], g["returned"], g["net"],
+                        g["allocations"]])
+        w.writerow(["Grand Total", "", "", "", "", summary["issued"], summary["returned"], summary["net"],
+                    summary["allocations"]])
+        buf.seek(0)
+        return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv",
+                                 headers={"Content-Disposition":
+                                          'attachment; filename="material-allocations-projectwise.csv"'})
+
+    from io import BytesIO
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    from fastapi.responses import Response
+    wb = Workbook()
+
+    def _head(ws, hdrs):
+        ws.append(hdrs)
+        for c in ws[1]:
+            c.font = Font(bold=True, color="FFFFFF")
+            c.fill = PatternFill("solid", fgColor="0F172A")
+        ws.freeze_panes = "A2"
+
+    ws = wb.active
+    ws.title = "Project-wise Allocations"
+    _head(ws, headers)
+    for g in ordered:
+        for it in g["items"]:
+            ws.append([g["project_name"], g["project_code"], it["item_name"], (it["kind"] or "").title(),
+                       it["unit"], it["issued"], it["returned"], it["net"], it["allocations"]])
+        ws.append([f"Total — {g['project_name']}", "", "", "", "", g["issued"], g["returned"], g["net"],
+                   g["allocations"]])
+        for c in ws[ws.max_row]:
+            c.font = Font(bold=True)
+    ws.append(["Grand Total", "", "", "", "", summary["issued"], summary["returned"], summary["net"],
+               summary["allocations"]])
+    for c in ws[ws.max_row]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="0F172A")
+    for i, wd in enumerate([34, 16, 34, 14, 10, 16, 18, 14, 12], start=1):
+        ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = wd
+
+    s2 = wb.create_sheet("Project Summary")
+    _head(s2, ["Project Name", "Project Code", "Distinct Items", "Total Quantity Issued",
+               "Total Returned", "Net Issued", "Allocations"])
+    for g in ordered:
+        s2.append([g["project_name"], g["project_code"], len(g["items"]), g["issued"], g["returned"],
+                   g["net"], g["allocations"]])
+    s2.append(["Grand Total", "", "", summary["issued"], summary["returned"], summary["net"],
+               summary["allocations"]])
+    for c in s2[s2.max_row]:
+        c.font = Font(bold=True)
+    for i, wd in enumerate([34, 16, 14, 20, 16, 14, 12], start=1):
+        s2.column_dimensions[s2.cell(row=1, column=i).column_letter].width = wd
+
+    s3 = wb.create_sheet("Allocation Detail")
+    _head(s3, ["ALC #", "Issue Date", "Project Name", "Project Code", "Allocated To", "Material / Asset Name",
+               "Kind", "Unit", "Quantity Issued", "Quantity Returned", "Status", "Return Due", "Remarks"])
+    for r in rows:
+        code = r.get("project_code") or ""
+        pname = (names.get(r.get("project_id") or "") or names.get(f"code::{code}") or code
+                 if (r.get("allocated_to_type") or "project") == "project" else "")
+        s3.append([r.get("allocation_no"), (r.get("issue_date") or "")[:10], pname, code,
+                   r.get("employee_name") or r.get("department") or r.get("site_code") or
+                   (r.get("allocated_to_type") or "").title(),
+                   r.get("item_name"), (r.get("kind") or "").title(), r.get("unit") or "Nos",
+                   float(r.get("quantity") or 0), float(r.get("returned_qty") or 0),
+                   (r.get("status") or "").replace("_", " ").title(),
+                   (r.get("expected_return_date") or "")[:10], r.get("remarks") or ""])
+    for i, wd in enumerate([18, 12, 30, 14, 22, 30, 12, 8, 16, 18, 18, 12, 30], start=1):
+        s3.column_dimensions[s3.cell(row=1, column=i).column_letter].width = wd
+
+    s4 = wb.create_sheet("Filters")
+    s4.append(["Report", "Material / Asset Allocations — Project-wise"])
+    for k, v in applied or [("Filters", "None — all allocations")]:
+        s4.append([k, str(v)])
+    s4.column_dimensions["A"].width = 22
+    s4.column_dimensions["B"].width = 40
+
+    buf = BytesIO()
+    wb.save(buf)
+    return Response(content=buf.getvalue(),
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition":
+                             'attachment; filename="material-allocations-projectwise.xlsx"'})
+
+
 @router.post("/allocations")
 async def create_allocation(payload: AllocateIn, request: Request,
                             user: dict = Depends(require_permission("material_allocations", "write"))):

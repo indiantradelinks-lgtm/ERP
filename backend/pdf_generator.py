@@ -863,6 +863,69 @@ def render_approval_report_pdf(rows: List[Dict[str, Any]], summary: Dict[str, An
 
 
 # ──────────────────────── Pending Billing Report ────────────────────────
+def render_allocation_report_pdf(groups: List[Dict[str, Any]], summary: Dict[str, Any],
+                                 applied: Optional[List[Any]] = None) -> bytes:
+    """Project-wise material / asset allocation report."""
+    filter_block = ""
+    if applied:
+        chips = " &nbsp;·&nbsp; ".join(f"<b>{_esc(k)}:</b> {_esc(v)}" for k, v in applied)
+        filter_block = (f'<div class="note" style="margin:0 0 8px;padding:6px 8px;border:1px solid #cbd5e1;'
+                        f'background:#f8fafc;">Filters applied — {chips}</div>')
+
+    sections = ""
+    for g in groups:
+        item_rows = "".join(f"""<tr>
+<td>{_esc(it['item_name'])}</td>
+<td>{_esc((it.get('kind') or '').title())}</td>
+<td>{_esc(it.get('unit') or 'Nos')}</td>
+<td class="num">{it['issued']:g}</td>
+<td class="num">{it['returned']:g}</td>
+<td class="num" style="font-weight:700;">{it['net']:g}</td>
+<td class="num">{it['allocations']}</td>
+</tr>""" for it in g["items"])
+        sections += f"""
+<div class="section-title">{_esc(g['project_name'])}{f" <span style='font-weight:400;color:#64748b;'>({_esc(g['project_code'])})</span>" if g.get('project_code') else ''}</div>
+<table style="font-size:8pt;"><thead><tr>
+<th>Material / Asset</th><th>Kind</th><th>Unit</th><th class="num">Qty Issued</th>
+<th class="num">Returned</th><th class="num">Net Issued</th><th class="num">Allocations</th>
+</tr></thead><tbody>{item_rows}
+<tr style="background:#f1f5f9;font-weight:700;">
+<td colspan="3">Total — {_esc(g['project_name'])}</td>
+<td class="num">{g['issued']:g}</td><td class="num">{g['returned']:g}</td>
+<td class="num">{g['net']:g}</td><td class="num">{g['allocations']}</td></tr>
+</tbody></table>"""
+
+    sum_rows = "".join(f"""<tr>
+<td>{_esc(g['project_name'])}</td><td>{_esc(g.get('project_code') or '—')}</td>
+<td class="num">{len(g['items'])}</td><td class="num">{g['issued']:g}</td>
+<td class="num">{g['returned']:g}</td><td class="num" style="font-weight:700;">{g['net']:g}</td>
+</tr>""" for g in groups)
+
+    body = f"""
+<style>@page {{ size: A4; margin: 16mm 14mm 26mm 14mm; }}</style>
+{filter_block}
+<div class="kv" style="grid-template-columns: 1fr 1fr 1fr 1fr;">
+  <div><b>Projects / Groups</b><br/>{summary.get('projects', 0)}</div>
+  <div><b>Allocations</b><br/>{summary.get('allocations', 0)}</div>
+  <div><b>Total Qty Issued</b><br/><span style="font-weight:700;">{summary.get('issued', 0):g}</span></div>
+  <div><b>Net Outstanding</b><br/><span style="color:#b91c1c;font-weight:700;">{summary.get('net', 0):g}</span></div>
+</div>
+<div class="section-title">Project-wise Summary</div>
+<table style="font-size:8pt;"><thead><tr>
+<th>Project Name</th><th>Code</th><th class="num">Items</th>
+<th class="num">Qty Issued</th><th class="num">Returned</th><th class="num">Net Issued</th>
+</tr></thead><tbody>{sum_rows or '<tr><td colspan="6">No allocations.</td></tr>'}
+<tr style="background:#0f172a;color:#fff;font-weight:700;">
+<td colspan="3">Grand Total</td><td class="num">{summary.get('issued', 0):g}</td>
+<td class="num">{summary.get('returned', 0):g}</td><td class="num">{summary.get('net', 0):g}</td></tr>
+</tbody></table>
+{sections}
+<div class="note">Net Issued = quantity issued less quantity returned, i.e. the material currently lying with the project.
+Allocations = number of issue entries behind that quantity.</div>
+"""
+    return _render(_wrap("Material / Asset Allocations — Project-wise Report", body))
+
+
 def render_billing_pending_pdf(rows: List[Dict[str, Any]], summary: Dict[str, Any], month: str,
                                months: Optional[List[Dict[str, Any]]] = None,
                                applied: Optional[List[Any]] = None) -> bytes:
