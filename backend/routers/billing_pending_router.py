@@ -21,6 +21,8 @@ from scope import apply_project_scope
 router = APIRouter(tags=["billing-pending"])
 
 BILLING_TYPES = {"annual_rate_contract", "one_time_supply"}
+# `month=all` → report every pending month instead of one selected month.
+ALL_MONTHS = "all"
 ORDER_TYPES = {"supply", "service", "one_time_service", "arc", "shutdown", "outage"}
 SERVICE_TYPES_STD = ["scaffolding", "painting", "roof_sheeting", "roof_access", "rope_access", "insulation", "services", "shutdown"]
 
@@ -120,6 +122,8 @@ async def build_pending_report(month: str, user: Optional[dict] = None,
                 status = "requested"
             else:
                 status = "pending"
+        elif month == ALL_MONTHS:  # resolved from the full ledger further below
+            status = "pending"
         else:  # monthly cycle (AMC / ARC)
             valid_months = contract_months(p)
             if period_from and period_to:
@@ -194,11 +198,35 @@ async def build_pending_report(month: str, user: Optional[dict] = None,
             pending_months = [m["month"] for m in month_rows if m["status"] == "pending"]
             pending_amount = round(sum(m["amount"] for m in month_rows if m["status"] == "pending"), 2)
             billing_period = month
+            if month == ALL_MONTHS:
+                billing_period = (f"{month_rows[0]['month']} → {month_rows[-1]['month']}"
+                                  if month_rows else "All months")
+                status = ("pending" if pending_months
+                          else "requested" if any(m["status"] == "requested" for m in month_rows)
+                          else "billed" if any(m["status"] == "billed" for m in month_rows)
+                          else "out_of_period")
         else:
             pending_months = [] if status == "billed" else [month]
             pending_amount = 0.0 if status == "billed" else round(max(total_scope - billed_value, 0), 2)
             billing_period = " → ".join([x for x in [(p.get("start_date") or "")[:10],
-                                                     (p.get("extended_end_date") or p.get("end_date") or "")[:10]] if x]) or month
+                                                     (p.get("extended_end_date") or p.get("end_date") or "")[:10]] if x]) \
+                or ("All months" if month == ALL_MONTHS else month)
+        remarks: List[str] = []
+        if status == "pending" and pending_days is not None:
+            remarks.append(f"Pending {pending_days} day(s)")
+        if len(pending_months) > 1:
+            remarks.append(f"{len(pending_months)} month(s) pending: " + ", ".join(pending_months))
+        if recurring and pending_months and not pending_amount:
+            remarks.append("Monthly amount not set in Project Master")
+        if not recurring and status == "pending" and not total_scope:
+            remarks.append("Contract value not set")
+        if status == "out_of_period":
+            remarks.append("Outside project validity period")
+        if open_req:
+            remarks.append(f"Open bill request {open_req.get('request_no')} "
+                           f"({(open_req.get('bill_nature') or open_req.get('bill_type') or '—')})")
+        if payment_status == "partially_paid":
+            remarks.append(f"Part payment received ₹{paid:,.0f}, balance ₹{balance:,.0f}")
         rows.append({
             "project_id": p.get("id"), "project_code": p.get("code"), "project_name": p.get("name"),
             "client": p.get("client"), "project_status": p.get("status"),
@@ -226,6 +254,7 @@ async def build_pending_report(month: str, user: Optional[dict] = None,
             "paid_amount": paid, "balance_due": balance,
             "payment_status": payment_status,
             "pending_days": pending_days,
+            "remarks": " · ".join(remarks),
         })
 
     counts: Dict[str, int] = {}
@@ -379,37 +408,55 @@ async def pending_report_export(fmt: str = "xlsx", month: Optional[str] = None,
                                 category=category, project_code=project_code)
     summary = _summarise(rows)
     months = month_wise_summary(rows)
+    applied = [(lbl, str(val).replace("_", " ")) for lbl, val in [
+        ("Billing Month", "All Months" if month == ALL_MONTHS else month),
+        ("Search", q), ("Project", project_code), ("Project Category", category),
+        ("Project Manager", project_manager), ("Client", client),
+        ("Billing Type", billing_type), ("Billing Status", status),
+        ("Payment Status", payment_status),
+        ("Pending ≥ days", min_pending_days), ("WO/PO Type", order_type),
+        ("Service Type", service_type), ("Service Period From", period_from),
+        ("Service Period To", period_to)] if val not in (None, "")]
     if fmt == "pdf":
         from pdf_generator import render_billing_pending_pdf
-        data = render_billing_pending_pdf(rows, summary, month, months)
+        data = render_billing_pending_pdf(rows, summary, month, months, applied)
         return Response(content=data, media_type="application/pdf",
                         headers={"Content-Disposition": f'inline; filename="pending-billing-{month}.pdf"'})
-    headers = ["Project Code", "Project Name", "Project Category", "Billing Month / Period",
-               "Client", "Project Manager", "Pending Billing Status", "Pending Months",
-               "Pending Amount (₹)", "Expected Monthly (₹)", "WO/PO Type", "Service Type",
+    headers = ["Project Code", "Project Name", "Project Category", "Billing Mode",
+               "Billing Month / Period", "Client", "Project Manager", "Pending Billing Status",
+               "Pending Months", "Pending Months Count",
+               "Pending Amount (₹)", "Expected Monthly (₹)", "Contract / Scope Value (₹)",
+               "WO/PO Type", "Service Type",
                "Pending Days", "Last Bill No", "Last Bill Date", "Open Request",
                "Bills Generated", "Billed Basic (₹)", "GST (₹)", "Gross (₹)",
-               "Paid (₹)", "Balance Due (₹)", "Payment Status"]
+               "Paid (₹)", "Balance Due (₹)", "Payment Status", "Pending Remarks"]
 
     def line(r):
         return [r["project_code"], r["project_name"], r.get("category_label"),
+                "Month-wise" if r.get("billing_mode") == "monthly" else "Scope / timeline",
                 r.get("billing_period") or month, r["client"], r["project_manager"],
                 r["billing_status"].replace("_", " ").title(),
                 ", ".join(r.get("pending_months") or []) if r.get("billing_mode") == "monthly" else "",
+                r.get("pending_months_count") or 0,
                 r.get("pending_amount") or 0, r.get("expected_monthly") or 0,
+                r.get("scope_value") or 0,
                 (r.get("order_type") or "").replace("_", " ").title(),
                 (r.get("service_type") or "").replace("_", " ").title(),
                 r.get("pending_days"), r["last_bill_no"], (r["last_bill_at"] or "")[:10],
                 r["open_request_no"], r["bills_generated"],
                 r["billed_basic"], r["billed_gst"], r["billed_gross"],
                 r["paid_amount"], r["balance_due"],
-                (r["payment_status"] or "").replace("_", " ").title()]
+                (r["payment_status"] or "").replace("_", " ").title(),
+                r.get("remarks") or ""]
 
     if fmt == "csv":
         import csv
         from io import StringIO
         buf = StringIO()
         w = csv.writer(buf)
+        w.writerow(["Pending Billing Report", "All Months" if month == ALL_MONTHS else month])
+        w.writerow(["Filters applied"] + [f"{k}: {v}" for k, v in applied])
+        w.writerow([])
         w.writerow(headers)
         for r in rows:
             w.writerow(["" if v is None else v for v in line(r)])
@@ -425,14 +472,15 @@ async def pending_report_export(fmt: str = "xlsx", month: Optional[str] = None,
     from io import BytesIO
     wb = Workbook()
     ws = wb.active
-    ws.title = f"Pending Billing {month}"
+    ws.title = "Pending Billing" if month == ALL_MONTHS else f"Pending Billing {month}"
     ws.append(headers)
     for c in ws[1]:
         c.font = Font(bold=True, color="FFFFFF")
         c.fill = PatternFill("solid", fgColor="0F172A")
     for r in rows:
         ws.append(line(r))
-    for i, w in enumerate([15, 28, 16, 22, 20, 18, 18, 26, 16, 16, 14, 14, 12, 16, 12, 14, 8, 14, 12, 14, 14, 14, 14], start=1):
+    for i, w in enumerate([15, 28, 16, 16, 24, 22, 18, 18, 30, 10, 16, 16, 18, 14, 14,
+                           12, 16, 12, 16, 8, 14, 12, 14, 14, 14, 14, 52], start=1):
         ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
     ms = wb.create_sheet("Month-wise Pending")
     ms.append(["Billing Month", "Projects Pending", "Pending Amount (₹)"])
@@ -444,9 +492,15 @@ async def pending_report_export(fmt: str = "xlsx", month: Optional[str] = None,
     for col, width in zip("ABC", (18, 18, 20)):
         ms.column_dimensions[col].width = width
     s = wb.create_sheet("Summary")
+    s.append(["Billing Month", "All Months" if month == ALL_MONTHS else month])
     for k, v in summary.items():
         s.append([k.replace("_", " ").title(), v])
+    s.append([])
+    s.append(["Filters Applied"])
+    for k, v in applied:
+        s.append([k, v])
     s.column_dimensions["A"].width = 24
+    s.column_dimensions["B"].width = 32
     buf = BytesIO()
     wb.save(buf)
     return Response(content=buf.getvalue(),

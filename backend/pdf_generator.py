@@ -860,9 +860,11 @@ def render_approval_report_pdf(rows: List[Dict[str, Any]], summary: Dict[str, An
 
 # ──────────────────────── Pending Billing Report ────────────────────────
 def render_billing_pending_pdf(rows: List[Dict[str, Any]], summary: Dict[str, Any], month: str,
-                               months: Optional[List[Dict[str, Any]]] = None) -> bytes:
+                               months: Optional[List[Dict[str, Any]]] = None,
+                               applied: Optional[List[Any]] = None) -> bytes:
     STATUS_COLORS = {"pending": "#b91c1c", "requested": "#b45309", "partially_billed": "#1d4ed8", "billed": "#166534"}
     PAY_LABEL = {"paid": "Paid", "partially_paid": "Partially Paid", "unpaid": "Unpaid", "not_billed": "Not Billed"}
+    month_label = "All Months" if month == "all" else month
     trs = ""
     for r in rows:
         col = STATUS_COLORS.get(r.get("billing_status"), "#0f172a")
@@ -870,7 +872,7 @@ def render_billing_pending_pdf(rows: List[Dict[str, Any]], summary: Dict[str, An
         trs += f"""<tr>
 <td>{_esc(r.get('project_code'))}<br/><span style="color:#64748b;font-size:7pt;">{_esc(r.get('project_name') or '')}</span></td>
 <td>{_esc(r.get('category_label') or '—')}<br/><span style="color:#64748b;font-size:7pt;">{'Monthly cycle' if r.get('billing_mode') == 'monthly' else 'Scope / timeline'}</span></td>
-<td>{_esc(r.get('billing_period') or month)}<br/><span style="color:#64748b;font-size:7pt;">{_esc(pend_months)}</span></td>
+<td>{_esc(r.get('billing_period') or month_label)}<br/><span style="color:#64748b;font-size:7pt;">{_esc(pend_months)}</span></td>
 <td>{_esc(r.get('client') or '—')}<br/><span style="color:#64748b;font-size:7pt;">PM: {_esc(r.get('project_manager') or '—')}</span></td>
 <td style="color:{col};font-weight:700;">{_esc((r.get('billing_status') or '').replace('_', ' ').title())}<br/><span style="color:#64748b;font-size:7pt;font-weight:400;">{str(r.get('pending_days')) + ' days' if r.get('pending_days') is not None else ''}</span></td>
 <td class="num" style="color:{col};font-weight:700;">{_money(r.get('pending_amount')) if r.get('pending_amount') else '—'}</td>
@@ -878,6 +880,7 @@ def render_billing_pending_pdf(rows: List[Dict[str, Any]], summary: Dict[str, An
 <td class="num">{_money(r.get('billed_basic')) if r.get('billed_basic') else '—'}</td>
 <td class="num">{_money(r.get('balance_due')) if r.get('balance_due') else '—'}</td>
 <td>{_esc(PAY_LABEL.get(r.get('payment_status'), '—'))}</td>
+<td style="font-size:7pt;color:#475569;">{_esc(r.get('remarks') or '—')}</td>
 </tr>"""
     month_block = ""
     if months:
@@ -890,7 +893,14 @@ def render_billing_pending_pdf(rows: List[Dict[str, Any]], summary: Dict[str, An
 <table style="font-size:8pt;width:60%;"><thead><tr>
 <th>Billing Month</th><th class="num">Projects Pending</th><th class="num">Pending Amount (₹)</th>
 </tr></thead><tbody>{mtrs}</tbody></table>"""
+    filter_block = ""
+    if applied:
+        chips = " &nbsp;·&nbsp; ".join(f"<b>{_esc(k)}:</b> {_esc(v)}" for k, v in applied)
+        filter_block = (f'<div class="note" style="margin:0 0 8px;padding:6px 8px;border:1px solid #cbd5e1;'
+                        f'background:#f8fafc;">Filters applied — {chips}</div>')
     body = f"""
+<style>@page {{ size: A4 landscape; margin: 14mm 10mm 24mm 10mm; }}</style>
+{filter_block}
 <div class="kv" style="grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr;">
   <div><b>Projects</b><br/>{summary.get('total')}</div>
   <div><b>Pending</b><br/><span style="color:#b91c1c;font-weight:700;">{summary.get('pending', 0)}</span></div>
@@ -903,12 +913,12 @@ def render_billing_pending_pdf(rows: List[Dict[str, Any]], summary: Dict[str, An
 <div class="section-title">Project-wise Pending Billing</div>
 <table style="font-size:7.5pt;"><thead><tr>
 <th>Project</th><th>Category</th><th>Billing Month / Period</th><th>Client / PM</th><th>Status</th>
-<th class="num">Pending (₹)</th><th>Last Bill</th><th class="num">Basic (₹)</th><th class="num">Balance Due (₹)</th><th>Payment</th>
-</tr></thead><tbody>{trs or '<tr><td colspan="10">No projects.</td></tr>'}</tbody></table>
+<th class="num">Pending (₹)</th><th>Last Bill</th><th class="num">Basic (₹)</th><th class="num">Balance Due (₹)</th><th>Payment</th><th>Pending Remarks</th>
+</tr></thead><tbody>{trs or '<tr><td colspan="11">No projects.</td></tr>'}</tbody></table>
 <div class="note">AMC / ARC projects require one bill every month of the project validity. Short-Term, Long-Term,
 Shutdown and One-Time projects are billed against the project scope / timeline.</div>
 """
-    return _render(_wrap(f"Pending Billing Report — {month}", body))
+    return _render(_wrap(f"Pending Billing Report — {month_label}", body))
 
 
 # ───────────────────────────── SERVICE PO (Service Workflow) ─────────────────────────────

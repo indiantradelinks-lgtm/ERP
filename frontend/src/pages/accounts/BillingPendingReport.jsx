@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { fmtD } from "@/lib/datetime";
 
 const inr = (v) => `₹ ${Number(v || 0).toLocaleString("en-IN")}`;
+const ALL = "all";
 const STATUS_META = {
   pending: { label: "Pending", cls: "border-red-300 text-red-800 bg-red-50" },
   requested: { label: "In Flow", cls: "border-amber-300 text-amber-800 bg-amber-50" },
@@ -53,9 +54,10 @@ export default function BillingPendingReport() {
       const { data: blob } = await api.get(`/billing/pending-report/export?fmt=${fmt}&${qs(true)}`, { responseType: "blob" });
       const url = window.URL.createObjectURL(new Blob([blob]));
       const a = document.createElement("a");
-      a.href = url; a.download = `pending-billing-${month}.${fmt}`;
+      a.href = url; a.download = `pending-billing-${month === ALL ? "all-months" : month}.${fmt}`;
       document.body.appendChild(a); a.click(); a.remove();
       window.URL.revokeObjectURL(url);
+      toast.success(`${fmt.toUpperCase()} downloaded — ${rows.length} project(s)${activeFilters.length || statusFilter ? " (filtered)" : ""}`);
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
@@ -89,7 +91,15 @@ export default function BillingPendingReport() {
           </p>
         </div>
         <div className="flex gap-2 items-center">
-          <Input type="month" className="h-9 w-40" value={month} onChange={(e) => setMonth(e.target.value)} data-testid="billing-month" />
+          <div className="flex items-center gap-1">
+            <Button variant={month === ALL ? "default" : "outline"} className="h-9 rounded-sm text-xs"
+              onClick={() => setMonth(month === ALL ? new Date().toISOString().slice(0, 7) : ALL)}
+              data-testid="billing-all-months">
+              {month === ALL ? "All Months" : "View All Months"}
+            </Button>
+            <Input type="month" className="h-9 w-40" value={month === ALL ? "" : month}
+              onChange={(e) => setMonth(e.target.value || new Date().toISOString().slice(0, 7))} data-testid="billing-month" />
+          </div>
           <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("xlsx")} data-testid="billing-export-xlsx"><Download className="h-4 w-4 mr-1" /> Excel</Button>
           <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("csv")} data-testid="billing-export-csv"><Download className="h-4 w-4 mr-1" /> CSV</Button>
           <Button variant="outline" className="h-9 rounded-sm" onClick={() => download("pdf")} data-testid="billing-export-pdf"><FileText className="h-4 w-4 mr-1" /> PDF</Button>
@@ -206,6 +216,13 @@ export default function BillingPendingReport() {
             Month-wise Pending Billing
           </div>
           <div className="flex gap-2 p-3 min-w-max">
+            <button onClick={() => setMonth(ALL)}
+              className={`text-left border rounded-sm px-3 py-2 min-w-[140px] transition-colors hover:border-primary ${month === ALL ? "border-primary bg-primary/5" : "border-border"}`}
+              data-testid="billing-month-all">
+              <div className="text-[11px] font-bold">All Months</div>
+              <div className="text-sm font-black tabular text-red-800">{inr(s?.pending_amount)}</div>
+              <div className="text-[10px] text-muted-foreground">{(data?.month_wise || []).length} month(s) pending</div>
+            </button>
             {(data?.month_wise || []).length === 0 && <div className="text-sm text-muted-foreground">Nothing pending — all months are billed.</div>}
             {(data?.month_wise || []).map((m) => (
               <button key={m.month} onClick={() => setMonth(m.month)}
@@ -229,16 +246,17 @@ export default function BillingPendingReport() {
             <TableHead className="text-[10px] uppercase tracking-wider">Category</TableHead>
             <TableHead className="text-[10px] uppercase tracking-wider">Billing Month / Period</TableHead>
             <TableHead className="text-[10px] uppercase tracking-wider">Client / PM</TableHead>
-            <TableHead className="text-[10px] uppercase tracking-wider">Status ({month})</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-wider">Status ({month === ALL ? "All Months" : month})</TableHead>
             <TableHead className="text-[10px] uppercase tracking-wider text-right">Pending (₹)</TableHead>
             <TableHead className="text-[10px] uppercase tracking-wider">Last Bill</TableHead>
             <TableHead className="text-[10px] uppercase tracking-wider">Open Request</TableHead>
             <TableHead className="text-[10px] uppercase tracking-wider text-right">Basic (₹)</TableHead>
             <TableHead className="text-[10px] uppercase tracking-wider">Payment</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-wider">Pending Remarks</TableHead>
           </TableRow></TableHeader>
           <TableBody>
-            {!data && <TableRow><TableCell colSpan={10} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>}
-            {data && rows.length === 0 && <TableRow><TableCell colSpan={10} className="text-center py-10 text-muted-foreground">No projects match.</TableCell></TableRow>}
+            {!data && <TableRow><TableCell colSpan={11} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>}
+            {data && rows.length === 0 && <TableRow><TableCell colSpan={11} className="text-center py-10 text-muted-foreground">No projects match.</TableCell></TableRow>}
             {rows.map((r) => {
               const m = STATUS_META[r.billing_status] || {};
               return (
@@ -255,7 +273,7 @@ export default function BillingPendingReport() {
                     <div className="text-[10px] text-muted-foreground mt-0.5">{r.billing_mode === "monthly" ? "Month-wise" : "Scope / timeline"}</div>
                   </TableCell>
                   <TableCell className="text-xs" data-testid={`billing-period-${r.project_code}`}>
-                    <div className="font-semibold">{r.billing_mode === "monthly" ? month : (r.billing_period || "—")}</div>
+                    <div className="font-semibold">{r.billing_mode === "monthly" && month !== ALL ? month : (r.billing_period || "—")}</div>
                     {r.billing_mode === "monthly" && (r.pending_months || []).length > 0 && (
                       <div className="text-[10px] text-red-700 mt-0.5 max-w-[190px]">
                         Pending: {(r.pending_months || []).slice(0, 4).join(", ")}{(r.pending_months || []).length > 4 ? ` +${r.pending_months.length - 4}` : ""}
@@ -293,6 +311,9 @@ export default function BillingPendingReport() {
                       {PAY_META[r.payment_status]?.label || "—"}
                     </Badge>
                     {r.payment_status === "partially_paid" && <div className="text-[10px] text-muted-foreground mt-0.5">Recd {inr(r.paid_amount)} · Due {inr(r.balance_due)}</div>}
+                  </TableCell>
+                  <TableCell className="text-[10px] text-muted-foreground max-w-[220px]" data-testid={`billing-remarks-${r.project_code}`}>
+                    {r.remarks || "—"}
                   </TableCell>
                 </TableRow>
               );
