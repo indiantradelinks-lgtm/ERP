@@ -7,7 +7,7 @@ Status transitions are enforced; "Won" enquiry can be converted to an Order
 """
 import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
@@ -195,56 +195,155 @@ async def create_enquiry(payload: EnquiryIn, request: Request, user: dict = Depe
     await db.enquiries.insert_one(doc)
     doc.pop("_id", None)
 
-    # Phase C — auto-create a draft quotation linked back to this enquiry
-    try:
-        quote_no = await next_sequence("QTN")
-        quote_doc = {
-            "id": new_id(),
-            "quote_number": quote_no,
-            "enquiry_id": doc["id"],
-            "enquiry_no": doc["enquiry_no"],
-            "client_id": doc.get("client_id"),
-            "site_id": doc.get("site_id"),
-            "client": doc.get("customer"),
-            "project": doc.get("scope_of_work") or doc.get("scope") or "",
-            # Iter 67 — "Customer Site" picked on the enquiry feeds the Quotation
-            # Builder's "Site / Project Name". Priority: enquiry's snapshotted
-            # site_name (from the master site picker) → site_location → scope.
-            "site_name": doc.get("site_name") or doc.get("site_location") or doc.get("scope_of_work") or doc.get("project") or "",
-            "site_location": doc.get("site_location") or "",
-            "service_categories": doc.get("service_categories") or [],
-            "rfq_type": doc.get("rfq_type") or [],
-            "submission_deadline": doc.get("submission_deadline") or doc.get("deadline"),
-            "scope_of_work": doc.get("scope_of_work"),
-            "technical_requirements": doc.get("technical_requirements"),
-            "material_requirements": doc.get("material_requirements"),
-            "material_requirement": doc.get("material_requirement"),
-            "manpower_requirement": doc.get("manpower_requirement"),
-            "commercial_notes": doc.get("commercial_notes"),
-            "contact_person": doc.get("contact_person"),
-            "contact_email": doc.get("contact_email"),
-            "contact_phone": doc.get("contact_phone"),
-            "amount": doc.get("expected_value") or 0,
-            "date": doc.get("enquiry_date") or now_iso()[:10],
-            "status": "draft",
-            "created_at": now_iso(),
-            "created_by": user["id"],
-            "created_by_name": user_display_name(user),
-            "created_via": "auto_from_enquiry",
-            "technical_conditions": await default_selected_conditions("technical"),
-        }
-        await stamp_dept_doc(quote_doc, "quotation")
-        await db.quotations.insert_one(quote_doc)
-        quote_doc.pop("_id", None)
-        await db.enquiries.update_one({"id": doc["id"]},
-                                      {"$set": {"quotation_id": quote_doc["id"], "quotation_no": quote_no}})
-        doc["quotation_id"] = quote_doc["id"]
-        doc["quotation_no"] = quote_no
-    except Exception as e:
-        logger.warning(f"Auto-quotation creation failed for enquiry {doc['id']}: {e}")
+    # Phase C — auto-create a draft quotation linked back to this enquiry so the
+    # enquiry is immediately visible on Sales & Quotations. One retry, then the
+    # Sales screen's self-heal picks it up — an enquiry is never left invisible.
+    for attempt in (1, 2):
+        try:
+            quote_doc = await _build_auto_quotation(doc, user)
+            doc["quotation_id"] = quote_doc["id"]
+            doc["quotation_no"] = quote_doc["quote_number"]
+            break
+        except Exception as e:
+            logger.warning(f"Auto-quotation attempt {attempt} failed for enquiry {doc['enquiry_no']}: {e}")
 
     await audit(user=user, action="create", resource="enquiries", record_id=doc["id"], after=doc, ip=_ip(request))
     return doc
+
+
+async def next_quote_number() -> str:
+    """Quotation number that is guaranteed free. The counter is atomic, but a
+    restored / re-seeded database can leave it behind the numbers already issued —
+    so skip anything that is taken instead of printing a duplicate Quote #."""
+    for _ in range(25):
+        no = await next_sequence("QTN")
+        if not await db.quotations.find_one({"quote_number": no}, {"_id": 1}):
+            return no
+        logger.warning(f"[sales] quote number {no} already in use — drawing the next one")
+    return f"{await next_sequence('QTN')}-{new_id()[:4].upper()}"
+
+
+async def _build_auto_quotation(doc: Dict[str, Any], user: dict) -> Dict[str, Any]:
+    """Draft quotation mirrored from an enquiry (Phase C). Shared by enquiry
+    creation and the Sales & Quotations self-heal, so both produce identical rows."""
+    try:
+        tech = await default_selected_conditions("technical")
+    except Exception:  # a broken clause master must never cost us the quotation
+        tech = []
+    quote_doc = {
+        "id": new_id(),
+        "quote_number": await next_quote_number(),
+        "enquiry_id": doc["id"],
+        "enquiry_no": doc.get("enquiry_no"),
+        "client_id": doc.get("client_id"),
+        "site_id": doc.get("site_id"),
+        "client": doc.get("customer") or doc.get("client_name"),
+        "project": doc.get("scope_of_work") or doc.get("scope") or "",
+        # Iter 67 — "Customer Site" picked on the enquiry feeds the Quotation
+        # Builder's "Site / Project Name". Priority: enquiry's snapshotted
+        # site_name (from the master site picker) → site_location → scope.
+        "site_name": doc.get("site_name") or doc.get("site_location") or doc.get("scope_of_work") or doc.get("project") or "",
+        "site_location": doc.get("site_location") or "",
+        "service_categories": doc.get("service_categories") or [],
+        "rfq_type": doc.get("rfq_type") or [],
+        "submission_deadline": doc.get("submission_deadline") or doc.get("deadline"),
+        "scope_of_work": doc.get("scope_of_work"),
+        "technical_requirements": doc.get("technical_requirements"),
+        "material_requirements": doc.get("material_requirements"),
+        "material_requirement": doc.get("material_requirement"),
+        "manpower_requirement": doc.get("manpower_requirement"),
+        "commercial_notes": doc.get("commercial_notes"),
+        "contact_person": doc.get("contact_person"),
+        "contact_email": doc.get("contact_email"),
+        "contact_phone": doc.get("contact_phone"),
+        "amount": doc.get("expected_value") or 0,
+        "date": doc.get("enquiry_date") or now_iso()[:10],
+        "status": "draft",
+        "created_at": doc.get("created_at") or now_iso(),
+        "created_by": doc.get("created_by") or user.get("id"),
+        "created_by_name": doc.get("created_by_name") or user_display_name(user),
+        "created_via": "auto_from_enquiry",
+        "technical_conditions": tech,
+    }
+    await stamp_dept_doc(quote_doc, "quotation")
+    await db.quotations.insert_one(quote_doc)
+    quote_doc.pop("_id", None)
+    await db.enquiries.update_one({"id": doc["id"]}, {"$set": {
+        "quotation_id": quote_doc["id"], "quotation_no": quote_doc["quote_number"]}})
+    return quote_doc
+
+
+async def _sync_missing_quotations(user: dict) -> List[Dict[str, Any]]:
+    """Every enquiry must be visible on Sales & Quotations. Creates the missing
+    draft quotation for any enquiry that has none — idempotent, so an enquiry that
+    already has one (or a revision chain) is never duplicated."""
+    linked = set()
+    async for q in db.quotations.find({"enquiry_id": {"$ne": None}}, {"_id": 0, "enquiry_id": 1}):
+        linked.add(q["enquiry_id"])
+    created: List[Dict[str, Any]] = []
+    async for e in db.enquiries.find({}, {"_id": 0}).sort("created_at", 1):
+        if e["id"] in linked:
+            continue
+        try:
+            q = await _build_auto_quotation(e, user)
+            created.append({"enquiry_no": e.get("enquiry_no"), "quote_number": q["quote_number"]})
+            logger.info(f"[sales-sync] quotation {q['quote_number']} created for enquiry {e.get('enquiry_no')}")
+        except Exception as ex:
+            logger.warning(f"[sales-sync] could not create a quotation for {e.get('enquiry_no')}: {ex}")
+    return created
+
+
+async def _repair_duplicate_quote_numbers(user: dict) -> List[Dict[str, Any]]:
+    """Two quotations printed with the same Quote # read as duplicate rows on the
+    Sales screen. Keep the oldest, renumber the newer one."""
+    seen: Dict[str, Dict[str, Any]] = {}
+    fixed: List[Dict[str, Any]] = []
+    rows = await db.quotations.find({}, {"_id": 0, "id": 1, "quote_number": 1, "created_at": 1,
+                                         "enquiry_no": 1}).sort("created_at", 1).to_list(20000)
+    for q in rows:
+        no = q.get("quote_number")
+        if not no:
+            continue
+        if no not in seen:
+            seen[no] = q
+            continue
+        fresh = await next_quote_number()
+        await db.quotations.update_one({"id": q["id"]}, {"$set": {
+            "quote_number": fresh, "renumbered_from": no, "renumbered_at": now_iso()}})
+        await db.enquiries.update_many({"quotation_id": q["id"]}, {"$set": {"quotation_no": fresh}})
+        fixed.append({"was": no, "now": fresh, "enquiry_no": q.get("enquiry_no")})
+        logger.warning(f"[sales-sync] duplicate quote number {no} renumbered to {fresh}")
+    return fixed
+
+
+@router.post("/quotations/sync-from-enquiries")
+async def sync_quotations_from_enquiries(request: Request,
+                                         user: dict = Depends(require_permission("quotations", "write"))):
+    renumbered = await _repair_duplicate_quote_numbers(user)
+    created = await _sync_missing_quotations(user)
+    if created or renumbered:
+        await audit(user=user, action="sales_sync", resource="quotations", record_id="sync",
+                    after={"created": created, "renumbered": renumbered}, ip=_ip(request))
+    return {"created": len(created), "quotations": created,
+            "renumbered": len(renumbered), "renumbered_detail": renumbered}
+
+
+@router.get("/quotations/coverage")
+async def quotation_coverage(user: dict = Depends(require_permission("quotations", "read"))):
+    """Reconciliation for the Sales screen — enquiries vs quotations, and any gap."""
+    linked = set()
+    async for q in db.quotations.find({"enquiry_id": {"$ne": None}}, {"_id": 0, "enquiry_id": 1}):
+        linked.add(q["enquiry_id"])
+    enq = await db.enquiries.find({}, {"_id": 0, "id": 1, "enquiry_no": 1, "status": 1}).to_list(5000)
+    missing = [{"enquiry_no": e.get("enquiry_no"), "status": e.get("status")} for e in enq if e["id"] not in linked]
+    dupes = [d["_id"] for d in await db.quotations.aggregate([
+        {"$group": {"_id": "$quote_number", "n": {"$sum": 1}}},
+        {"$match": {"n": {"$gt": 1}, "_id": {"$ne": None}}},
+    ]).to_list(500)]
+    return {"enquiries": len(enq), "quotations": await db.quotations.count_documents({}),
+            "linked_enquiries": len([e for e in enq if e["id"] in linked]),
+            "missing": len(missing), "missing_enquiries": missing[:50],
+            "duplicate_quote_numbers": dupes}
 
 
 @router.get("/enquiries/{enq_id}")

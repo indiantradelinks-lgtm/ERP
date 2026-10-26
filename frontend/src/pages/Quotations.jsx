@@ -43,6 +43,20 @@ export default function Quotations() {
   const r = useResource("quotations");
 
   useEffect(() => {
+    // Every enquiry must show up here — heal any enquiry whose draft quotation
+    // was never created (older records, or a failed auto-create) before loading.
+    (async () => {
+      try {
+        const { data } = await api.post("/quotations/sync-from-enquiries");
+        if (data?.created > 0 || data?.renumbered > 0) {
+          const bits = [];
+          if (data.created) bits.push(`${data.created} enquiry(s) were missing a quotation — added to the list`);
+          if (data.renumbered) bits.push(`${data.renumbered} duplicate quote number(s) renumbered`);
+          toast.success(bits.join(" · "), { duration: 7000 });
+          r.reload();
+        }
+      } catch { /* read-only users simply see the list as-is */ }
+    })();
     const iv = setInterval(() => { if (!document.hidden) r.reload(); }, 30000);
     const onFocus = () => { if (!document.hidden) r.reload(); };
     window.addEventListener("focus", onFocus);

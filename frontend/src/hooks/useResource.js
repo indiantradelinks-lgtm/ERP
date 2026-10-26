@@ -58,7 +58,9 @@ export default function useResource(resource, opts = {}) {
     if (!view.ready || viewApplied) return;
     const s = view.initial;
     if (s) {
-      if (typeof s.search === "string") setSearch(s.search);
+      // Sort + page size are genuine preferences and are remembered.
+      // A free-text search is NOT — a sticky search silently hides records and
+      // reads as "rows are missing" on the next visit (Iter 217).
       if (s.sort_by) setSort({ by: s.sort_by, dir: s.sort_dir === "asc" ? "asc" : "desc" });
       if (s.page_size) setPageSize(Number(s.page_size));
     }
@@ -97,11 +99,12 @@ export default function useResource(resource, opts = {}) {
 
   useEffect(() => { load(); }, [load]);
 
-  // Remember the user's view (debounced, server-side) whenever it changes
+  // Remember the user's view (debounced, server-side) whenever it changes.
+  // The search term is deliberately cleared, never carried into the next visit.
   useEffect(() => {
-    if (viewApplied) view.persist({ search, sort_by: sort.by, sort_dir: sort.dir, page_size: pageSize });
+    if (viewApplied) view.persist({ search: "", sort_by: sort.by, sort_dir: sort.dir, page_size: pageSize });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewApplied, search, sort.by, sort.dir, pageSize]);
+  }, [viewApplied, sort.by, sort.dir, pageSize]);
 
   // Filters / page-size changed from outside → restart from page 1
   const firstExtra = useRef(extraKey);

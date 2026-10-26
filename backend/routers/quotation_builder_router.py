@@ -213,7 +213,8 @@ async def create_quotation_full(payload: dict, request: Request,
     Typically called when the sales team starts a fresh quote. The enquiry-driven
     path continues to use `POST /api/enquiries` which auto-creates a draft.
     """
-    quote_no = await next_sequence("QTN")
+    from routers.sales_router import next_quote_number
+    quote_no = await next_quote_number()
     enquiry_id = payload.get("enquiry_id")
     if enquiry_id:
         # One fresh quotation per enquiry — further versions go through /revise.
