@@ -40,6 +40,19 @@ Backend routes are prefixed `/api`; frontend calls via `REACT_APP_BACKEND_URL`.
   - Tests: `tests/test_iter219_bill_payment_request_queue.py` 9 passed; regression 68 passed.
     Testing agent report: `/app/test_reports/iteration_209.json` (all HIGH items fixed).
 
+- **Iter 220 (27 Jun 2026) — approver visibility, fuel vehicle no., RFQ vendor search** *(this change)*:
+  - **My Pending Approvals** has a **Pay Mode** column: payment requests show `UPI` or `Accounts`
+    (anything without an explicit UPI choice is processed by Accounts), non-payment rows show `—`.
+    `/api/my-inbox` items now all carry a `payment_mode` key.
+  - **Payment Request → Fuel** shows a mandatory, auto-uppercased **Vehicle Number** field; the
+    backend rejects a fuel request without `vehicle_ref` (400) and stores it uppercase. The field
+    clears when the request type changes, and the detail dialog shows a "Vehicle No" tile.
+    Legacy tests that raised fuel requests were updated to send a vehicle number.
+  - **New RFQ** vendor list has a search box (name / code / city / category) with a clear button,
+    an empty-state message and a "Selected (n)" summary so filtered-out picks stay visible.
+    Category filtering and "Show all vendors" still apply before the search.
+  - Tests: `tests/test_iter220_paymode_fuel_vehicle.py` 6 passed; all three verified in the browser.
+
 ## Backlog
 - **P1** Cancel / edit an open vendor-bill payment request from the Payments popup.
 - **P1** Export queue: very large reports as a background job with a "ready to download" notice.

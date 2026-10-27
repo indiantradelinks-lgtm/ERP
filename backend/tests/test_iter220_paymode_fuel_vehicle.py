@@ -4,15 +4,17 @@ import uuid
 
 import pytest
 import requests
+from dotenv import dotenv_values
 from pymongo import MongoClient
 
-BASE = os.environ.get("REACT_APP_BACKEND_URL", "https://worksite-command.preview.emergentagent.com").rstrip("/")
+BASE = (os.environ.get("REACT_APP_BACKEND_URL")
+        or dotenv_values("/app/frontend/.env")["REACT_APP_BACKEND_URL"]).rstrip("/")
 API = f"{BASE}/api"
 
 
 @pytest.fixture(scope="module")
 def db():
-    return MongoClient("mongodb://localhost:27017")["erp_database"]
+    return MongoClient(os.environ["MONGO_URL"])[os.environ["DB_NAME"]]
 
 
 @pytest.fixture(scope="module")
@@ -74,6 +76,16 @@ def test_inbox_exposes_payment_mode(s, ctx):
     row = next((it for it in inbox["items"] if it["id"] == rid), None)
     if row:
         assert row["payment_mode"] == "UPI"
+
+
+def test_payment_request_without_a_chosen_mode_reads_as_accounts(s, ctx):
+    r = _raise(s, ctx, request_type="other", description=f"iter220 acc {uuid.uuid4().hex[:6]}")
+    assert r.status_code == 200, r.text
+    rid = r.json()["id"]
+    inbox = s.get(f"{API}/my-inbox", timeout=90).json()
+    row = next((it for it in inbox["items"] if it["id"] == rid), None)
+    if row:
+        assert row["payment_mode"] == "Accounts"
 
 
 def test_inbox_payment_mode_is_none_for_non_payment_rows(s):

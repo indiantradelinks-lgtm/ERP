@@ -85,7 +85,7 @@ async def _project_requests(role: str, user: dict) -> List[dict]:
                          title=f"{r.get('request_type_label')} — {r.get('project_code')}",
                          subtitle=r.get("project_name") or "",
                          amount=r.get("est_value"), step_label=step.get("label"),
-                         payment_mode=(r.get("payment_mode") if r.get("is_payment") else None),
+                         payment_mode=((r.get("payment_mode") or "Accounts") if r.get("is_payment") else None),
                          link="/app/ops/requests",
                          approve_path=f"/project-requests/{r['id']}/approve",
                          reject_path=f"/project-requests/{r['id']}/reject"))

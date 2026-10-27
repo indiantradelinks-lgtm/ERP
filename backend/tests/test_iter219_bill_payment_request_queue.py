@@ -13,7 +13,7 @@ INVOICE_NO = "ITER219-PENDING-PAY"
 
 @pytest.fixture(scope="module")
 def db():
-    return MongoClient("mongodb://localhost:27017")["erp_database"]
+    return MongoClient(os.environ["MONGO_URL"])[os.environ["DB_NAME"]]
 
 
 @pytest.fixture(scope="module")

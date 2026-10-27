@@ -613,7 +613,7 @@ export default function ProjectRequests() {
                 )}
                 <div>
                   <Label className="text-[10px] uppercase tracking-wider">Request Type (Routing) *</Label>
-                  <select value={form.request_type} onChange={(e) => { setForm({ ...form, request_type: e.target.value, items: [blankItem()] }); setStock(null); }}
+                  <select value={form.request_type} onChange={(e) => { setForm({ ...form, request_type: e.target.value, items: [blankItem()], vehicle_ref: "" }); setStock(null); }}
                     className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="req-form-type">
                     <option value="">— select —</option>
                     {types.filter((t) => !STOCKABLE.has(t.key) && t.key !== "manpower").map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
