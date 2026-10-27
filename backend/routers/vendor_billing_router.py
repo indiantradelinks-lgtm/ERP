@@ -206,6 +206,14 @@ async def _record_bill_payment(bill: Dict[str, Any], p: BillPaymentIn, user: dic
             status_code=400,
             detail=f"Payment ₹{amount:,.2f} exceeds the outstanding balance ₹{outstanding_before:,.2f} "
                    f"on {bill['bill_no']} — enter ₹{outstanding_before:,.2f} or less")
+    pending = round(sum(float(r.get("est_value") or 0)
+                        for r in await _open_bill_payment_requests(bill["id"])), 2)
+    if pending > 0 and amount > round(outstanding_before - pending, 2) + 0.01:
+        raise HTTPException(
+            status_code=400,
+            detail=(f"₹{pending:,.2f} is already awaiting release in Payment Processing for "
+                    f"{bill['bill_no']} — record at most ₹{max(round(outstanding_before - pending, 2), 0):,.2f} "
+                    f"here, or cancel that request first"))
 
     paid_after = round(paid_before + amount, 2)
     outstanding_after = round(net - paid_after, 2)
@@ -273,6 +281,62 @@ async def _record_bill_payment(bill: Dict[str, Any], p: BillPaymentIn, user: dic
                        "payment_status": pay_status},
                 ip=request.client.host if request and request.client else "")
     return {**pay, "paid_amount": paid_after, "payment_status": pay_status}
+
+
+async def settle_bill_from_payment_queue(bill_id: str, amount: float, utr: str, paid_date: str,
+                                         user: dict, request_no: Optional[str] = None,
+                                         mode: str = "Bank (Payment Processing)") -> Optional[Dict[str, Any]]:
+    """A payment released through Accounts → Payment Processing, mirrored back onto
+    the bill so its payment history, paid amount and status stay in sync.
+    The JE is posted by the payment queue, so none is posted here."""
+    b = await db.vendor_bills.find_one({"id": bill_id}, {"_id": 0})
+    amount = round(float(amount or 0), 2)
+    if not b or amount <= 0:
+        return None
+    net = round(float((b.get("totals") or {}).get("net_payable") or b.get("amount") or 0), 2)
+    rows = await db.vendor_payments.find({"bill_ids": bill_id}, {"_id": 0, "amount": 1}).to_list(500)
+    paid_before = round(max(sum(float(r.get("amount") or 0) for r in rows),
+                           float(b.get("paid_amount") or 0)), 2)
+    paid_after = round(paid_before + amount, 2)
+    outstanding_after = round(net - paid_after, 2)
+    status_before = b.get("status") or "draft"
+    pay_status = _payment_status(paid_after, net, status_before, len(rows) + 1)
+    pay = {
+        "id": new_id(),
+        "payment_no": await next_sequence("VPAY"),
+        "payment_date": paid_date or now_iso()[:10],
+        "vendor_id": b.get("vendor_id"), "vendor_name": b.get("vendor_name"),
+        "bill_ids": [bill_id], "bill_no": b.get("bill_no"),
+        "invoice_no": b.get("invoice_no"), "grn_number": b.get("grn_number"),
+        "po_number": b.get("po_number"),
+        "mode": mode, "bank_account": None,
+        "utr": utr, "cheque_no": None, "reference": utr,
+        "amount": amount, "retention_held": 0.0, "other_deduction": 0.0,
+        "total_settled": amount,
+        "payment_kind": "advance" if (status_before not in APPROVED_LIKE and not rows) else "part",
+        "bill_status_at_payment": status_before,
+        "invoice_total": net, "outstanding_after": outstanding_after,
+        "project_id": b.get("project_id"), "project_code": b.get("project_code"),
+        "attachments": [],
+        "remarks": f"Paid via Payment Processing{f' · {request_no}' if request_no else ''}",
+        "source": "payment_queue", "request_no": request_no,
+        "status": "released",
+        "created_at": now_iso(),
+        "created_by": user.get("name") or user.get("email"),
+    }
+    await db.vendor_payments.insert_one(pay)
+    upd: Dict[str, Any] = {
+        "paid_amount": paid_after, "outstanding": max(outstanding_after, 0.0),
+        "payment_status": pay_status, "last_payment_at": pay["payment_date"],
+        "last_payment_utr": utr, "last_payment_date": pay["payment_date"],
+        "updated_at": now_iso(),
+    }
+    # An approval chain is never short-circuited by a payment release.
+    if status_before in APPROVED_LIKE:
+        upd["status"] = "paid" if outstanding_after < 0.01 else "partially_paid"
+    await db.vendor_bills.update_one({"id": bill_id}, {"$set": upd})
+    return {"payment_no": pay["payment_no"], "paid_amount": paid_after,
+            "outstanding": max(outstanding_after, 0.0), "payment_status": pay_status}
 
 
 async def _validate_bill_dependencies(payload: VendorBillIn) -> Dict[str, Any]:
@@ -561,8 +625,9 @@ async def bill_payment_history(bill_id: str,
         raise HTTPException(status_code=404, detail="Bill not found")
     rows = await db.vendor_payments.find({"bill_ids": bill_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
     net = round(float((b.get("totals") or {}).get("net_payable") or b.get("amount") or 0), 2)
-    paid = round(sum(float(r.get("amount") or 0) + float(r.get("retention_held") or 0)
-                     + float(r.get("other_deduction") or 0) for r in rows), 2)
+    paid = round(max(sum(float(r.get("amount") or 0) + float(r.get("retention_held") or 0)
+                         + float(r.get("other_deduction") or 0) for r in rows),
+                     float(b.get("paid_amount") or 0)), 2)
     open_reqs = await _open_bill_payment_requests(bill_id)
     vmap = {v["request_id"]: v async for v in db.payment_verifications.find(
         {"request_id": {"$in": [r["id"] for r in open_reqs]}},

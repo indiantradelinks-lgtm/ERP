@@ -501,6 +501,11 @@ async def verify_payment(rid: str, p: VerifyIn, request: Request,
             raise HTTPException(400, "TDS / advance adjustment cannot be negative")
         if p.tds_applicable and p.tds_amount <= 0:
             raise HTTPException(400, "tds_amount must be > 0 when TDS is applicable")
+        req_amt = round(float(row.get("est_value") or 0), 2)
+        if row.get("source") == "accounts_vendor_bill" and req_amt > 0 \
+                and round(p.verified_amount, 2) > req_amt + 0.01:
+            raise HTTPException(400, f"Verified amount cannot exceed the requested ₹{req_amt:,.2f} "
+                                     f"on {row.get('request_no')}")
     net_payable = round(p.verified_amount - p.tds_amount - p.advance_adjusted, 2)
     if p.decision == "verified" and net_payable < 0:
         raise HTTPException(400, "TDS + advance adjustment exceed the verified amount")
@@ -774,16 +779,10 @@ async def mark_paid(rid: str, p: MarkPaidIn, request: Request,
             await _mirror_bill_to_vendor_bills(lvb)
     if row.get("source") == "accounts_vendor_bill" and row.get("source_id"):
         paid_amt = float(v.get("net_payable") if v.get("net_payable") is not None else net)
-        bill = await db.vendor_bills.find_one({"id": row["source_id"]},
-                                              {"_id": 0, "paid_amount": 1, "outstanding": 1})
-        if bill:
-            new_paid = round(float(bill.get("paid_amount") or 0) + paid_amt, 2)
-            new_out = max(round(float(bill.get("outstanding") or 0) - paid_amt, 2), 0.0)
-            await db.vendor_bills.update_one({"id": row["source_id"]}, {"$set": {
-                "paid_amount": new_paid, "outstanding": new_out,
-                "status": "paid" if new_out <= 0 else "partially_paid",
-                "last_payment_utr": p.utr_no, "last_payment_date": p.paid_date,
-                "updated_at": now_iso()}})
+        from routers.vendor_billing_router import settle_bill_from_payment_queue
+        settled = await settle_bill_from_payment_queue(
+            row["source_id"], paid_amt, p.utr_no, p.paid_date, user, v.get("request_no"))
+        if settled:
             await db.alerts.delete_one({"id": f"vpd-{row['source_id']}"})
     if row.get("source") == "service_invoice" and row.get("source_id"):
         from routers.service_workflow_router import on_service_invoice_paid

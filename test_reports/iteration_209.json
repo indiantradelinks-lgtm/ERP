@@ -1,0 +1,44 @@
+{
+  "summary": "Tested the Vendor Bill Payments popup routing to Payment Processing (iter219 fix). The core bug is fixed: a pending request raised from the popup shows up in Payment Processing (UI: /app/accounts/payment-processing, Pending Verification tab, with vendor RAHUL, ₹1,200, the bill no and the invoice in the justification line, and a Verify button). Everything listed in the dialog checklist works: the radio defaults to Pending; in Pending mode only Amount and Remarks show; the Paid route adds Date, Mode and UTR and relabels the button 'Record Payment'; the toast shows the request no; the pending block lists requests with stage 'Pending Verification'; Paid So Far stays ₹0 while a request is pending; amount prefills to payable_now; a second request gets its own number (-P2); requests above the payable amount are blocked with a clear 400 shown as a toast; amount 0 returns 400. The 'Already paid' flow still works (VPAY recorded, Paid/Outstanding/status updated). Backend pytest (iter219 + iter213): 13/13 passed. Two follow-on probes found integration defects. (1) After a routed request is verified and marked paid in Payment Processing, the bill's Payments popup still shows Paid ₹0 / Outstanding full / Unpaid with no history row, and a draft bill's status jumps to partially_paid. (2) The 'Already paid' route ignores requests that are already queued, which risks double payment.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/accounts/payment-queue/{rid}/mark-paid (source=accounts_vendor_bill) + GET /api/payables/vendor-bills/{id}/payments", "issue": "mark_paid only $sets vendor_bills.paid_amount/outstanding/status. It writes no vendor_payments row and does not update payment_status. bill_payment_history computes paid_amount from vendor_payments rows, so once a routed request is paid the popup shows Paid ₹0, Outstanding ₹1000, Unpaid and no history row (reproduced: bill doc paid_amount=400, outstanding=600; popup paid=0, outstanding=1000). The paid request also drops out of pending_requests, so the popup offers payable_now=1000 while POST payment-requests (which uses bill.paid_amount) allows only 600, and the user gets a confusing 400.", "priority": "HIGH"},
+      {"endpoint": "POST /api/accounts/payment-queue/{rid}/mark-paid", "issue": "For accounts_vendor_bill, the bill status is set to 'paid'/'partially_paid' unconditionally. A request raised on a DRAFT or under-approval bill (the new popup route allows this) skips the approval chain: draft→partially_paid was reproduced on VB-2026-0052. _record_bill_payment deliberately avoids this (it only moves status when the bill is in APPROVED_LIKE). mark_paid should do the same and should also set payment_status via _payment_status.", "priority": "HIGH"},
+      {"endpoint": "POST /api/payables/vendor-bills/{id}/payments (Already paid route)", "issue": "Validation only checks outstanding and ignores open payment requests. Reproduced: with outstanding ₹4000 and ₹1700 queued, recording ₹4000 as already paid succeeded. Outstanding became 0, payable_now became -1700, and both queue requests stayed live in Payment Processing, so they can still be verified and paid (double payment). Either block when amount > outstanding - pending, or cancel/flag the open requests.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/accounts/payment-queue/{rid}/verify", "issue": "verified_amount is not capped to the request est_value or the bill outstanding, so the verifier can pay more than was requested."},
+      {"endpoint": "_push_bill_to_payment_queue", "issue": "request_no suffix comes from count_documents. If any request row is ever deleted, numbers can collide (e.g. a second '-P2')."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "BillPaymentsDialog preview (Paid route)", "issue": "The preview says 'status becomes Partially Paid' for an unapproved bill, but the backend sets 'Advance Paid' (toast and row show Advance Paid). The preview should mirror _payment_status (bill status / prior payments).", "selector": "[data-testid='pay-vb-hist-preview']", "priority": "LOW"},
+      {"component": "BillPaymentsDialog", "issue": "Date, Mode and UTR inputs in the Paid route have no data-testid.", "selector": "input[type=date], select", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Popup → Payment Processing → mark paid → reopen popup", "issue": "The popup never reflects payments settled through Payment Processing (see backend critical #1).", "affected_selectors": ["[data-testid='pay-vb-hist-paid']", "[data-testid='pay-vb-hist-outstanding']", "[data-testid='pay-vb-hist-status']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter219_bill_payment_request_queue.py", "/app/backend/tests/iter220_e2e_markpaid_probe.py", "/app/backend/tests/iter220_overcommit_probe.py", "/app/backend/tests/iter220_ui_seed.py", "/app/test_reports/pytest/pytest_iter220.xml"],
+  "action_items": [
+    "In payment_processing_router.mark_paid for source=accounts_vendor_bill: insert a vendor_payments row (bill_ids=[bill_id], amount, utr, payment_kind, outstanding_after) OR make bill_payment_history use bill.paid_amount. Set payment_status via _payment_status. Only change bill.status when it is in APPROVED_LIKE.",
+    "In _record_bill_payment (Already paid route): block amount > outstanding - pending_amount, or auto-cancel/adjust the open accounts_vendor_bill requests.",
+    "Cap verified_amount at the request est_value / bill outstanding for accounts_vendor_bill requests.",
+    "Fix the Paid-route preview status label for unapproved bills (Advance Paid vs Partially Paid).",
+    "Add a pytest for the full loop: raise → verify → mark-paid → GET /payments shows paid_amount and a history row."
+  ],
+  "critical_code_review_comments": [
+    "There are two sources of truth for 'paid': vendor_bills.paid_amount (used by POST payment-requests and _record_bill_payment) and the sum of vendor_payments rows (used by GET /payments). They diverge whenever the queue pays a bill.",
+    "The new popup route lets payment requests be raised on draft bills. Combined with mark_paid's unconditional status change, this bypasses the approval chain.",
+    "VendorBillingViews.jsx is about 1164 lines and should be split (BillPaymentsDialog is a natural module)."
+  ],
+  "updated_files": ["/app/backend/tests/iter220_ui_seed.py", "/app/backend/tests/iter220_overcommit_probe.py", "/app/backend/tests/iter220_e2e_markpaid_probe.py"],
+  "success_rate": {"backend": "13/13 pytest passed; 3 integration defects found in probes", "frontend": "~95% of the requested dialog/queue checks passed"},
+  "seed_data_creation": "Temporary bills VB-2026-0051 (TEST-ITER220-UI) and VB-2026-0052 (TEST-ITER220-E2E), plus their requests, verifications, payments and JEs, were created and then cleaned up. Note: bill numbers 0051/0052 are consumed from the sequence.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Vendor Bills tab: go to /app/accounts and dispatch window event 'accounts:set-tab' with detail 'vendor_bills'. Payment Processing: /app/accounts/payment-processing (search with ppc-filter-search; rows use ppc-description-{request_no}). Login testids: login-email, login-password, login-submit. Run iter220_e2e_markpaid_probe.py to recheck the mark-paid consistency fix. It should then print the popup paid=400 and payment_status partially_paid/advance_paid, and the bill status should stay draft.",
+  "rca of the issue": "Original bug (request not in Payment Processing): fixed and verified. New issue: mark_paid's accounts_vendor_bill branch was written for approved, fully-queued bills and updates only bill fields. The Payments popup reads vendor_payments rows, so payments settled through the queue are invisible there. Repro: run iter220_e2e_markpaid_probe.py."
+}

@@ -754,15 +754,15 @@ function BillPaymentsDialog({ bill, onClose }) {
             </div>
             <div className="grid grid-cols-5 gap-2">
               <Field label="Amount *"><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: Number(e.target.value) })} data-testid="pay-vb-hist-amount" /></Field>
-              {route === "paid" && <Field label="Date"><Input type="date" value={form.payment_date} onChange={e => setForm({ ...form, payment_date: e.target.value })} /></Field>}
+              {route === "paid" && <Field label="Date"><Input type="date" value={form.payment_date} onChange={e => setForm({ ...form, payment_date: e.target.value })} data-testid="pay-vb-hist-date" /></Field>}
               {route === "paid" && (
                 <Field label="Mode">
-                  <select className="h-9 w-full rounded-sm border bg-background px-2" value={form.mode} onChange={e => setForm({ ...form, mode: e.target.value })}>
+                  <select className="h-9 w-full rounded-sm border bg-background px-2" value={form.mode} onChange={e => setForm({ ...form, mode: e.target.value })} data-testid="pay-vb-hist-mode">
                     {["Bank", "NEFT", "RTGS", "IMPS", "UPI", "Cheque", "Cash"].map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </Field>
               )}
-              {route === "paid" && <Field label="UTR / Cheque #"><Input value={form.utr} onChange={e => setForm({ ...form, utr: e.target.value })} /></Field>}
+              {route === "paid" && <Field label="UTR / Cheque #"><Input value={form.utr} onChange={e => setForm({ ...form, utr: e.target.value })} data-testid="pay-vb-hist-utr" /></Field>}
               <Field label="Remarks"><Input value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} data-testid="pay-vb-hist-remarks" /></Field>
             </div>
             <div className="text-[11px] text-slate-600 mt-2" data-testid="pay-vb-hist-preview">
@@ -771,7 +771,10 @@ function BillPaymentsDialog({ bill, onClose }) {
                   {" · "}this request goes to <b>Accounts → Payment Processing</b> for verification</>
               ) : (
                 <>Balance after this payment: <b className="tabular-nums">{fmt(Math.max(outstanding - Number(form.amount || 0), 0))}</b>
-                  {" · "}status becomes <b>{PAY_STATUS_LABELS[outstanding - Number(form.amount || 0) < 0.01 ? "fully_paid" : "partially_paid"]}</b></>
+                  {" · "}status becomes <b>{PAY_STATUS_LABELS[
+                    outstanding - Number(form.amount || 0) < 0.01 ? "fully_paid"
+                      : (["approved", "partially_paid", "paid"].includes(data?.bill_status) || (data?.payments || []).length > 0)
+                        ? "partially_paid" : "advance_paid"]}</b></>
               )}
             </div>
           </div>

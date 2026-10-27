@@ -108,3 +108,83 @@ def test_zero_amount_is_blocked(s, bill):
     r = s.post(f"{API}/payables/vendor-bills/{bill['id']}/payment-requests",
                json={"amount": 0}, timeout=60)
     assert r.status_code == 400
+
+
+# ─── Full loop: raise → verify → mark paid → bill history stays in sync ───
+INVOICE_NO_2 = "ITER219-FULL-LOOP"
+
+
+@pytest.fixture(scope="module")
+def bill2(s, grn, db):
+    body = {
+        "vendor_name": grn["vendor_name"], "vendor_id": grn.get("vendor_id"), "bank_verified": True,
+        "po_number": grn.get("po_number"), "grn_number": grn["grn_number"], "grn_id": grn.get("grn_id"),
+        "project_code": grn.get("project_code"), "invoice_no": INVOICE_NO_2, "invoice_date": "2026-10-23",
+        "expense_category": "material", "gst_rate": 0, "due_days": 30,
+        "lines": [{"description": "full loop test", "quantity": 1, "unit": "Nos", "rate": 1000, "gst_pct": 0}],
+    }
+    r = s.post(f"{API}/payables/vendor-bills", json=body, timeout=90)
+    assert r.status_code == 200, r.text
+    b = r.json()
+    yield b
+    reqs = [x["id"] for x in db.project_requests.find({"source_id": b["id"]}, {"id": 1})]
+    db.journal_entries.delete_many({"source_id": {"$in": reqs}})
+    db.payment_verifications.delete_many({"request_id": {"$in": reqs}})
+    db.project_requests.delete_many({"source_id": b["id"]})
+    ids = [p["id"] for p in db.vendor_payments.find({"bill_ids": b["id"]}, {"id": 1})]
+    db.journal_entries.delete_many({"source_id": {"$in": ids}})
+    db.vendor_payments.delete_many({"bill_ids": b["id"]})
+    db.vendor_bills.delete_one({"id": b["id"]})
+
+
+@pytest.fixture(scope="module")
+def loop_request(s, bill2):
+    r = s.post(f"{API}/payables/vendor-bills/{bill2['id']}/payment-requests",
+               json={"amount": 400, "remarks": "loop"}, timeout=90)
+    assert r.status_code == 200, r.text
+    return r.json()["request"]
+
+
+def test_verify_cannot_exceed_the_requested_amount(s, loop_request, bill2):
+    r = s.post(f"{API}/accounts/payment-queue/{loop_request['id']}/verify",
+               json={"decision": "verified", "vendor_name": bill2["vendor_name"],
+                     "vendor_account_no": "000111222333", "ifsc": "ICIC0000001",
+                     "invoice_no": INVOICE_NO_2, "verified_amount": 900}, timeout=60)
+    assert r.status_code == 400
+    assert "cannot exceed the requested" in r.json()["detail"]
+
+
+def test_paid_through_payment_processing_syncs_the_bill(s, loop_request, bill2, db):
+    v = s.post(f"{API}/accounts/payment-queue/{loop_request['id']}/verify",
+               json={"decision": "verified", "vendor_name": bill2["vendor_name"],
+                     "vendor_account_no": "000111222333", "ifsc": "ICIC0000001",
+                     "invoice_no": INVOICE_NO_2, "verified_amount": 400}, timeout=60)
+    assert v.status_code == 200, v.text
+    mp = s.post(f"{API}/accounts/payment-queue/{loop_request['id']}/mark-paid",
+                json={"utr_no": "ITER219UTR", "paid_date": "2026-10-27"}, timeout=90)
+    assert mp.status_code == 200, mp.text
+
+    d = s.get(f"{API}/payables/vendor-bills/{bill2['id']}/payments", timeout=60).json()
+    assert d["paid_amount"] == 400 and d["outstanding"] == 600
+    assert d["payment_status"] in ("advance_paid", "partially_paid")
+    assert len(d["payments"]) == 1
+    assert d["payments"][0]["utr"] == "ITER219UTR" and d["payments"][0]["amount"] == 400
+    assert d["pending_requests"] == [] and d["payable_now"] == 600
+
+    doc = db.vendor_bills.find_one({"id": bill2["id"]}, {"_id": 0, "status": 1, "paid_amount": 1})
+    assert doc["paid_amount"] == 400
+    assert doc["status"] == "draft", "a payment release must not short-circuit the approval chain"
+
+
+def test_already_paid_route_respects_a_queued_request(s, bill2):
+    q = s.post(f"{API}/payables/vendor-bills/{bill2['id']}/payment-requests",
+               json={"amount": 300}, timeout=90)
+    assert q.status_code == 200, q.text
+    r = s.post(f"{API}/payables/vendor-bills/{bill2['id']}/payments",
+               json={"amount": 600, "mode": "NEFT", "utr": "ITER219DOUBLE"}, timeout=60)
+    assert r.status_code == 400
+    assert "awaiting release in Payment Processing" in r.json()["detail"]
+    ok = s.post(f"{API}/payables/vendor-bills/{bill2['id']}/payments",
+                json={"amount": 300, "mode": "NEFT", "utr": "ITER219OK"}, timeout=90)
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["bill"]["paid_amount"] == 700
