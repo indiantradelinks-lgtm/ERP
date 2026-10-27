@@ -53,6 +53,7 @@ from pydantic import BaseModel, Field
 from core import db, require_permission, now_iso, new_id
 from scope import ensure_project_access
 from audit import audit
+from offload import run_blocking
 
 
 router = APIRouter(prefix="/proj-phase2", tags=["projects-ops-phase2-r2"])
@@ -454,10 +455,10 @@ async def export_project_resources(project_id: str, fmt: str,
         r["project_code"] = proj.get("code") or ""
         r["project_name"] = proj.get("name") or ""
     if fmt == "xlsx":
-        data = to_excel("project_resources", rows)
+        data = await run_blocking(to_excel, "project_resources", rows)
         media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else:
-        data = to_pdf("project_resources", rows)
+        data = await run_blocking(to_pdf, "project_resources", rows)
         media = "application/pdf"
     fname = f"resource-plan-{proj.get('code') or project_id}{('-' + type) if type else ''}.{fmt}"
     return Response(content=data, media_type=media,

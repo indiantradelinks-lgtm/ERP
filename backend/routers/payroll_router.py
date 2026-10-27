@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 from core import db, get_current_user, now_iso, new_id
 from pagination import maybe_paged, paged_or_rows
 from hr_worker_rules import is_worker_master, paid_weights
+from offload import run_blocking
 
 logger = logging.getLogger("erp.payroll")
 router = APIRouter(prefix="/payroll", tags=["payroll"])
@@ -716,7 +717,7 @@ async def payslips_bulk_pdf(month: str, user: dict = Depends(get_current_user)):
     emp_ids = [s["employee_id"] for s in slips]
     pans = {m["employee_id"]: m.get("pan") or "" async for m in db.payroll_master.find(
         {"employee_id": {"$in": emp_ids}}, {"_id": 0, "employee_id": 1, "pan": 1})}
-    data = render_payslips_bundle_pdf(slips, month, pans=pans)
+    data = await run_blocking(render_payslips_bundle_pdf, slips, month, pans=pans)
     return Response(content=data, media_type="application/pdf", headers={
         "Content-Disposition": f'inline; filename="Payslips-{month}.pdf"'})
 
@@ -742,7 +743,7 @@ async def payslip_pdf(employee_id: str, month: str, user: dict = Depends(get_cur
     doc = await _payslip_with_access(employee_id, month, user)
     from pdf_generator import render_payslip_pdf
     master = await db.payroll_master.find_one({"employee_id": employee_id}, {"_id": 0, "pan": 1}) or {}
-    data = render_payslip_pdf(doc, pan=master.get("pan") or "")
+    data = await run_blocking(render_payslip_pdf, doc, pan=master.get("pan") or "")
     fname = f"Payslip-{doc.get('employee_code') or employee_id[:6]}-{month}.pdf"
     return Response(content=data, media_type="application/pdf", headers={
         "Content-Disposition": f'inline; filename="{fname}"'})
@@ -778,7 +779,7 @@ async def email_payslips_all(month: str, background_tasks: BackgroundTasks,
             skipped.append({"employee": s.get("employee_name") or s["employee_id"], "reason": "no email on employee record"})
             continue
         try:
-            pdf = render_payslip_pdf(s, pan=pans.get(s["employee_id"], ""))
+            pdf = await run_blocking(render_payslip_pdf, s, pan=pans.get(s["employee_id"], ""))
         except Exception as e:
             skipped.append({"employee": s.get("employee_name") or s["employee_id"], "reason": f"PDF error: {e}"})
             continue

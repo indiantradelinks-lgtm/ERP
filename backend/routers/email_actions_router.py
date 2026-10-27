@@ -37,6 +37,7 @@ from m365_email import (
     shared_mailbox_configured,
 )
 from routers.email_router import _queue_outbox, _send_and_log
+from offload import run_blocking
 
 logger = logging.getLogger("erp.email_actions")
 router = APIRouter(prefix="/email", tags=["email"])
@@ -219,7 +220,7 @@ async def _build_attachment(module: str, rec: Dict[str, Any], party: str) -> Opt
             rec = dict(rec)
             rec["company_state"] = company.get("state")
             recalc_quotation(rec)
-            pdf = render_quotation_pdf(rec, company)
+            pdf = await run_blocking(render_quotation_pdf, rec, company)
             return {
                 "filename": f"Quotation-{rec.get('quote_number', rec['id'][:8])}.pdf",
                 "content_type": "application/pdf",

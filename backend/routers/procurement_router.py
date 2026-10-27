@@ -25,6 +25,7 @@ from pagination import maybe_paged, paged_or_rows
 from audit import audit
 from sequences import next_sequence, stamp_dept_doc
 from approval_engine import build_chain, insert_approval, copy_approval_doc_fields
+from offload import run_blocking
 
 # PO lifecycle: statuses where the PO is under approval or finalised — no edits allowed.
 PO_LOCKED_STATUSES = frozenset({"pending_approval", "submitted", "approved",
@@ -1516,7 +1517,7 @@ async def pr_pdf(pr_id: str, user: dict = Depends(require_permission("purchase_r
     pr = await db.purchase_requisitions.find_one({"id": pr_id}, {"_id": 0})
     if not pr:
         raise HTTPException(status_code=404, detail="PR not found")
-    pdf = render_pr_pdf(pr)
+    pdf = await run_blocking(render_pr_pdf, pr)
     return _pdf_response(pdf, f"{pr.get('pr_number') or pr_id}.pdf")
 
 
@@ -1528,7 +1529,7 @@ async def rfq_pdf(rfq_id: str, user: dict = Depends(require_permission("rfqs", "
     pr = None
     if rfq.get("pr_id"):
         pr = await db.purchase_requisitions.find_one({"id": rfq["pr_id"]}, {"_id": 0})
-    pdf = render_rfq_pdf(rfq, pr)
+    pdf = await run_blocking(render_rfq_pdf, rfq, pr)
     return _pdf_response(pdf, f"{rfq.get('rfq_number') or rfq_id}.pdf")
 
 
@@ -1559,7 +1560,7 @@ async def comparative_pdf(rfq_id: str, user: dict = Depends(require_permission("
             "selected": r.get("is_selected"),
             "non_l1_justification": r.get("non_l1_justification") or rfq.get("non_l1_justification"),
         })
-    pdf = render_comparative_pdf(rfq, {
+    pdf = await run_blocking(render_comparative_pdf, rfq, {
         "items": items_for_pdf,
         "vendors": vendors_for_pdf,
         "non_l1_justification": rfq.get("non_l1_justification"),
@@ -1583,7 +1584,7 @@ async def po_pdf(po_id: str, user: dict = Depends(require_permission("purchase_o
             if proj:
                 po["project_name"] = proj.get("name")
                 po["project_code"] = po.get("project_code") or proj.get("code") or code
-    pdf = render_po_pdf(po, vendor)
+    pdf = await run_blocking(render_po_pdf, po, vendor)
     return _pdf_response(pdf, f"{po.get('po_number') or po_id}.pdf")
 
 
@@ -1599,7 +1600,7 @@ async def grn_pdf(grn_id: str, user: dict = Depends(require_permission("grns", "
     if (po or {}).get("vendor_id") or grn.get("vendor_id"):
         vid = (po or {}).get("vendor_id") or grn.get("vendor_id")
         vendor = await db.vendors.find_one({"id": vid}, {"_id": 0})
-    pdf = render_grn_pdf(grn, po, vendor)
+    pdf = await run_blocking(render_grn_pdf, grn, po, vendor)
     return _pdf_response(pdf, f"{grn.get('grn_number') or grn_id}.pdf")
 
 

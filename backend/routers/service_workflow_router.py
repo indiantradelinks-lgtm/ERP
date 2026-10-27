@@ -21,6 +21,7 @@ from core import db, get_current_user, require_permission, now_iso, new_id
 from dedupe import ensure_no_duplicate
 from audit import audit
 from sequences import next_sequence
+from offload import run_blocking
 
 logger = logging.getLogger("erp")
 router = APIRouter(prefix="/service-workflow", tags=["service-workflow"])
@@ -896,7 +897,7 @@ async def service_po_pdf(po_id: str,
     vendor = await db.vendors.find_one({"id": po.get("vendor_id")}, {"_id": 0})
     sr = await db.svc_requests.find_one({"id": po.get("sr_id")}, {"_id": 0})
     from pdf_generator import render_service_po_pdf
-    pdf = render_service_po_pdf(po, vendor, sr)
+    pdf = await run_blocking(render_service_po_pdf, po, vendor, sr)
     draft = str(po.get("status") or "").lower() in ("draft", "pending_approval")
     fname = f"{po['po_no']}{'-DRAFT' if draft else ''}.pdf"
     return Response(content=pdf, media_type="application/pdf",
@@ -925,7 +926,7 @@ async def email_service_po(po_id: str, p: EmailPoIn, request: Request,
         raise HTTPException(503, "Shared company mailbox is not configured — set it up under Email Settings")
     sr = await db.svc_requests.find_one({"id": po.get("sr_id")}, {"_id": 0})
     from pdf_generator import render_service_po_pdf
-    pdf = render_service_po_pdf(po, vendor, sr)
+    pdf = await run_blocking(render_service_po_pdf, po, vendor, sr)
     import base64
     subject = f"Purchase Order {po['po_no']} — INDIAN TRADE LINKS"
     extra = f"<p>{p.message.strip()}</p>" if p.message.strip() else ""

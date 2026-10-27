@@ -21,7 +21,19 @@ ACCESS_MIN = 60 * 8  # 8h
 REFRESH_DAYS = 7
 
 # ---------- mongo ----------
-client = AsyncIOMotorClient(MONGO_URL)
+# Bounded pool: the container runs one event loop, so an unbounded pool only
+# adds idle sockets and memory. Short timeouts surface a sick DB as a fast 500
+# instead of a request that hangs until the edge drops it (Cloudflare 520).
+client = AsyncIOMotorClient(
+    MONGO_URL,
+    maxPoolSize=int(os.environ.get("MONGO_MAX_POOL", "40")),
+    minPoolSize=2,
+    maxIdleTimeMS=60_000,
+    serverSelectionTimeoutMS=8_000,
+    connectTimeoutMS=8_000,
+    socketTimeoutMS=45_000,
+    retryWrites=True,
+)
 db = client[DB_NAME]
 
 

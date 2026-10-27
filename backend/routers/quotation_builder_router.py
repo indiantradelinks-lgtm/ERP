@@ -28,6 +28,7 @@ from quotation_data import (
 )
 from quotation_pdf import render_quotation_pdf
 from notification_service import send_email, email_enabled, _shell
+from offload import run_blocking
 
 logger = logging.getLogger("erp.quotation_builder")
 router = APIRouter(tags=["quotation-builder"])
@@ -373,7 +374,7 @@ async def quotation_pdf(q_id: str, user: dict = Depends(require_permission("quot
     row["company_state"] = company.get("state")
     recalc_quotation(row)
     await attach_user_names(row)
-    pdf = render_quotation_pdf(row, company)
+    pdf = await run_blocking(render_quotation_pdf, row, company)
     filename = f"{row.get('quote_number', 'Quotation')}.pdf".replace(" ", "_")
     return StreamingResponse(
         io.BytesIO(pdf),
@@ -463,7 +464,7 @@ async def send_to_client(q_id: str, payload: SubmitToClientIn, request: Request,
     attachments = []
     if payload.attach_pdf:
         await attach_user_names(row)
-        pdf = render_quotation_pdf(row, company)
+        pdf = await run_blocking(render_quotation_pdf, row, company)
         # Resend supports content base64
         import base64
         attachments.append({

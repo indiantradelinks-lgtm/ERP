@@ -21,6 +21,7 @@ from pagination import maybe_paged, paged_or_rows
 from rbac import can
 from approval_engine import build_chain, apply_action, current_step, insert_approval, copy_approval_doc_fields
 from sequences import next_sequence, next_dept_doc
+from offload import run_blocking
 
 logger = logging.getLogger("erp.advances")
 router = APIRouter(tags=["advances"])
@@ -570,10 +571,10 @@ async def advance_monthly_report(fmt: str = "json", month: str = "", status_filt
     from exports import to_excel, to_pdf
     suffix = f"{month or 'All'}{('-' + status_filter) if status_filter else ''}"
     if fmt == "xlsx":
-        content = to_excel("salary_advance_report", data)
+        content = await run_blocking(to_excel, "salary_advance_report", data)
         mt = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else:
-        content = to_pdf("salary_advance_report", data)
+        content = await run_blocking(to_pdf, "salary_advance_report", data)
         mt = "application/pdf"
     return Response(content=content, media_type=mt,
                     headers={"Content-Disposition": f'attachment; filename="Salary-Advance-Report-{suffix}.{fmt}"'})

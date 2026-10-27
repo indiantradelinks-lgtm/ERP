@@ -24,6 +24,7 @@ from pagination import maybe_paged, paged_or_rows
 from audit import audit
 from sequences import next_sequence
 from accounting_service import post_vendor_invoice_verify, post_vendor_payment
+from offload import run_blocking
 
 router = APIRouter(prefix="/payables", tags=["Vendor Billing & Payables"])
 
@@ -715,7 +716,7 @@ async def vendor_bill_pdf(bill_id: str,
     if not b:
         raise HTTPException(status_code=404, detail="Bill not found")
     from pdf_generator import render_vendor_bill_pdf
-    pdf = render_vendor_bill_pdf(b)
+    pdf = await run_blocking(render_vendor_bill_pdf, b)
     from fastapi import Response
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{b.get("bill_no") or bill_id}.pdf"'})

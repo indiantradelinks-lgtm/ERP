@@ -2,12 +2,14 @@
 import asyncio
 import logging
 import os
-from datetime import datetime, timezone
+import socket
+from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from core import db
 from routers.notifications_router import run_expiry_scan, run_invoice_reminders
 
 logger = logging.getLogger("erp.scheduler")
@@ -350,6 +352,55 @@ def start_scheduler() -> None:
         f"Scheduler started (tz={tz}). Jobs: expiry_scan@09:00, invoice_reminders@Mon 09:00, "
         f"shortage_scan@07:30, email_retry@every 10min"
     )
+
+
+# ── Single-replica leadership ──────────────────────────────────────────
+# Production runs more than one API replica. Without a lock every replica ran
+# all ~15 jobs, duplicating the memory and event-loop load that OOM-killed the
+# pods. Only the replica holding this lease schedules jobs; the lease is renewed
+# while it lives, so another replica takes over within a minute if it dies.
+INSTANCE_ID = f"{socket.gethostname()}-{os.getpid()}"
+LEASE_SECONDS = 90
+_lease_task: "asyncio.Task | None" = None
+
+
+async def _claim_lease() -> bool:
+    now = datetime.now(timezone.utc)
+    fresh = (now - timedelta(seconds=LEASE_SECONDS)).isoformat()
+    res = await db.scheduler_lease.update_one(
+        {"_id": "erp-scheduler", "$or": [{"holder": INSTANCE_ID}, {"renewed_at": {"$lt": fresh}}]},
+        {"$set": {"holder": INSTANCE_ID, "renewed_at": now.isoformat()}},
+    )
+    if res.matched_count:
+        return True
+    try:  # no document yet → first replica to insert wins
+        await db.scheduler_lease.insert_one(
+            {"_id": "erp-scheduler", "holder": INSTANCE_ID, "renewed_at": now.isoformat()})
+        return True
+    except Exception:
+        return False
+
+
+async def start_scheduler_when_leader() -> None:
+    """Called at startup — keeps renewing the lease and starts the jobs once won."""
+    global _lease_task
+
+    async def _loop():
+        started = False
+        while True:
+            try:
+                leader = await _claim_lease()
+                if leader and not started:
+                    start_scheduler()
+                    started = True
+                    logger.info(f"[scheduler] this replica ({INSTANCE_ID}) holds the lease")
+                elif not leader and not started:
+                    logger.info("[scheduler] another replica holds the lease — jobs not scheduled here")
+            except Exception as e:
+                logger.warning(f"[scheduler] lease check failed: {e}")
+            await asyncio.sleep(LEASE_SECONDS // 3)
+
+    _lease_task = asyncio.create_task(_loop())
 
 
 async def _email_retry_job():

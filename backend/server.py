@@ -40,7 +40,7 @@ from routers.department_master_router import seed_department_master_if_empty
 from routers.project_requests_router import backfill_manpower_recruitment, migrate_legacy_resource_requests
 
 from seed import seed_admin, seed_sample_data
-from scheduler import start_scheduler, shutdown_scheduler, scheduler_status
+from scheduler import start_scheduler_when_leader, shutdown_scheduler, scheduler_status
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
@@ -173,7 +173,13 @@ async def on_startup():
         except Exception as ce:
             logger.warning(f"Condition library seed skipped: {ce}")
         init_storage()
-        start_scheduler()
+        await start_scheduler_when_leader()
+        try:
+            from perf_indexes import ensure_perf_indexes
+            await ensure_perf_indexes()
+            logger.info("[perf-index] hot-path indexes ensured")
+        except Exception as e:
+            logger.warning(f"[perf-index] skipped: {e}")
         # Iter 71 — Seed Chart of Accounts (idempotent)
         try:
             from accounting_service import ensure_coa_seeded
@@ -309,6 +315,23 @@ async def on_shutdown():
 
 
 app.include_router(api)
+
+
+@app.middleware("http")
+async def _safe_headers(request, call_next):
+    """A header value that is not latin-1 encodable (a ₹, an en-dash or a Hindi
+    name reaching a download filename) kills the response while it is being
+    written, which the browser shows as a Cloudflare 520. Sanitise instead."""
+    response = await call_next(request)
+    cd = response.headers.get("content-disposition")
+    if cd:
+        try:
+            cd.encode("latin-1")
+        except UnicodeEncodeError:
+            response.headers["content-disposition"] = (
+                cd.encode("ascii", "replace").decode("ascii").replace("?", "_"))
+    return response
+
 
 _cors_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(_DupMW)

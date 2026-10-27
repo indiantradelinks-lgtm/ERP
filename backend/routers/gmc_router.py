@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from core import db, require_permission, now_iso, new_id
 from audit import audit
 from exports import to_excel, to_pdf
+from offload import run_blocking
 
 router = APIRouter(tags=["gmc"])
 
@@ -335,10 +336,10 @@ async def export_members(fmt: str, policy_id: Optional[str] = None, scope: Optio
         r["dependent_names"] = "; ".join(parts)
     fname = f"group_medical_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.{fmt}"
     if fmt == "xlsx":
-        data = to_excel("gmc_members", rows)
+        data = await run_blocking(to_excel, "gmc_members", rows)
         media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else:
-        data = to_pdf("gmc_members", rows)
+        data = await run_blocking(to_pdf, "gmc_members", rows)
         media = "application/pdf"
     return StreamingResponse(io.BytesIO(data), media_type=media,
                              headers={"Content-Disposition": f'attachment; filename="{fname}"'})
@@ -454,7 +455,7 @@ async def email_insurer_update(pid: str, request: Request,
     for r in rows:
         r["dependent_names"] = "; ".join(
             f"{d.get('name')} ({d.get('relation')})" for d in (r.get("dependent_details") or []))
-    xlsx = to_excel("gmc_members", rows)
+    xlsx = await run_blocking(to_excel, "gmc_members", rows)
     html = f"""
       <p>Dear {policy['insurer']} team,</p>
       <p>Please find below the member updates for Group Medical Policy <b>{policy['policy_number']}</b>

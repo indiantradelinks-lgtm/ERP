@@ -42,6 +42,7 @@ from routers.project_expenses_router import get_expense_types as _pex_types
 from sequences import next_sequence
 from exports import to_excel, to_pdf
 from request_visibility import apply_request_visibility, own_rows_clauses
+from offload import run_blocking
 
 router = APIRouter(tags=["project-requests"])
 logger = logging.getLogger("erp")
@@ -1549,7 +1550,7 @@ async def export_requests(fmt: str, project_code: Optional[str] = None, status: 
         q["request_type"] = request_type
     q = await apply_request_visibility(user, q)
     rows = await db.project_requests.find(q, {"_id": 0}).sort("created_at", -1).to_list(5000)
-    data = to_excel("project_requests", rows) if fmt == "xlsx" else to_pdf("project_requests", rows)
+    data = await run_blocking(to_excel, "project_requests", rows) if fmt == "xlsx" else await run_blocking(to_pdf, "project_requests", rows)
     media = ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
              if fmt == "xlsx" else "application/pdf")
     return StreamingResponse(io.BytesIO(data), media_type=media,

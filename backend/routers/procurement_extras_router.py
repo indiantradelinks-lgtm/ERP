@@ -51,6 +51,7 @@ from pydantic import BaseModel, Field
 from core import db, require_permission, get_current_user, now_iso, new_id
 from audit import audit
 from sequences import next_sequence
+from offload import run_blocking
 
 router = APIRouter(prefix="/procurement-extras", tags=["procurement-extras"])
 
@@ -570,7 +571,7 @@ async def srn_pdf(srn_id: str, user: dict = Depends(require_permission("purchase
     so = await db.service_orders.find_one({"id": srn.get("so_id")}, {"_id": 0})
     vendor = await db.vendors.find_one({"id": srn.get("vendor_id")}, {"_id": 0}) if srn.get("vendor_id") else None
     from pdf_generator import render_srn_pdf
-    pdf = render_srn_pdf(srn, so, vendor)
+    pdf = await run_blocking(render_srn_pdf, srn, so, vendor)
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{srn.get("srn_number") or srn_id}.pdf"'})
 

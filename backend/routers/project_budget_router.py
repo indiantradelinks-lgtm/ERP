@@ -21,6 +21,7 @@ from core import db, require_permission, now_iso, new_id
 from scope import apply_project_scope, ensure_project_access
 from audit import audit
 from exports import to_excel, to_pdf
+from offload import run_blocking
 
 router = APIRouter(prefix="/ops/project-budgets", tags=["project-budget"])
 
@@ -227,7 +228,7 @@ async def export_budget(fmt: str, project_id: str = "", category_id: str = "", c
         "Units": r.get("units"), "Total Budget": r.get("total"),
         "Remarks": r.get("remarks") or "",
     } for r in raw]
-    data = to_excel("project_budget_lines", rows) if fmt == "xlsx" else to_pdf("project_budget_lines", rows)
+    data = await run_blocking(to_excel, "project_budget_lines", rows) if fmt == "xlsx" else await run_blocking(to_pdf, "project_budget_lines", rows)
     media = ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
              if fmt == "xlsx" else "application/pdf")
     return StreamingResponse(io.BytesIO(data), media_type=media,

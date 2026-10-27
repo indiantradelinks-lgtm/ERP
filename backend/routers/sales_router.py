@@ -206,6 +206,8 @@ async def create_enquiry(payload: EnquiryIn, request: Request, user: dict = Depe
             break
         except Exception as e:
             logger.warning(f"Auto-quotation attempt {attempt} failed for enquiry {doc['enquiry_no']}: {e}")
+            # let the Sales screen's self-heal pick this enquiry up on the next visit
+            await db.sales_sync_state.delete_one({"_id": "quotation_coverage"})
 
     await audit(user=user, action="create", resource="enquiries", record_id=doc["id"], after=doc, ip=_ip(request))
     return doc
@@ -317,13 +319,23 @@ async def _repair_duplicate_quote_numbers(user: dict) -> List[Dict[str, Any]]:
 
 
 @router.post("/quotations/sync-from-enquiries")
-async def sync_quotations_from_enquiries(request: Request,
+async def sync_quotations_from_enquiries(request: Request, force: bool = False,
                                          user: dict = Depends(require_permission("quotations", "write"))):
+    # The Sales screen calls this on every visit, so skip the scan when a recent
+    # one found nothing — enquiry creation already links its quotation inline.
+    state = await db.sales_sync_state.find_one({"_id": "quotation_coverage"}, {"_id": 0, "clean_at": 1})
+    if not force and state and state.get("clean_at"):
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(state["clean_at"])).total_seconds()
+        if age < 600:
+            return {"created": 0, "quotations": [], "renumbered": 0, "renumbered_detail": [], "skipped": True}
     renumbered = await _repair_duplicate_quote_numbers(user)
     created = await _sync_missing_quotations(user)
     if created or renumbered:
         await audit(user=user, action="sales_sync", resource="quotations", record_id="sync",
                     after={"created": created, "renumbered": renumbered}, ip=_ip(request))
+    else:
+        await db.sales_sync_state.update_one({"_id": "quotation_coverage"},
+                                             {"$set": {"clean_at": now_iso()}}, upsert=True)
     return {"created": len(created), "quotations": created,
             "renumbered": len(renumbered), "renumbered_detail": renumbered}
 

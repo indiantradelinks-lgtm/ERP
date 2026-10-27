@@ -18,6 +18,7 @@ from core import db, require_permission, now_iso, new_id
 from audit import audit
 from sequences import next_sequence
 from accounting_service import post_journal_entry, ensure_coa_seeded
+from offload import run_blocking
 
 router = APIRouter(prefix="/accounts/payment-queue", tags=["payment-processing"])
 
@@ -468,10 +469,10 @@ async def export_payment_queue(fmt: str, stage: str = "pending", search: str = "
     from exports import to_excel, to_pdf
     label = {"pending": "Pending-Verification", "verified": "Verified", "bank": "Bank-Files", "paid": "Paid-History"}.get(stage, stage)
     if fmt == "xlsx":
-        content = to_excel("payment_queue", data)
+        content = await run_blocking(to_excel, "payment_queue", data)
         mt = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else:
-        content = to_pdf("payment_queue", data)
+        content = await run_blocking(to_pdf, "payment_queue", data)
         mt = "application/pdf"
     return Response(content=content, media_type=mt,
                     headers={"Content-Disposition": f'attachment; filename="Payment-{label}.{fmt}"'})

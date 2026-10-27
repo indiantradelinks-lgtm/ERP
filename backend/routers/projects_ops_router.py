@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 from core import db, require_permission, get_current_user, now_iso, new_id
 from audit import audit
 from sequences import next_sequence
+from offload import run_blocking
 
 logger = logging.getLogger("erp.ops")
 router = APIRouter(tags=["projects-ops"])
@@ -396,10 +397,10 @@ async def export_handovers(fmt: str, status: Optional[str] = None,
     rows = await db.project_handovers.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
     rows = await _hydrate_project_client_from_sales(rows)
     if fmt == "xlsx":
-        data = to_excel("project_handovers", rows)
+        data = await run_blocking(to_excel, "project_handovers", rows)
         media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else:
-        data = to_pdf("project_handovers", rows)
+        data = await run_blocking(to_pdf, "project_handovers", rows)
         media = "application/pdf"
     fname = f"contract-handovers.{fmt}"
     return Response(content=data, media_type=media,

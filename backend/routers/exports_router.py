@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 from core import db, get_current_user
 from rbac import can
 from exports import to_excel, to_pdf
+from offload import run_blocking
 
 router = APIRouter(tags=["exports"])
 
@@ -137,9 +138,9 @@ async def export_resource(resource: str, fmt: str,
     mask = _should_mask_pii(user.get("role"), perm_key)
     fname = f"{perm_key}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.{fmt}"
     if fmt == "xlsx":
-        data = to_excel(perm_key, rows, mask_pii=mask)
+        data = await run_blocking(to_excel, perm_key, rows, mask_pii=mask)
         media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else:
-        data = to_pdf(perm_key, rows, mask_pii=mask)
+        data = await run_blocking(to_pdf, perm_key, rows, mask_pii=mask)
         media = "application/pdf"
     return StreamingResponse(io.BytesIO(data), media_type=media, headers={"Content-Disposition": f'attachment; filename="{fname}"'})

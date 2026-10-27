@@ -26,6 +26,7 @@ from pagination import maybe_paged, paged_or_rows
 from audit import audit
 from sequences import next_sequence
 from exports import to_excel, to_pdf
+from offload import run_blocking
 
 router = APIRouter(tags=["project-expenses"])
 
@@ -377,7 +378,7 @@ async def export_expenses(fmt: str, project_code: Optional[str] = None, status: 
     if status:
         q["status"] = status
     rows = await db.project_expenses.find(q, {"_id": 0}).sort("expense_date", -1).to_list(5000)
-    data = to_excel("project_expenses", rows) if fmt == "xlsx" else to_pdf("project_expenses", rows)
+    data = await run_blocking(to_excel, "project_expenses", rows) if fmt == "xlsx" else await run_blocking(to_pdf, "project_expenses", rows)
     media = ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
              if fmt == "xlsx" else "application/pdf")
     return StreamingResponse(io.BytesIO(data), media_type=media,
@@ -494,7 +495,7 @@ async def export_pnl(fmt: str, user: dict = Depends(require_permission("project_
         "income_billed": r["income_billed"], "receipts": r["receipts"],
         "total_expense": r["total_expense"], "gross_profit": r["gross_profit"], "margin_pct": r["margin_pct"],
     } for r in data_all["projects"]]
-    data = to_excel("project_pnl", rows) if fmt == "xlsx" else to_pdf("project_pnl", rows)
+    data = await run_blocking(to_excel, "project_pnl", rows) if fmt == "xlsx" else await run_blocking(to_pdf, "project_pnl", rows)
     media = ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
              if fmt == "xlsx" else "application/pdf")
     return StreamingResponse(io.BytesIO(data), media_type=media,

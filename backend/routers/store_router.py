@@ -15,6 +15,7 @@ from pagination import maybe_paged, paged_or_rows
 from audit import audit
 from sequences import next_sequence
 from approval_engine import build_chain, insert_approval, copy_approval_doc_fields
+from offload import run_blocking
 
 router = APIRouter(tags=["store"])
 
@@ -434,7 +435,7 @@ async def material_issue_pdf(txn_id: str,
         "issue_date": (txn.get("created_at") or "")[:10],
         "slip_no": txn.get("txn_no") or txn.get("id"),
     }
-    pdf = render_material_issue_pdf(slip)
+    pdf = await run_blocking(render_material_issue_pdf, slip)
     return Response(
         content=pdf,
         media_type="application/pdf",

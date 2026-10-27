@@ -26,6 +26,7 @@ from audit import audit
 from sequences import next_sequence
 from exports import to_excel, to_pdf
 from pdf_generator import _wrap, _render, _esc
+from offload import run_blocking
 
 router = APIRouter(tags=["scaffolding"])
 logger = logging.getLogger("erp")
@@ -1142,7 +1143,7 @@ async def export_stock(fmt: str, kind: str = "stock", location_id: Optional[str]
             r["weight_kg"] = round(float(r.get("quantity") or 0) * w, 2)
             r["tonnage_mt"] = round(r["weight_kg"] / 1000, 3)
         res = "scaf_stock"
-    data = to_excel(res, rows) if fmt == "xlsx" else to_pdf(res, rows)
+    data = await run_blocking(to_excel, res, rows) if fmt == "xlsx" else await run_blocking(to_pdf, res, rows)
     media = ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if fmt == "xlsx" else "application/pdf")
     return StreamingResponse(io.BytesIO(data), media_type=media,
                              headers={"Content-Disposition": f'attachment; filename="scaffolding_{kind}.{fmt}"'})

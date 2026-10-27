@@ -14,6 +14,7 @@ Templates are inline HTML to avoid any extra file deps. Branding stays minimal +
 professional — slate header, table grid, footer with system note.
 """
 from __future__ import annotations
+import gc
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -160,10 +161,17 @@ def _wrap(title: str, body_html: str, logo: bool = False) -> str:
 
 def _render(html: str) -> bytes:
     if _WP_OK:
+        doc = None
         try:
-            return HTML(string=html).write_pdf()
+            doc = HTML(string=html)
+            return doc.write_pdf()
         except Exception:
             pass
+        finally:
+            # WeasyPrint holds the whole document tree; drop it before the next
+            # render so a burst of report downloads cannot pile up and OOM the pod.
+            del doc
+            gc.collect()
     # Fallback: very basic text PDF via ReportLab
     if _RL_OK:
         from io import BytesIO

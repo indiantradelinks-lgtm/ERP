@@ -29,8 +29,8 @@ def _coverage(s):
     return r.json()
 
 
-def _sync(s):
-    r = s.post(f"{API}/quotations/sync-from-enquiries", timeout=180)
+def _sync(s, force=True):
+    r = s.post(f"{API}/quotations/sync-from-enquiries", params={"force": str(force).lower()}, timeout=180)
     assert r.status_code == 200, r.text
     return r.json()
 
@@ -122,3 +122,12 @@ def test_new_enquiry_shows_up_immediately(s, mdb):
 def test_quote_numbers_are_unique_across_the_list(s):
     nums = [n for n in _quote_numbers(s) if n]
     assert len(nums) == len(set(nums))
+
+
+def test_recent_clean_scan_is_cached(s):
+    """The Sales screen calls the sync on every visit — a clean result is cached
+    so the page does not pay for a full scan each time."""
+    _sync(s, force=True)
+    cheap = s.post(f"{API}/quotations/sync-from-enquiries", timeout=60).json()
+    assert cheap.get("skipped") is True
+    assert cheap["created"] == 0 and cheap["renumbered"] == 0

@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from core import db, require_permission, now_iso, new_id, logger
 from audit import audit
 from sequences import next_sequence
+from offload import run_blocking
 
 router = APIRouter(tags=["procurement-phase-b"])
 
@@ -157,7 +158,8 @@ async def export_allocations(fmt: str = "xlsx", status: Optional[str] = None,
     if fmt == "pdf":
         from pdf_generator import render_allocation_report_pdf
         from fastapi.responses import Response
-        return Response(content=render_allocation_report_pdf(ordered, summary, applied),
+        pdf = await run_blocking(render_allocation_report_pdf, ordered, summary, applied)
+        return Response(content=pdf,
                         media_type="application/pdf",
                         headers={"Content-Disposition": 'inline; filename="material-allocations-projectwise.pdf"'})
 

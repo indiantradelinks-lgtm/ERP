@@ -17,6 +17,7 @@ from core import db, get_current_user, now_iso, require_permission
 from billing_category import (CATEGORY_LABELS, category_label, category_of, contract_months,
                              is_recurring, month_bounds, monthly_amount, scope_value)
 from scope import apply_project_scope
+from offload import run_blocking
 
 router = APIRouter(tags=["billing-pending"])
 
@@ -419,7 +420,7 @@ async def pending_report_export(fmt: str = "xlsx", month: Optional[str] = None,
         ("Service Period To", period_to)] if val not in (None, "")]
     if fmt == "pdf":
         from pdf_generator import render_billing_pending_pdf
-        data = render_billing_pending_pdf(rows, summary, month, months, applied)
+        data = await run_blocking(render_billing_pending_pdf, rows, summary, month, months, applied)
         return Response(content=data, media_type="application/pdf",
                         headers={"Content-Disposition": f'inline; filename="pending-billing-{month}.pdf"'})
     headers = ["Project Code", "Project Name", "Project Category", "Billing Mode",

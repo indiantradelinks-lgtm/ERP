@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from core import db, get_current_user, now_iso
 from pagination import parse_keys, search_clause, extra_filters, combine, paged_find, sort_spec
 from approval_engine import build_chain, apply_action, apply_resubmit, APPROVAL_CHAINS
+from offload import run_blocking
 
 router = APIRouter(tags=["approvals"])
 
@@ -1172,7 +1173,7 @@ async def approvals_report_export(fmt: str = "xlsx", status: str = "approved", t
     stamp = now_iso()[:10]
     if fmt == "pdf":
         from pdf_generator import render_approval_report_pdf
-        data = render_approval_report_pdf(rows, summary, {
+        data = await run_blocking(render_approval_report_pdf, rows, summary, {
             "Status": status, "Type": type or "All", "From": date_from or "—", "To": date_to or "—",
             "Search": q or "—", "Approver": approver or "—", "Project Manager": project_manager or "—"})
         return Response(content=data, media_type="application/pdf",
