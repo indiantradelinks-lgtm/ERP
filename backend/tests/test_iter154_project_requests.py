@@ -131,7 +131,7 @@ def test_create_fuel(sess, project_code):
     if not sess.get("pm"):
         pytest.skip("no pm")
     r = sess["pm"].post(f"{API}/project-requests", json={
-        "project_code": project_code, "request_type": "fuel",
+        "project_code": project_code, "request_type": "fuel", "vehicle_ref": "HR26DK8337",
         "description": "TEST_iter154 fuel", "amount": 5000, "vendor": "TEST_FUEL_STN"}, timeout=30)
     assert r.status_code == 200, r.text
     d = r.json()
@@ -193,7 +193,7 @@ def test_reject_flow(sess, project_code):
         pytest.skip("no pm/dh")
     # Raise a temp request to reject
     r = sess["pm"].post(f"{API}/project-requests", json={
-        "project_code": project_code, "request_type": "fuel", "amount": 300,
+        "project_code": project_code, "request_type": "fuel", "vehicle_ref": "HR26DK8337", "amount": 300,
         "description": "TEST_iter154 to_reject"}, timeout=30)
     assert r.status_code == 200
     rid = r.json()["id"]

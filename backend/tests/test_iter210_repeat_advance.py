@@ -123,7 +123,7 @@ def pctx(s):
 
 
 def _preq(s, created, pctx, desc, amount=4321, priority="medium"):
-    body = {"request_type": "fuel", "amount": amount, "priority": priority, "description": desc,
+    body = {"request_type": "fuel", "vehicle_ref": "HR26DK8337", "amount": amount, "priority": priority, "description": desc,
             "project_id": pctx["project_id"], "cost_center_id": pctx["cost_center_id"],
             "vendor": "TEST_iter210 vendor", "notes": uuid.uuid4().hex[:6]}
     r = s.post(f"{API}/project-requests", json=body, timeout=40)

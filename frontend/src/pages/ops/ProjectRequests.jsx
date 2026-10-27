@@ -124,6 +124,7 @@ export default function ProjectRequests() {
   const isStockable = form.request_type && STOCKABLE.has(form.request_type);
   const isManpower = form.request_type === "manpower";
   const isVehicle = form.request_type?.startsWith("vehicle") || form.request_type === "one_time_vehicle";
+  const isFuel = form.request_type === "fuel";
   const isSelf = form.request_type === "self_expense";
   const isHO = form.request_type === "head_office_expense";
   const [hoCCs, setHoCCs] = useState([]);
@@ -275,6 +276,7 @@ export default function ProjectRequests() {
     if (isSelf && form.self_for_project && !form.project_code) { toast.error("Select the project this expense was incurred for"); return; }
     if (!form.request_type) { toast.error("Select request type"); return; }
     if (isManpower && !form.items.some((i) => i.name && Number(i.quantity) > 0)) { toast.error("Add at least one manpower line"); return; }
+    if (isFuel && !(form.vehicle_ref || "").trim()) { toast.error("Vehicle Number is mandatory for a Fuel payment request"); return; }
     if (isStockable && !form.items.some((i) => (i.name || "").trim() && Number(i.quantity) > 0)) { toast.error("Add at least one item"); return; }
     if (estValue <= 0 && !isStockable && !isManpower) { toast.error("Enter amount / rate"); return; }
     if (!form.cost_center_id) { toast.error((isSelf || isHO) ? (form.self_for_project ? "Select the project's Cost Center" : "Select a Head Office Cost Center before submitting") : "Cost Center is mandatory — select a valid Cost Center before submitting"); return; }
@@ -872,6 +874,14 @@ export default function ProjectRequests() {
               <div><Label className="text-[10px] uppercase tracking-wider">Vehicle Type / Ref</Label>
                 <Input value={form.vehicle_ref} onChange={(e) => setForm({ ...form, vehicle_ref: e.target.value })} placeholder={form.request_type === "vehicle_material" ? "Big Truck / Small Truck" : "Car / Bus / Winger / Magic"} className="h-9 rounded-sm mt-1" data-testid="req-form-vehicle" /></div>
             )}
+            {isFuel && (
+              <div><Label className="text-[10px] uppercase tracking-wider">Vehicle Number *</Label>
+                <Input value={form.vehicle_ref}
+                  onChange={(e) => setForm({ ...form, vehicle_ref: e.target.value.toUpperCase() })}
+                  placeholder="e.g. HR26 DK 8337" className="h-9 rounded-sm mt-1 uppercase" data-testid="req-form-fuel-vehicle-no" />
+                <div className="text-[10px] text-muted-foreground mt-0.5">Mandatory — the vehicle this fuel is being paid for.</div>
+              </div>
+            )}
             {form.request_type === "one_time_vehicle" && (
               <>
                 <div><Label className="text-[10px] uppercase tracking-wider">From Location</Label>
@@ -940,6 +950,7 @@ export default function ProjectRequests() {
                   {[["Status", (STATUS[detail.status] || [detail.status])[0]], ["Est. Value", inr(detail.est_value)],
                     ["Priority", detail.priority], ["Need By", detail.need_by || "—"],
                     ...(detail.payment_mode ? [["Payment Mode", detail.payment_mode]] : []),
+                    ...(detail.vehicle_ref ? [[detail.request_type === "fuel" ? "Vehicle No" : "Vehicle", detail.vehicle_ref]] : []),
                     ...(detail.upi_any_name ? [["UPI Any Name", detail.upi_any_name]] : []),
                     ["Cost Center", detail.cost_center_label || "Auto (project default)"],
                     ["Site Location", detail.site_location || "—"],

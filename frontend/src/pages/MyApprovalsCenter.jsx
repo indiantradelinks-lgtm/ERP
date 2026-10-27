@@ -20,6 +20,10 @@ const SOURCES = {
   dpr: { label: "Site Reports (DPR)", icon: HardHat, tone: "border-orange-300 text-orange-900 bg-orange-50" },
   ra_bill: { label: "RA Bills", icon: Receipt, tone: "border-rose-300 text-rose-900 bg-rose-50" },
 };
+const PAY_MODE_TONE = {
+  UPI: "border-violet-300 text-violet-900 bg-violet-50",
+  Accounts: "border-sky-300 text-sky-900 bg-sky-50",
+};
 const ago = (iso) => {
   if (!iso) return "—";
   const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
@@ -167,14 +171,15 @@ export default function MyApprovalsCenter() {
             <TableHead className="text-[10px] uppercase tracking-wider">Ref # / Raised</TableHead>
             <TableHead className="text-[10px] uppercase tracking-wider">Item</TableHead>
             <TableHead className="text-[10px] uppercase tracking-wider text-right">Amount</TableHead>
+            <TableHead className="text-[10px] uppercase tracking-wider">Pay Mode</TableHead>
             <TableHead className="text-[10px] uppercase tracking-wider">Waiting At</TableHead>
             <TableHead className="text-[10px] uppercase tracking-wider">Age</TableHead>
             <TableHead className="text-right"></TableHead>
           </TableRow></TableHeader>
           <TableBody>
-            {!data && <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>}
+            {!data && <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>}
             {data && items.length === 0 && (
-              <TableRow><TableCell colSpan={7} className="text-center py-14">
+              <TableRow><TableCell colSpan={8} className="text-center py-14">
                 <Inbox className="h-8 w-8 mx-auto text-muted-foreground/40" />
                 <div className="mt-3 text-sm font-semibold">Inbox zero</div>
                 <div className="text-xs text-muted-foreground mt-1">Nothing is waiting on your action right now.</div>
@@ -194,6 +199,12 @@ export default function MyApprovalsCenter() {
                     {it.subtitle && <div className="text-[11px] text-muted-foreground truncate max-w-[280px]">{it.subtitle}</div>}
                   </TableCell>
                   <TableCell className="text-right font-mono-data tabular text-sm font-bold">{it.amount ? inr(it.amount) : "—"}</TableCell>
+                  <TableCell>
+                    {it.payment_mode ? (
+                      <Badge variant="outline" className={`rounded-sm text-[10px] font-bold ${PAY_MODE_TONE[it.payment_mode] || "border-border"}`}
+                        data-testid={`inbox-paymode-${it.id}`}>{it.payment_mode}</Badge>
+                    ) : <span className="text-xs text-muted-foreground" data-testid={`inbox-paymode-${it.id}`}>—</span>}
+                  </TableCell>
                   <TableCell className="text-xs">{it.step_label || "—"}</TableCell>
                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{ago(it.created_at)}</TableCell>
                   <TableCell className="text-right space-x-1 whitespace-nowrap">

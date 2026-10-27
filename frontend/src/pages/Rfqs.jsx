@@ -3,7 +3,7 @@ import usePagedList from "@/hooks/usePagedList";
 import TablePager from "@/components/TablePager";
 import TableViewsMenu from "@/components/TableViewsMenu";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { Plus, RefreshCw, Search, Trophy, FileText, ChevronRight, Send, Mail, Network, FileDown, Mails, History, XCircle } from "lucide-react";
+import { Plus, RefreshCw, Search, Trophy, FileText, ChevronRight, Send, Mail, Network, FileDown, Mails, History, XCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,6 +48,7 @@ export default function Rfqs() {
   const [cancelFor, setCancelFor] = useState(null);
   const [cancelReason, setCancelReason] = useState("");
   const [showAllVendors, setShowAllVendors] = useState(false);
+  const [vendorQuery, setVendorQuery] = useState("");
   const [tagOpen, setTagOpen] = useState(false);
   const [catMaster, setCatMaster] = useState([]);
 
@@ -93,11 +94,17 @@ export default function Rfqs() {
     return selectedCats.some((ic) => vc.some((c) => ic === c || ic.includes(c) || c.includes(ic)));
   };
   const visibleVendors = useMemo(() => {
-    if (showAllVendors || !selectedCats.length) return vendors;
-    const matched = vendors.filter(matchesCat);
-    return matched.length ? matched : vendors;   // fall back to all if nothing matches
+    const base = (showAllVendors || !selectedCats.length)
+      ? vendors
+      : (vendors.filter(matchesCat).length ? vendors.filter(matchesCat) : vendors);
+    const q = vendorQuery.trim().toLowerCase();
+    if (!q) return base;
+    return base.filter((v) => `${v.name || ""} ${v.vendor_code || ""} ${v.code || ""} ${v.city || ""} ${(v.categories || []).join(" ")}`
+      .toLowerCase().includes(q));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vendors, selectedCats, showAllVendors]);
+  }, [vendors, selectedCats, showAllVendors, vendorQuery]);
+  const selectedVendors = useMemo(
+    () => vendors.filter((v) => form.vendor_ids.includes(v.id)), [vendors, form.vendor_ids]);
 
   const pickPr = (pr_id) => {
     const pr = prs.find((p) => p.id === pr_id);
@@ -129,6 +136,7 @@ export default function Rfqs() {
       toast.success(`${data.rfq_number} created for ${form.item_indexes.length} item(s)`);
       setOpen(false);
       setForm({ pr_id: "", vendor_ids: [], notes: "", response_due_date: "", item_indexes: [] });
+      setVendorQuery("");
       load();
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
@@ -297,8 +305,24 @@ export default function Rfqs() {
                   )}
                 </div>
               </div>
+              <div className="relative mt-1">
+                <Search className="h-3.5 w-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input value={vendorQuery} onChange={(e) => setVendorQuery(e.target.value)}
+                  placeholder="Search vendor by name, code or city…"
+                  className="h-9 rounded-sm pl-7 pr-7 text-sm" data-testid="rfq-vendor-search" />
+                {vendorQuery && (
+                  <button type="button" onClick={() => setVendorQuery("")} data-testid="rfq-vendor-search-clear"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
               <div className="flex flex-wrap gap-1.5 p-2 border border-input rounded-sm bg-background mt-1 max-h-48 overflow-y-auto" data-testid="rfq-vendor-list">
-                {visibleVendors.length === 0 && <span className="text-xs text-muted-foreground p-1">No vendors found.</span>}
+                {visibleVendors.length === 0 && (
+                  <span className="text-xs text-muted-foreground p-1" data-testid="rfq-vendor-empty">
+                    {vendorQuery ? `No vendor matches “${vendorQuery}”.` : "No vendors found."}
+                  </span>
+                )}
                 {visibleVendors.map((v) => {
                   const active = form.vendor_ids.includes(v.id);
                   return (
@@ -310,6 +334,11 @@ export default function Rfqs() {
                   );
                 })}
               </div>
+              {selectedVendors.length > 0 && (
+                <div className="text-[11px] text-muted-foreground mt-1" data-testid="rfq-vendor-selected">
+                  Selected ({selectedVendors.length}): <b className="text-foreground">{selectedVendors.map((v) => v.name).join(", ")}</b>
+                </div>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>

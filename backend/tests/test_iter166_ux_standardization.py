@@ -103,7 +103,7 @@ class TestProjectRequestCostCenterAutoResolve:
         cat = ctx["cat"]
         payload = {
             "project_id": project["id"],
-            "request_type": "fuel",
+            "request_type": "fuel", "vehicle_ref": "HR26DK8337",
             "priority": "medium",
             "description": f"TEST_iter166 auto-CC {uuid.uuid4().hex[:6]}",
             "amount": 5000,

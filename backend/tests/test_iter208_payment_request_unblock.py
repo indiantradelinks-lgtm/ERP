@@ -63,6 +63,8 @@ def _raise(session, ctx, rtype, description, *, amount=5000, ho=False, **extra):
             "description": description,
             "project_id": ctx["ho_project_id"] if ho else ctx["project_id"],
             "cost_center_id": ctx["ho_cc"] if ho else ctx["cost_center_id"], **extra}
+    if rtype == "fuel":
+        body.setdefault("vehicle_ref", "HR26DK8337")   # mandatory from Iter 220
     r = session.post(f"{API}/project-requests", json=body, timeout=40)
     if r.status_code == 200:
         ctx["ids"].append(r.json()["id"])

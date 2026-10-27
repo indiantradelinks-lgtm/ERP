@@ -432,6 +432,8 @@ async def create_request(p: RequestIn, request: Request,
     if p.request_type not in _rtypes:
         raise HTTPException(400, f"request_type must be one of {sorted(_rtypes)}")
     meta = _rtypes[p.request_type]
+    if p.request_type == "fuel" and not (p.vehicle_ref or "").strip():
+        raise HTTPException(400, "Vehicle Number is mandatory for a Fuel payment request")
     if meta.get("payment") and (p.priority or "").lower() == "high":
         if p.payment_mode not in ("UPI", "Accounts"):
             raise HTTPException(400, "Payment Mode (UPI or Accounts) is mandatory for HIGH priority payment requests")
@@ -619,7 +621,8 @@ async def create_request(p: RequestIn, request: Request,
         "total_weight_kg": round(sum(float(i.quantity or 0) * float(i.unit_weight_kg or 0) for i in p.items), 2),
         "stock_lines": stock_lines,
         "availability_lines": availability_lines,
-        "vendor": p.vendor, "vehicle_ref": p.vehicle_ref,
+        "vendor": p.vendor,
+        "vehicle_ref": (p.vehicle_ref or "").strip().upper() if p.request_type == "fuel" else p.vehicle_ref,
         "period_from": p.period_from, "period_to": p.period_to,
         "monthly_rate": p.monthly_rate, "months": p.months,
         "from_location": p.from_location, "to_location": p.to_location,

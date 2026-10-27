@@ -40,13 +40,15 @@ def _my_chain_step(row: dict, role: str) -> Optional[dict]:
 def _item(source: str, source_label: str, row: dict, *, ref: str, title: str,
           subtitle: str = "", amount: Optional[float] = None, step_label: str = "",
           link: str = "", approve_path: Optional[str] = None,
-          reject_path: Optional[str] = None) -> Dict[str, Any]:
+          reject_path: Optional[str] = None,
+          payment_mode: Optional[str] = None) -> Dict[str, Any]:
     return {
         "source": source, "source_label": source_label, "id": row.get("id"),
         "ref": ref, "title": title, "subtitle": subtitle, "amount": amount,
         "step_label": step_label, "created_at": row.get("created_at") or row.get("updated_at"),
         "created_by": row.get("created_by") or row.get("requested_by"),
         "link": link, "approve_path": approve_path, "reject_path": reject_path,
+        "payment_mode": payment_mode,
     }
 
 
@@ -64,6 +66,7 @@ async def _central_approvals(role: str) -> List[dict]:
                          title=r.get("title") or r.get("type") or "Approval",
                          subtitle=(r.get("type") or "").replace("_", " "),
                          amount=r.get("amount"), step_label=step.get("label") or step.get("role"),
+                         payment_mode=r.get("payment_mode"),
                          link=f"/app/approvals?id={r['id']}"))
     return out
 
@@ -82,6 +85,7 @@ async def _project_requests(role: str, user: dict) -> List[dict]:
                          title=f"{r.get('request_type_label')} — {r.get('project_code')}",
                          subtitle=r.get("project_name") or "",
                          amount=r.get("est_value"), step_label=step.get("label"),
+                         payment_mode=(r.get("payment_mode") if r.get("is_payment") else None),
                          link="/app/ops/requests",
                          approve_path=f"/project-requests/{r['id']}/approve",
                          reject_path=f"/project-requests/{r['id']}/reject"))

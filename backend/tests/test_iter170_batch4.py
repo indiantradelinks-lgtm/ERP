@@ -88,7 +88,7 @@ class TestProjectRequestCreation:
         pid = project.get("id") or project.get("_id")
         assert pid
         payload = {
-            "request_type": "fuel",
+            "request_type": "fuel", "vehicle_ref": "HR26DK8337",
             "project_id": pid,
             "amount": 100.0,
             "description": "iter170 smoke",

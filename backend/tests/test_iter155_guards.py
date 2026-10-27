@@ -48,7 +48,7 @@ def test_close_blocked_when_pending_approval():
     pm = _login("test_pm@erp.com", "PM@12345")
     pc = _project()
     r = pm.post(f"{API}/project-requests", json={
-        "project_code": pc, "request_type": "fuel", "amount": 200,
+        "project_code": pc, "request_type": "fuel", "vehicle_ref": "HR26DK8337", "amount": 200,
         "description": "TEST_iter155 close pending"}, timeout=30)
     assert r.status_code == 200
     rid = r.json()["id"]
@@ -63,7 +63,7 @@ def test_close_blocked_when_rejected():
     dh = _login("depthead.ops@erp.com", "DeptHead@123")
     pc = _project()
     r = pm.post(f"{API}/project-requests", json={
-        "project_code": pc, "request_type": "fuel", "amount": 300,
+        "project_code": pc, "request_type": "fuel", "vehicle_ref": "HR26DK8337", "amount": 300,
         "description": "TEST_iter155 rejected close"}, timeout=30)
     assert r.status_code == 200
     rid = r.json()["id"]

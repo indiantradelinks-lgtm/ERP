@@ -79,7 +79,7 @@ def test_create_payment_request_with_new_fields(admin):
 def test_create_request_invalid_expense_type_falls_back(admin):
     proj = _first_project(admin)
     r = admin.post(f"{BASE}/api/project-requests", json={
-        "request_type": "fuel", "project_id": proj["id"],
+        "request_type": "fuel", "vehicle_ref": "HR26DK8337", "project_id": proj["id"],
         "amount": 500, "expense_type": "does_not_exist"})
     assert r.status_code == 200
     # falls back to routing meta (fuel → fuel)
