@@ -649,13 +649,14 @@ export function VendorBillsView() {
 function BillPaymentsDialog({ bill, onClose }) {
   const [data, setData] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [route, setRoute] = useState("pending");   // pending → Payment Processing | paid → already paid
   const [form, setForm] = useState({
     amount: 0, payment_date: new Date().toISOString().slice(0, 10),
     mode: "Bank", utr: "", remarks: "",
   });
 
   const load = () => api.get(`/payables/vendor-bills/${bill.id}/payments`)
-    .then(r => { setData(r.data); setForm(f => ({ ...f, amount: r.data.outstanding })); })
+    .then(r => { setData(r.data); setForm(f => ({ ...f, amount: r.data.payable_now ?? r.data.outstanding })); })
     .catch(e => toast.error(e.response?.data?.detail || "Failed to load payment history"));
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [bill.id]);
@@ -664,8 +665,14 @@ function BillPaymentsDialog({ bill, onClose }) {
     if (Number(form.amount) <= 0) { toast.error("Enter the amount being paid"); return; }
     setSaving(true);
     try {
-      const { data: res } = await api.post(`/payables/vendor-bills/${bill.id}/payments`, { ...form, amount: Number(form.amount) });
-      toast.success(`${res.payment.payment_no} recorded — ${PAY_STATUS_LABELS[res.bill.payment_status]}, outstanding ${fmt(res.bill.outstanding)}`);
+      if (route === "pending") {
+        const { data: res } = await api.post(`/payables/vendor-bills/${bill.id}/payment-requests`,
+          { amount: Number(form.amount), remarks: form.remarks });
+        toast.success(`${res.request.request_no} raised — awaiting verification in Accounts → Payment Processing`);
+      } else {
+        const { data: res } = await api.post(`/payables/vendor-bills/${bill.id}/payments`, { ...form, amount: Number(form.amount) });
+        toast.success(`${res.payment.payment_no} recorded — ${PAY_STATUS_LABELS[res.bill.payment_status]}, outstanding ${fmt(res.bill.outstanding)}`);
+      }
       load();
       onClose(true);
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
@@ -673,6 +680,8 @@ function BillPaymentsDialog({ bill, onClose }) {
   };
 
   const outstanding = data?.outstanding ?? 0;
+  const pendingAmount = data?.pending_amount ?? 0;
+  const payableNow = data?.payable_now ?? outstanding;
   return (
     <Dialog open onOpenChange={() => onClose(false)}>
       <DialogContent className="max-w-3xl" data-testid="pay-vb-payments-dialog">
@@ -711,23 +720,59 @@ function BillPaymentsDialog({ bill, onClose }) {
           </table>
         </div>
 
+        {(data?.pending_requests || []).length > 0 && (
+          <div className="border rounded-md p-3 mt-3 bg-amber-50/70 border-amber-200" data-testid="pay-vb-pending-block">
+            <div className="text-[10px] uppercase tracking-wider font-semibold text-amber-900 mb-1.5">
+              Awaiting Payment Processing — {fmt(pendingAmount)}
+            </div>
+            <div className="space-y-1">
+              {data.pending_requests.map(p => (
+                <div key={p.id} className="flex items-center gap-3 text-xs" data-testid={`pay-vb-pending-${p.request_no}`}>
+                  <span className="font-mono">{p.request_no}</span>
+                  <span className="tabular-nums font-semibold">{fmt(p.amount)}</span>
+                  <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 capitalize">{String(p.stage).replace(/_/g, " ")}</span>
+                  <span className="text-slate-500">{p.remarks || ""}</span>
+                </div>
+              ))}
+            </div>
+            <div className="text-[11px] text-amber-900 mt-1.5">Verify these in Accounts → Payment Processing to release the bank file and UTR.</div>
+          </div>
+        )}
+
         {outstanding > 0.01 ? (
           <div className="border rounded-md p-3 mt-3 bg-sky-50/60 border-sky-200">
-            <div className="text-[10px] uppercase tracking-wider font-semibold text-sky-900 mb-2">Record another payment against this invoice (no new bill)</div>
+            <div className="text-[10px] uppercase tracking-wider font-semibold text-sky-900 mb-2">Raise another payment against this invoice (no new bill)</div>
+            <div className="flex gap-4 mb-2 text-xs">
+              <label className="flex items-center gap-1.5 cursor-pointer" data-testid="pay-vb-route-pending">
+                <input type="radio" checked={route === "pending"} onChange={() => setRoute("pending")} />
+                <span>Send to Payment Processing <span className="text-slate-500">(pending verification)</span></span>
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer" data-testid="pay-vb-route-paid">
+                <input type="radio" checked={route === "paid"} onChange={() => setRoute("paid")} />
+                <span>Already paid <span className="text-slate-500">(record UTR now)</span></span>
+              </label>
+            </div>
             <div className="grid grid-cols-5 gap-2">
               <Field label="Amount *"><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: Number(e.target.value) })} data-testid="pay-vb-hist-amount" /></Field>
-              <Field label="Date"><Input type="date" value={form.payment_date} onChange={e => setForm({ ...form, payment_date: e.target.value })} /></Field>
-              <Field label="Mode">
-                <select className="h-9 w-full rounded-sm border bg-background px-2" value={form.mode} onChange={e => setForm({ ...form, mode: e.target.value })}>
-                  {["Bank", "NEFT", "RTGS", "IMPS", "UPI", "Cheque", "Cash"].map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-              </Field>
-              <Field label="UTR / Cheque #"><Input value={form.utr} onChange={e => setForm({ ...form, utr: e.target.value })} /></Field>
-              <Field label="Remarks"><Input value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} /></Field>
+              {route === "paid" && <Field label="Date"><Input type="date" value={form.payment_date} onChange={e => setForm({ ...form, payment_date: e.target.value })} /></Field>}
+              {route === "paid" && (
+                <Field label="Mode">
+                  <select className="h-9 w-full rounded-sm border bg-background px-2" value={form.mode} onChange={e => setForm({ ...form, mode: e.target.value })}>
+                    {["Bank", "NEFT", "RTGS", "IMPS", "UPI", "Cheque", "Cash"].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </Field>
+              )}
+              {route === "paid" && <Field label="UTR / Cheque #"><Input value={form.utr} onChange={e => setForm({ ...form, utr: e.target.value })} /></Field>}
+              <Field label="Remarks"><Input value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} data-testid="pay-vb-hist-remarks" /></Field>
             </div>
-            <div className="text-[11px] text-slate-600 mt-2">
-              Balance after this payment: <b className="tabular-nums">{fmt(Math.max(outstanding - Number(form.amount || 0), 0))}</b>
-              {" · "}status becomes <b>{PAY_STATUS_LABELS[outstanding - Number(form.amount || 0) < 0.01 ? "fully_paid" : "partially_paid"]}</b>
+            <div className="text-[11px] text-slate-600 mt-2" data-testid="pay-vb-hist-preview">
+              {route === "pending" ? (
+                <>Payable now (outstanding less already-queued): <b className="tabular-nums">{fmt(payableNow)}</b>
+                  {" · "}this request goes to <b>Accounts → Payment Processing</b> for verification</>
+              ) : (
+                <>Balance after this payment: <b className="tabular-nums">{fmt(Math.max(outstanding - Number(form.amount || 0), 0))}</b>
+                  {" · "}status becomes <b>{PAY_STATUS_LABELS[outstanding - Number(form.amount || 0) < 0.01 ? "fully_paid" : "partially_paid"]}</b></>
+              )}
             </div>
           </div>
         ) : data && (
@@ -736,7 +781,7 @@ function BillPaymentsDialog({ bill, onClose }) {
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onClose(false)}>Close</Button>
-          {outstanding > 0.01 && <Button onClick={pay} disabled={saving} data-testid="pay-vb-hist-save">{saving ? "Saving…" : "Record Payment"}</Button>}
+          {outstanding > 0.01 && <Button onClick={pay} disabled={saving} data-testid="pay-vb-hist-save">{saving ? "Saving…" : route === "pending" ? "Send to Payment Processing" : "Record Payment"}</Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>

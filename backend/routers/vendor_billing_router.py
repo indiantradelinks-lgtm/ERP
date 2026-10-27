@@ -155,6 +155,22 @@ def _compute_bill_totals(payload: VendorBillIn) -> Dict[str, float]:
 
 APPROVED_LIKE = ("approved", "partially_paid", "paid")
 
+# Statuses a payment request can hold while it is still live in the Accounts
+# Payment Processing queue (mirrors QUEUE_STATUSES there).
+QUEUE_OPEN_STATUSES = ["with_dept", "pr_raised", "sourcing", "fulfilled"]
+
+
+async def _open_bill_payment_requests(bill_id: str) -> List[Dict[str, Any]]:
+    """Payment requests for this bill that are still sitting in Payment Processing
+    (not yet paid). A bill may legitimately have several over its life — one per
+    instalment — so only the un-paid ones block a fresh request."""
+    return await db.project_requests.find(
+        {"source": "accounts_vendor_bill", "source_id": bill_id,
+         "status": {"$in": QUEUE_OPEN_STATUSES},
+         "payment_status": {"$ne": "paid"},
+         "split_into_children": {"$exists": False}},
+        {"_id": 0}).sort("created_at", 1).to_list(100)
+
 
 def _payment_status(paid: float, net: float, bill_status: str, n_payments: int = 1) -> str:
     """Advance Paid → the first payment made before the bill cleared its approval chain.
@@ -495,6 +511,48 @@ async def record_bill_payment(bill_id: str, payload: BillPaymentIn, request: Req
     return {"payment": pay, "bill": bill}
 
 
+class BillPaymentRequestIn(BaseModel):
+    """Raise a *pending* payment against an existing bill — routed to Accounts
+    Payment Processing for verification, bank file and UTR, instead of being
+    booked as already-paid."""
+    amount: float
+    remarks: Optional[str] = None
+
+
+@router.post("/vendor-bills/{bill_id}/payment-requests")
+async def raise_bill_payment_request(bill_id: str, payload: BillPaymentRequestIn, request: Request,
+                                     user: dict = Depends(require_permission("accounting", "write"))):
+    b = await db.vendor_bills.find_one({"id": bill_id}, {"_id": 0})
+    if not b:
+        raise HTTPException(status_code=404, detail="Bill not found")
+    if b.get("status") in ("cancelled", "rejected"):
+        raise HTTPException(status_code=400,
+                            detail=f"Bill {b['bill_no']} is {b['status']} — payment cannot be requested")
+    amount = round(float(payload.amount or 0), 2)
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Payment amount must be greater than zero")
+    net = round(float((b.get("totals") or {}).get("net_payable") or b.get("amount") or 0), 2)
+    outstanding = round(net - round(float(b.get("paid_amount") or 0), 2), 2)
+    pending = round(sum(float(r.get("est_value") or 0) for r in await _open_bill_payment_requests(bill_id)), 2)
+    available = round(outstanding - pending, 2)
+    if amount > available + 0.01:
+        raise HTTPException(
+            status_code=400,
+            detail=(f"₹{amount:,.2f} exceeds what is still payable on {b['bill_no']} — outstanding "
+                    f"₹{outstanding:,.2f} less ₹{pending:,.2f} already awaiting payment processing "
+                    f"leaves ₹{max(available, 0):,.2f}"))
+    req = await _push_bill_to_payment_queue(b, user, amount=amount, remarks=payload.remarks)
+    await db.vendor_bills.update_one({"id": bill_id}, {"$set": {
+        "payment_requested_at": now_iso(),
+        "payment_request_no": req["request_no"]}})
+    await audit(user=user, action="vendor_bill_payment_request", resource="vendor_bills",
+                record_id=bill_id,
+                after={"bill_no": b["bill_no"], "request_no": req["request_no"], "amount": amount},
+                ip=request.client.host if request.client else "")
+    return {"request": req, "pending_amount": round(pending + amount, 2),
+            "outstanding": outstanding}
+
+
 @router.get("/vendor-bills/{bill_id}/payments")
 async def bill_payment_history(bill_id: str,
                                user: dict = Depends(require_permission("accounting", "read"))):
@@ -505,10 +563,23 @@ async def bill_payment_history(bill_id: str,
     net = round(float((b.get("totals") or {}).get("net_payable") or b.get("amount") or 0), 2)
     paid = round(sum(float(r.get("amount") or 0) + float(r.get("retention_held") or 0)
                      + float(r.get("other_deduction") or 0) for r in rows), 2)
+    open_reqs = await _open_bill_payment_requests(bill_id)
+    vmap = {v["request_id"]: v async for v in db.payment_verifications.find(
+        {"request_id": {"$in": [r["id"] for r in open_reqs]}},
+        {"_id": 0, "request_id": 1, "stage": 1, "net_payable": 1})} if open_reqs else {}
+    pending_requests = [{
+        "id": r["id"], "request_no": r.get("request_no"), "amount": float(r.get("est_value") or 0),
+        "created_at": r.get("created_at"), "created_by": r.get("created_by"),
+        "remarks": r.get("remarks"),
+        "stage": (vmap.get(r["id"]) or {}).get("stage") or "pending_verification",
+    } for r in open_reqs]
+    pending_amount = round(sum(p["amount"] for p in pending_requests), 2)
     return {
         "bill_no": b.get("bill_no"), "invoice_no": b.get("invoice_no"),
         "vendor_name": b.get("vendor_name"), "grn_number": b.get("grn_number"),
         "invoice_total": net, "paid_amount": paid, "outstanding": round(net - paid, 2),
+        "pending_requests": pending_requests, "pending_amount": pending_amount,
+        "payable_now": round(net - paid - pending_amount, 2),
         "payment_status": b.get("payment_status") or _payment_status(paid, net, b.get("status") or "draft", len(rows)),
         "bill_status": b.get("status"),
         "payments": rows,
@@ -884,18 +955,26 @@ async def approve_vendor_bill(bill_id: str, request: Request,
     return updated
 
 
-async def _push_bill_to_payment_queue(b: dict, user: dict) -> None:
+async def _push_bill_to_payment_queue(b: dict, user: dict, amount: Optional[float] = None,
+                                      remarks: Optional[str] = None) -> Optional[dict]:
     """Approved vendor bill → shadow row in the unified Accounts Payment Processing
     queue (same flow as logistics vendor bills & employee advances). Payment JE
-    debits Accounts Payable (2100) since expense was booked at approval."""
-    if await db.project_requests.find_one(
-            {"source": "accounts_vendor_bill", "source_id": b["id"]}, {"_id": 0, "id": 1}):
-        return
+    debits Accounts Payable (2100) since expense was booked at approval.
+
+    `amount` raises an instalment request for part of the invoice; when omitted the
+    whole outstanding is queued and an already-open request short-circuits."""
+    open_reqs = await _open_bill_payment_requests(b["id"])
+    if amount is None and open_reqs:
+        return None
+    amt = round(float(b.get("outstanding") or 0) if amount is None else float(amount), 2)
+    total_reqs = await db.project_requests.count_documents(
+        {"source": "accounts_vendor_bill", "source_id": b["id"]})
+    req_no = b.get("bill_no") if total_reqs == 0 else f"{b.get('bill_no')}-P{total_reqs + 1}"
     proj = await db.projects.find_one({"id": b.get("project_id")}, {"_id": 0, "name": 1}) if b.get("project_id") else None
     is_service = bool(b.get("service_confirmation_no")) and not b.get("grn_number")
-    await db.project_requests.insert_one({
+    doc = {
         "id": new_id(),
-        "request_no": b.get("bill_no"),
+        "request_no": req_no,
         "request_type": "service_vendor_bill" if is_service else "material_vendor_bill",
         "request_type_label": "Service Vendor Bill (SRN)" if is_service else "Material Vendor Bill (PO/GRN)",
         "is_payment": True, "is_stockable": False,
@@ -909,14 +988,19 @@ async def _push_bill_to_payment_queue(b: dict, user: dict) -> None:
         "vendor": b.get("vendor_name"),
         "invoice_no": b.get("invoice_no"), "invoice_date": b.get("invoice_date"),
         "due_date": b.get("due_date"),
-        "est_value": float(b.get("outstanding") or 0),
+        "est_value": amt,
         "pay_debit_account_code": "2100",
         "description": (f"Vendor bill {b.get('bill_no')} · Inv {b.get('invoice_no')} — {b.get('vendor_name')} "
-                        f"(PO {b.get('po_number') or '—'} / {'SC ' + b.get('service_confirmation_no') if is_service else 'GRN ' + (b.get('grn_number') or '—')})"),
+                        f"(PO {b.get('po_number') or '—'} / {'SC ' + b.get('service_confirmation_no') if is_service else 'GRN ' + (b.get('grn_number') or '—')})"
+                        + (f" · {remarks}" if remarks else "")),
+        "remarks": remarks,
         "items": [], "chain": [], "current_step": None,
         "created_by": user.get("name") or user.get("email"), "created_by_id": user.get("id"),
         "created_at": now_iso(),
-    })
+    }
+    await db.project_requests.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
 
 
 @router.post("/vendor-bills/{bill_id}/cancel")
