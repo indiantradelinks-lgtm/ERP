@@ -53,6 +53,20 @@ Backend routes are prefixed `/api`; frontend calls via `REACT_APP_BACKEND_URL`.
     Category filtering and "Show all vendors" still apply before the search.
   - Tests: `tests/test_iter220_paymode_fuel_vehicle.py` 6 passed; all three verified in the browser.
 
+- **Iter 221 (30 Jun 2026) — New RA Bill white screen on Save** *(this change)*:
+  - Root cause: FastAPI 422s return `detail` as a **list of objects**; pages toast
+    `e.response.data.detail` directly, React cannot render an object, so the app unmounted —
+    a blank white page and nothing saved. Triggered whenever a numeric box (GST/Retention/
+    TDS/Advance/Qty/Rate) was left blank, since `""` fails float parsing.
+  - Fix 1 (app-wide): the axios error interceptor in `lib/api.js` now flattens any non-string
+    `detail` to readable text (`gst_pct: Input should be a valid number · items → 0 → ...`) and
+    keeps the original under `detail_raw`, so no page can hand an object to a toast.
+  - Fix 2 (form): `RaBills.create()` coerces every numeric field and line to a number, trims
+    descriptions, blocks a line with no description with a clear toast, and reports failures
+    through `apiErrorMessage`. A cleared % box now saves as 0 instead of erroring.
+  - Tests: `tests/test_iter221_ra_bill_save.py` 4 passed + receivables suite 13 passed;
+    reproduced the white screen before the fix and confirmed a clean save after.
+
 ## Backlog
 - **P1** Cancel / edit an open vendor-bill payment request from the Payments popup.
 - **P1** Export queue: very large reports as a background job with a "ready to download" notice.

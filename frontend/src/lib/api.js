@@ -75,6 +75,15 @@ api.interceptors.response.use(
     }
     // Friendly full-screen notice when a project-scoped user follows a link
     // to a project that is not assigned to them.
+    // FastAPI 422s return `detail` as an ARRAY of validation objects. Callers
+    // toast `detail` directly, and React cannot render an object — that used to
+    // unmount the whole app (white screen). Normalise it to text once, here, so
+    // no caller can ever hand an object to a toast.
+    if (error?.response?.data && error.response.data.detail != null
+        && typeof error.response.data.detail !== "string") {
+      error.response.data.detail_raw = error.response.data.detail;
+      error.response.data.detail = formatApiErrorDetail(error.response.data.detail);
+    }
     const detail = error?.response?.data?.detail;
     // Duplicate blocked by the ERP-wide guard — always surface a clear warning.
     if (status === 409 && error?.response?.data?.duplicate) {
@@ -94,8 +103,16 @@ export function formatApiErrorDetail(detail) {
   if (detail == null) return "Something went wrong. Please try again.";
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail))
-    return detail.map((e) => (e && typeof e.msg === "string" ? e.msg : JSON.stringify(e))).filter(Boolean).join(" ");
+    return detail.map((e) => {
+      if (!e || typeof e !== "object") return String(e ?? "");
+      const where = Array.isArray(e.loc)
+        ? e.loc.filter((p) => p !== "body").join(" → ")
+        : "";
+      const msg = typeof e.msg === "string" ? e.msg : JSON.stringify(e);
+      return where ? `${where}: ${msg}` : msg;
+    }).filter(Boolean).join(" · ");
   if (detail && typeof detail.msg === "string") return detail.msg;
+  if (typeof detail === "object") { try { return JSON.stringify(detail); } catch { return "Request failed"; } }
   return String(detail);
 }
 

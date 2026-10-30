@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/DataTableShell";
-import { api } from "@/lib/api";
+import { api, apiErrorMessage } from "@/lib/api";
 import usePagedList from "@/hooks/usePagedList";
 import TablePager from "@/components/TablePager";
 import TableViewsMenu from "@/components/TableViewsMenu";
@@ -103,8 +103,21 @@ export default function RaBills() {
 
   const create = async () => {
     if (!form.items.length) { toast.error("Add at least one item"); return; }
+    const blankLine = form.items.findIndex((i) => !String(i.description || "").trim());
+    if (blankLine >= 0) { toast.error(`Line ${blankLine + 1} needs a description`); return; }
+    const num = (v) => Number(v) || 0;
+    const payload = {
+      ...form,
+      gst_pct: num(form.gst_pct), retention_pct: num(form.retention_pct),
+      tds_pct: num(form.tds_pct), advance_recovery: num(form.advance_recovery),
+      previous_bill_value: num(form.previous_bill_value),
+      items: form.items.map((i) => ({
+        description: String(i.description || "").trim(),
+        quantity: num(i.quantity), unit: i.unit || "Nos", rate: num(i.rate),
+      })),
+    };
     try {
-      const { data } = await api.post("/ra-bills", { ...form, items: form.items.map((i) => ({ ...i, quantity: Number(i.quantity) || 0, rate: Number(i.rate) || 0 })) });
+      const { data } = await api.post("/ra-bills", payload);
       toast.success(`${data.bill_number} saved`);
       if (fromRequestId) {
         try {
@@ -115,7 +128,7 @@ export default function RaBills() {
         setSearchParams({}, { replace: true });
       }
       setOpen(false); setForm(blankBill()); load();
-    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+    } catch (e) { toast.error(apiErrorMessage(e, "Could not save the bill")); }
   };
   const submit = async (b) => { try { await api.post(`/ra-bills/${b.id}/submit`); toast.success("Submitted"); load(); } catch (e) { toast.error(e.response?.data?.detail || "Failed"); } };
   const approve = async (b) => { try { await api.post(`/ra-bills/${b.id}/approve`); toast.success("Approved · measurements flipped to billed"); load(); } catch (e) { toast.error(e.response?.data?.detail || "Failed"); } };
