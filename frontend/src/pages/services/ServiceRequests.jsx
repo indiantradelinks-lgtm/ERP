@@ -19,6 +19,7 @@ const blank = () => ({
   department: "", project_code: "", project_name: "", site_location: "", service_category: "",
   service_type: "", service_description: "", scope_of_work: "", required_date: "",
   priority: "Medium", estimated_budget: 0, cost_center_id: "", cost_center_label: "",
+  cost_center_category_id: "",
   from_location: "", to_location: "", remarks: "",
 });
 
@@ -143,7 +144,7 @@ export default function ServiceRequests() {
                 <TableCell className="text-xs text-muted-foreground">{r.current_owner || "—"}</TableCell>
                 <TableCell className="text-right whitespace-nowrap">
                   <Button variant="ghost" size="icon" className="h-7 w-7" title="View full trail" onClick={() => nav(`/app/services/requests/${r.id}`)} data-testid={`svc-req-view-${r.sr_no}`}><Eye className="h-3.5 w-3.5" /></Button>
-                  {canEdit(r) && <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={() => setEditing({ ...blank(), ...r })} data-testid={`svc-req-edit-${r.sr_no}`}><Pencil className="h-3.5 w-3.5" /></Button>}
+                  {canEdit(r) && <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={() => setEditing({ ...blank(), ...r, cost_center_category_id: r.cost_center_category_id || (meta?.cost_centers || []).find((c) => c.id === r.cost_center_id)?.category_id || "" })} data-testid={`svc-req-edit-${r.sr_no}`}><Pencil className="h-3.5 w-3.5" /></Button>}
                   {canEdit(r) && <Button variant="ghost" size="icon" className="h-7 w-7" title="Submit — goes straight to RFQ / Procurement" onClick={() => submitRow(r)} data-testid={`svc-req-submit-${r.sr_no}`}><Send className="h-3.5 w-3.5" /></Button>}
                   {["submitted", "under_review"].includes(r.status) &&
                     <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-700 border-amber-300" title="Approve from My Pending Approvals" data-testid={`svc-req-awaiting-${r.sr_no}`}>Awaiting: {pendingStep(r)?.label || pendingStep(r)?.role || "Approver"}</Badge>}
@@ -176,12 +177,21 @@ export default function ServiceRequests() {
               <div><Label className="text-xs">Required Date</Label><Input type="date" value={editing.required_date} onChange={(e) => setEditing({ ...editing, required_date: e.target.value })} data-testid="svc-req-form-required-date" /></div>
               <Sel label="Priority" value={editing.priority} onChange={(e) => setEditing({ ...editing, priority: e.target.value })} options={meta?.priorities || ["Low", "Medium", "High", "Urgent"]} testid="svc-req-form-priority" />
               <div><Label className="text-xs">Estimated Budget (₹)</Label><Input type="number" min="0" value={editing.estimated_budget} onChange={(e) => setEditing({ ...editing, estimated_budget: e.target.value })} data-testid="svc-req-form-budget" /></div>
-              <Sel label="Cost Center" value={editing.cost_center_id}
+              <Sel label="Cost Center" value={editing.cost_center_category_id || ""}
                 onChange={(e) => {
-                  const cc = (meta?.cost_centers || []).find((x) => x.id === e.target.value);
-                  setEditing({ ...editing, cost_center_id: e.target.value, cost_center_label: cc ? `${cc.code} · ${cc.category_name || cc.name || ""}` : "" });
+                  const catId = e.target.value;
+                  const cat = (meta?.cost_center_categories || []).find((c) => c.category_id === catId);
+                  // One cost centre exists per project × category — bind to this project's.
+                  const cc = (meta?.cost_centers || []).find(
+                    (x) => (x.category_id === catId || x.category_name === catId)
+                      && x.project_code === editing.project_code);
+                  setEditing({
+                    ...editing, cost_center_category_id: catId,
+                    cost_center_id: cc?.id || "",
+                    cost_center_label: cat?.category_name || "",
+                  });
                 }}
-                options={(meta?.cost_centers || []).map((cc) => ({ value: cc.id, label: `${cc.code} · ${cc.category_name || cc.name || ""}` }))}
+                options={(meta?.cost_center_categories || []).map((c) => ({ value: c.category_id, label: c.category_name }))}
                 testid="svc-req-form-cc" />
               <div className="md:col-span-2"><Label className="text-xs">Service Description *</Label><Textarea rows={2} value={editing.service_description} onChange={(e) => setEditing({ ...editing, service_description: e.target.value })} data-testid="svc-req-form-desc" /></div>
               <div className="md:col-span-2"><Label className="text-xs">Scope of Work</Label><Textarea rows={3} value={editing.scope_of_work} onChange={(e) => setEditing({ ...editing, scope_of_work: e.target.value })} data-testid="svc-req-form-scope" /></div>

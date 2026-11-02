@@ -9,8 +9,9 @@ Approved invoices land in the unified Accounts Payment Processing queue
 (project_requests shadow row, source='service_invoice'); mark-paid there calls
 on_service_invoice_paid() to cascade Paid → PO → SR closure.
 """
+import re
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 import logging
 
@@ -31,6 +32,29 @@ PROC_ROLES = {"super_admin", "purchase_officer", "manager_log", "director", "gen
 SRN_ROLES = PROC_ROLES | {"project_manager", "site_engineer", "supervisor", "dept_head"}
 ACCOUNTS_ROLES = {"super_admin", "accounts_executive", "director"}
 VIEW_ALL_ROLES = SR_APPROVERS | PROC_ROLES | ACCOUNTS_ROLES | {"hr_executive"}
+
+# Procurement & Vendors manager: sees own requests plus everything raised by
+# Operations managers, except the categories owned by Logistics / Admin.
+PNV_ROLES = {"manager_pnv", "manager_p_n_v"}
+OPS_REQUESTER_ROLES = ["manager_o_p", "manager_op"]
+PNV_EXCLUDED_CATEGORY_RX = re.compile(r"transport|room\s*rent|accommodation", re.I)
+
+
+def _pnv_filter(user_id: str) -> dict:
+    return {"$and": [
+        {"$or": [{"requester_id": user_id}, {"requester_role": {"$in": OPS_REQUESTER_ROLES}}]},
+        {"service_category": {"$not": PNV_EXCLUDED_CATEGORY_RX}},
+    ]}
+
+
+def _can_view_sr(sr: dict, user: dict) -> bool:
+    role = user.get("role")
+    if role in VIEW_ALL_ROLES or sr.get("requester_id") == user.get("id"):
+        return True
+    if role in PNV_ROLES:
+        return (sr.get("requester_role") in OPS_REQUESTER_ROLES
+                and not PNV_EXCLUDED_CATEGORY_RX.search(sr.get("service_category") or ""))
+    return False
 
 SR_STATUSES = ["draft", "submitted", "under_review", "approved", "rejected", "sent_back",
                "rfq_created", "po_created", "service_in_progress", "srn_created",
@@ -129,11 +153,20 @@ async def workflow_meta(user: dict = Depends(get_current_user)):
     vendors = await db.vendors.find({"status": {"$nin": ["inactive", "blacklisted"]}},
                                     {"_id": 0, "id": 1, "name": 1, "email": 1, "gstin": 1}).sort("name", 1).to_list(2000)
     extra_cats = sorted({v["label"] for v in (await get_service_categories(True)).values()})
-    ccs = await db.cost_centers.find({}, {"_id": 0, "id": 1, "code": 1, "name": 1,
-                                          "category_name": 1}).sort("code", 1).to_list(1000)
+    ccs = await db.cost_centers.find({}, {"_id": 0, "id": 1, "code": 1, "name": 1, "project_code": 1,
+                                          "category_id": 1, "category_name": 1}).sort("code", 1).to_list(1000)
+    # One cost centre exists per project × category, so the raw list repeats every
+    # category once per project. Service Requests pick the category only.
+    cc_categories: Dict[str, Dict[str, str]] = {}
+    for c in ccs:
+        nm = (c.get("category_name") or "").strip()
+        if nm and nm.lower() not in cc_categories:
+            cc_categories[nm.lower()] = {"category_id": c.get("category_id") or nm, "category_name": nm}
     return {"departments": departments, "vendors": vendors,
             "service_categories": extra_cats,
-            "cost_centers": ccs, "priorities": ["Low", "Medium", "High", "Urgent"],
+            "cost_centers": ccs,
+            "cost_center_categories": sorted(cc_categories.values(), key=lambda x: x["category_name"].lower()),
+            "priorities": ["Low", "Medium", "High", "Urgent"],
             "sr_statuses": SR_STATUSES,
             "role_caps": {"sr_approver": user.get("role") in SR_APPROVERS,
                           "procurement": user.get("role") in PROC_ROLES,
@@ -156,6 +189,7 @@ class SRIn(BaseModel):
     estimated_budget: float = 0.0
     cost_center_id: str = ""
     cost_center_label: str = ""
+    cost_center_category_id: str = ""
     from_location: str = ""
     to_location: str = ""
     remarks: str = ""
@@ -193,7 +227,9 @@ async def list_requests(status: str = "", department: str = "", site: str = "", 
                         date_from: str = "", date_to: str = "",
                         user: dict = Depends(require_permission("service_workflow", "read"))):
     fl: dict = {}
-    if user.get("role") not in VIEW_ALL_ROLES:
+    if user.get("role") in PNV_ROLES:
+        fl.update(_pnv_filter(user.get("id")))
+    elif user.get("role") not in VIEW_ALL_ROLES:
         fl["requester_id"] = user.get("id")
     if status:
         fl["status"] = status
@@ -211,16 +247,17 @@ async def list_requests(status: str = "", department: str = "", site: str = "", 
         fl["request_date"] = {**({"$gte": date_from} if date_from else {}),
                               **({"$lte": date_to} if date_to else {})}
     if q:
-        fl["$or"] = [{"sr_no": {"$regex": q, "$options": "i"}},
+        fl.setdefault("$and", []).append(
+            {"$or": [{"sr_no": {"$regex": q, "$options": "i"}},
                      {"service_description": {"$regex": q, "$options": "i"}},
-                     {"service_type": {"$regex": q, "$options": "i"}}]
+                     {"service_type": {"$regex": q, "$options": "i"}}]})
     return await db.svc_requests.find(fl, {"_id": 0, "history": 0}).sort("created_at", -1).to_list(1000)
 
 
 @router.get("/requests/{sr_id}")
 async def request_detail(sr_id: str, user: dict = Depends(require_permission("service_workflow", "read"))):
     sr = await _sr(sr_id)
-    if user.get("role") not in VIEW_ALL_ROLES and sr.get("requester_id") != user.get("id"):
+    if not _can_view_sr(sr, user):
         raise HTTPException(403, "You can only view your own Service Requests")
     rfq = await db.svc_rfqs.find_one({"sr_id": sr_id}, {"_id": 0})
     pos = await db.svc_pos.find({"sr_id": sr_id}, {"_id": 0}).sort("created_at", 1).to_list(50)

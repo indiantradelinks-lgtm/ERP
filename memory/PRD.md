@@ -67,6 +67,19 @@ Backend routes are prefixed `/api`; frontend calls via `REACT_APP_BACKEND_URL`.
   - Tests: `tests/test_iter221_ra_bill_save.py` 4 passed + receivables suite 13 passed;
     reproduced the white screen before the fix and confirmed a clean save after.
 
+- **Iter 222 (2 Nov 2026) — Service Request cost centres & P&V visibility** *(this change)*:
+  - Cost centres exist per project × category (109 rows / 22 categories), so the SR dropdown
+    repeated every category once per project with `CC-PRJ-…` codes. `/service-workflow/meta`
+    now also returns `cost_center_categories` (unique, name only) and the SR form lists those,
+    silently binding `cost_center_id` to the selected project's matching cost centre.
+  - **Manager PNV** now sees Service Requests raised by **Manager OP** as well as its own,
+    excluding Transportation / Room Rent / Accommodation categories (Logistics & Admin own
+    those). Applies to both the list and the detail route via `_pnv_filter` / `_can_view_sr`;
+    the `q` search can no longer widen visibility (now nested under `$and`).
+  - Tests: `tests/test_iter222_svc_cc_and_pnv_visibility.py` 9 passed; both verified in the
+    browser as test_mop@erp.com and test_pnv@erp.com. (`test_service_workflow_iter181.py` has
+    pre-existing failures from the earlier removal of the SR approval stage.)
+
 ## Backlog
 - **P1** Cancel / edit an open vendor-bill payment request from the Payments popup.
 - **P1** Export queue: very large reports as a background job with a "ready to download" notice.
