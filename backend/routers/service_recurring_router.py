@@ -22,6 +22,7 @@ router = APIRouter(prefix="/service-recurring", tags=["service-recurring"])
 
 RAISE_ROLES = {"super_admin", "manager_log", "manager_l_o_g", "logistics_executive",
                "logistics_manager", "purchase_officer", "procurement_executive",
+               "manager_pnv", "manager_p_n_v",
                "director", "general_manager"}
 CLOSED_PROJECT_STATUSES = {"closed", "cancelled"}
 PO_ELIGIBLE_STATUSES = {"approved", "issued", "in_progress", "completed"}

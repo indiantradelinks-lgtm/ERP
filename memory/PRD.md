@@ -80,6 +80,19 @@ Backend routes are prefixed `/api`; frontend calls via `REACT_APP_BACKEND_URL`.
     browser as test_mop@erp.com and test_pnv@erp.com. (`test_service_workflow_iter181.py` has
     pre-existing failures from the earlier removal of the SR approval stage.)
 
+- **Iter 223 (3 Nov 2026) — Manager PNV owns the service procurement chain** *(this change)*:
+  - `manager_pnv` added to `PROC_ROLES` (service workflow) and to `RAISE_ROLES` in
+    `service_recurring_router.py`, unlocking: Create RFQ → Issue RFQ → record vendor quotations →
+    comparison → vendor selection → create/submit/issue PO → SRN → vendor invoice →
+    Monthly Service Payments. The UI follows automatically (`meta.role_caps.procurement`).
+  - Scope kept intact: `VIEW_ALL_ROLES` now excludes `PNV_ROLES`, so Iter 222's Service Request
+    visibility rule still holds, and `create_rfq` rejects a request outside P&V's scope (403) —
+    Transportation / Room Rent stay with Logistics.
+  - Segregation kept: vendor-invoice approval (the payment release) remains with Accounts;
+    P&V can see payment status but not approve it.
+  - Tests: `tests/test_iter223_pnv_procurement_chain.py` 10 passed (full chain driven as
+    test_pnv@erp.com) + Iter 222/203/204 suites 34 passed; Create RFQ verified in the browser.
+
 ## Backlog
 - **P1** Cancel / edit an open vendor-bill payment request from the Payments popup.
 - **P1** Export queue: very large reports as a background job with a "ready to download" notice.

@@ -28,14 +28,15 @@ logger = logging.getLogger("erp")
 router = APIRouter(prefix="/service-workflow", tags=["service-workflow"])
 
 SR_APPROVERS = {"super_admin", "director", "general_manager", "dept_head", "project_manager"}
-PROC_ROLES = {"super_admin", "purchase_officer", "manager_log", "director", "general_manager"}
+# Procurement & Vendors manager runs the service procurement chain end to end:
+# RFQ → quotes → comparison → PO → SRN → invoice.
+PNV_ROLES = {"manager_pnv", "manager_p_n_v"}
+PROC_ROLES = {"super_admin", "purchase_officer", "manager_log", "director", "general_manager"} | PNV_ROLES
 SRN_ROLES = PROC_ROLES | {"project_manager", "site_engineer", "supervisor", "dept_head"}
 ACCOUNTS_ROLES = {"super_admin", "accounts_executive", "director"}
-VIEW_ALL_ROLES = SR_APPROVERS | PROC_ROLES | ACCOUNTS_ROLES | {"hr_executive"}
+# P&V keeps its Service Request scope (Iter 222) even though it is a procurement role.
+VIEW_ALL_ROLES = (SR_APPROVERS | PROC_ROLES | ACCOUNTS_ROLES | {"hr_executive"}) - PNV_ROLES
 
-# Procurement & Vendors manager: sees own requests plus everything raised by
-# Operations managers, except the categories owned by Logistics / Admin.
-PNV_ROLES = {"manager_pnv", "manager_p_n_v"}
 OPS_REQUESTER_ROLES = ["manager_o_p", "manager_op"]
 PNV_EXCLUDED_CATEGORY_RX = re.compile(r"transport|room\s*rent|accommodation", re.I)
 
@@ -49,12 +50,13 @@ def _pnv_filter(user_id: str) -> dict:
 
 def _can_view_sr(sr: dict, user: dict) -> bool:
     role = user.get("role")
-    if role in VIEW_ALL_ROLES or sr.get("requester_id") == user.get("id"):
+    if sr.get("requester_id") == user.get("id"):
         return True
     if role in PNV_ROLES:
         return (sr.get("requester_role") in OPS_REQUESTER_ROLES
                 and not PNV_EXCLUDED_CATEGORY_RX.search(sr.get("service_category") or ""))
-    return False
+    return role in VIEW_ALL_ROLES
+
 
 SR_STATUSES = ["draft", "submitted", "under_review", "approved", "rejected", "sent_back",
                "rfq_created", "po_created", "service_in_progress", "srn_created",
@@ -432,6 +434,8 @@ class RfqIn(BaseModel):
 async def create_rfq(sr_id: str, p: RfqIn, request: Request, user: dict = Depends(get_current_user)):
     _require_role(user, PROC_ROLES, "create RFQs")
     sr = await _sr(sr_id)
+    if not _can_view_sr(sr, user):
+        raise HTTPException(403, "This Service Request is outside your scope")
     if sr["status"] != "approved":
         raise HTTPException(400, f"RFQ can only be created from an APPROVED request (status '{sr['status']}')")
     if not p.vendor_ids:
