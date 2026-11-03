@@ -86,6 +86,72 @@ def _late_early(row: dict, shifts: Dict[str, dict]) -> tuple:
 
 
 # ──────────────────────────── SUMMARY ────────────────────────────
+async def _deployed_project_code(employee_id: str, date: str) -> Optional[str]:
+    """Project from an active deployment covering `date` — used when the employee
+    has no HR posting, so new attendance rows still carry their project."""
+    d = await db.deployments.find_one(
+        {"employee_id": employee_id, "status": {"$ne": "cancelled"},
+         "$or": [{"start_date": {"$lte": date}}, {"start_date": {"$in": [None, ""]}}],
+         "$and": [{"$or": [{"end_date": {"$gte": date}}, {"end_date": {"$in": [None, ""]}}]}]},
+        {"_id": 0, "project": 1}, sort=[("start_date", -1)])
+    return (d or {}).get("project") or None
+
+
+async def _project_employee_ids(project_code: str, month: str) -> List[str]:
+    """Employees mapped to a project: HR master posting plus any deployment that
+    overlaps the month. Attendance is often marked without a project tag (biometric
+    import, auto-derive), so the mapping — not the row — decides who belongs where."""
+    ids: set = set()
+    async for e in db.employees.find({"current_project_code": project_code},
+                                     {"_id": 0, "id": 1}):
+        ids.add(e["id"])
+    month_end = f"{month}-31"
+    async for d in db.deployments.find(
+            {"project": project_code, "status": {"$ne": "cancelled"},
+             "$or": [{"start_date": {"$lte": month_end}}, {"start_date": {"$in": [None, ""]}}],
+             "$and": [{"$or": [{"end_date": {"$gte": f"{month}-01"}}, {"end_date": {"$in": [None, ""]}}]}]},
+            {"_id": 0, "employee_id": 1}):
+        if d.get("employee_id"):
+            ids.add(d["employee_id"])
+    return list(ids)
+
+
+async def _unmapped_employee_ids(month: str) -> List[str]:
+    """Employees with no project posting and no deployment in the month — Head Office."""
+    deployed: set = set()
+    async for d in db.deployments.find(
+            {"status": {"$ne": "cancelled"},
+             "$or": [{"start_date": {"$lte": f"{month}-31"}}, {"start_date": {"$in": [None, ""]}}],
+             "$and": [{"$or": [{"end_date": {"$gte": f"{month}-01"}}, {"end_date": {"$in": [None, ""]}}]}]},
+            {"_id": 0, "employee_id": 1, "project": 1}):
+        if d.get("employee_id") and d.get("project") not in (None, "", "HEAD-OFFICE"):
+            deployed.add(d["employee_id"])
+    ids = []
+    async for e in db.employees.find({"$or": [{"current_project_code": {"$in": [None, "", "HEAD-OFFICE"]}},
+                                              {"current_project_code": {"$exists": False}}]},
+                                     {"_id": 0, "id": 1}):
+        if e["id"] not in deployed:
+            ids.append(e["id"])
+    return ids
+
+
+async def _project_match(project_code: str, month: str) -> Dict[str, Any]:
+    """Mongo clause for the Location / Project filter.
+
+    An attendance row belongs to the selected project when the row itself is
+    tagged with it, OR when the row carries no project tag and the employee is
+    mapped to that project. Keep both halves — dropping the mapping half is what
+    breaks the filter whenever attendance is marked without a project.
+    """
+    if project_code == "HEAD-OFFICE":
+        return {"$or": [{"project_code": "HEAD-OFFICE"},
+                        {"project_code": {"$in": [None, ""]},
+                         "employee_id": {"$in": await _unmapped_employee_ids(month)}}]}
+    return {"$or": [{"project_code": project_code},
+                    {"project_code": {"$in": [None, ""]},
+                     "employee_id": {"$in": await _project_employee_ids(project_code, month)}}]}
+
+
 async def _summary_data(month: str, project_code: Optional[str], department: Optional[str],
                         shift_code: Optional[str], q: Optional[str], employee_id: Optional[str],
                         user: dict) -> dict:
@@ -96,10 +162,7 @@ async def _summary_data(month: str, project_code: Optional[str], department: Opt
     from scope import apply_project_scope
     match: Dict[str, Any] = {"date": {"$regex": f"^{month}-"}}
     if project_code:
-        if project_code == "HEAD-OFFICE":
-            match["project_code"] = {"$in": [None, "", "HEAD-OFFICE"]}
-        else:
-            match["project_code"] = project_code
+        match.setdefault("$and", []).append(await _project_match(project_code, month))
     if department:
         match["department"] = department
     if shift_code:
@@ -309,7 +372,7 @@ async def export_breakdown(fmt: str = Query(..., pattern="^(xlsx|pdf)$"), month:
     from scope import apply_project_scope
     match: Dict[str, Any] = {"date": {"$regex": f"^{month}-"}}
     if project_code:
-        match["project_code"] = {"$in": [None, "", "HEAD-OFFICE"]} if project_code == "HEAD-OFFICE" else project_code
+        match.setdefault("$and", []).append(await _project_match(project_code, month))
     if department:
         match["department"] = department
     if shift_code:
@@ -697,7 +760,7 @@ async def _write_attendance(person: dict, date: str, status: str, in_time: Optio
         "id": new_id(), "employee_id": person["id"], "employee_name": person.get("name"),
         "employee_code": person.get("employee_id") or person.get("emp_code"),
         "person_type": "employee", "date": date,
-        "project_code": person.get("current_project_code"),
+        "project_code": person.get("current_project_code") or await _deployed_project_code(person["id"], date),
         "department": person.get("department"), "designation": person.get("designation"),
         "site_location": None, "skill": None, "attachment_url": None,
         "locked": False, "lock_id": None, "created_at": now_iso(), **base,

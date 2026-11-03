@@ -93,6 +93,25 @@ Backend routes are prefixed `/api`; frontend calls via `REACT_APP_BACKEND_URL`.
   - Tests: `tests/test_iter223_pnv_procurement_chain.py` 10 passed (full chain driven as
     test_pnv@erp.com) + Iter 222/203/204 suites 34 passed; Create RFQ verified in the browser.
 
+- **Iter 224 (3 Nov 2026) — Attendance Summary Location / Project filter** *(this change)*:
+  - Root cause: the filter matched only `attendance.project_code`, but most rows carry no
+    project tag (414 of 446 in preview) — the punch-machine import and auto-derive write rows
+    from the punch file, and `project_code` is copied from `employees.current_project_code`,
+    which is empty for staff mapped through HR **deployments** instead. So picking a project
+    matched nothing and everything fell into Head Office.
+  - Fix in `attendance_plus_router.py`: one shared `_project_match(project_code, month)` helper
+    used by the summary **and** the breakdown export — a row counts for a project when the row
+    is tagged with it OR it is untagged and the employee is mapped there (HR posting or a
+    deployment overlapping the month). Head Office = tagged HO rows + untagged rows of staff
+    with no posting and no deployment. New rows also stamp the deployment project at write time
+    (`_deployed_project_code`), so fresh imports carry it.
+  - Permanence: single code path for both endpoints + 9 regression tests that seed untagged
+    attendance exactly as the importers do.
+  - Tests: `tests/test_iter224_attendance_project_filter.py` 9 passed, related attendance suites
+    34 passed, verified in the browser (All 43 → PRJ-2025-01 shows its 1 mapped employee).
+    (`test_iter165::test_rollback` and `test_iter192::test_default_shared_view_flow` fail before
+    and after this change — pre-existing.)
+
 ## Backlog
 - **P1** Cancel / edit an open vendor-bill payment request from the Payments popup.
 - **P1** Export queue: very large reports as a background job with a "ready to download" notice.
