@@ -112,6 +112,27 @@ Backend routes are prefixed `/api`; frontend calls via `REACT_APP_BACKEND_URL`.
     (`test_iter165::test_rollback` and `test_iter192::test_default_shared_view_flow` fail before
     and after this change — pre-existing.)
 
+- **Iter 225 (4 Nov 2026) — Challan PDF → Material Lines (AI/OCR)** *(this change)*:
+  - New `challan_ai.py` reads a delivery challan with **Gemini 3.1 Pro** via the Emergent
+    universal key (embedded PDF text when present, page images for scans) and returns strict
+    JSON: challan no, date, vehicle, and every item row with unit + quantity.
+  - `POST /api/scaffolding/transfers/challan-extract?from_location_id=…` maps each row to
+    `db.inventory`: exact code / normalised-name hit, else closest name ≥ 0.86 (`_norm_item`
+    collapses 2.5M / 2.5 m / 2.5 MTR and unit words). Returns per-row status
+    `matched | review | unmatched`, live availability, shortage flags, totals, and `lines`
+    containing **only** real Item Master ids — nothing invented can reach a transfer.
+  - The PDF is stored in Emergent object storage (`objstore.py`) and attached to the transfer
+    (`challan_attachment`); `GET /scaffolding/transfers/{id}/challan-file` serves it back.
+  - UI (`ScaffoldingMovements.jsx`): "Challan PDF → Material Lines" pane with total items,
+    matched / unmatched / short counts, an editable per-row mapping table (red = unmatched,
+    amber = confirm), "Load N line(s)", a shortage confirm before raising, and a challan icon
+    on the transfer row to reopen the PDF.
+  - The LLM call runs through `run_blocking` — the client reaches litellm synchronously and
+    froze the whole API (and `/health`) before that was fixed.
+  - Tests: `tests/test_iter225_challan_ai_extract.py` 10 passed against the real 29-row sample
+    (`tests/fixtures/challan_sample.pdf`); verified in the browser; light API calls stayed at
+    ~0.12 s while an extraction ran.
+
 ## Backlog
 - **P1** Cancel / edit an open vendor-bill payment request from the Payments popup.
 - **P1** Export queue: very large reports as a background job with a "ready to download" notice.

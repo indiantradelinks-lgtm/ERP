@@ -12,6 +12,7 @@ against one approved transfer.
 from __future__ import annotations
 
 import csv
+import difflib
 import io
 import logging
 import re
@@ -23,6 +24,8 @@ from pydantic import BaseModel
 
 from core import db, require_permission, now_iso, new_id
 from audit import audit
+from challan_ai import read_challan_sync
+from objstore import APP_NAME, get_object, put_object
 from sequences import next_sequence
 from exports import to_excel, to_pdf
 from pdf_generator import _wrap, _render, _esc
@@ -304,12 +307,24 @@ class TLine(BaseModel):
     quantity: float
 
 
+class ChallanRef(BaseModel):
+    storage_path: Optional[str] = None
+    filename: Optional[str] = None
+    size: Optional[int] = None
+    uploaded_at: Optional[str] = None
+    uploaded_by: Optional[str] = None
+    challan_no: Optional[str] = None
+    challan_date: Optional[str] = None
+    vehicle_no: Optional[str] = None
+
+
 class TransferIn(BaseModel):
     from_location_id: str
     to_location_id: str
     lines: List[TLine]
     need_by: Optional[str] = None
     remarks: Optional[str] = None
+    challan_attachment: Optional[ChallanRef] = None
 
 
 @router.post("/scaffolding/transfers")
@@ -340,6 +355,7 @@ async def create_transfer(p: TransferIn, request: Request,
            "from_location_id": src["id"], "from_location": src["name"], "from_type": src["type"],
            "to_location_id": dst["id"], "to_location": dst["name"], "to_type": dst["type"],
            "lines": lines, "need_by": p.need_by, "remarks": p.remarks,
+           "challan_attachment": p.challan_attachment.model_dump() if p.challan_attachment else None,
            "status": "pending_approval", "challan_count": 0,
            "created_at": now_iso(), "created_by": user.get("name") or user.get("email")}
     await db.scaf_transfers.insert_one(doc); doc.pop("_id", None)
@@ -1113,6 +1129,137 @@ async def transfer_bulk_validate(from_location_id: str, file: UploadFile = File(
             "valid": len(valid), "skipped": len([r for r in out if r["status"] == "skipped"]),
             "errors": len([r for r in out if r["status"] == "error"]),
             "lines": [{"item_id": r["item_id"], "quantity": r["quantity"]} for r in valid]}
+
+
+# ─── Challan PDF → material lines (AI/OCR) ──────────────────────────────
+_CHALLAN_NOISE = re.compile(r"\b(nos?|no|pcs?|pieces?|mtr|mtrs?|meters?|mm|set|sets|kg|kgs)\b", re.I)
+
+
+def _norm_item(s: str) -> str:
+    """Comparable form of an item name: upper-cased, punctuation and unit words
+    dropped, 2.5M / 2.5 m / 2.5mtr collapsed to 2.5."""
+    s = (s or "").upper().replace("&", " AND ")
+    s = re.sub(r"(\d+(?:\.\d+)?)\s*(?:M|MTR|MTRS|METER|METERS|MM)\b", r"\1", s)
+    s = _CHALLAN_NOISE.sub(" ", s)
+    s = re.sub(r"[^A-Z0-9.]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _match_item(name: str, by_norm: Dict[str, Dict[str, Any]], norms: List[str]) -> tuple:
+    """(item, confidence, how) — exact normalised hit, else closest name above 0.86."""
+    key = _norm_item(name)
+    if not key:
+        return None, 0.0, "none"
+    if key in by_norm:
+        return by_norm[key], 1.0, "exact"
+    close = difflib.get_close_matches(key, norms, n=1, cutoff=0.86)
+    if close:
+        return by_norm[close[0]], round(difflib.SequenceMatcher(None, key, close[0]).ratio(), 3), "fuzzy"
+    return None, 0.0, "none"
+
+
+@router.post("/scaffolding/transfers/challan-extract")
+async def challan_extract(from_location_id: Optional[str] = None, file: UploadFile = File(...),
+                          user: dict = Depends(require_permission("scaffolding", "write"))):
+    """Read a delivery challan PDF, map every row to the ERP Item Master and return
+    ready-to-load material lines. Nothing is written to stock here — unmatched rows
+    come back flagged so the user picks the item by hand."""
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(400, "The challan file is empty")
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(400, "Challan PDF must be 10 MB or smaller")
+    if not raw[:5].startswith(b"%PDF"):
+        raise HTTPException(400, "Upload the challan as a PDF file")
+
+    try:
+        parsed = await run_blocking(read_challan_sync, raw)
+    except Exception as e:
+        logger.exception("challan extraction failed")
+        raise HTTPException(502, f"Could not read the challan: {e}")
+    if not parsed["items"]:
+        raise HTTPException(422, "No item rows could be read from this challan — check the PDF or add the lines manually")
+
+    src = await _loc(from_location_id) if from_location_id else None
+    index = await _item_index()
+    by_norm: Dict[str, Dict[str, Any]] = {}
+    for key, it in index.items():
+        if key.startswith("name::"):
+            by_norm.setdefault(_norm_item(it["name"]), it)
+    norms = list(by_norm.keys())
+
+    rows: List[Dict[str, Any]] = []
+    seen: Dict[str, int] = {}
+    for i, it in enumerate(parsed["items"], start=1):
+        rec: Dict[str, Any] = {"sr": it["sr"], "challan_name": it["name"], "challan_unit": it["unit"],
+                               "quantity": it["quantity"], "item_id": None, "item_code": None,
+                               "item_name": None, "unit": None, "available": None,
+                               "confidence": 0.0, "match": "none", "status": "unmatched",
+                               "note": "not in the ERP Item Master — pick the item manually"}
+        item = index.get(f"code::{it['name'].strip().lower()}")
+        conf, how = (1.0, "exact") if item else (0.0, "none")
+        if not item:
+            item, conf, how = _match_item(it["name"], by_norm, norms)
+        if item:
+            avl = None
+            if src:
+                srow = await db.scaf_stock.find_one({"item_id": item["id"], "location_id": src["id"]},
+                                                    {"_id": 0, "quantity": 1})
+                avl = round(float((srow or {}).get("quantity") or 0), 3)
+            rec.update({"item_id": item["id"], "item_code": item.get("code"), "item_name": item["name"],
+                        "unit": item.get("unit") or item.get("uom") or "Nos", "available": avl,
+                        "confidence": conf, "match": how,
+                        "status": "matched" if how == "exact" else "review",
+                        "note": None if how == "exact" else f"closest match ({int(conf * 100)}%) — confirm the item"})
+            if it["quantity"] <= 0:
+                rec.update({"status": "review", "note": "no quantity printed on the challan"})
+            if item["id"] in seen:
+                rec.update({"status": "review", "note": f"same item as row {seen[item['id']]} — merge or correct"})
+            else:
+                seen[item["id"]] = rec["sr"]
+            if avl is not None and it["quantity"] > avl:
+                rec["short"] = True
+                rec["note"] = f"only {avl} available at {src['name']}"
+        rows.append(rec)
+
+    attachment = None
+    try:
+        path = f"{APP_NAME}/challans/{new_id()}.pdf"
+        res = await run_blocking(put_object, path, raw, "application/pdf")
+        attachment = {"storage_path": res["path"], "filename": file.filename or "challan.pdf",
+                      "size": res.get("size") or len(raw), "uploaded_at": now_iso(),
+                      "uploaded_by": user.get("name") or user.get("email")}
+    except Exception as e:                       # extraction is still useful without the copy
+        logger.warning("challan upload failed: %s", e)
+
+    matched = [r for r in rows if r["item_id"]]
+    return {
+        "challan_no": parsed["challan_no"], "challan_date": parsed["challan_date"],
+        "vehicle_no": parsed["vehicle_no"], "challan_from": parsed["from_location"],
+        "challan_to": parsed["to_location"], "read_via": parsed["source"],
+        "from_location": src["name"] if src else None,
+        "rows": rows,
+        "total_items": len(rows),
+        "matched": len(matched),
+        "unmatched": len(rows) - len(matched),
+        "review": len([r for r in rows if r["status"] == "review"]),
+        "short": len([r for r in rows if r.get("short")]),
+        "total_quantity": round(sum(float(r["quantity"] or 0) for r in rows), 3),
+        "attachment": attachment,
+        "lines": [{"item_id": r["item_id"], "quantity": r["quantity"]}
+                  for r in matched if float(r["quantity"] or 0) > 0],
+    }
+
+
+@router.get("/scaffolding/transfers/{tid}/challan-file")
+async def transfer_challan_file(tid: str, user: dict = Depends(require_permission("scaffolding", "read"))):
+    t = await db.scaf_transfers.find_one({"id": tid}, {"_id": 0, "challan_attachment": 1, "transfer_no": 1})
+    att = (t or {}).get("challan_attachment")
+    if not att:
+        raise HTTPException(404, "No challan PDF is attached to this transfer")
+    data, ctype = await run_blocking(get_object, att["storage_path"])
+    return Response(content=data, media_type=ctype,
+                    headers={"Content-Disposition": f'inline; filename="{att.get("filename") or "challan.pdf"}"'})
 
 
 @router.get("/scaffolding/export.{fmt}")

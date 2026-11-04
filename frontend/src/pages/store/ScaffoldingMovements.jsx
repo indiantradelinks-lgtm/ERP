@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Truck, CheckCircle2, XCircle, FileText, PackageCheck, Trash2, Download } from "lucide-react";
+import { Plus, Truck, CheckCircle2, XCircle, FileText, PackageCheck, Trash2, Download, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { api } from "@/lib/api";
+import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { fmtD } from "@/lib/datetime";
 
@@ -38,6 +38,57 @@ export function TransfersTab({ bump, locations, items, canWrite, canApprove, onC
   const [bulkFile, setBulkFile] = useState(null);
   const [bulkResult, setBulkResult] = useState(null);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [challanFile, setChallanFile] = useState(null);
+  const [challanBusy, setChallanBusy] = useState(false);
+  const [challanResult, setChallanResult] = useState(null);
+
+  const extractChallan = async () => {
+    if (!challanFile) { toast.error("Choose the challan PDF first"); return; }
+    const fd = new FormData(); fd.append("file", challanFile);
+    setChallanBusy(true);
+    try {
+      const { data } = await api.post("/scaffolding/transfers/challan-extract", fd, {
+        params: form.from_location_id ? { from_location_id: form.from_location_id } : {},
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setChallanResult(data);
+      toast[data.unmatched ? "warning" : "success"](
+        `${data.total_items} item(s) read from ${data.challan_no || "the challan"} · ${data.matched} matched · ${data.unmatched} need review`);
+    } catch (e) { toast.error(apiErrorMessage(e, "Could not read the challan")); }
+    finally { setChallanBusy(false); }
+  };
+
+  const setChallanRow = (sr, item_id) => setChallanResult((c) => ({
+    ...c,
+    rows: c.rows.map((r) => {
+      if (r.sr !== sr) return r;
+      const it = items.find((x) => x.id === item_id);
+      return { ...r, item_id: item_id || null, item_name: it?.name || null, item_code: it?.code || null,
+        status: item_id ? "matched" : "unmatched", match: item_id ? "manual" : "none",
+        note: item_id ? null : "not in the ERP Item Master — pick the item manually" };
+    }),
+  }));
+
+  const setChallanQty = (sr, quantity) => setChallanResult((c) => ({
+    ...c, rows: c.rows.map((r) => (r.sr === sr ? { ...r, quantity } : r)),
+  }));
+
+  const applyChallan = () => {
+    const ready = (challanResult?.rows || []).filter((r) => r.item_id && Number(r.quantity) > 0);
+    if (!ready.length) { toast.error("Map at least one item with a quantity before loading"); return; }
+    const pending = (challanResult?.rows || []).filter((r) => !r.item_id).length;
+    setForm((f) => ({
+      ...f,
+      lines: ready.map((r) => ({ item_id: r.item_id, quantity: String(r.quantity) })),
+      remarks: f.remarks || (challanResult.challan_no ? `Challan ${challanResult.challan_no}` : ""),
+      challan_attachment: challanResult.attachment
+        ? { ...challanResult.attachment, challan_no: challanResult.challan_no,
+            challan_date: challanResult.challan_date, vehicle_no: challanResult.vehicle_no }
+        : undefined,
+    }));
+    setChallanResult(null); setChallanFile(null);
+    toast.success(`${ready.length} line(s) loaded from the challan${pending ? ` · ${pending} unmatched row(s) skipped` : ""}`);
+  };
 
   const downloadTransferTemplate = async () => {
     try {
@@ -92,6 +143,17 @@ export function TransfersTab({ bump, locations, items, canWrite, canApprove, onC
     const lines = form.lines.filter((l) => l.item_id && Number(l.quantity) > 0).map((l) => ({ item_id: l.item_id, quantity: Number(l.quantity) }));
     if (!form.from_location_id || !form.to_location_id) { toast.error("Pick From and To locations"); return; }
     if (!lines.length) { toast.error("Enter a quantity for at least one item (lines with 0 are ignored)"); return; }
+    const short = lines
+      .map((l) => ({ l, avl: Number(stockMap[l.item_id]?.[form.from_location_id] || 0) }))
+      .filter((x) => x.l.quantity > x.avl);
+    if (short.length) {
+      const names = short.slice(0, 5).map((x) => {
+        const it = items.find((i) => i.id === x.l.item_id);
+        return `${it?.name || x.l.item_id}: want ${x.l.quantity}, available ${x.avl}`;
+      }).join("\n");
+      if (!window.confirm(`${short.length} line(s) exceed the stock available at the From location:\n\n${names}` +
+        `\n\nStock cannot be moved before it exists, so these lines must be corrected. Continue anyway?`)) return;
+    }
     try {
       const r = await api.post("/scaffolding/transfers", { ...form, lines });
       toast.success(`Transfer ${r.data.transfer_no} raised — pending Store Manager approval (${lines.length} item line(s))`);
@@ -107,6 +169,13 @@ export function TransfersTab({ bump, locations, items, canWrite, canApprove, onC
   };
 
   const canChallan = (t) => ["approved", "partially_dispatched", "partially_received"].includes(t.status) && canWrite;
+
+  const viewChallanPdf = async (t) => {
+    try {
+      const { data } = await api.get(`/scaffolding/transfers/${t.id}/challan-file`, { responseType: "blob" });
+      window.open(URL.createObjectURL(new Blob([data], { type: "application/pdf" })), "_blank");
+    } catch (e) { toast.error(apiErrorMessage(e, "Could not open the attached challan")); }
+  };
 
   return (
     <div className="bg-card border border-border rounded-sm">
@@ -165,6 +234,12 @@ export function TransfersTab({ bump, locations, items, canWrite, canApprove, onC
                       <XCircle className="h-3.5 w-3.5" />
                     </Button>
                   </>
+                )}
+                {t.challan_attachment?.storage_path && (
+                  <Button size="sm" variant="ghost" className="h-7 rounded-sm" title={`Challan ${t.challan_attachment.challan_no || ""}`}
+                    onClick={() => viewChallanPdf(t)} data-testid={`scaf-challan-pdf-${t.id}`}>
+                    <FileText className="h-3.5 w-3.5" />
+                  </Button>
                 )}
                 {canChallan(t) && (
                   <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={() => setChallanFor(t)} data-testid={`scaf-challan-btn-${t.id}`}>
@@ -262,9 +337,96 @@ export function TransfersTab({ bump, locations, items, canWrite, canApprove, onC
                 </div>
               )}
             </div>
+            <div className="col-span-2 border border-violet-200 bg-violet-50/60 rounded-sm p-2" data-testid="scaf-challan-ai-pane">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-900 flex items-center gap-1.5">
+                  <Sparkles className="h-3 w-3" /> Challan PDF → Material Lines
+                </div>
+                <div className="flex items-center gap-2">
+                  <input type="file" accept="application/pdf,.pdf" className="text-[11px]" data-testid="scaf-challan-ai-file"
+                    onChange={(e) => { setChallanFile(e.target.files?.[0] || null); setChallanResult(null); }} />
+                  <Button size="sm" variant="outline" className="h-7 rounded-sm" disabled={!challanFile || challanBusy}
+                    onClick={extractChallan} data-testid="scaf-challan-ai-read">
+                    {challanBusy ? "Reading…" : "Read Challan"}
+                  </Button>
+                </div>
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-1">
+                Upload the delivery challan — item names and quantities are read automatically and matched to the Item Master.
+                Only items that exist in the master can be transferred; anything else is flagged for you to map by hand.
+              </div>
+              {challanBusy && <div className="text-[11px] text-violet-900 mt-1.5" data-testid="scaf-challan-ai-busy">Reading the challan — this takes a few seconds for a long one…</div>}
+              {challanResult && (
+                <div className="mt-2 border border-border rounded-sm bg-background" data-testid="scaf-challan-ai-result">
+                  <div className="flex items-center gap-3 p-1.5 border-b border-border text-[11px] flex-wrap">
+                    <span className="font-semibold" data-testid="scaf-challan-ai-total">Total items: {challanResult.total_items}</span>
+                    <span className="text-emerald-700 font-semibold" data-testid="scaf-challan-ai-matched">{challanResult.matched} matched</span>
+                    {challanResult.unmatched > 0 && <span className="text-rose-700 font-semibold" data-testid="scaf-challan-ai-unmatched">{challanResult.unmatched} unmatched</span>}
+                    {challanResult.short > 0 && <span className="text-amber-700 font-semibold">{challanResult.short} short on stock</span>}
+                    <span className="text-muted-foreground">Qty {challanResult.total_quantity}</span>
+                    {challanResult.challan_no && <span className="font-mono-data text-muted-foreground">{challanResult.challan_no}</span>}
+                    {challanResult.vehicle_no && <span className="text-muted-foreground">{challanResult.vehicle_no}</span>}
+                  </div>
+                  <div className="max-h-56 overflow-y-auto">
+                    <table className="w-full text-[11px]">
+                      <thead className="bg-muted/30 sticky top-0"><tr>
+                        <th className="text-left px-2 py-1 w-8">#</th>
+                        <th className="text-left px-2 py-1">On the challan</th>
+                        <th className="text-left px-2 py-1">ERP item</th>
+                        <th className="text-right px-2 py-1 w-20">Qty</th>
+                        <th className="text-right px-2 py-1 w-16">Avl</th>
+                      </tr></thead>
+                      <tbody>
+                        {(challanResult.rows || []).map((r) => (
+                          <tr key={r.sr} className={`border-t border-border ${!r.item_id ? "bg-rose-50/70" : r.status === "review" ? "bg-amber-50/60" : ""}`}
+                            data-testid={`scaf-challan-ai-row-${r.sr}`}>
+                            <td className="px-2 py-1 font-mono-data">{r.sr}</td>
+                            <td className="px-2 py-1">
+                              <div className={!r.item_id ? "text-rose-800 font-semibold" : ""}>{r.challan_name}</div>
+                              {r.note && <div className={`text-[10px] ${!r.item_id ? "text-rose-700" : "text-amber-700"}`}>{r.note}</div>}
+                            </td>
+                            <td className="px-2 py-1">
+                              <select value={r.item_id || ""} onChange={(e) => setChallanRow(r.sr, e.target.value)}
+                                className={`h-7 w-full rounded-sm border bg-background px-1 text-[11px] ${!r.item_id ? "border-rose-400" : "border-input"}`}
+                                data-testid={`scaf-challan-ai-item-${r.sr}`}>
+                                <option value="">— map manually —</option>
+                                {items.map((it) => <option key={it.id} value={it.id}>{it.name}{it.code ? ` · ${it.code}` : ""}</option>)}
+                              </select>
+                            </td>
+                            <td className="px-2 py-1">
+                              <Input type="number" value={r.quantity} onChange={(e) => setChallanQty(r.sr, e.target.value)}
+                                className="h-7 rounded-sm text-[11px] tabular text-right" data-testid={`scaf-challan-ai-qty-${r.sr}`} />
+                            </td>
+                            <td className={`px-2 py-1 text-right tabular ${r.short ? "text-rose-700 font-bold" : ""}`}>{r.available ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="p-1.5 border-t border-border flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-muted-foreground">
+                      {challanResult.attachment ? "The challan PDF will stay attached to this transfer." : "The challan copy could not be stored — the lines are still usable."}
+                    </span>
+                    <Button size="sm" className="h-7 rounded-sm" onClick={applyChallan} data-testid="scaf-challan-ai-apply">
+                      Load {(challanResult.rows || []).filter((r) => r.item_id && Number(r.quantity) > 0).length} line(s)
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="col-span-2 border border-border rounded-sm">
               <div className="flex items-center justify-between p-2 border-b border-border">
-                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Material Lines</div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">
+                  Material Lines
+                  <span className="ml-2 font-mono-data text-muted-foreground normal-case tracking-normal" data-testid="scaf-lines-count">
+                    {form.lines.filter((l) => l.item_id && Number(l.quantity) > 0).length} item(s) · qty {form.lines.reduce((s, l) => s + (Number(l.quantity) || 0), 0)}
+                  </span>
+                  {form.challan_attachment?.challan_no && (
+                    <span className="ml-2 text-violet-800 normal-case tracking-normal" data-testid="scaf-lines-challan-ref">
+                      from challan {form.challan_attachment.challan_no}
+                    </span>
+                  )}
+                </div>
                 <Button size="sm" variant="outline" className="h-7 rounded-sm" onClick={() => setForm({ ...form, lines: [...form.lines, blankLine()] })} data-testid="scaf-add-line">
                   <Plus className="h-3 w-3 mr-1" /> Add
                 </Button>
