@@ -16,6 +16,12 @@ Backend routes are prefixed `/api`; frontend calls via `REACT_APP_BACKEND_URL`.
 - **Iter 208–217**: repeat advances unblock, ICICI CMS bank-file format, Pending Billing all-month
   filter + Excel/PDF exports, vendor bill advance/part payments, PO PDF terms + project name,
   bulk stock adjustment/transfer via Excel, project-wise allocation exports, enquiry→quotation coverage.
+- **Iter 226 (Jun 2026) — Performance/Storage RCA delivered, awaiting approval**: see
+  `/app/memory/PERF_RCA_2026-06.md`. Key findings: `emergentintegrations` import pulls litellm
+  (+160 MB, permanent) on first AI use → OOM at 512 Mi; idle 233 MB (eager WeasyPrint/PyMuPDF/
+  openpyxl); single 4.76 MB JS bundle (no code-splitting); un-paginated lists; OneDrive mirror
+  blocked by expired client secret. Plan A–F (AI subprocess, lazy imports, code-splitting,
+  pagination, verified OneDrive-primary migration, housekeeping, system-health). NOT implemented yet.
 - **Iter 218 (Jun 2026) — Cloudflare 520s & ERP slowness**: root cause was backend-origin —
   pods OOMKilled at 512 Mi (tier_0) plus synchronous PDF/Excel generation blocking the single
   Uvicorn event loop (a 300-row report PDF froze all requests ~5 s, timing out `/health`).
