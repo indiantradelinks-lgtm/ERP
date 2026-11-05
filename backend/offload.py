@@ -33,3 +33,11 @@ async def run_blocking(fn, *args, **kwargs):
         ms = (time.perf_counter() - started) * 1000
         if ms > SLOW_MS:
             logger.warning(f"[offload] {getattr(fn, '__name__', fn)} took {ms:.0f} ms")
+        if _RENDER_LIMITER.borrowed_tokens == 0:
+            # Last heavy job finished — hand freed heap pages back to the OS so a
+            # burst of exports does not leave the pod sitting at its RSS high-water mark.
+            try:
+                from system_health import trim_memory
+                trim_memory()
+            except Exception:  # noqa: BLE001
+                pass

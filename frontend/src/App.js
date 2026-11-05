@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -7,231 +8,247 @@ import Layout from "@/components/Layout";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
-import PoAck from "@/pages/PoAck";
-import Dashboard from "@/pages/Dashboard";
-import Clients from "@/pages/Clients";
-import Vendors from "@/pages/Vendors";
-import Employees from "@/pages/Employees";
-import Attendance from "@/pages/Attendance";
-import Projects from "@/pages/Projects";
-import Inventory from "@/pages/Inventory";
-import StoreInventory from "@/pages/StoreInventory";
-import PurchaseOrders from "@/pages/PurchaseOrders";
-import POTermsMaster from "@/pages/procurement/POTermsMaster";
-import Quotations from "@/pages/Quotations";
-import Accounts from "@/pages/Accounts";
-import Safety from "@/pages/Safety";
-// Iter 127 — Safety Foundation phase 1
-import SafetyDashboard from "@/pages/safety/SafetyDashboard";
-import SafetyMasters from "@/pages/safety/SafetyMasters";
-import Hira from "@/pages/safety/Hira";
-import Jsa from "@/pages/safety/Jsa";
-import SafetyPlanRegister from "@/pages/safety/SafetyPlanRegister";
-import SafetyDocumentRegister from "@/pages/safety/SafetyDocumentRegister";
-// Iter 128 — Safety Phase 2
-import WorkPermitRegister from "@/pages/safety/WorkPermitRegister";
-import PpeRequirements from "@/pages/safety/PpeRequirements";
-import PpeCompliance from "@/pages/safety/PpeCompliance";
-import SafetyReadiness from "@/pages/safety/SafetyReadiness";
-import TrainingExpiryRegister from "@/pages/safety/TrainingExpiryRegister";
-// Iter 129 — Safety Phase 3
-import SafetyInspections from "@/pages/safety/SafetyInspections";
-import SafetyObservationsRegister from "@/pages/safety/SafetyObservationsRegister";
-import Incidents from "@/pages/safety/Incidents";
-import Capa from "@/pages/safety/Capa";
-import SafetyEscalationDashboard from "@/pages/safety/SafetyEscalationDashboard";
-// Iter 130 — Safety Phase 4 (Audits · Client Compliance · Reviews · Vendor · Cost)
-import SafetyAudits from "@/pages/safety/SafetyAudits";
-import ClientCompliance from "@/pages/safety/ClientCompliance";
-import MonthlySafetyReview from "@/pages/safety/MonthlySafetyReview";
-import VendorSafetyCompliance from "@/pages/safety/VendorSafetyCompliance";
-import SafetyCostRegister from "@/pages/safety/SafetyCostRegister";
-import SafetyManagementReview from "@/pages/safety/SafetyManagementReview";
-// Iter 131 — Safety Phase 5 (Closure · Reports · Audit Trail)
-import ProjectSafetyClosure from "@/pages/safety/ProjectSafetyClosure";
-import SafetyReportsCenter from "@/pages/safety/SafetyReportsCenter";
-import SafetyAuditTrail from "@/pages/safety/SafetyAuditTrail";
-import Assets from "@/pages/Assets";
-import Payroll from "@/pages/Payroll";
-import Logistics from "@/pages/Logistics";
-// Iter 132 — Logistics Phase 1
-import LogisticsDashboard from "@/pages/logistics/LogisticsDashboard";
-import VehicleMaster from "@/pages/logistics/VehicleMaster";
-import DriverMaster from "@/pages/logistics/DriverMaster";
-import DispatchRequests from "@/pages/logistics/DispatchRequests";
-import { RouteMaster, LoadingUnloadingPoints, DispatchTypes, TransportVendorProfiles } from "@/pages/logistics/LogisticsMasters";
-import { VehicleAvailability, DriverAvailability, LogisticsAuditTrail } from "@/pages/logistics/LogisticsAvailAudit";
-// Iter 133 — Logistics Phase 2 (Dispatch lifecycle)
-import DispatchRequestDetail from "@/pages/logistics/DispatchRequestDetail";
-import { InTransitTracking, DeliveryConfirmations, TransitExceptions } from "@/pages/logistics/LogisticsPhase2Lists";
-// Iter 134/135 — Logistics Phase 3 & 4
-import {
-  ManpowerMobilization, TravelArrangement, AccommodationArrangement, SiteReporting, Demobilization,
-  FuelEntries, VehicleExpenses, VehicleMaintenance, VendorBills, LogisticsCostSummary,
-} from "@/pages/logistics/LogisticsPhase34Pages";
-// Iter 136 — Logistics Phase 4 Completion
-import {
-  FinanceApprovalInbox, VendorPayable, AccountsPostingStatus, ProjectWiseCost, VehicleWiseCost,
-} from "@/pages/logistics/LogisticsPhase4Views";
-// Iter 137 — Logistics Phase 5 (Reports, Closure, Advanced Dashboard)
-import {
-  LogisticsReportsCenter, TripClosurePanel, LogisticsAdvancedDashboard,
-} from "@/pages/logistics/LogisticsPhase5Views";
-import Documents from "@/pages/Documents";
-import Approvals from "@/pages/Approvals";
-import ApprovalsDashboard from "@/pages/ApprovalsDashboard";
-import ApprovalAnalytics from "@/pages/ApprovalAnalytics";
-import MyRevisions from "@/pages/MyRevisions";
-import Reports from "@/pages/Reports";
-import Profile from "@/pages/Profile";
-import Enquiries from "@/pages/Enquiries";
-import Orders from "@/pages/Orders";
-import StoreTransactions from "@/pages/StoreTransactions";
-import PpeIssuance from "@/pages/PpeIssuance";
-import PermitsToWork from "@/pages/PermitsToWork";
-import SafetyTrainings from "@/pages/SafetyTrainings";
-import ToolboxTalks from "@/pages/ToolboxTalks";
-import RecruitmentRequests from "@/pages/RecruitmentRequests";
-import Candidates from "@/pages/Candidates";
-import Deployments from "@/pages/Deployments";
-import ProjectManpower from "@/pages/ProjectManpower";
-import AllocationReports from "@/pages/AllocationReports";
-import AllocationBoard from "@/pages/AllocationBoard";
-import DeploymentCalendar from "@/pages/DeploymentCalendar";
-import ClientReports from "@/pages/ClientReports";
-import ClientMap from "@/pages/ClientMap";
-import SalesReports from "@/pages/SalesReports";
-import PurchaseRequisitions from "@/pages/PurchaseRequisitions";
-import ProcurementReports from "@/pages/ProcurementReports";
-import Rfqs from "@/pages/Rfqs";
-import Grn from "@/pages/Grn";
-import ProcurementDashboard from "@/pages/ProcurementDashboard";
-import MaterialAllocations from "@/pages/MaterialAllocations";
-import AssetLifecycle from "@/pages/AssetLifecycle";
-import Challans from "@/pages/Challans";
-import InventoryIntel from "@/pages/InventoryIntel";
-import ProcurementIntel from "@/pages/ProcurementIntel";
-import Dprs from "@/pages/Dprs";
-import DprMobile from "@/pages/DprMobile";
-import Measurements from "@/pages/Measurements";
-import RaBills from "@/pages/RaBills";
-import Receivables from "@/pages/Receivables";
-import ProjectOps from "@/pages/ProjectOps";
-import ServiceRates from "@/pages/ServiceRates";
-import BillingDefaults from "@/pages/BillingDefaults";
-import CustomerCodeSettings from "@/pages/admin/CustomerCodeSettings";
-import RoleDepartmentMap from "@/pages/admin/RoleDepartmentMap";
-import CompanyProfile from "@/pages/admin/CompanyProfile";
-import ConditionLibrary from "@/pages/admin/ConditionLibrary";
-import UserManagement from "@/pages/admin/UserManagement";
-import AssignmentManager from "@/pages/admin/AssignmentManager";
-import RoleRegister from "@/pages/admin/RoleRegister";
-import Categories from "@/pages/admin/Categories";
-import CodeOverride from "@/pages/admin/CodeOverride";
-import CostCenters from "@/pages/admin/CostCenters";
-import DataCleanup from "@/pages/admin/DataCleanup";
-import EmailSettings from "@/pages/admin/EmailSettings";
-import EmailOutbox from "@/pages/admin/EmailOutbox";
-import MyEmailSettings from "@/pages/MyEmailSettings";
-import RoleCatalog from "@/pages/admin/RoleCatalog";
-import OneDriveSettings from "@/pages/admin/OneDriveSettings";
-import DataLinkage from "@/pages/admin/DataLinkage";
-import DepartmentMaster from "@/pages/admin/DepartmentMaster";
-import DeptGovernance from "@/pages/admin/DeptGovernance";
-import Onboarding from "@/pages/hr/Onboarding";
-import HrMasters from "@/pages/hr/HrMasters";
-import Employee360 from "@/pages/hr/Employee360";
-import Leave from "@/pages/hr/Leave";
-import HrLetters from "@/pages/hr/HrLetters";
-import Advances from "@/pages/hr/Advances";
-import AdvanceRecovery from "@/pages/hr/AdvanceRecovery";
-import HrPayroll from "@/pages/hr/Payroll";
-import Exit from "@/pages/hr/Exit";
-import HrPhase2 from "@/pages/hr/HrPhase2";
-import HrPhase3 from "@/pages/hr/HrPhase3";
-import HrPhase4 from "@/pages/hr/HrPhase4";
-import LabourLicenses from "@/pages/hr/LabourLicenses";
-import ServiceWorkflowDashboard from "@/pages/services/ServiceWorkflowDashboard";
-import ServiceRequests from "@/pages/services/ServiceRequests";
-import ServiceRequestDetail from "@/pages/services/ServiceRequestDetail";
-import ServiceRfqs from "@/pages/services/ServiceRfqs";
-import ServicePos from "@/pages/services/ServicePos";
-import ServiceRecurring from "@/pages/services/ServiceRecurring";
-import ServiceSrns from "@/pages/services/ServiceSrns";
-import ServiceInvoices from "@/pages/services/ServiceInvoices";
-import HrPhase5 from "@/pages/hr/HrPhase5";
-import AttendanceCenter from "@/pages/hr/AttendanceCenter";
-import AttendanceSummary from "@/pages/hr/AttendanceSummary";
-import MinimumWages from "@/pages/hr/MinimumWages";
-import GroupMedical from "@/pages/hr/GroupMedical";
-import ProjectExpenses from "@/pages/ops/ProjectExpenses";
-import ProjectRequests from "@/pages/ops/ProjectRequests";
-import PmHandover from "@/pages/ops/PmHandover";
-import Scaffolding from "@/pages/store/Scaffolding";
-import MyApprovalsCenter from "@/pages/MyApprovalsCenter";
-import ApprovalReport from "@/pages/admin/ApprovalReport";
-import BillingPendingReport from "@/pages/accounts/BillingPendingReport";
-import RequestOptions from "@/pages/admin/RequestOptions";
-import ProjectPnl from "@/pages/ops/ProjectPnl";
-import ReportsCenter from "@/pages/ReportsCenter";
-import BillRequests from "@/pages/ops/BillRequests";
-import QuotationBuilder from "@/pages/QuotationBuilder";
-import ProjectDashboard from "@/pages/ProjectDashboard";
-import ContractHandovers from "@/pages/ops/ContractHandovers";
-import ServiceTypeMaster from "@/pages/ops/ServiceTypeMaster";
-import SiteMaster from "@/pages/ops/SiteMaster";
-import WorkOrders from "@/pages/ops/WorkOrders";
-import ProjectTeam from "@/pages/ops/ProjectTeam";
-import ProjectDocuments from "@/pages/ops/ProjectDocuments";
-import DocumentCenter from "@/pages/DocumentCenter";
-import ProjectStatus from "@/pages/ops/ProjectStatus";
-import ProjectAuditTrail from "@/pages/ops/ProjectAuditTrail";
-import ProjectSettings from "@/pages/ops/ProjectSettings";
-import ProjectDashboardPhase1 from "@/pages/ops/ProjectDashboard";
-import MyAssignedProjects from "@/pages/ops/MyAssignedProjects";
-import PlanningHub from "@/pages/ops/PlanningHub";
-import ProjectOpsDashboard from "@/pages/ops/ProjectOpsDashboard";
-import OpsReports from "@/pages/ops/OpsReports";
-import ActivityTimeline from "@/pages/ops/ActivityTimeline";
-import DailyProgressReports from "@/pages/ops/DailyProgressReports";
-import WorkProgressTracker from "@/pages/ops/WorkProgressTracker";
-import MeasurementSheets from "@/pages/ops/MeasurementSheets";
-import SiteIssues from "@/pages/ops/SiteIssues";
-import ClientInstructions from "@/pages/ops/ClientInstructions";
-import ExtraWorks from "@/pages/ops/ExtraWorks";
-import WorkPermits from "@/pages/ops/WorkPermits";
-import ExecutionDashboard from "@/pages/ops/ExecutionDashboard";
-import ProjectControlCenter from "@/pages/ops/ProjectControlCenter";
-import ProjectClosureCenter from "@/pages/ops/ProjectClosureCenter";
-import RateContracts from "@/pages/procurement/RateContracts";
-import ServiceOrders from "@/pages/procurement/ServiceOrders";
-import VendorComplianceCenter from "@/pages/procurement/VendorComplianceCenter";
-import DebitCreditNotes from "@/pages/accounts/DebitCreditNotes";
-import BudgetCommitmentCenter from "@/pages/accounts/BudgetCommitmentCenter";
-import ComplianceCenter from "@/pages/accounts/ComplianceCenter";
-import FinanceDashboard from "@/pages/accounts/FinanceDashboard";
-import Accommodations from "@/pages/Accommodations";
-import Overtime from "@/pages/Overtime";
-import VendorPortal from "@/pages/VendorPortal";
-import DepartmentLauncher from "@/pages/DepartmentLauncher";
-import DepartmentWorkspace from "@/pages/DepartmentWorkspace";
-import AdminConsole from "@/pages/admin/AdminConsole";
 import PWAInstallPrompt from "@/components/PWAInstallPrompt";
-import Departments from "@/pages/admin/Departments";
-import Dropdowns from "@/pages/admin/Dropdowns";
-import ApprovalMatrix from "@/pages/admin/ApprovalMatrix";
-import ApprovalWorkflowSettings from "@/pages/admin/ApprovalWorkflowSettings";
-import SequenceAdmin from "@/pages/admin/SequenceAdmin";
-import AuditLogs from "@/pages/admin/AuditLogs";
-import DuplicateBlocks from "@/pages/admin/DuplicateBlocks";
-import Sessions from "@/pages/admin/Sessions";
-import SecurityCenter from "@/pages/admin/SecurityCenter";
-import GoLiveCenter from "@/pages/admin/GoLiveCenter";
-import FinanceAlerts from "@/pages/accounts/FinanceAlerts";
-import PaymentProcessingCenter from "@/pages/accounts/PaymentProcessingCenter";
-import EnquiryFollowUpTracker from "@/pages/sales/EnquiryFollowUpTracker";
-import InternalProjectReview from "@/pages/ops/InternalProjectReview";
 import "@/App.css";
+// Route-level code splitting: each page is its own chunk, loaded on first visit.
+const PoAck = lazy(() => import("@/pages/PoAck"));
+const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const Clients = lazy(() => import("@/pages/Clients"));
+const Vendors = lazy(() => import("@/pages/Vendors"));
+const Employees = lazy(() => import("@/pages/Employees"));
+const Attendance = lazy(() => import("@/pages/Attendance"));
+const Projects = lazy(() => import("@/pages/Projects"));
+const Inventory = lazy(() => import("@/pages/Inventory"));
+const StoreInventory = lazy(() => import("@/pages/StoreInventory"));
+const PurchaseOrders = lazy(() => import("@/pages/PurchaseOrders"));
+const POTermsMaster = lazy(() => import("@/pages/procurement/POTermsMaster"));
+const Quotations = lazy(() => import("@/pages/Quotations"));
+const Accounts = lazy(() => import("@/pages/Accounts"));
+const Safety = lazy(() => import("@/pages/Safety"));
+const SafetyDashboard = lazy(() => import("@/pages/safety/SafetyDashboard"));
+const SafetyMasters = lazy(() => import("@/pages/safety/SafetyMasters"));
+const Hira = lazy(() => import("@/pages/safety/Hira"));
+const Jsa = lazy(() => import("@/pages/safety/Jsa"));
+const SafetyPlanRegister = lazy(() => import("@/pages/safety/SafetyPlanRegister"));
+const SafetyDocumentRegister = lazy(() => import("@/pages/safety/SafetyDocumentRegister"));
+const WorkPermitRegister = lazy(() => import("@/pages/safety/WorkPermitRegister"));
+const PpeRequirements = lazy(() => import("@/pages/safety/PpeRequirements"));
+const PpeCompliance = lazy(() => import("@/pages/safety/PpeCompliance"));
+const SafetyReadiness = lazy(() => import("@/pages/safety/SafetyReadiness"));
+const TrainingExpiryRegister = lazy(() => import("@/pages/safety/TrainingExpiryRegister"));
+const SafetyInspections = lazy(() => import("@/pages/safety/SafetyInspections"));
+const SafetyObservationsRegister = lazy(() => import("@/pages/safety/SafetyObservationsRegister"));
+const Incidents = lazy(() => import("@/pages/safety/Incidents"));
+const Capa = lazy(() => import("@/pages/safety/Capa"));
+const SafetyEscalationDashboard = lazy(() => import("@/pages/safety/SafetyEscalationDashboard"));
+const SafetyAudits = lazy(() => import("@/pages/safety/SafetyAudits"));
+const ClientCompliance = lazy(() => import("@/pages/safety/ClientCompliance"));
+const MonthlySafetyReview = lazy(() => import("@/pages/safety/MonthlySafetyReview"));
+const VendorSafetyCompliance = lazy(() => import("@/pages/safety/VendorSafetyCompliance"));
+const SafetyCostRegister = lazy(() => import("@/pages/safety/SafetyCostRegister"));
+const SafetyManagementReview = lazy(() => import("@/pages/safety/SafetyManagementReview"));
+const ProjectSafetyClosure = lazy(() => import("@/pages/safety/ProjectSafetyClosure"));
+const SafetyReportsCenter = lazy(() => import("@/pages/safety/SafetyReportsCenter"));
+const SafetyAuditTrail = lazy(() => import("@/pages/safety/SafetyAuditTrail"));
+const Assets = lazy(() => import("@/pages/Assets"));
+const Payroll = lazy(() => import("@/pages/Payroll"));
+const Logistics = lazy(() => import("@/pages/Logistics"));
+const LogisticsDashboard = lazy(() => import("@/pages/logistics/LogisticsDashboard"));
+const VehicleMaster = lazy(() => import("@/pages/logistics/VehicleMaster"));
+const DriverMaster = lazy(() => import("@/pages/logistics/DriverMaster"));
+const DispatchRequests = lazy(() => import("@/pages/logistics/DispatchRequests"));
+const DispatchRequestDetail = lazy(() => import("@/pages/logistics/DispatchRequestDetail"));
+const Documents = lazy(() => import("@/pages/Documents"));
+const Approvals = lazy(() => import("@/pages/Approvals"));
+const ApprovalsDashboard = lazy(() => import("@/pages/ApprovalsDashboard"));
+const ApprovalAnalytics = lazy(() => import("@/pages/ApprovalAnalytics"));
+const MyRevisions = lazy(() => import("@/pages/MyRevisions"));
+const Reports = lazy(() => import("@/pages/Reports"));
+const Profile = lazy(() => import("@/pages/Profile"));
+const Enquiries = lazy(() => import("@/pages/Enquiries"));
+const Orders = lazy(() => import("@/pages/Orders"));
+const StoreTransactions = lazy(() => import("@/pages/StoreTransactions"));
+const PpeIssuance = lazy(() => import("@/pages/PpeIssuance"));
+const PermitsToWork = lazy(() => import("@/pages/PermitsToWork"));
+const SafetyTrainings = lazy(() => import("@/pages/SafetyTrainings"));
+const ToolboxTalks = lazy(() => import("@/pages/ToolboxTalks"));
+const RecruitmentRequests = lazy(() => import("@/pages/RecruitmentRequests"));
+const Candidates = lazy(() => import("@/pages/Candidates"));
+const Deployments = lazy(() => import("@/pages/Deployments"));
+const ProjectManpower = lazy(() => import("@/pages/ProjectManpower"));
+const AllocationReports = lazy(() => import("@/pages/AllocationReports"));
+const AllocationBoard = lazy(() => import("@/pages/AllocationBoard"));
+const DeploymentCalendar = lazy(() => import("@/pages/DeploymentCalendar"));
+const ClientReports = lazy(() => import("@/pages/ClientReports"));
+const ClientMap = lazy(() => import("@/pages/ClientMap"));
+const SalesReports = lazy(() => import("@/pages/SalesReports"));
+const PurchaseRequisitions = lazy(() => import("@/pages/PurchaseRequisitions"));
+const ProcurementReports = lazy(() => import("@/pages/ProcurementReports"));
+const Rfqs = lazy(() => import("@/pages/Rfqs"));
+const Grn = lazy(() => import("@/pages/Grn"));
+const ProcurementDashboard = lazy(() => import("@/pages/ProcurementDashboard"));
+const MaterialAllocations = lazy(() => import("@/pages/MaterialAllocations"));
+const AssetLifecycle = lazy(() => import("@/pages/AssetLifecycle"));
+const Challans = lazy(() => import("@/pages/Challans"));
+const InventoryIntel = lazy(() => import("@/pages/InventoryIntel"));
+const ProcurementIntel = lazy(() => import("@/pages/ProcurementIntel"));
+const Dprs = lazy(() => import("@/pages/Dprs"));
+const DprMobile = lazy(() => import("@/pages/DprMobile"));
+const Measurements = lazy(() => import("@/pages/Measurements"));
+const RaBills = lazy(() => import("@/pages/RaBills"));
+const Receivables = lazy(() => import("@/pages/Receivables"));
+const ProjectOps = lazy(() => import("@/pages/ProjectOps"));
+const ServiceRates = lazy(() => import("@/pages/ServiceRates"));
+const BillingDefaults = lazy(() => import("@/pages/BillingDefaults"));
+const CustomerCodeSettings = lazy(() => import("@/pages/admin/CustomerCodeSettings"));
+const RoleDepartmentMap = lazy(() => import("@/pages/admin/RoleDepartmentMap"));
+const CompanyProfile = lazy(() => import("@/pages/admin/CompanyProfile"));
+const ConditionLibrary = lazy(() => import("@/pages/admin/ConditionLibrary"));
+const UserManagement = lazy(() => import("@/pages/admin/UserManagement"));
+const AssignmentManager = lazy(() => import("@/pages/admin/AssignmentManager"));
+const RoleRegister = lazy(() => import("@/pages/admin/RoleRegister"));
+const Categories = lazy(() => import("@/pages/admin/Categories"));
+const CodeOverride = lazy(() => import("@/pages/admin/CodeOverride"));
+const CostCenters = lazy(() => import("@/pages/admin/CostCenters"));
+const DataCleanup = lazy(() => import("@/pages/admin/DataCleanup"));
+const EmailSettings = lazy(() => import("@/pages/admin/EmailSettings"));
+const EmailOutbox = lazy(() => import("@/pages/admin/EmailOutbox"));
+const MyEmailSettings = lazy(() => import("@/pages/MyEmailSettings"));
+const RoleCatalog = lazy(() => import("@/pages/admin/RoleCatalog"));
+const OneDriveSettings = lazy(() => import("@/pages/admin/OneDriveSettings"));
+const DataLinkage = lazy(() => import("@/pages/admin/DataLinkage"));
+const DepartmentMaster = lazy(() => import("@/pages/admin/DepartmentMaster"));
+const DeptGovernance = lazy(() => import("@/pages/admin/DeptGovernance"));
+const Onboarding = lazy(() => import("@/pages/hr/Onboarding"));
+const HrMasters = lazy(() => import("@/pages/hr/HrMasters"));
+const Employee360 = lazy(() => import("@/pages/hr/Employee360"));
+const Leave = lazy(() => import("@/pages/hr/Leave"));
+const HrLetters = lazy(() => import("@/pages/hr/HrLetters"));
+const Advances = lazy(() => import("@/pages/hr/Advances"));
+const AdvanceRecovery = lazy(() => import("@/pages/hr/AdvanceRecovery"));
+const HrPayroll = lazy(() => import("@/pages/hr/Payroll"));
+const Exit = lazy(() => import("@/pages/hr/Exit"));
+const HrPhase2 = lazy(() => import("@/pages/hr/HrPhase2"));
+const HrPhase3 = lazy(() => import("@/pages/hr/HrPhase3"));
+const HrPhase4 = lazy(() => import("@/pages/hr/HrPhase4"));
+const LabourLicenses = lazy(() => import("@/pages/hr/LabourLicenses"));
+const ServiceWorkflowDashboard = lazy(() => import("@/pages/services/ServiceWorkflowDashboard"));
+const ServiceRequests = lazy(() => import("@/pages/services/ServiceRequests"));
+const ServiceRequestDetail = lazy(() => import("@/pages/services/ServiceRequestDetail"));
+const ServiceRfqs = lazy(() => import("@/pages/services/ServiceRfqs"));
+const ServicePos = lazy(() => import("@/pages/services/ServicePos"));
+const ServiceRecurring = lazy(() => import("@/pages/services/ServiceRecurring"));
+const ServiceSrns = lazy(() => import("@/pages/services/ServiceSrns"));
+const ServiceInvoices = lazy(() => import("@/pages/services/ServiceInvoices"));
+const HrPhase5 = lazy(() => import("@/pages/hr/HrPhase5"));
+const AttendanceCenter = lazy(() => import("@/pages/hr/AttendanceCenter"));
+const AttendanceSummary = lazy(() => import("@/pages/hr/AttendanceSummary"));
+const MinimumWages = lazy(() => import("@/pages/hr/MinimumWages"));
+const GroupMedical = lazy(() => import("@/pages/hr/GroupMedical"));
+const ProjectExpenses = lazy(() => import("@/pages/ops/ProjectExpenses"));
+const ProjectRequests = lazy(() => import("@/pages/ops/ProjectRequests"));
+const PmHandover = lazy(() => import("@/pages/ops/PmHandover"));
+const Scaffolding = lazy(() => import("@/pages/store/Scaffolding"));
+const MyApprovalsCenter = lazy(() => import("@/pages/MyApprovalsCenter"));
+const ApprovalReport = lazy(() => import("@/pages/admin/ApprovalReport"));
+const BillingPendingReport = lazy(() => import("@/pages/accounts/BillingPendingReport"));
+const RequestOptions = lazy(() => import("@/pages/admin/RequestOptions"));
+const ProjectPnl = lazy(() => import("@/pages/ops/ProjectPnl"));
+const ReportsCenter = lazy(() => import("@/pages/ReportsCenter"));
+const BillRequests = lazy(() => import("@/pages/ops/BillRequests"));
+const QuotationBuilder = lazy(() => import("@/pages/QuotationBuilder"));
+const ProjectDashboard = lazy(() => import("@/pages/ProjectDashboard"));
+const ContractHandovers = lazy(() => import("@/pages/ops/ContractHandovers"));
+const ServiceTypeMaster = lazy(() => import("@/pages/ops/ServiceTypeMaster"));
+const SiteMaster = lazy(() => import("@/pages/ops/SiteMaster"));
+const WorkOrders = lazy(() => import("@/pages/ops/WorkOrders"));
+const ProjectTeam = lazy(() => import("@/pages/ops/ProjectTeam"));
+const ProjectDocuments = lazy(() => import("@/pages/ops/ProjectDocuments"));
+const DocumentCenter = lazy(() => import("@/pages/DocumentCenter"));
+const ProjectStatus = lazy(() => import("@/pages/ops/ProjectStatus"));
+const ProjectAuditTrail = lazy(() => import("@/pages/ops/ProjectAuditTrail"));
+const ProjectSettings = lazy(() => import("@/pages/ops/ProjectSettings"));
+const ProjectDashboardPhase1 = lazy(() => import("@/pages/ops/ProjectDashboard"));
+const MyAssignedProjects = lazy(() => import("@/pages/ops/MyAssignedProjects"));
+const PlanningHub = lazy(() => import("@/pages/ops/PlanningHub"));
+const ProjectOpsDashboard = lazy(() => import("@/pages/ops/ProjectOpsDashboard"));
+const OpsReports = lazy(() => import("@/pages/ops/OpsReports"));
+const ActivityTimeline = lazy(() => import("@/pages/ops/ActivityTimeline"));
+const DailyProgressReports = lazy(() => import("@/pages/ops/DailyProgressReports"));
+const WorkProgressTracker = lazy(() => import("@/pages/ops/WorkProgressTracker"));
+const MeasurementSheets = lazy(() => import("@/pages/ops/MeasurementSheets"));
+const SiteIssues = lazy(() => import("@/pages/ops/SiteIssues"));
+const ClientInstructions = lazy(() => import("@/pages/ops/ClientInstructions"));
+const ExtraWorks = lazy(() => import("@/pages/ops/ExtraWorks"));
+const WorkPermits = lazy(() => import("@/pages/ops/WorkPermits"));
+const ExecutionDashboard = lazy(() => import("@/pages/ops/ExecutionDashboard"));
+const ProjectControlCenter = lazy(() => import("@/pages/ops/ProjectControlCenter"));
+const ProjectClosureCenter = lazy(() => import("@/pages/ops/ProjectClosureCenter"));
+const RateContracts = lazy(() => import("@/pages/procurement/RateContracts"));
+const ServiceOrders = lazy(() => import("@/pages/procurement/ServiceOrders"));
+const VendorComplianceCenter = lazy(() => import("@/pages/procurement/VendorComplianceCenter"));
+const DebitCreditNotes = lazy(() => import("@/pages/accounts/DebitCreditNotes"));
+const BudgetCommitmentCenter = lazy(() => import("@/pages/accounts/BudgetCommitmentCenter"));
+const ComplianceCenter = lazy(() => import("@/pages/accounts/ComplianceCenter"));
+const FinanceDashboard = lazy(() => import("@/pages/accounts/FinanceDashboard"));
+const Accommodations = lazy(() => import("@/pages/Accommodations"));
+const Overtime = lazy(() => import("@/pages/Overtime"));
+const VendorPortal = lazy(() => import("@/pages/VendorPortal"));
+const DepartmentLauncher = lazy(() => import("@/pages/DepartmentLauncher"));
+const DepartmentWorkspace = lazy(() => import("@/pages/DepartmentWorkspace"));
+const AdminConsole = lazy(() => import("@/pages/admin/AdminConsole"));
+const Departments = lazy(() => import("@/pages/admin/Departments"));
+const Dropdowns = lazy(() => import("@/pages/admin/Dropdowns"));
+const ApprovalMatrix = lazy(() => import("@/pages/admin/ApprovalMatrix"));
+const ApprovalWorkflowSettings = lazy(() => import("@/pages/admin/ApprovalWorkflowSettings"));
+const SequenceAdmin = lazy(() => import("@/pages/admin/SequenceAdmin"));
+const AuditLogs = lazy(() => import("@/pages/admin/AuditLogs"));
+const DuplicateBlocks = lazy(() => import("@/pages/admin/DuplicateBlocks"));
+const Sessions = lazy(() => import("@/pages/admin/Sessions"));
+const SecurityCenter = lazy(() => import("@/pages/admin/SecurityCenter"));
+const GoLiveCenter = lazy(() => import("@/pages/admin/GoLiveCenter"));
+const SystemHealth = lazy(() => import("@/pages/admin/SystemHealth"));
+const FinanceAlerts = lazy(() => import("@/pages/accounts/FinanceAlerts"));
+const PaymentProcessingCenter = lazy(() => import("@/pages/accounts/PaymentProcessingCenter"));
+const EnquiryFollowUpTracker = lazy(() => import("@/pages/sales/EnquiryFollowUpTracker"));
+const InternalProjectReview = lazy(() => import("@/pages/ops/InternalProjectReview"));
+const RouteMaster = lazy(() => import("@/pages/logistics/LogisticsMasters").then((m) => ({ default: m.RouteMaster })));
+const LoadingUnloadingPoints = lazy(() => import("@/pages/logistics/LogisticsMasters").then((m) => ({ default: m.LoadingUnloadingPoints })));
+const DispatchTypes = lazy(() => import("@/pages/logistics/LogisticsMasters").then((m) => ({ default: m.DispatchTypes })));
+const TransportVendorProfiles = lazy(() => import("@/pages/logistics/LogisticsMasters").then((m) => ({ default: m.TransportVendorProfiles })));
+const VehicleAvailability = lazy(() => import("@/pages/logistics/LogisticsAvailAudit").then((m) => ({ default: m.VehicleAvailability })));
+const DriverAvailability = lazy(() => import("@/pages/logistics/LogisticsAvailAudit").then((m) => ({ default: m.DriverAvailability })));
+const LogisticsAuditTrail = lazy(() => import("@/pages/logistics/LogisticsAvailAudit").then((m) => ({ default: m.LogisticsAuditTrail })));
+const InTransitTracking = lazy(() => import("@/pages/logistics/LogisticsPhase2Lists").then((m) => ({ default: m.InTransitTracking })));
+const DeliveryConfirmations = lazy(() => import("@/pages/logistics/LogisticsPhase2Lists").then((m) => ({ default: m.DeliveryConfirmations })));
+const TransitExceptions = lazy(() => import("@/pages/logistics/LogisticsPhase2Lists").then((m) => ({ default: m.TransitExceptions })));
+const ManpowerMobilization = lazy(() => import("@/pages/logistics/LogisticsPhase34Pages").then((m) => ({ default: m.ManpowerMobilization })));
+const TravelArrangement = lazy(() => import("@/pages/logistics/LogisticsPhase34Pages").then((m) => ({ default: m.TravelArrangement })));
+const AccommodationArrangement = lazy(() => import("@/pages/logistics/LogisticsPhase34Pages").then((m) => ({ default: m.AccommodationArrangement })));
+const SiteReporting = lazy(() => import("@/pages/logistics/LogisticsPhase34Pages").then((m) => ({ default: m.SiteReporting })));
+const Demobilization = lazy(() => import("@/pages/logistics/LogisticsPhase34Pages").then((m) => ({ default: m.Demobilization })));
+const FuelEntries = lazy(() => import("@/pages/logistics/LogisticsPhase34Pages").then((m) => ({ default: m.FuelEntries })));
+const VehicleExpenses = lazy(() => import("@/pages/logistics/LogisticsPhase34Pages").then((m) => ({ default: m.VehicleExpenses })));
+const VehicleMaintenance = lazy(() => import("@/pages/logistics/LogisticsPhase34Pages").then((m) => ({ default: m.VehicleMaintenance })));
+const VendorBills = lazy(() => import("@/pages/logistics/LogisticsPhase34Pages").then((m) => ({ default: m.VendorBills })));
+const LogisticsCostSummary = lazy(() => import("@/pages/logistics/LogisticsPhase34Pages").then((m) => ({ default: m.LogisticsCostSummary })));
+const FinanceApprovalInbox = lazy(() => import("@/pages/logistics/LogisticsPhase4Views").then((m) => ({ default: m.FinanceApprovalInbox })));
+const VendorPayable = lazy(() => import("@/pages/logistics/LogisticsPhase4Views").then((m) => ({ default: m.VendorPayable })));
+const AccountsPostingStatus = lazy(() => import("@/pages/logistics/LogisticsPhase4Views").then((m) => ({ default: m.AccountsPostingStatus })));
+const ProjectWiseCost = lazy(() => import("@/pages/logistics/LogisticsPhase4Views").then((m) => ({ default: m.ProjectWiseCost })));
+const VehicleWiseCost = lazy(() => import("@/pages/logistics/LogisticsPhase4Views").then((m) => ({ default: m.VehicleWiseCost })));
+const LogisticsReportsCenter = lazy(() => import("@/pages/logistics/LogisticsPhase5Views").then((m) => ({ default: m.LogisticsReportsCenter })));
+const TripClosurePanel = lazy(() => import("@/pages/logistics/LogisticsPhase5Views").then((m) => ({ default: m.TripClosurePanel })));
+const LogisticsAdvancedDashboard = lazy(() => import("@/pages/logistics/LogisticsPhase5Views").then((m) => ({ default: m.LogisticsAdvancedDashboard })));
+
+
+function RouteLoader() {
+  return (
+    <div className="flex h-screen w-full items-center justify-center" data-testid="route-loading">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600" />
+    </div>
+  );
+}
 
 function ProtectedShell({ children }) {
   return (
@@ -250,6 +267,7 @@ export default function App() {
         <BrowserRouter>
           <Toaster richColors position="top-right" />
           <PWAInstallPrompt />
+          <Suspense fallback={<RouteLoader />}>
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
@@ -318,6 +336,7 @@ export default function App() {
             <Route path="/app/ops/internal-review" element={<ProtectedShell><InternalProjectReview /></ProtectedShell>} />
             <Route path="/app/admin/security-center" element={<ProtectedShell><SecurityCenter /></ProtectedShell>} />
             <Route path="/app/admin/go-live" element={<ProtectedShell><GoLiveCenter /></ProtectedShell>} />
+            <Route path="/app/admin/system-health" element={<ProtectedShell><SystemHealth /></ProtectedShell>} />
             <Route path="/app/project-dashboard" element={<ProtectedShell><ProjectDashboard /></ProtectedShell>} />
             <Route path="/app/project-dashboard/:id" element={<ProtectedShell><ProjectDashboard /></ProtectedShell>} />
             <Route path="/app/inventory" element={<ProtectedShell><Inventory /></ProtectedShell>} />
@@ -497,6 +516,7 @@ export default function App() {
             <Route path="/app/services/invoices" element={<ProtectedShell><ServiceInvoices /></ProtectedShell>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
         </BrowserRouter>
       </AuthProvider>
     </ThemeProvider>

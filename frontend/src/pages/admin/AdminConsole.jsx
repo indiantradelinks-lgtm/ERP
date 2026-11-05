@@ -80,6 +80,13 @@ const TILES = [
     testid: "admin-card-role-catalog",
   },
   {
+    to: "/app/admin/system-health",
+    icon: Activity,
+    label: "System Health",
+    desc: "Live backend memory, CPU, disk, database size and slow API requests with alert thresholds and automated housekeeping.",
+    testid: "admin-card-system-health",
+  },
+  {
     to: "/app/admin/onedrive",
     icon: Cloud,
     label: "OneDrive Cloud Storage",

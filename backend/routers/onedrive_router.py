@@ -42,6 +42,7 @@ class OneDriveSettingsIn(BaseModel):
     client_secret: str = ""    # blank ⇒ keep existing
     backup_user_upn: str
     base_folder: str = "ITL-ERP-Backups"
+    primary_reads: bool = True
 
 
 @router.get("/settings")
@@ -263,8 +264,13 @@ async def run_push_queue(limit: int = 25) -> dict:
             pushed += 1
         else:
             failed += 1
+    try:
+        from doc_storage import run_verification_batch
+        verify = await run_verification_batch(limit)
+    except Exception as e:  # noqa: BLE001
+        verify = {"error": str(e)[:200]}
     return {"processed": len(items), "pushed": pushed, "failed": failed,
-            "requeued": healed.modified_count}
+            "requeued": healed.modified_count, "verify": verify}
 
 
 @router.get("/queue")
@@ -482,6 +488,31 @@ async def retry_failed(user: dict = Depends(get_current_user)):
                   "permanent": False, "next_attempt_at": now_iso(),
                   "sanitizer_v": ods.SANITIZER_VERSION, "updated_at": now_iso()}})
     return {"ok": True, "requeued": r.modified_count}
+
+
+@router.get("/storage-audit")
+async def storage_audit(user: dict = Depends(get_current_user)):
+    """Per-module document counts/bytes by tier — the exact numbers before/after migration."""
+    _require_admin(user)
+    from doc_storage import storage_audit as _audit
+    return await _audit()
+
+
+@router.post("/verify-now")
+async def verify_now(limit: int = 50, user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    from doc_storage import run_verification_batch
+    return await run_verification_batch(max(1, min(limit, 200)))
+
+
+@router.post("/verify/{file_id}")
+async def verify_one(file_id: str, user: dict = Depends(get_current_user)):
+    _require_admin(user)
+    from doc_storage import verify_file
+    f = await db.files.find_one({"id": file_id, "is_deleted": False}, {"_id": 0})
+    if not f:
+        raise HTTPException(status_code=404, detail="File not found")
+    return await verify_file(f)
 
 
 @router.post("/migrate-historical")

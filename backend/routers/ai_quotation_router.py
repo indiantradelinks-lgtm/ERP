@@ -132,21 +132,12 @@ async def extract_rfq(file: UploadFile = File(...),
         tmp.flush()
         tmp.close()
 
-        from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
-
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f"rfq-extract-{new_id()}",
-            system_message=RFQ_EXTRACT_SYSTEM,
-        ).with_model("gemini", "gemini-2.5-pro")
-
-        fc = FileContentWithMimeType(file_path=tmp.name, mime_type=mime)
-        msg = UserMessage(
-            text="Extract the RFQ data per the JSON schema in the system message. Return JSON only.",
-            file_contents=[fc],
-        )
+        from ai_worker import llm_send
         try:
-            response = await chat.send_message(msg)
+            response = await llm_send(
+                "gemini", "gemini-2.5-pro", RFQ_EXTRACT_SYSTEM,
+                "Extract the RFQ data per the JSON schema in the system message. Return JSON only.",
+                files=[{"path": tmp.name, "mime": mime}], session_id=f"rfq-extract-{new_id()}")
         except Exception as e:
             logger.exception("Gemini call failed")
             raise HTTPException(status_code=502, detail=f"AI extraction failed: {e}")
@@ -221,25 +212,15 @@ async def suggest_items(payload: SuggestIn,
         "Return JSON only as per schema."
     )
 
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
-
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=f"qb-suggest-{new_id()}",
-        system_message=SUGGEST_SYSTEM,
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-
+    from ai_worker import llm_send
     try:
-        response = await chat.send_message(UserMessage(text=user_text))
+        response = await llm_send("anthropic", "claude-sonnet-4-5-20250929", SUGGEST_SYSTEM, user_text,
+                                  session_id=f"qb-suggest-{new_id()}")
     except Exception as e:
         logger.exception("Claude suggest-items failed; falling back to Gemini")
-        chat2 = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f"qb-suggest-fb-{new_id()}",
-            system_message=SUGGEST_SYSTEM,
-        ).with_model("gemini", "gemini-2.5-pro")
         try:
-            response = await chat2.send_message(UserMessage(text=user_text))
+            response = await llm_send("gemini", "gemini-2.5-pro", SUGGEST_SYSTEM, user_text,
+                                      session_id=f"qb-suggest-fb-{new_id()}")
         except Exception as e2:
             raise HTTPException(status_code=502, detail=f"AI suggestion failed: {e2}")
 
@@ -292,14 +273,10 @@ async def risk_review(payload: RiskReviewIn,
         f"Items ({len(payload.items)} total): {json.dumps(payload.items[:30])}\n\n"
         "Return JSON: {risks:[str], missing_info:[str], suggested_conditions:[str]}"
     )
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=f"qb-risk-{new_id()}",
-        system_message=RISK_SYSTEM,
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    from ai_worker import llm_send
     try:
-        resp = await chat.send_message(UserMessage(text=user_text))
+        resp = await llm_send("anthropic", "claude-sonnet-4-5-20250929", RISK_SYSTEM, user_text,
+                              session_id=f"qb-risk-{new_id()}")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"AI risk review failed: {e}")
     parsed = _safe_json_load(resp)

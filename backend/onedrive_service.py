@@ -171,6 +171,7 @@ async def get_settings(*, include_secret: bool = False) -> dict:
         "client_secret": secret,
         "backup_user_upn": doc.get("backup_user_upn", ""),
         "base_folder": doc.get("base_folder", "ITL-ERP-Backups"),
+        "primary_reads": doc.get("primary_reads", True),
         "configured": bool(doc.get("tenant_id") and doc.get("client_id") and doc.get("client_secret_enc")),
         "last_test_at": doc.get("last_test_at"),
         "last_test_ok": doc.get("last_test_ok"),
@@ -200,6 +201,7 @@ async def save_settings(payload: dict) -> dict:
         "backup_user_upn": backup_user_upn,
         "base_folder": base_folder,
         "enabled": enabled,
+        "primary_reads": bool(payload.get("primary_reads", True)),
         "updated_at": now_iso(),
     }
     # Only overwrite the encrypted secret if a non-masked value is supplied
@@ -379,10 +381,11 @@ async def test_connection() -> dict:
 
 
 async def download_item(item_id: str) -> tuple[bytes, str]:
-    """Fetch a driveItem's content from the backup drive (fallback reads)."""
-    drive = await _get_backup_drive()
+    """Fetch a driveItem's content from the backup drive (primary / fallback reads)."""
+    s = await get_settings(include_secret=False)
+    drive_id = s.get("drive_id") or (await _get_backup_drive())["id"]
     async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
-        r = await client.get(f"{GRAPH_BASE}/drives/{drive['id']}/items/{item_id}/content", headers=await _headers())
+        r = await client.get(f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}/content", headers=await _headers())
         r.raise_for_status()
         return r.content, r.headers.get("content-type", "application/octet-stream")
 

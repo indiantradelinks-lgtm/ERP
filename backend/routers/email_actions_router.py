@@ -377,24 +377,15 @@ async def ai_draft(
         "Return JSON only."
     )
 
+    from ai_worker import llm_send
     try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f"email-draft-{new_id()}",
-            system_message=system_msg,
-        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-        resp = await chat.send_message(UserMessage(text=user_msg))
+        resp = await llm_send("anthropic", "claude-sonnet-4-5-20250929", system_msg, user_msg,
+                              session_id=f"email-draft-{new_id()}")
     except Exception:
         logger.exception("AI draft failed; falling back to Gemini")
         try:
-            from emergentintegrations.llm.chat import LlmChat, UserMessage
-            chat = LlmChat(
-                api_key=EMERGENT_LLM_KEY,
-                session_id=f"email-draft-fb-{new_id()}",
-                system_message=system_msg,
-            ).with_model("gemini", "gemini-2.5-pro")
-            resp = await chat.send_message(UserMessage(text=user_msg))
+            resp = await llm_send("gemini", "gemini-2.5-pro", system_msg, user_msg,
+                                  session_id=f"email-draft-fb-{new_id()}")
         except Exception as e2:
             raise HTTPException(502, f"AI draft failed: {e2}")
 

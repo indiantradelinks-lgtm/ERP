@@ -88,6 +88,7 @@ from routers.email_router import router as email_router
 from routers.email_actions_router import router as email_actions_router
 from routers.role_catalog_router import router as role_catalog_router
 from routers.onedrive_router import router as onedrive_router
+from routers.system_health_router import router as system_health_router
 from routers.linkage_router import router as linkage_router
 from routers.advance_router import router as advance_router
 from routers.department_master_router import router as department_master_router
@@ -233,6 +234,7 @@ ROUTERS_IN_ORDER: List[Tuple[str, APIRouter]] = [
     ("code_override", code_override_router),
     ("notifications", notifications_router),
     ("onedrive", onedrive_router),
+    ("system_health", system_health_router),
     ("procurement", procurement_router),
     ("procurement_extras", procurement_extras_router),
     ("procurement_intel", procurement_intel_router),

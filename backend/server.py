@@ -41,6 +41,9 @@ from routers.project_requests_router import backfill_manpower_recruitment, migra
 
 from seed import seed_admin, seed_sample_data
 from scheduler import start_scheduler_when_leader, shutdown_scheduler, scheduler_status
+import system_health
+
+system_health.tune_malloc()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
@@ -195,6 +198,22 @@ async def on_startup():
         logger.info(f"ERP backend started. email_enabled={email_enabled()}")
     except Exception as e:
         logger.exception(f"Startup error: {e}")
+    try:
+        await system_health.start_background()
+    except Exception as e:
+        logger.warning(f"[health] monitor start skipped: {e}")
+
+
+@app.on_event("startup")
+async def freeze_startup_heap():
+    """Runs last: everything imported/seeded so far is long-lived — freezing it keeps
+    the GC from rescanning ~4k modules on every collection (CPU) and avoids
+    copy-on-write churn in the AI/PDF child processes."""
+    import gc
+    gc.collect()
+    gc.freeze()
+    system_health.trim_memory()
+    logger.info(f"[health] startup heap frozen; rss={system_health.rss_mb()} MB")
 
 
 @app.on_event("startup")
@@ -335,6 +354,7 @@ async def _safe_headers(request, call_next):
 
 _cors_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(_DupMW)
+system_health.install(app)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,

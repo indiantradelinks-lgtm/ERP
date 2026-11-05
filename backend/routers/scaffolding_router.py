@@ -24,7 +24,7 @@ from pydantic import BaseModel
 
 from core import db, require_permission, now_iso, new_id
 from audit import audit
-from challan_ai import read_challan_sync
+from challan_ai import read_challan
 from objstore import APP_NAME, get_object, put_object
 from sequences import next_sequence
 from exports import to_excel, to_pdf
@@ -1173,7 +1173,7 @@ async def challan_extract(from_location_id: Optional[str] = None, file: UploadFi
         raise HTTPException(400, "Upload the challan as a PDF file")
 
     try:
-        parsed = await run_blocking(read_challan_sync, raw)
+        parsed = await read_challan(raw)
     except Exception as e:
         logger.exception("challan extraction failed")
         raise HTTPException(502, f"Could not read the challan: {e}")

@@ -75,13 +75,7 @@ async def _gemini_extract(blob: bytes, mime: str, doc_type: str, session_id: str
         tmp.write(blob)
         tmp.flush()
         tmp.close()
-        from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=session_id,
-            system_message=SCAN_SYSTEM,
-        ).with_model("gemini", GEMINI_MODEL)
-        fc = FileContentWithMimeType(file_path=tmp.name, mime_type=mime)
+        from ai_worker import llm_send
         prompt = (
             f"The HR system classifies this document as '{DOC_TYPES.get(doc_type, doc_type)}' "
             f"(doc_kind hint: {doc_type}).\n"
@@ -89,7 +83,8 @@ async def _gemini_extract(blob: bytes, mime: str, doc_type: str, session_id: str
             f"If the actual document doesn't match this kind, return your best guess for doc_kind."
         )
         try:
-            raw = await chat.send_message(UserMessage(text=prompt, file_contents=[fc]))
+            raw = await llm_send("gemini", GEMINI_MODEL, SCAN_SYSTEM, prompt,
+                                 files=[{"path": tmp.name, "mime": mime}], session_id=session_id)
         except Exception as exc:
             logger.exception("Gemini extraction failed")
             raise HTTPException(502, f"AI scan failed: {exc}")

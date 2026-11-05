@@ -347,6 +347,23 @@ def start_scheduler() -> None:
 
     _scheduler.add_job(_labour_license_job, CronTrigger(hour=7, minute=15),
                        id="labour_license_daily", replace_existing=True)
+
+    async def _health_sample_job():
+        try:
+            from system_health import sample_and_alert
+            _last_results["health_sample"] = await sample_and_alert()
+        except Exception as e:
+            logger.exception(f"Health sample failed: {e}")
+
+    async def _housekeeping_job():
+        try:
+            from system_health import housekeeping
+            _last_results["housekeeping"] = await housekeeping()
+        except Exception as e:
+            logger.exception(f"Housekeeping failed: {e}")
+
+    _scheduler.add_job(_health_sample_job, IntervalTrigger(minutes=5), id="health_sample", replace_existing=True)
+    _scheduler.add_job(_housekeeping_job, CronTrigger(hour=20, minute=30), id="housekeeping", replace_existing=True)
     _scheduler.start()
     logger.info(
         f"Scheduler started (tz={tz}). Jobs: expiry_scan@09:00, invoice_reminders@Mon 09:00, "

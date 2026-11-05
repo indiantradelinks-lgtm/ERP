@@ -1492,22 +1492,21 @@ async def import_items(request: Request, file: UploadFile = File(...), mode: str
 
 
 async def _ai_extract_items(rows: List[List[str]]) -> List[dict]:
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    from ai_worker import llm_send
     key = os.environ.get("EMERGENT_LLM_KEY")
     if not key:
         raise HTTPException(500, "EMERGENT_LLM_KEY not configured")
     sheet = "\n".join("\t".join(r) for r in rows[:300])[:24000]
-    chat = LlmChat(
-        api_key=key, session_id=f"req-import-{new_id()[:8]}",
-        system_message=("You extract material requirement lines from messy spreadsheets for a scaffolding/construction ERP. "
-                        "Return ONLY a JSON array (no markdown). Each element: "
-                        '{"name": str, "item_code": str, "size": str, "material": str (MOC like MS/GI/Aluminium), '
-                        '"make": str, "coating": str, "item_type": str, "quantity": number, "unit": str, '
-                        '"unit_weight_kg": number, "rate": number, "specs": str}. '
-                        "Skip headers/totals/empty rows. Use empty string or 0 when unknown. Infer sensible units (Nos, Kg, Mtr, Set).")
-    ).with_model("openai", "gpt-5.4")
+    system = ("You extract material requirement lines from messy spreadsheets for a scaffolding/construction ERP. "
+              "Return ONLY a JSON array (no markdown). Each element: "
+              '{"name": str, "item_code": str, "size": str, "material": str (MOC like MS/GI/Aluminium), '
+              '"make": str, "coating": str, "item_type": str, "quantity": number, "unit": str, '
+              '"unit_weight_kg": number, "rate": number, "specs": str}. '
+              "Skip headers/totals/empty rows. Use empty string or 0 when unknown. Infer sensible units (Nos, Kg, Mtr, Set).")
     try:
-        resp = await chat.send_message(UserMessage(text=f"Extract the requirement items from this sheet:\n\n{sheet}"))
+        resp = await llm_send("openai", "gpt-5.4", system,
+                              f"Extract the requirement items from this sheet:\n\n{sheet}",
+                              session_id=f"req-import-{new_id()[:8]}")
     except Exception as e:
         logger.exception("AI extraction failed")
         raise HTTPException(502, f"AI extraction failed: {e}")
@@ -1665,21 +1664,20 @@ class AiBeneficiariesIn(BaseModel):
 @router.post("/project-requests/beneficiaries/ai-parse")
 async def beneficiaries_ai_parse(p: AiBeneficiariesIn,
                                  user: dict = Depends(require_permission("project_requests", "write"))):
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    from ai_worker import llm_send
     key = os.environ.get("EMERGENT_LLM_KEY")
     if not key:
         raise HTTPException(500, "EMERGENT_LLM_KEY not configured")
     if not (p.text or "").strip():
         raise HTTPException(400, "Paste the employee payment list first")
-    chat = LlmChat(
-        api_key=key, session_id=f"benef-{new_id()[:8]}",
-        system_message=("You extract employee payment lists (e.g. medical reimbursements) from messy pasted text or tables. "
-                        "Return ONLY a JSON array (no markdown). Each element: "
-                        '{"employee_code": str, "employee_name": str, "amount": number, "remarks": str}. '
-                        "Skip headers/totals. Amounts are INR numbers (strip ₹, Rs, commas). Use empty string when unknown.")
-    ).with_model("openai", "gpt-5.4")
+    system = ("You extract employee payment lists (e.g. medical reimbursements) from messy pasted text or tables. "
+              "Return ONLY a JSON array (no markdown). Each element: "
+              '{"employee_code": str, "employee_name": str, "amount": number, "remarks": str}. '
+              "Skip headers/totals. Amounts are INR numbers (strip ₹, Rs, commas). Use empty string when unknown.")
     try:
-        resp = await chat.send_message(UserMessage(text=f"Extract the employee payment list:\n\n{p.text[:20000]}"))
+        resp = await llm_send("openai", "gpt-5.4", system,
+                              f"Extract the employee payment list:\n\n{p.text[:20000]}",
+                              session_id=f"benef-{new_id()[:8]}")
     except Exception as e:
         raise HTTPException(502, f"AI extraction failed: {e}")
     m = re.search(r"\[.*\]", str(resp).strip(), re.S)

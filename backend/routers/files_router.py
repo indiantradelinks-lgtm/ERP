@@ -8,7 +8,7 @@ import jwt as pyjwt
 
 from core import db, get_current_user, now_iso, new_id, JWT_SECRET, JWT_ALGORITHM, logger
 import hashlib
-from storage import put_object, get_object, MAX_BYTES
+from storage import put_object, MAX_BYTES
 from pagination import combine, search_clause, paged_find
 
 router = APIRouter(tags=["files"])
@@ -154,19 +154,11 @@ async def download_file(file_id: str, request: Request, auth: str = Query(None))
     if not record:
         raise HTTPException(status_code=404, detail="File not found")
     try:
-        data, ct = get_object(record["storage_path"])
+        from doc_storage import fetch_bytes
+        data, ct = await fetch_bytes(record)
     except Exception as e:
-        # Fallback: fetch from OneDrive (centralized store) if this file was pushed
-        if record.get("onedrive_item_id"):
-            try:
-                import onedrive_service as ods
-                data, ct = await ods.download_item(record["onedrive_item_id"])
-            except Exception as e2:
-                logger.exception(f"onedrive fallback failed: {e2}")
-                raise HTTPException(status_code=500, detail="Download failed") from e2
-        else:
-            logger.exception(f"download failed: {e}")
-            raise HTTPException(status_code=500, detail="Download failed") from e
+        logger.exception(f"download failed: {e}")
+        raise HTTPException(status_code=500, detail="Download failed") from e
     headers = {"Content-Disposition": f'inline; filename="{record.get("original_filename", "file")}"'}
     return Response(content=data, media_type=record.get("content_type") or ct, headers=headers)
 

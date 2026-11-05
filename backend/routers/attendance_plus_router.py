@@ -902,12 +902,12 @@ def _file_to_lines(filename: str, content: bytes) -> List[str]:
 async def _ai_map(lines: List[str]) -> dict:
     if not EMERGENT_LLM_KEY:
         raise HTTPException(503, "EMERGENT_LLM_KEY not configured")
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    from ai_worker import llm_send
     sample = "\n".join(lines[:40])
-    chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"punch-map-{new_id()}",
-                   system_message=PUNCH_MAP_SYSTEM).with_model("gemini", "gemini-2.5-flash")
     try:
-        resp = await chat.send_message(UserMessage(text=f"Sample lines from the punch machine file:\n\n{sample}\n\nReturn the JSON mapping only."))
+        resp = await llm_send("gemini", "gemini-2.5-flash", PUNCH_MAP_SYSTEM,
+                              f"Sample lines from the punch machine file:\n\n{sample}\n\nReturn the JSON mapping only.",
+                              session_id=f"punch-map-{new_id()}")
     except Exception as e:
         logger.exception("AI mapping failed")
         raise HTTPException(502, f"AI format detection failed: {e}")

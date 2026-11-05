@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { fmtDT } from "@/lib/datetime";
+import DocumentStorageAudit from "@/components/DocumentStorageAudit";
 
 const StatusPill = ({ ok, label }) =>
   ok ? (
@@ -26,7 +27,7 @@ const StatusPill = ({ ok, label }) =>
 
 export default function OneDriveSettings() {
   const [settings, setSettings] = useState(null);
-  const [form, setForm] = useState({ tenant_id: "", client_id: "", client_secret: "", backup_user_upn: "", base_folder: "ITL-ERP-Backups", enabled: true });
+  const [form, setForm] = useState({ tenant_id: "", client_id: "", client_secret: "", backup_user_upn: "", base_folder: "ITL-ERP-Backups", enabled: true, primary_reads: true });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -82,6 +83,7 @@ export default function OneDriveSettings() {
         backup_user_upn: s.data.backup_user_upn || "",
         base_folder: s.data.base_folder || "ITL-ERP-Backups",
         enabled: s.data.enabled !== false,
+        primary_reads: s.data.primary_reads !== false,
       });
       setStats(st.data);
       setQueue(q.data);
@@ -196,6 +198,7 @@ export default function OneDriveSettings() {
           { key: "settings", label: "Settings", icon: ShieldCheck },
           { key: "queue", label: `Push Queue (${stats.pending} pending · ${stats.failed} failed)`, icon: RefreshCw },
           { key: "backups", label: "DB Backups", icon: Database },
+          { key: "storage", label: "Document Storage", icon: Cloud },
         ].map((t) => (
           <button
             key={t.key}
@@ -240,6 +243,10 @@ export default function OneDriveSettings() {
             <div className="flex items-center gap-2">
               <input type="checkbox" id="enabled" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
               <Label htmlFor="enabled" className="font-normal">Enable one-way push to OneDrive</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="primary_reads" checked={form.primary_reads} onChange={(e) => setForm({ ...form, primary_reads: e.target.checked })} data-testid="onedrive-primary-reads" />
+              <Label htmlFor="primary_reads" className="font-normal">Serve verified documents from OneDrive first (object store stays as automatic fallback)</Label>
             </div>
 
             <div className="flex items-center gap-2">
@@ -348,6 +355,8 @@ export default function OneDriveSettings() {
           </CardContent>
         </Card>
       )}
+
+      {tab === "storage" && <DocumentStorageAudit onMigrateAll={migrateAll} />}
 
       {tab === "backups" && (
         <Card>
