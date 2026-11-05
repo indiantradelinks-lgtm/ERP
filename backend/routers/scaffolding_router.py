@@ -23,6 +23,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from core import db, require_permission, now_iso, new_id
+import hashlib
 from audit import audit
 from challan_ai import read_challan
 from objstore import APP_NAME, get_object, put_object
@@ -311,6 +312,8 @@ class ChallanRef(BaseModel):
     storage_path: Optional[str] = None
     filename: Optional[str] = None
     size: Optional[int] = None
+    sha256: Optional[str] = None
+    file_id: Optional[str] = None
     uploaded_at: Optional[str] = None
     uploaded_by: Optional[str] = None
     challan_no: Optional[str] = None
@@ -358,6 +361,22 @@ async def create_transfer(p: TransferIn, request: Request,
            "challan_attachment": p.challan_attachment.model_dump() if p.challan_attachment else None,
            "status": "pending_approval", "challan_count": 0,
            "created_at": now_iso(), "created_by": user.get("name") or user.get("email")}
+    if doc["challan_attachment"] and doc["challan_attachment"].get("storage_path"):
+        # Register the challan in the document registry so it joins the OneDrive pipeline
+        att = doc["challan_attachment"]
+        frec = {"id": new_id(), "storage_path": att["storage_path"], "sha256": att.get("sha256"),
+                "original_filename": att.get("filename") or "challan.pdf", "content_type": "application/pdf",
+                "size": att.get("size"), "title": f"Challan {att.get('challan_no') or ''} · {doc['transfer_no']}".strip(" ·"),
+                "folder": "documents", "parent_type": "scaf_transfers", "parent_id": doc["id"], "category": None,
+                "uploaded_by": user.get("name") or user.get("email"), "uploaded_by_id": user["id"],
+                "is_deleted": False, "created_at": now_iso()}
+        await db.files.insert_one(frec)
+        att["file_id"] = frec["id"]
+        try:
+            from routers.onedrive_router import enqueue_file
+            await enqueue_file(frec["id"])
+        except Exception as e:  # noqa: BLE001
+            logger.warning("challan OneDrive enqueue skipped: %s", e)
     await db.scaf_transfers.insert_one(doc); doc.pop("_id", None)
     await audit(user=user, action="create", resource="scaf_transfers", record_id=doc["id"], after=doc, ip=_ip(request))
     return doc
@@ -1227,7 +1246,8 @@ async def challan_extract(from_location_id: Optional[str] = None, file: UploadFi
         path = f"{APP_NAME}/challans/{new_id()}.pdf"
         res = await run_blocking(put_object, path, raw, "application/pdf")
         attachment = {"storage_path": res["path"], "filename": file.filename or "challan.pdf",
-                      "size": res.get("size") or len(raw), "uploaded_at": now_iso(),
+                      "size": res.get("size") or len(raw), "sha256": hashlib.sha256(raw).hexdigest(),
+                      "uploaded_at": now_iso(),
                       "uploaded_by": user.get("name") or user.get("email")}
     except Exception as e:                       # extraction is still useful without the copy
         logger.warning("challan upload failed: %s", e)
@@ -1257,7 +1277,12 @@ async def transfer_challan_file(tid: str, user: dict = Depends(require_permissio
     att = (t or {}).get("challan_attachment")
     if not att:
         raise HTTPException(404, "No challan PDF is attached to this transfer")
-    data, ctype = await run_blocking(get_object, att["storage_path"])
+    frec = await db.files.find_one({"id": att.get("file_id"), "is_deleted": False}, {"_id": 0}) if att.get("file_id") else None
+    if frec:
+        from doc_storage import fetch_bytes
+        data, ctype = await fetch_bytes(frec)
+    else:
+        data, ctype = await run_blocking(get_object, att["storage_path"])
     return Response(content=data, media_type=ctype,
                     headers={"Content-Disposition": f'inline; filename="{att.get("filename") or "challan.pdf"}"'})
 

@@ -1,0 +1,35 @@
+{
+  "summary": "Iter 226 frontend verification (perf/storage). Lazy routes: 17 routes tested as admin (/app, approvals, employees, projects, quotations, inventory, scaffolding, store-inventory, admin, admin/users, admin/audit-logs, hr/leave, hr/payroll, safety, logistics, logistics/vehicles, services/requests) all render real content, route-loading spinner clears, zero ChunkLoadError / dynamic import / pageerror (only 2 pre-login 401s from auth probe). Admin console System Health card navigates to /app/admin/system-health. All 6 metric cards show values (MB, %, %, MB, ms, min up); history chart renders (recharts svg); Refresh, Trim memory (success toast) and Run housekeeping (success toast, Last housekeeping timestamp updated 3:58 PM -> 4:01 PM IST) work. slow_ms 1500->1400 saved, persisted after reload, restored to 1500 (verified). OneDrive: primary_reads checkbox present + checked by default; Document Storage tab (onedrive-tab-storage) renders audit card: 103 active docs, 55 pushed, 0 verified, 55 failed, 16 module rows; Refresh works; Verify pushed files -> 200 + toast 'Verified 0 · failed 0 · candidates 0'. 'Queue all historical files' NOT clicked. sales@erp.com on /app/admin/system-health gets clean 'Access Denied' route guard page (no API call, no crash). One real bug found: 30s auto-refresh wipes unsaved threshold form edits.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "SystemHealth ThresholdForm", "issue": "Unsaved edits are silently reset every 30 s. load() runs on a 30s setInterval and calls setSnap with a fresh settings object; ThresholdForm's useEffect(() => setF(settings), [settings]) then overwrites the form. Reproduced: typed 1234 in health-setting-slow_ms, waited 33 s, value reverted to 1500.", "selector": "[data-testid='health-settings-card'] input", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "System Health", "issues": [
+        "Trim memory / Housekeeping success toasts show raw JSON (e.g. {\"rss_before_mb\":224.1,...}) truncated to 160 chars. Format them, e.g. 'Freed 1.8 MB'.",
+        "Subtitle says '30-day history' but the chart is titled 'Last 7 days' (days=7). Minor inconsistency.",
+        "If the first load fails, the page stays on 'Loading system health…' forever with an error toast every 30 s. No error state or retry."
+      ]},
+      {"screen": "OneDrive > Document Storage", "issues": [
+        "Modules where every pushed file failed verification (e.g. quotations pushed 13 / failed 13) still show status 'verifying'. A 'failed' or 'needs attention' badge would be clearer."
+      ]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter226_perf_storage.py"],
+  "action_items": [
+    "SystemHealth.jsx: stop the 30 s poll from overwriting ThresholdForm edits. Options: only re-seed the form when not dirty, key the useEffect on a settings version or updated_at, or pass settings only on first load or after save.",
+    "Optional: show readable toasts for trim/housekeeping, an error/retry state when the first load fails, and a 'failed' status badge in the storage audit table."
+  ],
+  "critical_code_review_comments": [
+    "SystemHealth.jsx line 34: useEffect(() => setF(settings), [settings]) together with setInterval(load, 30000) at line 98 causes the form-reset bug.",
+    "SystemHealth.jsx line 107: when snap is null after an error, the page renders loading forever."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (frontend only)", "frontend": "~96% (all requested flows pass; 1 medium bug)"},
+  "seed_data_creation": "None. slow_ms was changed to 1400 and restored to 1500 (verified).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "OneDrive tabs are buttons with data-testid onedrive-tab-<name> (not role=tab). Sonner toasts disappear in about 4 s, so poll for them right after clicking. Non-admins are blocked by the frontend route guard ('Access Denied' card) before any API call. Never click storage-audit-migrate."
+}

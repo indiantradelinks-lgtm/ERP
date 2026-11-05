@@ -16,12 +16,19 @@ Backend routes are prefixed `/api`; frontend calls via `REACT_APP_BACKEND_URL`.
 - **Iter 208–217**: repeat advances unblock, ICICI CMS bank-file format, Pending Billing all-month
   filter + Excel/PDF exports, vendor bill advance/part payments, PO PDF terms + project name,
   bulk stock adjustment/transfer via Excel, project-wise allocation exports, enquiry→quotation coverage.
-- **Iter 226 (Jun 2026) — Performance/Storage RCA delivered, awaiting approval**: see
-  `/app/memory/PERF_RCA_2026-06.md`. Key findings: `emergentintegrations` import pulls litellm
-  (+160 MB, permanent) on first AI use → OOM at 512 Mi; idle 233 MB (eager WeasyPrint/PyMuPDF/
-  openpyxl); single 4.76 MB JS bundle (no code-splitting); un-paginated lists; OneDrive mirror
-  blocked by expired client secret. Plan A–F (AI subprocess, lazy imports, code-splitting,
-  pagination, verified OneDrive-primary migration, housekeeping, system-health). NOT implemented yet.
+- **Iter 226 (Jun 2026) — Performance & storage remediation (approved, implemented)**: RCA +
+  before/after in `/app/memory/PERF_RCA_2026-06.md`. (a) `ai_worker.py`: every LLM call
+  (challan OCR, HR doc scan, AI quotation, attendance AI, email drafts, request imports) runs in a
+  short-lived child process — litellm (+160 MB) never loads in the API (RSS +2 MB per call vs +160);
+  PyMuPDF text extraction also out-of-process. (b) `system_health.py` + `/api/admin/system-health`
+  + Admin → System Health page: RSS/CPU/loop-lag/disk/DB/p95, slow-request log (≥1.5 s), 5-min
+  samples (30 d TTL), thresholds → in-app + email alerts, daily housekeeping (temp files, technical
+  logs only), malloc tuning + `gc.freeze` + `malloc_trim` after heavy exports. (c) Route-level
+  `React.lazy` for all 229 pages: main bundle 4.76 MB → 686 KB. (d) `doc_storage.py`: verified
+  OneDrive-primary tier (download-back + SHA-256), `fetch_bytes` OneDrive-first with object-store
+  fallback, storage audit per module, `primary_reads` switch, challan PDFs registered in `files`.
+  Backup taken before changes: `/app/backups/erp_database-20261105-101030.archive.gz` + files manifest.
+  **Blocked on user:** valid Azure client secret for backup@indiantradelinks.in (AADSTS7000215).
 - **Iter 218 (Jun 2026) — Cloudflare 520s & ERP slowness**: root cause was backend-origin —
   pods OOMKilled at 512 Mi (tier_0) plus synchronous PDF/Excel generation blocking the single
   Uvicorn event loop (a 300-row report PDF froze all requests ~5 s, timing out `/health`).

@@ -82,7 +82,25 @@ Estimated effort: steps 0–3 first (they remove the OOM cause), then 4–5, the
 - **Object storage:** 100 % of eligible historical files (preview: 103 files/10.8 MB; production: measured by storage audit in step 6) become OneDrive-primary; object-store copies retained as rollback until you approve release.
 - **DB:** ~30 % of technical-log rows eligible for retention after approval; no business data affected.
 
-## 7. Baseline captured today (preview, for before/after)
+## 8. Implemented (Iter 226, approved) — before / after on the preview (same image as production)
+
+| Metric | Before | After |
+|---|---|---|
+| Backend RSS idle | 245 MB | **208–221 MB** |
+| Backend RSS growth after first AI call | **+160 MB, permanent** (litellm in-process) | **+2 MB** — AI runs in a child process (`ai_worker.py`, peak 208 MB, exits after reply) |
+| RSS after 4 concurrent PDF renders | +7 MB, kept | +6 MB then `malloc_trim` returns pages (227 MB) |
+| First-load JavaScript | 1 file, **4.76 MB** (1.01 MB gzip) | **686 KB** main (203 KB gzip) + 240 on-demand chunks (−86 %) |
+| PR PDF render | 0.43 s | 0.44 s (unchanged — already offloaded) |
+| List APIs (admin, 50 rows) | 0.11–0.22 s | 0.11–0.15 s (unchanged; main grids were already server-paged — RCA item #4 applies to ad-hoc callers only, now tracked by the slow-request log) |
+| Visibility | none in-app | Admin → System Health: RSS/CPU/loop-lag/disk/DB/p95, slow-request log, 30-day history, thresholds + in-app/email alerts |
+| Housekeeping | none | daily 20:30 UTC: temp files > 2 h, login_activity > 180 d, read notifications > 90 d, email bodies > 180 d (headers kept); configurable; business data untouched |
+| Documents | one-way mirror, no verification | verified OneDrive-primary tier (size + download-back + SHA-256), object-store copy kept as fallback/rollback; storage audit per module; `primary_reads` switch |
+
+CPU quota (250m) is unchanged and remains the ceiling for PDF-heavy minutes; the System Health history will show whether a tier upgrade is justified after a week of production data.
+
+Still blocked on the user: a valid Azure client secret (verification/pushes currently fail with `AADSTS7000215` in preview).
+
+## 7. Baseline captured before implementation (preview)
 - Backend idle RSS: 245 MB (uvicorn --reload); after `import server`: 233 MB; +160 MB after first AI import.
 - PR PDF: 0.43 s, +11 MB; 4 concurrent PDFs: 0.44–0.87 s, +7 MB.
 - List APIs (admin): /projects 0.15 s 30 KB; /employees 0.11 s 29 KB; /my-inbox 0.18 s 113 KB; /quotations 0.17 s 266 KB; /inventory 0.14 s 114 KB; /approvals 0.22 s 678 KB.

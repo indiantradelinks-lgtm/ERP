@@ -86,13 +86,14 @@ function ThresholdForm({ settings, onSaved }) {
 
 export default function SystemHealth() {
   const [snap, setSnap] = useState(null);
+  const [settings, setSettings] = useState(null);
   const [hist, setHist] = useState([]);
   const [busy, setBusy] = useState("");
 
   const load = async () => {
     try {
       const [s, h] = await Promise.all([api.get("/admin/system-health"), api.get("/admin/system-health/history?days=7")]);
-      setSnap(s.data); setHist(h.data.map((r) => ({ ...r, t: new Date(r.at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) })));
+      setSnap(s.data); setSettings((prev) => prev || s.data.settings); setHist(h.data.map((r) => ({ ...r, t: new Date(r.at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) })));
     } catch (e) { toast.error(e?.response?.data?.detail || "Failed to load system health"); }
   };
   useEffect(() => { load(); const id = setInterval(load, 30000); return () => clearInterval(id); }, []);
@@ -181,7 +182,7 @@ export default function SystemHealth() {
         </Card>
       </div>
 
-      <ThresholdForm settings={st} onSaved={(s) => setSnap({ ...snap, settings: s })} />
+      <ThresholdForm settings={settings} onSaved={(s) => { setSettings(s); setSnap({ ...snap, settings: s }); }} />
     </div>
   );
 }

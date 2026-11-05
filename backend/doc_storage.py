@@ -49,6 +49,9 @@ async def verify_file(f: dict) -> dict:
         return {"ok": True, "file_id": fid}
     except Exception as e:  # noqa: BLE001 — recorded on the row, retried later
         err = str(e)[:300]
+        auth_issue = "AADSTS" in err or "token" in err.lower()
+        if auth_issue:
+            attempts -= 1  # a broken tenant secret is not the file's fault — never exhaust its retries
         logger.warning("verify failed for %s (attempt %s): %s", fid, attempts, err)
         await db.files.update_one({"id": fid}, {"$set": {
             "onedrive_verify_error": err, "onedrive_verify_attempts": attempts,
