@@ -16,6 +16,17 @@ Backend routes are prefixed `/api`; frontend calls via `REACT_APP_BACKEND_URL`.
 - **Iter 208–217**: repeat advances unblock, ICICI CMS bank-file format, Pending Billing all-month
   filter + Excel/PDF exports, vendor bill advance/part payments, PO PDF terms + project name,
   bulk stock adjustment/transfer via Excel, project-wise allocation exports, enquiry→quotation coverage.
+- **Iter 227 (Jun 2026) — Direct Payments for existing service vendors**: `service_direct_payment_router.py`
+  (`/api/service-direct-payments`, collection `svc_direct_payments`, seq `SDP`). Eligible = vendors with a paid
+  service invoice or live Service PO; optional ref PO (pre-filled from last PO, project auto-filled); raised by
+  Accounts/Procurement/Logistics; amounts (invoice/GST/other/TDS → net, payment ≤ net) editable while pending;
+  warning (not block) when payment > vendor's last paid; duplicate guards (vendor+invoice no across DPs and service
+  invoices; identical open request same month → 409). Super Admin approve/reject (remarks required to reject) from
+  the page or My Pending Approvals; approval creates a `project_requests` payment row (source
+  `service_direct_payment`) in Payment Processing Center; mark-paid callback `on_direct_payment_paid` closes it and
+  stamps the ref PO. Vendor-wise history endpoint, audit actions `svc_direct_payment_*`, optional attachments
+  (folder `service_direct_payments`). UI: Services → Direct Payments page + 'Direct Payment' button on Service
+  Requests. Existing SR workflow untouched. Tests: `tests/test_iter227_direct_payments.py` (15) + UI iteration_211.
 - **Iter 226 (Jun 2026) — Performance & storage remediation (approved, implemented)**: RCA +
   before/after in `/app/memory/PERF_RCA_2026-06.md`. (a) `ai_worker.py`: every LLM call
   (challan OCR, HR doc scan, AI quotation, attendance AI, email drafts, request imports) runs in a

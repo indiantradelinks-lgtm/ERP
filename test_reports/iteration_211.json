@@ -1,0 +1,41 @@
+{
+  "summary": "Iter 227 Direct Payment (service vendors) – FRONTEND e2e via Playwright on preview URL. All 11 requested flows PASS: SR page 'Direct Payment' button -> /app/services/direct-payments with form open; sidebar nav-svc-direct-payments; create flow (vendor search filter, vendor summary GSTIN/last paid/counts, Ref PO pre-selected + project auto-filled, net ₹29,000, payment auto 29000, manual 20000 sticks even when TDS changes, exceeds-warning shown, toast, row PENDING APPROVAL + amber triangle); detail dialog (payment ₹20,000, warnings box, history 'raised', vendor payment history); edit (vendor disabled, 19000 saved, history 'edited'); approve -> toast 'sent to Payment Processing', status PAYMENT PENDING, queue tile 0->1, row SDP-2026-0010 'Direct Payment (Service Vendor)' ₹19,000 listed in /app/accounts/payment-processing Pending Verification; reject with empty remarks -> 'Remarks are required to reject' then REJECTED; withdraw -> WITHDRAWN; My Pending Approvals lists 'Direct Payments' source with amount + inbox-approve/inbox-reject, approve works -> PAYMENT PENDING with approval stamp; status/vendor/search filters narrow table; sales: no New button, no approve/reject, no crash; purchase: New button shown, own pending detail has only Edit/Withdraw. Regression: SR list + svc-req-form-dialog, /app/services/invoices render OK. No page errors. Only minor UI issues found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/service-direct-payments/{id}/action", "issue": "Status check and update are not atomic (update_one filter is only {id}); two concurrent approve calls could both pass the pending_approval check and push the DP to the payment queue twice. Add status:'pending_approval' to the update filter and check modified_count."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ServiceDirectPayments detail footer", "issue": "Withdraw button is shown to ANY user for a pending request (only checks status). Verified: sales@erp.com sees Withdraw on purchase's SDP-2026-0014; clicking -> 403 toast 'Only the requester can withdraw this request'. Same for Edit: shown whenever meta.can_raise even if the user is not the requester (backend PUT rejects non-requester non-super-admin). Gate both on viewing.created_by_id === currentUser.id || role === super_admin.", "selector": "[data-testid='svc-dp-detail-withdraw'], [data-testid='svc-dp-detail-edit']", "priority": "MEDIUM"},
+      {"component": "ServiceDirectPayments tiles", "issue": "'Awaiting approval' / 'In payment queue' tiles are computed from the filtered rows, so applying status/vendor/search filters changes them (e.g. search 'zzzz' -> Awaiting approval 0 while a pending DP exists). Either label as '(listed)' or compute from unfiltered data/meta.", "selector": "[data-testid='svc-dp-tile-open'], [data-testid='svc-dp-tile-queue']", "priority": "LOW"},
+      {"component": "ServiceDirectPayments empty state", "issue": "When filters return no rows the table says 'No Direct Payment requests yet.' – misleading; should say 'No requests match the filters'.", "selector": "[data-testid='svc-dp-empty']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "DirectPaymentForm vendor select", "issues": ["Two vendors both named 'RAHUL' with no code appear identically in the vendor dropdown and filter – add GSTIN/code to disambiguate."]},
+      {"screen": "DirectPaymentForm edit save", "issues": ["After 'Save changes' on an edit, the attachments dialog auto-opens again (onSaved always setDocsFor) – only needed after create."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Hide Edit/Withdraw in DP detail unless current user is the requester (created_by_id) or super_admin",
+    "Make approve/reject/withdraw update atomic with status filter to avoid double queue push",
+    "Tiles: compute from unfiltered data or relabel; fix empty-state text when filters active",
+    "(optional) disambiguate duplicate vendor names in selects; don't reopen attachments dialog after edit"
+  ],
+  "critical_code_review_comments": [
+    "ServiceDirectPayments.jsx L175-180: Edit/Withdraw visibility ignores requester ownership (backend enforces → 403 toast)",
+    "service_direct_payment_router.py L344-359: check-then-update race on status transition",
+    "DirectPaymentForm.jsx: if the vendor search filters out the currently selected vendor, the <select> shows a value that is not in the option list (visually blank) – minor"
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (frontend only)", "frontend": "100% of requested flows pass; 3 minor UI issues"},
+  "test_credentials": "admin@erp.com/Admin@123, purchase@erp.com/Purchase@123, sales@erp.com/Sales@123 all working",
+  "seed_data_creation": "Created via UI: SDP-2026-0010 (approved→payment_pending, ₹19,000, now in Payment Processing Center Pending Verification), SDP-2026-0011 (rejected), SDP-2026-0012 (withdrawn), SDP-2026-0013 (approved via inbox→payment_pending, ₹600, in PPC queue), SDP-2026-0014 (raised by purchase, withdrawn via API for cleanup). All invoice nos prefixed TEST-. SDP-0010 and SDP-0013 remain in the payment queue (no delete API) – reject them in PPC if needed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Login in Playwright needs ~1.5s wait after login page load before filling, else submit is ignored; then wait_for_url('**/app**'). Eligible vendors: AutoVen-1782285159067 (index 1, last paid ₹1,000 so any amount warns), FastTrack Transporters, RAHUL x2. PPC route /app/accounts/payment-processing. Inbox route /app/my-approvals.",
+  "rca of the issue": "Withdraw/Edit visibility: frontend only checks status + meta.can_raise, whereas backend checks user.id == dp.created_by_id or super_admin. Repro: purchase raises DP; sales opens detail → Withdraw visible → Confirm → 403."
+}

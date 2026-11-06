@@ -54,7 +54,7 @@ export default function DirectPaymentForm({ row, vendors, onClose, onSaved }) {
         other_charges: num(f.other_charges), tds_amount: num(f.tds_amount), payment_amount: num(f.payment_amount) || null };
       const r = row ? await api.put(`/service-direct-payments/${row.id}`, body) : await api.post("/service-direct-payments", body);
       toast.success(`${r.data.dp_no} ${row ? "updated" : "raised — awaiting Super Admin approval"}${r.data.warnings?.length ? ` (warning: ${r.data.warnings[0]})` : ""}`);
-      onSaved(r.data);
+      onSaved(r.data, !row);
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setBusy(false); }
   };
@@ -69,7 +69,7 @@ export default function DirectPaymentForm({ row, vendors, onClose, onSaved }) {
             {!row && <Input className="h-8 mb-1" placeholder="Search vendor…" value={vq} onChange={(e) => setVq(e.target.value)} data-testid="svc-dp-vendor-search" />}
             <select className="h-9 border rounded-sm px-2 w-full" value={f.vendor_id} onChange={set("vendor_id")} disabled={!!row} data-testid="svc-dp-vendor">
               <option value="">Select vendor</option>
-              {filteredVendors.map((v) => <option key={v.id} value={v.id}>{v.name}{v.code ? ` (${v.code})` : ""}</option>)}
+              {filteredVendors.map((v) => <option key={v.id} value={v.id}>{v.name}{v.code ? ` (${v.code})` : v.gst ? ` · ${v.gst}` : ""}</option>)}
             </select>
           </div>
 

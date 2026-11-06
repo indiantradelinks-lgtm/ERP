@@ -94,7 +94,7 @@ export default function ServiceDirectPayments() {
           </select></div>
         <div><Label className="text-[10px] uppercase">Vendor</Label>
           <select className="h-9 border rounded-sm px-2 text-sm block min-w-[220px]" value={filters.vendor} onChange={(e) => setFilters({ ...filters, vendor: e.target.value })} data-testid="svc-dp-filter-vendor">
-            <option value="">All</option>{meta.vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+            <option value="">All</option>{meta.vendors.map((v) => <option key={v.id} value={v.id}>{v.name}{v.code ? ` (${v.code})` : v.gst ? ` · ${v.gst}` : ""}</option>)}
           </select></div>
         <div><Label className="text-[10px] uppercase">Search</Label>
           <Input className="h-9 w-64" placeholder="DP no / invoice / PO / period" value={filters.q} onChange={(e) => setFilters({ ...filters, q: e.target.value })} data-testid="svc-dp-filter-q" /></div>
@@ -132,7 +132,7 @@ export default function ServiceDirectPayments() {
       </div>
 
       {editing && <DirectPaymentForm row={editing.id ? editing : null} vendors={meta.vendors}
-        onClose={() => setEditing(null)} onSaved={(saved) => { setEditing(null); load(); setDocsFor(saved); }} />}
+        onClose={() => setEditing(null)} onSaved={(saved, isNew) => { setEditing(null); load(); if (isNew) setDocsFor(saved); }} />}
 
       <Dialog open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-sm" data-testid="svc-dp-detail-dialog">
