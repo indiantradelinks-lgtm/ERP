@@ -224,6 +224,7 @@ export const MENU_ITEMS = [
   { department: "procurement", parentLabel: "Service Procurement", label: "RFQs & Quotations",      to: "/app/services/rfqs",      icon: FileSearch,    testid: "nav-svc-rfqs",      perm: "service_workflow" },
   { department: "procurement", parentLabel: "Service Procurement", label: "Service POs",            to: "/app/services/pos",       icon: FileSignature, testid: "nav-svc-pos",       perm: "service_workflow" },
   { department: "procurement", parentLabel: "Service Procurement", label: "Monthly Service Payments", to: "/app/services/recurring", icon: CalendarClock, testid: "nav-svc-recurring", perm: "service_workflow" },
+  { department: "procurement", parentLabel: "Service Procurement", label: "Direct Payments",         to: "/app/services/direct-payments", icon: Banknote, testid: "nav-svc-direct-payments", perm: "service_workflow" },
   { department: "procurement", parentLabel: "Service Procurement", label: "Service Receipt Notes",  to: "/app/services/srns",      icon: ClipboardCheck, testid: "nav-svc-srns",     perm: "service_workflow" },
   { department: "procurement", parentLabel: "Service Procurement", label: "Invoices & Payments",    to: "/app/services/invoices",  icon: Receipt,       testid: "nav-svc-invoices",  perm: "service_workflow" },
   { department: "procurement", label: "Vendor Master",         to: "/app/vendors",                  icon: Truck,         testid: "nav-vendors", perm: "vendors" },

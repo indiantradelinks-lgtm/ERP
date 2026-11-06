@@ -22,6 +22,7 @@ from routers.payroll_router import router as payroll_router
 from routers.labour_license_router import router as labour_license_router
 from routers.service_workflow_router import router as service_workflow_router
 from routers.service_recurring_router import router as service_recurring_router
+from routers.service_direct_payment_router import router as service_direct_payment_router
 from routers.cron_router import router as cron_router
 from routers.vendors_router import router as vendors_router
 from routers.projects_ops_router import router as projects_ops_router
@@ -162,6 +163,7 @@ ROUTERS_IN_ORDER: List[Tuple[str, APIRouter]] = [
     ("labour_licenses", labour_license_router),  # HR labour license compliance
     ("service_workflow", service_workflow_router),  # Service Request → Payment workflow
     ("service_recurring", service_recurring_router),  # Monthly recurring service payments
+    ("service_direct_payment", service_direct_payment_router),  # Direct payments to existing service vendors
     ("cron", cron_router),                     # platform cron webhooks (.emergent/crons.yml)
     ("vendors", vendors_router),               # rich /vendors lifecycle
     ("projects_ops", projects_ops_router),     # Iter 60 — handover

@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Paperclip, Pencil, Send, Eye, ClipboardList } from "lucide-react";
+import { Plus, Paperclip, Pencil, Send, Eye, ClipboardList, Banknote } from "lucide-react";
 import { toast } from "sonner";
 import { api, apiErrorMessage } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
@@ -90,7 +90,14 @@ export default function ServiceRequests() {
           <h1 className="text-xl font-bold flex items-center gap-2"><ClipboardList className="h-5 w-5" /> Service Requests</h1>
           <p className="text-xs text-muted-foreground">Raise any service requirement from one place — <b>no internal approval needed</b>; submitted requests go straight to RFQ / Procurement, and the only approval left is the Accounts payment approval</p>
         </div>
-        <Button onClick={() => setEditing(blank())} data-testid="svc-req-new-btn"><Plus className="h-4 w-4 mr-1" /> New Service Request</Button>
+        <div className="flex gap-2">
+          {(meta?.role_caps?.accounts || meta?.role_caps?.procurement || ["manager_log", "manager_l_o_g", "logistics_executive", "logistics_manager"].includes(user?.role)) && (
+            <Button variant="outline" onClick={() => nav("/app/services/direct-payments?new=1")} data-testid="svc-req-direct-payment-btn" title="Repeat payment to a vendor already paid through the Service workflow — no new SR / RFQ / PO / SRN">
+              <Banknote className="h-4 w-4 mr-1" /> Direct Payment
+            </Button>
+          )}
+          <Button onClick={() => setEditing(blank())} data-testid="svc-req-new-btn"><Plus className="h-4 w-4 mr-1" /> New Service Request</Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-end gap-2">

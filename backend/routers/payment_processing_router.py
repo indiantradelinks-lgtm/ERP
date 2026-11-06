@@ -787,6 +787,9 @@ async def mark_paid(rid: str, p: MarkPaidIn, request: Request,
     if row.get("source") == "service_invoice" and row.get("source_id"):
         from routers.service_workflow_router import on_service_invoice_paid
         await on_service_invoice_paid(row["source_id"], p.utr_no, p.paid_date, user)
+    if row.get("source") == "service_direct_payment" and row.get("source_id"):
+        from routers.service_direct_payment_router import on_direct_payment_paid
+        await on_direct_payment_paid(row["source_id"], p.utr_no, p.paid_date, user)
     if row.get("source") == "advance" and row.get("source_id"):
         adv = await db.employee_advances.find_one({"id": row["source_id"]}, {"_id": 0})
         if adv and adv.get("status") == "approved":

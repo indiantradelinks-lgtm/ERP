@@ -197,13 +197,30 @@ async def _service_requests(role: str, user_id: str) -> List[dict]:
     return out
 
 
+async def _direct_payments(role: str) -> List[dict]:
+    if role != "super_admin":
+        return []
+    rows = await db.svc_direct_payments.find(
+        {"status": "pending_approval"}, {"_id": 0, "history": 0}).sort("created_at", -1).limit(200).to_list(200)
+    return [_item("service_direct_payment", "Direct Payment", r,
+                  ref=r.get("dp_no"),
+                  title=f"{r.get('vendor_name') or 'Vendor'} — {r.get('service_period') or r.get('vendor_invoice_no') or 'repeat payment'}",
+                  subtitle=" · ".join(x for x in [r.get("project_code"), f"ref PO {r['ref_po_no']}" if r.get("ref_po_no") else "",
+                                                  "; ".join(r.get("warnings") or [])] if x),
+                  amount=r.get("payment_amount"),
+                  step_label="Super Admin Approval",
+                  link=f"/app/services/direct-payments?id={r['id']}",
+                  approve_path=f"/service-direct-payments/{r['id']}/inbox-approve",
+                  reject_path=f"/service-direct-payments/{r['id']}/inbox-reject") for r in rows]
+
+
 @router.get("/my-inbox")
 async def my_inbox(user: dict = Depends(get_current_user)):
     role = user.get("role")
     results = await asyncio.gather(
         _central_approvals(role), _project_requests(role, user), _daily_expenses(role),
         _expense_payments(role), _scaffolding(role), _dprs(role), _ra_bills(role),
-        _service_requests(role, user.get("id")))
+        _service_requests(role, user.get("id")), _direct_payments(role))
     items: List[dict] = [it for group in results for it in group]
     items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
     counts: Dict[str, int] = {}

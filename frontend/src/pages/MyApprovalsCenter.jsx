@@ -14,6 +14,7 @@ const SOURCES = {
   approval: { label: "Approvals", icon: ClipboardCheck, tone: "border-blue-300 text-blue-900 bg-blue-50" },
   project_request: { label: "Project Requests", icon: FileText, tone: "border-violet-300 text-violet-900 bg-violet-50" },
   service_request: { label: "Service Requests", icon: Wrench, tone: "border-indigo-300 text-indigo-900 bg-indigo-50" },
+  service_direct_payment: { label: "Direct Payments", icon: Banknote, tone: "border-orange-300 text-orange-900 bg-orange-50" },
   expense: { label: "Daily Expenses", icon: Wallet, tone: "border-amber-300 text-amber-900 bg-amber-50" },
   expense_payment: { label: "Payments Due", icon: Banknote, tone: "border-emerald-300 text-emerald-900 bg-emerald-50" },
   scaffolding: { label: "Scaffolding Transfers", icon: Layers, tone: "border-cyan-300 text-cyan-900 bg-cyan-50" },

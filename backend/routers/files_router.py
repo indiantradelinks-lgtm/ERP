@@ -37,6 +37,7 @@ ALLOWED_FOLDERS = {
     "service_pos",
     "service_srns",
     "service_invoices",
+    "service_direct_payments",
 }
 CLIENT_DOC_CATEGORIES = {"PAN", "GST", "MSA", "NDA", "TradeLicense", "IncorporationCert", "AddressProof", "BankDetails", "Other"}
 

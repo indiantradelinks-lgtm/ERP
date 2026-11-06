@@ -138,6 +138,7 @@ const ServiceRequestDetail = lazy(() => import("@/pages/services/ServiceRequestD
 const ServiceRfqs = lazy(() => import("@/pages/services/ServiceRfqs"));
 const ServicePos = lazy(() => import("@/pages/services/ServicePos"));
 const ServiceRecurring = lazy(() => import("@/pages/services/ServiceRecurring"));
+const ServiceDirectPayments = lazy(() => import("@/pages/services/ServiceDirectPayments"));
 const ServiceSrns = lazy(() => import("@/pages/services/ServiceSrns"));
 const ServiceInvoices = lazy(() => import("@/pages/services/ServiceInvoices"));
 const HrPhase5 = lazy(() => import("@/pages/hr/HrPhase5"));
@@ -512,6 +513,7 @@ export default function App() {
             <Route path="/app/services/rfqs" element={<ProtectedShell><ServiceRfqs /></ProtectedShell>} />
             <Route path="/app/services/pos" element={<ProtectedShell><ServicePos /></ProtectedShell>} />
             <Route path="/app/services/recurring" element={<ProtectedShell><ServiceRecurring /></ProtectedShell>} />
+            <Route path="/app/services/direct-payments" element={<ProtectedShell><ServiceDirectPayments /></ProtectedShell>} />
             <Route path="/app/services/srns" element={<ProtectedShell><ServiceSrns /></ProtectedShell>} />
             <Route path="/app/services/invoices" element={<ProtectedShell><ServiceInvoices /></ProtectedShell>} />
             <Route path="*" element={<Navigate to="/" replace />} />
