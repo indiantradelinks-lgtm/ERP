@@ -243,6 +243,15 @@ export default function AttendanceSummary() {
         <Kpi label="Early Exits" value={t.early_count ?? 0} testid="kpi-early" />
         <Kpi label="OT Hours" value={t.ot_hours ?? 0} testid="kpi-ot" />
       </div>
+      {data?.data_quality && (
+        <div className="text-[11px] text-muted-foreground print:hidden" data-testid="summary-data-quality">
+          {data.data_quality.records} attendance records counted for {data.month}
+          {data.data_quality.duplicates_merged > 0 && <> · {data.data_quality.duplicates_merged} duplicate day(s) merged</>}
+          {data.data_quality.inactive_employees > 0 && <> · {data.data_quality.inactive_employees} inactive employee(s) included</>}
+          {data.data_quality.unresolved_rows > 0 && <> · <span className="text-rose-700">{data.data_quality.unresolved_rows} row(s) with a code not in the Employee Master</span></>}
+          {data.data_quality.unknown_status_rows > 0 && <> · <span className="text-amber-700">{data.data_quality.unknown_status_rows} row(s) with an unknown status skipped</span></>}
+        </div>
+      )}
 
       <Tabs value={view} onValueChange={setView} className="print:hidden">
         <TabsList>
@@ -282,6 +291,15 @@ export default function AttendanceSummary() {
                       <span className="ml-2 rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800"
                             title="Worker / Labour Master — weekly off is not a paid day"
                             data-testid={`summary-worker-tag-${e.employee_id}`}>Worker</span>
+                    )}
+                    {e.inactive && (
+                      <span className="ml-2 rounded-sm bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-700"
+                            title="Employee is inactive now — attendance uploaded for this month is still counted"
+                            data-testid={`summary-inactive-tag-${e.employee_id}`}>Inactive</span>
+                    )}
+                    {e.unmatched && (
+                      <span className="ml-2 rounded-sm bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700"
+                            title="Uploaded code is not in the Employee Master" data-testid={`summary-unmatched-tag-${e.employee_id}`}>Not in master</span>
                     )}
                   </td>
                   <td className="px-3 py-1.5 text-xs">{e.department || "—"}</td>

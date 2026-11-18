@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fmtDT } from "@/lib/datetime";
-import { CloudDownload, Eye, Link2, Plus, RefreshCw, Save, Trash2, TriangleAlert } from "lucide-react";
+import { CloudDownload, Eye, Link2, Pencil, Plus, RefreshCw, Save, Trash2, TriangleAlert } from "lucide-react";
 
 const TONE = { success: "bg-emerald-100 text-emerald-800 border-emerald-300",
                partial: "bg-amber-100 text-amber-800 border-amber-300",
@@ -38,7 +38,7 @@ export default function GoogleSheetSync({ canWrite = true }) {
       ]);
       setCfg(c.data.config);
       setSheets(c.data.sheets || []);
-      setMaxSheets(c.data.max_sheets || 40);
+      setMaxSheets(c.data.max_sheets || null);
       if (c.data.config) setSettings((s) => ({ ...s, ...c.data.config }));
       setRuns(r.data || []);
     } catch (e) { toast.error(apiErrorMessage(e)); }
@@ -61,6 +61,14 @@ export default function GoogleSheetSync({ canWrite = true }) {
     await api.post("/hr2/attendance-gsheet/sheets", add);
     setAdd({ sheet_url: "", gid: "", label: "" });
   }, "Google Sheet connected");
+
+  const [edit, setEdit] = useState(null); // {id, gid, label, sheet_url}
+  const saveEdit = () => run(`e-${edit.id}`, async () => {
+    const cur = sheets.find((x) => x.id === edit.id);
+    await api.put(`/hr2/attendance-gsheet/sheets/${edit.id}`,
+      { sheet_url: edit.sheet_url || cur.sheet_url, gid: (edit.gid || "").trim(), label: (edit.label || "").trim(), enabled: cur.enabled !== false });
+    setEdit(null);
+  }, "Sheet tab updated — the next sync reads the new tab");
 
   const toggleSheet = (s) => run(`t-${s.id}`, () => api.put(`/hr2/attendance-gsheet/sheets/${s.id}`,
     { sheet_url: s.sheet_url, gid: s.gid, label: s.label, enabled: !s.enabled }),
@@ -93,12 +101,13 @@ export default function GoogleSheetSync({ canWrite = true }) {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Link2 className="h-4 w-4 text-emerald-600" /> Google Sheet Attendance Connections
-            <Badge variant="outline" className="text-[10px]" data-testid="gsheet-count">{sheets.length} of {maxSheets} connected · {active} active</Badge>
+            <Badge variant="outline" className="text-[10px]" data-testid="gsheet-count">{sheets.length} connected{maxSheets ? ` of ${maxSheets}` : ""} · {active} active</Badge>
             {cfg?.last_sync_at && <Badge variant="outline" className="text-[10px]" data-testid="gsheet-last-sync">Last sync {fmtDT(cfg.last_sync_at)}</Badge>}
             {cfg?.last_sync_status && <Badge variant="outline" className={`text-[10px] ${TONE[cfg.last_sync_status] || ""}`}>{cfg.last_sync_status}</Badge>}
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            Add one link per site / month sheet — every active sheet syncs together, manually or on schedule.
+            Add one link per project sheet — no limit on connections. When a new month's tab is created, click the pencil on
+            the row and update its <b>Tab (gid)</b>; the scheduled sync picks up the new tab automatically.
             Employees are matched on <b>E-Code</b> and each day is stamped with the employee's project.
             Approved or locked days are never overwritten. Share each sheet as “Anyone with the link → Viewer”.
           </p>
@@ -120,7 +129,7 @@ export default function GoogleSheetSync({ canWrite = true }) {
                 <Input value={add.label} placeholder="e.g. Mysore · Sep'26"
                   onChange={(e) => setAdd({ ...add, label: e.target.value })} data-testid="gsheet-label" />
               </div>
-              <Button className="md:col-span-1" disabled={busy === "add" || !add.sheet_url || sheets.length >= maxSheets}
+              <Button className="md:col-span-1" disabled={busy === "add" || !add.sheet_url || (maxSheets && sheets.length >= maxSheets)}
                 onClick={addSheet} data-testid="gsheet-add">
                 <Plus className="h-4 w-4 mr-1" /> Add
               </Button>
@@ -147,10 +156,29 @@ export default function GoogleSheetSync({ canWrite = true }) {
                   return (
                     <TableRow key={s.id} data-testid={`gsheet-row-${s.id}`}>
                       <TableCell className="text-sm">
-                        <a href={s.sheet_url} target="_blank" rel="noreferrer" className="hover:underline">{s.label}</a>
-                        {s.last_error && <div className="text-[10px] text-rose-700">{s.last_error}</div>}
+                        {edit?.id === s.id ? (
+                          <div className="space-y-1">
+                            <Input className="h-7 text-xs" value={edit.label} placeholder="Label" onChange={(e) => setEdit({ ...edit, label: e.target.value })} data-testid={`gsheet-edit-label-${s.id}`} />
+                            <Input className="h-7 text-[11px]" value={edit.sheet_url} placeholder="Sheet link" onChange={(e) => setEdit({ ...edit, sheet_url: e.target.value })} data-testid={`gsheet-edit-url-${s.id}`} />
+                          </div>
+                        ) : (
+                          <>
+                            <a href={s.sheet_url} target="_blank" rel="noreferrer" className="hover:underline">{s.label}</a>
+                            {s.last_error && <div className="text-[10px] text-rose-700">{s.last_error}</div>}
+                          </>
+                        )}
                       </TableCell>
-                      <TableCell className="font-mono text-[11px]">{s.gid}</TableCell>
+                      <TableCell className="font-mono text-[11px]">
+                        {edit?.id === s.id ? (
+                          <div className="flex items-center gap-1">
+                            <Input className="h-7 w-28 font-mono text-[11px]" value={edit.gid} placeholder="gid" onChange={(e) => setEdit({ ...edit, gid: e.target.value })} data-testid={`gsheet-edit-gid-${s.id}`} />
+                            <Button size="sm" className="h-7 text-[10px]" disabled={busy === `e-${s.id}`} onClick={saveEdit} data-testid={`gsheet-edit-save-${s.id}`}>Save</Button>
+                            <Button size="sm" variant="ghost" className="h-7 text-[10px]" onClick={() => setEdit(null)} data-testid={`gsheet-edit-cancel-${s.id}`}>Cancel</Button>
+                          </div>
+                        ) : (
+                          <span data-testid={`gsheet-gid-${s.id}`}>{s.gid}{s.previous_gid ? <span className="text-muted-foreground"> (was {s.previous_gid})</span> : null}</span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Badge variant="outline" className={`text-[10px] ${s.enabled === false ? "" : TONE.success}`}>
                           {s.enabled === false ? "paused" : "active"}
@@ -168,6 +196,8 @@ export default function GoogleSheetSync({ canWrite = true }) {
                           onClick={() => previewSheet(s)} data-testid={`gsheet-preview-${s.id}`}><Eye className="h-3.5 w-3.5" /></Button>
                         {canWrite && (
                           <>
+                            <Button size="icon" variant="ghost" className="h-7 w-7" title="Edit tab (gid) / label / link"
+                              onClick={() => setEdit({ id: s.id, gid: s.gid || "", label: s.label || "", sheet_url: s.sheet_url || "" })} data-testid={`gsheet-edit-${s.id}`}><Pencil className="h-3.5 w-3.5" /></Button>
                             <Button size="icon" variant="ghost" className="h-7 w-7" title="Sync only this sheet"
                               onClick={() => sync(false, [s.id])} data-testid={`gsheet-sync-one-${s.id}`}><RefreshCw className="h-3.5 w-3.5" /></Button>
                             <Button size="sm" variant="ghost" className="h-7 text-[10px]" onClick={() => toggleSheet(s)}

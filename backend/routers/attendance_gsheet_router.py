@@ -71,7 +71,8 @@ class SheetIn(BaseModel):
     enabled: bool = True
 
 
-MAX_SHEETS = 40
+MAX_SHEETS = None  # unlimited — one connection per project sheet / monthly tab
+_FETCH_SEM = asyncio.Semaphore(6)
 
 
 def _parse_sheet_url(url: str) -> tuple[str, str]:
@@ -104,9 +105,9 @@ async def _migrate_single_sheet() -> None:
 async def get_config(user: dict = Depends(require_permission("attendance", "read"))):
     await _migrate_single_sheet()
     cfg = await db.gsheet_attendance_config.find_one({"id": CONFIG_ID}, {"_id": 0})
-    sheets = await db.gsheet_attendance_sheets.find({}, {"_id": 0}).sort("created_at", 1).to_list(MAX_SHEETS + 10)
+    sheets = await db.gsheet_attendance_sheets.find({}, {"_id": 0}).sort("created_at", 1).to_list(None)
     last = await db.gsheet_attendance_runs.find_one({}, {"_id": 0}, sort=[("started_at", -1)])
-    return {"config": cfg, "sheets": sheets, "max_sheets": MAX_SHEETS, "last_run": last}
+    return {"config": cfg, "sheets": sheets, "max_sheets": None, "last_run": last}
 
 
 @router.put("/config")
@@ -128,8 +129,6 @@ async def save_config(p: ConfigIn, request: Request,
 @router.post("/sheets")
 async def add_sheet(p: SheetIn, request: Request,
                     user: dict = Depends(require_permission("attendance", "write"))):
-    if await db.gsheet_attendance_sheets.count_documents({}) >= MAX_SHEETS:
-        raise HTTPException(400, f"Maximum {MAX_SHEETS} Google Sheets can be connected")
     sheet_id, url_gid = _parse_sheet_url(p.sheet_url)
     gid = (p.gid or url_gid or "0").strip()
     if await db.gsheet_attendance_sheets.find_one({"sheet_id": sheet_id, "gid": gid}):
@@ -155,10 +154,21 @@ async def update_sheet(sid: str, p: SheetIn, request: Request,
     if not row:
         raise HTTPException(404, "Sheet not connected")
     sheet_id, url_gid = _parse_sheet_url(p.sheet_url)
-    upd = {"sheet_url": p.sheet_url.strip(), "sheet_id": sheet_id,
-           "gid": (p.gid or url_gid or "0").strip(), "label": p.label.strip() or row.get("label"),
+    # An explicit gid wins; otherwise the gid in the (possibly new) link; otherwise keep the current tab.
+    gid = (p.gid or url_gid or row.get("gid") or "0").strip()
+    if not gid.isdigit():
+        raise HTTPException(400, "Tab (gid) must be the number after 'gid=' in the sheet link")
+    dup = await db.gsheet_attendance_sheets.find_one({"sheet_id": sheet_id, "gid": gid, "id": {"$ne": sid}}, {"_id": 0, "label": 1})
+    if dup:
+        raise HTTPException(409, f"That sheet tab is already connected as '{dup.get('label')}'")
+    upd = {"sheet_url": p.sheet_url.strip(), "sheet_id": sheet_id, "gid": gid,
+           "label": p.label.strip() or row.get("label"),
            "enabled": p.enabled, "updated_at": now_iso(),
            "updated_by": user.get("name") or user.get("email")}
+    if gid != (row.get("gid") or "0") or sheet_id != row.get("sheet_id"):
+        # New month's tab — previous sync stats belong to the old tab
+        upd.update({"previous_gid": row.get("gid"), "gid_changed_at": now_iso(),
+                    "last_sync_status": None, "last_sync_counts": None, "last_sync_month": None, "last_error": None})
     await db.gsheet_attendance_sheets.update_one({"id": sid}, {"$set": upd})
     await audit(user=user, action="gsheet_sheet_update", resource="attendance", record_id=sid,
                 before=row, after=upd, ip=request.headers.get("x-forwarded-for", "unknown"))
@@ -182,8 +192,12 @@ async def delete_sheet(sid: str, request: Request,
 # ──────────────────────────────────────────────────────────────────────────────
 async def _fetch_csv(sheet_id: str, gid: str) -> List[List[str]]:
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid or '0'}"
-    async with httpx.AsyncClient(follow_redirects=True, timeout=60) as cx:
-        r = await cx.get(url)
+    async with _FETCH_SEM:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=60) as cx:
+            r = await cx.get(url)
+    if r.status_code == 400 or (r.status_code == 200 and not r.text.strip()):
+        raise HTTPException(400, f"Tab gid={gid or '0'} does not exist in this sheet — open the month's tab in "
+                                 "Google Sheets and copy the number after 'gid=' from the address bar.")
     if r.status_code != 200 or "<html" in r.text[:200].lower():
         raise HTTPException(400, "Could not read the sheet. Open it in Google Sheets → Share → "
                                  "General access → 'Anyone with the link' (Viewer), then sync again.")
@@ -213,7 +227,7 @@ def _parse_sheet(rows: List[List[str]]) -> Dict[str, Any]:
 
     base_month, base_year = _base_month(rows)
     date_cols: List[tuple[int, str]] = []
-    month, year, prev = base_month, base_year, base_month
+    year, prev = base_year, base_month
     for i, c in enumerate(header):
         m = DATE_COL_RE.match(c or "")
         if not m:
@@ -350,8 +364,15 @@ async def _sync_one(sheet: dict, *, actor: str, trigger: str, dry_run: bool,
                 res["updated"] += 1
             else:
                 if not dry_run:
-                    await db.attendance.insert_one({"id": new_id(), **doc,
-                                                    "created_at": now_iso(), "created_by": actor})
+                    # Atomic upsert on (employee, date): two sheets carrying the same person
+                    # on the same day can never create a duplicate attendance row.
+                    r_up = await db.attendance.update_one(
+                        {"employee_id": emp["id"], "date": d["date"]},
+                        {"$set": doc, "$setOnInsert": {"id": new_id(), "created_at": now_iso(), "created_by": actor}},
+                        upsert=True)
+                    if r_up.upserted_id is None:
+                        res["updated"] += 1
+                        continue
                 res["imported"] += 1
 
     for code, name in list(unmatched.items())[:200]:
@@ -380,7 +401,7 @@ async def _run_sync(*, actor: str, trigger: str, dry_run: bool = False,
     q: Dict[str, Any] = {} if sheet_ids else {"enabled": {"$ne": False}}
     if sheet_ids:
         q["id"] = {"$in": sheet_ids}
-    sheets = await db.gsheet_attendance_sheets.find(q, {"_id": 0}).sort("created_at", 1).to_list(MAX_SHEETS + 10)
+    sheets = await db.gsheet_attendance_sheets.find(q, {"_id": 0}).sort("created_at", 1).to_list(None)
     if not sheets:
         raise HTTPException(400, "Connect at least one Google attendance sheet first")
     if not cfg.get("enabled", True) and trigger != "manual":

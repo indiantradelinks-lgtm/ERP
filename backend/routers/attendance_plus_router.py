@@ -152,6 +152,10 @@ async def _project_match(project_code: str, month: str) -> Dict[str, Any]:
                      "employee_id": {"$in": await _project_employee_ids(project_code, month)}}]}
 
 
+def _stamp(r: dict) -> str:
+    return r.get("updated_at") or r.get("synced_at") or r.get("created_at") or ""
+
+
 async def _summary_data(month: str, project_code: Optional[str], department: Optional[str],
                         shift_code: Optional[str], q: Optional[str], employee_id: Optional[str],
                         user: dict) -> dict:
@@ -170,13 +174,65 @@ async def _summary_data(month: str, project_code: Optional[str], department: Opt
     if employee_id:
         match["employee_id"] = employee_id
     match = await apply_project_scope(user, match, id_field="project_id", code_field="project_code")
-    rows = await db.attendance.find(match, {"_id": 0}).to_list(20000)
+    proj = {"_id": 0, "id": 1, "employee_id": 1, "employee_code": 1, "emp_code": 1, "employee_name": 1,
+            "department": 1, "project_code": 1, "shift_code": 1, "status": 1, "date": 1, "overtime_hours": 1,
+            "total_hours": 1, "hours": 1, "in_time": 1, "out_time": 1, "updated_at": 1, "synced_at": 1,
+            "created_at": 1}
+    # Streamed (no row cap, no second copy): a month of 700+ employees exceeds 20k rows
+    # and used to be silently truncated, which is what broke "All Locations & Projects".
+    # One row per employee per day — duplicates (re-uploads, overlapping sheets) count once, newest wins.
+    latest: Dict[tuple, dict] = {}
+    scanned = 0
+    pending_codes: set = set()
+    async for r in db.attendance.find(match, proj).batch_size(2000):
+        scanned += 1
+        eid = r.get("employee_id")
+        if not eid:
+            code = str(r.get("employee_code") or r.get("emp_code") or "").strip().upper()
+            eid = f"code:{code}" if code else f"code:?{r.get('id')}"
+            r["employee_id"] = eid
+            if code:
+                pending_codes.add(code)
+        key = (eid, r.get("date"))
+        cur = latest.get(key)
+        if cur is None or _stamp(r) >= _stamp(cur):
+            latest[key] = r
+    duplicates_merged = scanned - len(latest)
+
+    # Rows saved without an employee_id (older bulk uploads) → resolve through the employee code
+    code_map: Dict[str, dict] = {}
+    if pending_codes:
+        codes = list(pending_codes)
+        async for e in db.employees.find({"$or": [{"emp_code": {"$in": codes}}, {"employee_id": {"$in": codes}}]},
+                                         {"_id": 0, "id": 1, "emp_code": 1, "employee_id": 1, "name": 1}):
+            for k in (e.get("emp_code"), e.get("employee_id")):
+                if k:
+                    code_map.setdefault(str(k).strip().upper(), e)
+    rows = []
+    unresolved = 0
+    for r in latest.values():
+        eid = r["employee_id"]
+        if isinstance(eid, str) and eid.startswith("code:"):
+            e = code_map.get(eid[5:])
+            if e:
+                r["employee_id"] = e["id"]
+                r["employee_name"] = r.get("employee_name") or e.get("name")
+            else:
+                unresolved += 1
+        rows.append(r)
+    latest.clear()
+
     inactive_ids = set()
-    all_ids = list({r.get("employee_id") for r in rows if r.get("employee_id")})
+    all_ids = [i for i in {r.get("employee_id") for r in rows} if i and not str(i).startswith("code:")]
     if all_ids:
-        async for e in db.employees.find({"id": {"$in": all_ids}, "status": "inactive"}, {"_id": 0, "id": 1}):
+        # Real master values are mixed-case ('Active', 'active', 'exited', null) — matching the
+        # literal 'inactive' never flagged anyone.
+        async for e in db.employees.find({"id": {"$in": all_ids},
+                                          "status": {"$regex": "^(inactive|exited|resigned|terminated|left)$",
+                                                     "$options": "i"}}, {"_id": 0, "id": 1}):
             inactive_ids.add(e["id"])
-    rows = [r for r in rows if r.get("employee_id") not in inactive_ids]
+    # Uploaded attendance of employees who have since been made inactive stays in the
+    # summary (flagged) — hiding it made the "All Locations & Projects" totals disagree with the uploads.
     if q:
         s = q.lower()
         rows = [r for r in rows if s in (r.get("employee_name") or "").lower()
@@ -252,6 +308,7 @@ async def _summary_data(month: str, project_code: Optional[str], department: Opt
             **{k: v for k, v in e.items() if k not in ("projects", "shifts")},
             "projects": sorted(e["projects"]), "shift_codes": sorted(e["shifts"]),
             "is_worker_master": is_worker, "week_off_paid": not is_worker,
+            "inactive": eid in inactive_ids, "unmatched": str(eid).startswith("code:") or eid == "?",
             "working_days": e["days"], "paid_days": paid_days,
             "present_days": round(present_days, 1),
             "leave_balance": round(lb.get(eid, 0), 1),
@@ -270,8 +327,12 @@ async def _summary_data(month: str, project_code: Optional[str], department: Opt
     totals["employees"] = len(emp_rows)
     totals["present_days"] = round(sum(e["present_days"] for e in emp_rows), 1)
     totals["paid_days"] = round(sum(e["paid_days"] for e in emp_rows), 1)
+    totals["records"] = len(rows)
 
     return {"month": month, "totals": totals, "employees": emp_rows,
+            "data_quality": {"records": len(rows), "duplicates_merged": duplicates_merged,
+                             "unresolved_rows": unresolved, "inactive_employees": len(inactive_ids & set(emps)),
+                             "unknown_status_rows": sum(1 for r in rows if not STATUS_CODES.get(r.get("status") or ""))},
             "by_date": flat(by_date, "date"), "by_department": flat(by_dept, "department"),
             "by_project": flat(by_proj, "project_code"), "by_shift": flat(by_shift, "shift_code")}
 
@@ -378,11 +439,14 @@ async def export_breakdown(fmt: str = Query(..., pattern="^(xlsx|pdf)$"), month:
     if shift_code:
         match["shift_code"] = shift_code
     match = await apply_project_scope(user, match, id_field="project_id", code_field="project_code")
-    raw = await db.attendance.find(match, {"_id": 0, "employee_id": 1, "date": 1, "status": 1,
-                                           "in_time": 1, "out_time": 1, "total_hours": 1,
-                                           "overtime_hours": 1, "remarks": 1}).to_list(20000)
-    cell = {(r["employee_id"], r["date"]): STATUS_CODES.get(r.get("status") or "", "") for r in raw}
-    by_emp_date = {(r["employee_id"], r["date"]): r for r in raw}
+    cell: Dict[tuple, str] = {}
+    by_emp_date: Dict[tuple, dict] = {}
+    async for r in db.attendance.find(match, {"_id": 0, "employee_id": 1, "date": 1, "status": 1,
+                                              "in_time": 1, "out_time": 1, "total_hours": 1,
+                                              "overtime_hours": 1, "remarks": 1}).batch_size(2000):
+        k = (r.get("employee_id"), r.get("date"))
+        cell[k] = STATUS_CODES.get(r.get("status") or "", "")
+        by_emp_date[k] = r
     day_headers = [f"{d:02d}" for d in range(1, ndays + 1)]
     headers = ["Code", "Name", "Dept"] + day_headers + ["P", "A", "HD", "L", "WO", "H", "OD", "OT Hrs"]
     body = []
