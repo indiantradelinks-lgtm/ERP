@@ -1,0 +1,35 @@
+{
+  "summary": "Frontend-only UI check of the Attendance Summary 'All Locations & Projects' fix and the Google Sheet Sync tab-gid editing / unlimited connections. All 8 requested flows pass in the UI. 2026-06 data-quality line reads '17 attendance records counted for 2026-06 · 14 row(s) with a code not in the Employee Master'. The Project-wise tab lists all 8 projects and their entries add up to 17. Picking PRJ-2025-01 narrows to 3 records / 1 employee, and switching back restores 17 / 15. There are 14 'Not in master' badges. XLSX, CSV and PDF exports download (6104 / 1095 / 3849 bytes). The gsheet-count badge reads '2 connected · 2 active' with no /40 limit. Inline gid edit works: 'abc' shows the validation toast, the duplicate gid 1789055898 shows a conflict toast naming 'Mysore site', and 123456 -> 777 shows '(was 123456)'. Two per-row syncs of Mysore site both reported 0 imported / 0 updated / 30 unchanged, and Mongo has 0 duplicate (employee_id,date) pairs. The Inactive badge could not be checked because no inactive employee has attendance in 2026-06. One medium data-presentation issue was found with rows that have no code (see below).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/hr2/attendance-plus/summary", "issue": "Attendance rows with neither employee_id nor employee_code get a separate key per record (code:?<record id>, attendance_plus_router.py line 192). One person therefore shows up once per day: for 2026-06 'After Unlock', 'PYTEST APP A', 'PYTEST Worker A' and others each appear twice. The Employees KPI reads 15 when there are only about 9 distinct people. The data-quality text also says 'code not in the Employee Master' for rows that have no code at all. Suggested fix: fall back to a normalized employee_name key, e.g. code:?name:<NAME>, and word the message differently for rows with no code."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AttendanceSummary DrillDown", "issue": "Clicking a 'Not in master' row opens the drill-down with employee_id='code:?…', so /hr2/attendance/register returns nothing and the dialog shows an empty table. It should show a hint or the raw rows instead.", "selector": "[data-testid^='summary-emp-code:']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "GoogleSheetSync", "issues": ["The file header comment still says 'Connect up to 40 monthly sheets', and the initial state is useState(40). The badge can briefly read 'of 40' before config loads. Initialize it to null.", "The per-row sync button gives no busy feedback: busy='sync' disables 'Sync All Sheets' but not the row icon, so a double-click can start a second sync."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Group unresolved attendance rows that have no code by normalized employee_name instead of one row per record, and fix the Employees KPI and the data-quality wording for rows with no code.",
+    "Handle the drill-down for unmatched rows (empty dialog today).",
+    "GoogleSheetSync: change the initial maxSheets to null, update the stale 'up to 40' comment, and add a busy state to the per-row sync button."
+  ],
+  "critical_code_review_comments": [
+    "attendance_plus_router.py:192 — the fallback key code:?<id> inflates the employee count (see backend minor).",
+    "attendance_gsheet_router.py PUT — after a gid change, sheet_url still holds the old gid=… in the link. This is harmless because the explicit gid wins, but the link shown in the row opens the old tab.",
+    "attendance_plus_router.py is 1334 lines — consider splitting."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "skipped (frontend only)", "frontend": "100% of requested flows (Inactive badge not verifiable with current data)"},
+  "seed_data_creation": "Created the connection TEST_conn_gid (Mysore URL, gid 0 -> 123456 -> 777) through the UI and removed it through the UI. 0 TEST_ connections remain. No attendance data was changed: both syncs were 0 imported / 0 updated.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The attendance center route is /app/attendance-center (not /app/hr/attendance-center); open the tab with data-testid=ac-tab-gsheet. The real connection id is d2a15967-91d4-40a0-af41-fe5bf4408147 (Mysore site, gid 1789055898). Of the 17 records for 2026-06, 14 have no employee_id and no code (PYTEST data)."
+}

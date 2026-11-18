@@ -249,6 +249,7 @@ export default function AttendanceSummary() {
           {data.data_quality.duplicates_merged > 0 && <> · {data.data_quality.duplicates_merged} duplicate day(s) merged</>}
           {data.data_quality.inactive_employees > 0 && <> · {data.data_quality.inactive_employees} inactive employee(s) included</>}
           {data.data_quality.unresolved_rows > 0 && <> · <span className="text-rose-700">{data.data_quality.unresolved_rows} row(s) with a code not in the Employee Master</span></>}
+          {data.data_quality.no_code_rows > 0 && <> · <span className="text-rose-700">{data.data_quality.no_code_rows} row(s) uploaded without an employee code</span></>}
           {data.data_quality.unknown_status_rows > 0 && <> · <span className="text-amber-700">{data.data_quality.unknown_status_rows} row(s) with an unknown status skipped</span></>}
         </div>
       )}
@@ -283,7 +284,9 @@ export default function AttendanceSummary() {
             <tbody>
               {(data?.employees || []).length === 0 && <tr><td colSpan={16} className="text-center py-8 text-slate-400">No attendance for these filters.</td></tr>}
               {(data?.employees || []).map((e) => (
-                <tr key={e.employee_id} className="border-t hover:bg-blue-50/40 cursor-pointer" onClick={() => setDrill(e)} data-testid={`summary-emp-${e.employee_id}`}>
+                <tr key={e.employee_id} className={`border-t hover:bg-blue-50/40 ${e.unmatched ? "" : "cursor-pointer"}`}
+                    title={e.unmatched ? "This row is not linked to an Employee Master record — day-wise detail is unavailable" : undefined}
+                    onClick={() => !e.unmatched && setDrill(e)} data-testid={`summary-emp-${e.employee_id}`}>
                   <td className="px-3 py-1.5 font-mono-data text-xs">{e.employee_code || "—"}</td>
                   <td className="px-3 py-1.5 font-medium text-primary underline-offset-2 hover:underline">
                     {e.employee_name}

@@ -1,6 +1,6 @@
 /**
  * HR · Attendance Center → Google Sheet Sync.
- * Connect up to 40 monthly Google attendance sheets, sync them all at once
+ * Connect any number of monthly Google attendance sheets, sync them all at once
  * (manual or scheduled) and read per-sheet status + error reports.
  */
 import { useCallback, useEffect, useState } from "react";
@@ -22,7 +22,7 @@ const TONE = { success: "bg-emerald-100 text-emerald-800 border-emerald-300",
 export default function GoogleSheetSync({ canWrite = true }) {
   const [cfg, setCfg] = useState(null);
   const [sheets, setSheets] = useState([]);
-  const [maxSheets, setMaxSheets] = useState(40);
+  const [maxSheets, setMaxSheets] = useState(null);
   const [settings, setSettings] = useState({ enabled: true, auto_sync: true, sync_hour_ist: 7, sync_minute_ist: 0 });
   const [add, setAdd] = useState({ sheet_url: "", gid: "", label: "" });
   const [runs, setRuns] = useState([]);
@@ -85,7 +85,7 @@ export default function GoogleSheetSync({ canWrite = true }) {
     return data;
   }, (d) => `${d.label}: ${d.employees_in_sheet} employee(s) · ${d.matched} matched · ${d.date_count} day column(s)`);
 
-  const sync = (dry, sheet_ids = []) => run(dry ? "dry" : "sync", async () => {
+  const sync = (dry, sheet_ids = [], key) => run(key || (dry ? "dry" : "sync"), async () => {
     const { data } = await api.post("/hr2/attendance-gsheet/sync", { dry_run: dry, sheet_ids });
     setReport(data);
     return data;
@@ -199,7 +199,8 @@ export default function GoogleSheetSync({ canWrite = true }) {
                             <Button size="icon" variant="ghost" className="h-7 w-7" title="Edit tab (gid) / label / link"
                               onClick={() => setEdit({ id: s.id, gid: s.gid || "", label: s.label || "", sheet_url: s.sheet_url || "" })} data-testid={`gsheet-edit-${s.id}`}><Pencil className="h-3.5 w-3.5" /></Button>
                             <Button size="icon" variant="ghost" className="h-7 w-7" title="Sync only this sheet"
-                              onClick={() => sync(false, [s.id])} data-testid={`gsheet-sync-one-${s.id}`}><RefreshCw className="h-3.5 w-3.5" /></Button>
+                              disabled={busy === `s-${s.id}` || busy === "sync"}
+                              onClick={() => sync(false, [s.id], `s-${s.id}`)} data-testid={`gsheet-sync-one-${s.id}`}><RefreshCw className={`h-3.5 w-3.5 ${busy === `s-${s.id}` ? "animate-spin" : ""}`} /></Button>
                             <Button size="sm" variant="ghost" className="h-7 text-[10px]" onClick={() => toggleSheet(s)}
                               data-testid={`gsheet-toggle-${s.id}`}>{s.enabled === false ? "Activate" : "Pause"}</Button>
                             <Button size="icon" variant="ghost" className="h-7 w-7 text-rose-600" title="Remove"

@@ -161,7 +161,9 @@ async def update_sheet(sid: str, p: SheetIn, request: Request,
     dup = await db.gsheet_attendance_sheets.find_one({"sheet_id": sheet_id, "gid": gid, "id": {"$ne": sid}}, {"_id": 0, "label": 1})
     if dup:
         raise HTTPException(409, f"That sheet tab is already connected as '{dup.get('label')}'")
-    upd = {"sheet_url": p.sheet_url.strip(), "sheet_id": sheet_id, "gid": gid,
+    upd = {"sheet_url": (p.sheet_url.strip() if url_gid == gid
+                         else f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit#gid={gid}"),
+           "sheet_id": sheet_id, "gid": gid,
            "label": p.label.strip() or row.get("label"),
            "enabled": p.enabled, "updated_at": now_iso(),
            "updated_by": user.get("name") or user.get("email")}

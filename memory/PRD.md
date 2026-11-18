@@ -157,6 +157,34 @@ Backend routes are prefixed `/api`; frontend calls via `REACT_APP_BACKEND_URL`.
     (`tests/fixtures/challan_sample.pdf`); verified in the browser; light API calls stayed at
     ~0.12 s while an extraction ran.
 
+## Iter 228 — Attendance Summary (All Locations) + unlimited Google Sheet connections (18 Jun 2026)
+- `attendance_plus_router._summary_data` no longer caps the month's rows at `20000`
+  (production months hold 31k–37k rows — they were silently truncated, which is what made
+  **All Locations & Projects** disagree with the uploads). Rows are now streamed with a cursor
+  (`batch_size(2000)`, lean projection) straight into a `(employee, date)` dedupe map, so peak
+  memory is one copy and re-uploads / overlapping sheets count once (newest wins).
+- Rows uploaded without an `employee_id` are resolved through the employee code; otherwise they
+  are grouped by employee name (never one group per row) and surfaced instead of dropped —
+  "Not in master" badge + a data-quality line under the KPIs
+  (`records`, `duplicates_merged`, `unresolved_rows`, `no_code_rows`, `inactive_employees`,
+  `unknown_status_rows`). Unmatched rows are not clickable (no drill-down available).
+- The `status == "inactive"` exclusion never matched the real master values
+  (`Active/active/exited/null`); such attendance is now kept and badged **Inactive** instead of
+  vanishing from the totals. The day-wise matrix export was also uncapped.
+- `attendance_gsheet_router`: `MAX_SHEETS = None` — unlimited connections (verified with 46),
+  `PUT /sheets/{sid}` now validates and changes the **Tab (gid)** (stores `previous_gid`,
+  resets that row's sync stats, rejects a non-numeric gid and a tab already connected, and
+  rewrites the stored link to the new tab); sheet fetches run under a semaphore (6) and the
+  sync writes via an atomic upsert on `(employee_id, date)` so no sheet can duplicate a day.
+- `GoogleSheetSync.jsx`: pencil → inline edit of label / link / gid with Save & Cancel,
+  "N connected · M active" (no /40), per-row sync busy state.
+- Verified: 2026-06 now counts all 17 records (9 distinct people) and the project breakdown sums
+  to the all-projects total; two consecutive syncs = 0 imported / 30 unchanged, 0 duplicate
+  `(employee_id, date)` pairs in Mongo; UI flows passed the testing agent (iteration_212).
+- Production note: the deployer RCA also flagged the backend pod OOMKilled at tier_0 (512Mi)
+  while loading those 31k–37k rows — the query is now memory-safe, but a tier bump is still
+  advisable, and several Mysore sheet rows stay unmatched until their E-Codes exist in the master.
+
 ## Backlog
 - **P1** Cancel / edit an open vendor-bill payment request from the Payments popup.
 - **P1** Export queue: very large reports as a background job with a "ready to download" notice.

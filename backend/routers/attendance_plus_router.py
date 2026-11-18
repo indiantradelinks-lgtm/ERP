@@ -189,7 +189,9 @@ async def _summary_data(month: str, project_code: Optional[str], department: Opt
         eid = r.get("employee_id")
         if not eid:
             code = str(r.get("employee_code") or r.get("emp_code") or "").strip().upper()
-            eid = f"code:{code}" if code else f"code:?{r.get('id')}"
+            name = str(r.get("employee_name") or "").strip().upper()
+            # Group by code, else by name, else keep the row on its own — never merge two people
+            eid = f"code:{code}" if code else (f"name:{name}" if name else f"row:{r.get('id')}")
             r["employee_id"] = eid
             if code:
                 pending_codes.add(code)
@@ -210,6 +212,7 @@ async def _summary_data(month: str, project_code: Optional[str], department: Opt
                     code_map.setdefault(str(k).strip().upper(), e)
     rows = []
     unresolved = 0
+    no_code = 0
     for r in latest.values():
         eid = r["employee_id"]
         if isinstance(eid, str) and eid.startswith("code:"):
@@ -219,11 +222,14 @@ async def _summary_data(month: str, project_code: Optional[str], department: Opt
                 r["employee_name"] = r.get("employee_name") or e.get("name")
             else:
                 unresolved += 1
+        elif isinstance(eid, str) and (eid.startswith("name:") or eid.startswith("row:")):
+            no_code += 1
         rows.append(r)
     latest.clear()
 
     inactive_ids = set()
-    all_ids = [i for i in {r.get("employee_id") for r in rows} if i and not str(i).startswith("code:")]
+    all_ids = [i for i in {r.get("employee_id") for r in rows}
+               if i and not str(i).split(":", 1)[0] in ("code", "name", "row")]
     if all_ids:
         # Real master values are mixed-case ('Active', 'active', 'exited', null) — matching the
         # literal 'inactive' never flagged anyone.
@@ -308,7 +314,8 @@ async def _summary_data(month: str, project_code: Optional[str], department: Opt
             **{k: v for k, v in e.items() if k not in ("projects", "shifts")},
             "projects": sorted(e["projects"]), "shift_codes": sorted(e["shifts"]),
             "is_worker_master": is_worker, "week_off_paid": not is_worker,
-            "inactive": eid in inactive_ids, "unmatched": str(eid).startswith("code:") or eid == "?",
+            "inactive": eid in inactive_ids,
+            "unmatched": str(eid).split(":", 1)[0] in ("code", "name", "row"),
             "working_days": e["days"], "paid_days": paid_days,
             "present_days": round(present_days, 1),
             "leave_balance": round(lb.get(eid, 0), 1),
@@ -331,7 +338,8 @@ async def _summary_data(month: str, project_code: Optional[str], department: Opt
 
     return {"month": month, "totals": totals, "employees": emp_rows,
             "data_quality": {"records": len(rows), "duplicates_merged": duplicates_merged,
-                             "unresolved_rows": unresolved, "inactive_employees": len(inactive_ids & set(emps)),
+                             "unresolved_rows": unresolved, "no_code_rows": no_code,
+                             "inactive_employees": len(inactive_ids & set(emps)),
                              "unknown_status_rows": sum(1 for r in rows if not STATUS_CODES.get(r.get("status") or ""))},
             "by_date": flat(by_date, "date"), "by_department": flat(by_dept, "department"),
             "by_project": flat(by_proj, "project_code"), "by_shift": flat(by_shift, "shift_code")}
