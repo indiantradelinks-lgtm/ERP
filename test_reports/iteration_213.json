@@ -1,0 +1,39 @@
+{
+  "summary": "Frontend-only test of Bill Request multi-bill-per-month + Service Period From/To (BillRequests.jsx). All 7 requested scenarios PASS via Playwright on the public URL as admin@erp.com.",
+  "verified": [
+    "TEST-AMC-01 picked -> Billing Month + br-form-from/br-form-to rendered, prefilled 2026-04-01/2026-04-30 for next month 2026-04",
+    "Billing month 2026-11 -> no red 'already requested' error; amber br-form-month-taken lists BR-2026-0032, BR-2026-0033 (later also BR-2026-0034) and says another is allowed",
+    "Month chips all enabled; br-month-2026-11 shows '2026-11 ×2' (then ×3); clicking chip selects month (bg-primary) and resets period to 2026-11-01..2026-11-30; clicking 2026-12 sets 12-01..12-31 and hides the amber note",
+    "From 2026-11-20 > To 2026-11-10 -> toast \"Service Period 'From' date cannot be after the 'To' date\", no POST, dialog stays open",
+    "From 2026-11-05 / To 2026-11-15 + added item -> POST 200 BR-2026-0034, no duplicate toast, new row br-period-cell shows '2026-11-05 → 2026-11-15' under month 2026-11, chain PM→DH→GM→Director",
+    "Scope project PRJ-2026-0022 (TEST_Refinery Maintenance) -> no billing month field, From/To shown and defaulted to project start/end (both empty in Project Master), entered 2026-02-01..2026-02-28 -> POST 200 BR-2026-0035, list period cell correct",
+    "Detail view (br-view dialog) shows Period From / Period To fields",
+    "Regression: existing 12 rows list fine; after approving BR-2026-0034 (own test record) through the 4-step chain, Generate Bill navigates to /app/ra-bills?fromRequest=... and opens New RA Bill prefilled (project TEST-AMC-01, 4 items, notes 'Against Bill Request BR-2026-0034')"
+  ],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "RaBills fromRequest prefill", "issue": "Success toast 'Pre-filled from approved request ...' appears twice (useEffect runs twice / not guarded) — pre-existing, cosmetic", "selector": "[data-sonner-toast]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "New Bill Request dialog (AMC project)", "issues": ["Grid is md:grid-cols-5 but has 6 fields for monthly projects, so 'Service Period To' wraps alone onto a second row, separated from 'Service Period From'. Consider grid-cols-6 or grouping From/To together.", "Amber month-taken note is long and stretches the Billing Month column height"]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Optional: keep Service Period From/To on same row (layout tweak) in BillRequests.jsx create dialog",
+    "Optional: guard RaBills fromRequest useEffect to avoid duplicate toast"
+  ],
+  "critical_code_review_comments": [
+    "BillRequests.jsx: pickMonth always overwrites period_from/to with month bounds — intended, but a user who edited a custom period then touches the month input loses edits silently (acceptable per spec).",
+    "Generated RA bill does not carry period_from/period_to — matches user choice (3), just noting.",
+    "No delete endpoint for bill requests, so test records cannot be cleaned via API."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "seed_data_creation": "Created BR-2026-0034 (TEST-AMC-01, 2026-11, period 2026-11-05→2026-11-15, id 4d4dcca8-c529-4731-9e34-bcbb8c93a457) and approved all 4 steps via /api/approvals/92a47acc-d0a2-4989-a1c4-6db7c1f5ec45/action to test Generate Bill (bill NOT saved — RA Bill form left unsaved, so it remains 'approved'). Created BR-2026-0035 (PRJ-2026-0022 TEST_ project, period 2026-02-01→2026-02-28, id 1e95e163-0d66-46f2-b72c-fe1c938b6908, pending_approval). Please clean these up along with TEST-AMC-01.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Login form needs ~2.5s wait after load before filling (email field gets reset on hydration otherwise). Bill request testids: br-new, br-form-project (native select), br-form-billing-month, br-form-from, br-form-to, br-form-month-taken, br-month-YYYY-MM, br-add-item, br-item-desc-N, br-form-submit, br-period-cell-<id>, br-generate-<id>."
+}

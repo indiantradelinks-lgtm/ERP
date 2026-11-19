@@ -185,6 +185,21 @@ Backend routes are prefixed `/api`; frontend calls via `REACT_APP_BACKEND_URL`.
   while loading those 31k–37k rows — the query is now memory-safe, but a tier bump is still
   advisable, and several Mysore sheet rows stay unmatched until their E-Codes exist in the master.
 
+## Iter 229 — Multiple bills per month + Service Period on Bill Requests (19 Jun 2026)
+- `POST /bill-requests` no longer blocks a second request for an AMC/ARC month (the
+  `ensure_no_duplicate` gate on `project_code + billing_month` is removed) — part-month bills and
+  several work fronts in one month can each be raised.
+- **Service Period (From–To)** is now a first-class field on every bill request: month-wise
+  projects pre-fill the month's first/last day but the dates stay editable, scope projects keep
+  the project start/end default, and `from > to` is rejected (API 400 + a UI toast). The dates are
+  stored on the request, shown in the Bill Requests list under the billing month
+  (`br-period-cell-<id>`), in the request detail, and in the approval card title.
+- `GET /ra-bills/project-context/{code}` month ledger now returns every request per month
+  (`requests[]`, `request_count`); the month chips stay clickable, show `×N`, and an amber note in
+  the dialog lists the existing request numbers instead of the old red "pick another month" error.
+- Verified by curl (two requests for the same month, custom period saved, inverted range rejected)
+  and by the testing agent — 7/7 UI flows passed (iteration_213); test records cleaned up.
+
 ## Backlog
 - **P1** Cancel / edit an open vendor-bill payment request from the Payments popup.
 - **P1** Export queue: very large reports as a background job with a "ready to download" notice.

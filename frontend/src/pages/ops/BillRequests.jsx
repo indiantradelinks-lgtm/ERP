@@ -302,8 +302,8 @@ export default function BillRequests() {
             <DialogDescription>Goes for approval: Project Manager → Dept Head → GM → Director (Super Admin can change this in Approval Matrix).</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              <div>
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+              <div className="md:col-span-1">
                 <Label className="text-[10px] uppercase tracking-wider">Bill Type</Label>
                 <select value={form.bill_type} onChange={(e) => setForm({ ...form, bill_type: e.target.value })}
                   className="w-full h-9 rounded-sm border border-input bg-background px-2 text-sm mt-1" data-testid="br-form-type">
@@ -331,12 +331,6 @@ export default function BillRequests() {
                   <Input type="month" value={form.billing_month} min={(ctx.project_start || "").slice(0, 7) || undefined}
                     max={(ctx.project_end || "").slice(0, 7) || undefined}
                     onChange={(e) => pickMonth(e.target.value)} className="h-9 rounded-sm mt-1" data-testid="br-form-billing-month" />
-                  {monthTaken.length > 0 && (
-                    <div className="text-[10px] text-amber-800 font-semibold mt-0.5" data-testid="br-form-month-taken">
-                      {monthTaken.length} request(s) already raised for this month ({monthTaken.map((x) => x.request_no).join(", ")}) —
-                      another one is allowed; set the Service Period below for this bill.
-                    </div>
-                  )}
                 </div>
               )}
               <div>
@@ -348,6 +342,12 @@ export default function BillRequests() {
                 <Input type="date" value={form.period_to} onChange={(e) => setForm({ ...form, period_to: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="br-form-to" />
               </div>
             </div>
+            {monthTaken.length > 0 && (
+              <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-sm px-2 py-1 -mt-1" data-testid="br-form-month-taken">
+                {monthTaken.length} request(s) already raised for {form.billing_month} ({monthTaken.map((x) => x.request_no).join(", ")}) —
+                another bill for the same month is allowed; set the Service Period for this one.
+              </div>
+            )}
             {ctx?.project_category !== undefined && form.project_code && (
               <div className="border border-border rounded-sm bg-muted/30 p-3 space-y-2" data-testid="br-form-category">
                 <div className="flex flex-wrap items-center gap-2">
