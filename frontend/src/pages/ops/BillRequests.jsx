@@ -119,6 +119,9 @@ export default function BillRequests() {
   const create = async () => {
     if (!form.project_code) { toast.error("Select a project"); return; }
     if (ctx?.billing_mode === "monthly" && !form.billing_month) { toast.error("Select the Billing Month — AMC/ARC projects are billed month-wise"); return; }
+    if (form.period_from && form.period_to && form.period_from > form.period_to) {
+      toast.error("Service Period 'From' date cannot be after the 'To' date"); return;
+    }
     if (!form.items.length) { toast.error("Add at least one line item (as per the customer work order)"); return; }
     if (creatingBusy) return;
     setCreatingBusy(true);
@@ -138,6 +141,10 @@ export default function BillRequests() {
       if (!e.response?.data?.duplicate) toast.error(e?.response?.data?.detail || "Create failed");
     } finally { setCreatingBusy(false); }
   };
+
+  const monthTaken = useMemo(
+    () => (ctx?.month_ledger || []).find((m) => m.month === form.billing_month)?.requests || [],
+    [ctx, form.billing_month]);
 
   const kpi = useMemo(() => ({
     total: rows.length,
@@ -221,7 +228,10 @@ export default function BillRequests() {
                   )}
                 </TableCell>
                 <TableCell className="text-xs">
-                  {r.billing_month ? <span className="font-semibold" data-testid={`br-month-cell-${r.id}`}>{r.billing_month}</span> : <>{r.period_from || "—"} → {r.period_to || "—"}</>}
+                  {r.billing_month && <span className="font-semibold" data-testid={`br-month-cell-${r.id}`}>{r.billing_month}</span>}
+                  <div className="text-[10px] text-muted-foreground" data-testid={`br-period-cell-${r.id}`}>
+                    {r.period_from || "—"} → {r.period_to || "—"}
+                  </div>
                 </TableCell>
                 <TableCell className="text-right font-mono-data tabular text-xs">{inr(r.expected_amount)}
                   <div className="text-[10px] text-muted-foreground font-sans">
@@ -315,31 +325,28 @@ export default function BillRequests() {
                 <ProjectSelect label="Project Code" value={form.project_code} onChange={onProjectPicked} testid="br-form-project"
                   hint="Selecting a project auto-fills category, client, offer & line items" />
               </div>
-              {ctx?.billing_mode === "monthly" ? (
+              {ctx?.billing_mode === "monthly" && (
                 <div>
                   <Label className="text-[10px] uppercase tracking-wider">Billing Month *</Label>
                   <Input type="month" value={form.billing_month} min={(ctx.project_start || "").slice(0, 7) || undefined}
                     max={(ctx.project_end || "").slice(0, 7) || undefined}
                     onChange={(e) => pickMonth(e.target.value)} className="h-9 rounded-sm mt-1" data-testid="br-form-billing-month" />
-                  <div className="text-[10px] text-muted-foreground mt-0.5">Period {form.period_from || "—"} → {form.period_to || "—"}</div>
-                  {(ctx.month_ledger || []).some((m) => m.month === form.billing_month && m.taken) && (
-                    <div className="text-[10px] text-rose-700 font-semibold mt-0.5" data-testid="br-form-month-taken">
-                      This month is already requested — pick another month
+                  {monthTaken.length > 0 && (
+                    <div className="text-[10px] text-amber-800 font-semibold mt-0.5" data-testid="br-form-month-taken">
+                      {monthTaken.length} request(s) already raised for this month ({monthTaken.map((x) => x.request_no).join(", ")}) —
+                      another one is allowed; set the Service Period below for this bill.
                     </div>
                   )}
                 </div>
-              ) : (
-                <>
-                  <div>
-                    <Label className="text-[10px] uppercase tracking-wider">Period From</Label>
-                    <Input type="date" value={form.period_from} onChange={(e) => setForm({ ...form, period_from: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="br-form-from" />
-                  </div>
-                  <div>
-                    <Label className="text-[10px] uppercase tracking-wider">Period To</Label>
-                    <Input type="date" value={form.period_to} onChange={(e) => setForm({ ...form, period_to: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="br-form-to" />
-                  </div>
-                </>
               )}
+              <div>
+                <Label className="text-[10px] uppercase tracking-wider">Service Period From</Label>
+                <Input type="date" value={form.period_from} onChange={(e) => setForm({ ...form, period_from: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="br-form-from" />
+              </div>
+              <div>
+                <Label className="text-[10px] uppercase tracking-wider">Service Period To</Label>
+                <Input type="date" value={form.period_to} onChange={(e) => setForm({ ...form, period_to: e.target.value })} className="h-9 rounded-sm mt-1" data-testid="br-form-to" />
+              </div>
             </div>
             {ctx?.project_category !== undefined && form.project_code && (
               <div className="border border-border rounded-sm bg-muted/30 p-3 space-y-2" data-testid="br-form-category">
@@ -358,14 +365,15 @@ export default function BillRequests() {
                 {ctx.billing_mode === "monthly" && (ctx.month_ledger || []).length > 0 && (
                   <div className="flex flex-wrap gap-1" data-testid="br-form-month-ledger">
                     {ctx.month_ledger.map((m) => (
-                      <button key={m.month} type="button" disabled={m.taken} onClick={() => pickMonth(m.month)}
-                        title={m.taken ? `${m.request_no} · ${m.status}` : "Raise bill request for this month"}
+                      <button key={m.month} type="button" onClick={() => pickMonth(m.month)}
+                        title={m.taken ? `${(m.requests || []).map((x) => `${x.request_no} · ${x.status}`).join(", ")} — click to raise another bill for this month`
+                                       : "Raise bill request for this month"}
                         className={`text-[10px] px-1.5 py-0.5 rounded-sm border transition-colors
-                          ${m.taken ? "bg-emerald-50 border-emerald-300 text-emerald-800 cursor-not-allowed"
-                            : form.billing_month === m.month ? "bg-primary text-primary-foreground border-primary"
+                          ${form.billing_month === m.month ? "bg-primary text-primary-foreground border-primary"
+                            : m.taken ? "bg-emerald-50 border-emerald-300 text-emerald-800 hover:border-primary"
                             : "bg-rose-50 border-rose-200 text-rose-800 hover:border-primary"}`}
                         data-testid={`br-month-${m.month}`}>
-                        {m.month}
+                        {m.month}{m.request_count > 1 ? ` ×${m.request_count}` : ""}
                       </button>
                     ))}
                   </div>

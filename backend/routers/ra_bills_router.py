@@ -30,7 +30,6 @@ from pydantic import BaseModel, Field
 from core import db, require_permission, now_iso, new_id
 from billing_category import (category_label, category_of, contract_months, is_recurring,
                               month_bounds, monthly_amount, scope_value)
-from dedupe import ensure_no_duplicate
 from pagination import maybe_paged, paged_or_rows
 from audit import audit
 from sequences import next_sequence, stamp_dept_doc
@@ -265,16 +264,17 @@ async def create_bill_request(payload: BillRequestIn, request: Request,
         if valid_months and billing_month not in valid_months:
             raise HTTPException(400, f"Billing month {billing_month} is outside the project validity "
                                      f"({valid_months[0]} to {valid_months[-1]})")
-        period_from, period_to = month_bounds(billing_month)
-        await ensure_no_duplicate(
-            module="bill_requests", collection="bill_requests", no_field="request_no",
-            query={"project_code": payload.project_code, "billing_month": billing_month,
-                   "status": {"$ne": "rejected"}},
-            message=f"A bill request ({{no}}) already exists for {payload.project_code} · {billing_month}. "
-                    f"Open {{no}} instead of raising another request for the same billing month.",
-            user=user, request=request)
+        # Several bills per month are allowed (part-month / multiple work fronts), so the
+        # service period defaults to the month but can be narrowed by the requester.
+        m_from, m_to = month_bounds(billing_month)
+        period_from = (payload.period_from or "")[:10] or m_from
+        period_to = (payload.period_to or "")[:10] or m_to
     else:
         billing_month = None
+        period_from = (payload.period_from or "")[:10] or None
+        period_to = (payload.period_to or "")[:10] or None
+    if period_from and period_to and period_from > period_to:
+        raise HTTPException(400, "Service Period 'From' date cannot be after the 'To' date")
     req_no = await next_sequence("BR")
     rid = payload.id or new_id()
     if await db.bill_requests.find_one({"id": rid}, {"_id": 0, "id": 1}):
@@ -316,7 +316,7 @@ async def create_bill_request(payload: BillRequestIn, request: Request,
     chain = await build_chain("bill_request")
     approval = {
         "id": new_id(),
-        "title": f"Bill Request {req_no} — {doc['project_code']} · {doc['client_name']} ({(payload.bill_nature or payload.bill_type).replace('_', ' ').upper()}, ₹{expected:,.0f}, {len(items)} line item(s), {attachments} document(s))",
+        "title": f"Bill Request {req_no} — {doc['project_code']} · {doc['client_name']} ({(payload.bill_nature or payload.bill_type).replace('_', ' ').upper()}, {('service period ' + str(period_from) + ' → ' + str(period_to) + ', ') if period_from and period_to else ''}₹{expected:,.0f}, {len(items)} line item(s), {attachments} document(s))",
         "type": "bill_request",
         "reference": doc["id"],
         "amount": expected,
@@ -549,18 +549,22 @@ async def ra_bill_project_context(project_code: str,
     recurring = is_recurring(p)
     month_ledger: List[Dict[str, Any]] = []
     if recurring:
-        taken: Dict[str, Dict[str, Any]] = {}
+        taken: Dict[str, List[Dict[str, Any]]] = {}
         async for br in db.bill_requests.find(
                 {"project_code": project_code, "status": {"$ne": "rejected"}},
-                {"_id": 0, "billing_month": 1, "request_no": 1, "status": 1, "period_from": 1}):
+                {"_id": 0, "billing_month": 1, "request_no": 1, "status": 1,
+                 "period_from": 1, "period_to": 1}):
             key = br.get("billing_month") or (br.get("period_from") or "")[:7]
             if key:
-                taken[key] = {"request_no": br.get("request_no"), "status": br.get("status")}
+                taken.setdefault(key, []).append(
+                    {"request_no": br.get("request_no"), "status": br.get("status"),
+                     "period_from": br.get("period_from"), "period_to": br.get("period_to")})
         for mth in contract_months(p):
-            hit = taken.get(mth)
-            month_ledger.append({"month": mth, "taken": bool(hit),
-                                 "request_no": (hit or {}).get("request_no"),
-                                 "status": (hit or {}).get("status") or "pending"})
+            hits = sorted(taken.get(mth, []), key=lambda x: x.get("request_no") or "")
+            month_ledger.append({"month": mth, "taken": bool(hits), "requests": hits,
+                                 "request_count": len(hits),
+                                 "request_no": (hits[0] if hits else {}).get("request_no"),
+                                 "status": (hits[0] if hits else {}).get("status") or "pending"})
     next_month = next((m["month"] for m in month_ledger if not m["taken"]
                        and m["month"] <= now_iso()[:7]), None)
 
