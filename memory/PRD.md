@@ -200,6 +200,20 @@ Backend routes are prefixed `/api`; frontend calls via `REACT_APP_BACKEND_URL`.
 - Verified by curl (two requests for the same month, custom period saved, inverted range rejected)
   and by the testing agent — 7/7 UI flows passed (iteration_213); test records cleaned up.
 
+## Iter 230 — Noventiq Application Assessment report (25 Nov 2026)
+- Read-only extraction of repo, dev-DB, roles/accounts, local setup, hosting/deploy and
+  architecture/API/integration/backup facts → `/app/NOVENTIQ_APPLICATION_ASSESSMENT.md` and a
+  6-page shareable PDF `/app/Noventiq-Application-Assessment.pdf`
+  (generator: `scripts/gen_noventiq_assessment_pdf.py`). No ERP code or data was changed.
+- Key verified figures: 384 collections / 803 indexes / 38,028 docs (dev, `erp_database`,
+  MongoDB 7.0.45 standalone), 1,332 API paths & 1,693 operations across 127 tags with live
+  OpenAPI at `/openapi.json` + `/docs`, 133 routers, 245 frontend pages / 242 routes,
+  23 roles over 92 resources and 276 resource-action pairs, 21 APScheduler jobs + 1 platform cron.
+- Open items flagged as needing owner/admin action: **no GitHub remote configured** (needs
+  "Save to GitHub"), production DB connection/size/topology, production pod spec & replica count,
+  all secret values, test-account passwords, backup retention / RPO / RTO / SLA, OneDrive &
+  M365 production status, compliance scope, and named technical contacts.
+
 ## Backlog
 - **P1** Cancel / edit an open vendor-bill payment request from the Payments popup.
 - **P1** Export queue: very large reports as a background job with a "ready to download" notice.
